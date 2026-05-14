@@ -1,5 +1,4 @@
-import React from 'react'
-import { Outlet, Link, useNavigate } from 'react-router-dom'
+import { Outlet, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../stores/auth'
 import { Button, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, User } from '@heroui/react'
 import { LogOut, Book, Settings } from 'lucide-react'
@@ -15,7 +14,6 @@ export function MainLayout() {
 
   return (
     <div className="min-h-screen bg-gray-100">
-      {/* Header */}
       <header className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -26,7 +24,7 @@ export function MainLayout() {
           <div className="flex items-center gap-4">
             <Dropdown>
               <DropdownTrigger>
-                <Button variant="light" className="p-0 min-w-0">
+                <Button variant="light" className="p-0 min-w-0 h-auto">
                   <User
                     name={user?.name || user?.email || 'User'}
                     description={user?.email || ''}
@@ -42,7 +40,7 @@ export function MainLayout() {
                   key="logout"
                   color="danger"
                   startContent={<LogOut className="w-4 h-4" />}
-                  onPress={handleLogout}
+                  onClick={handleLogout}
                 >
                   Logout
                 </DropdownItem>
@@ -52,7 +50,6 @@ export function MainLayout() {
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 py-6">
         <Outlet />
       </main>

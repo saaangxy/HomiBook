@@ -12,7 +12,7 @@ async function main() {
 
   // 启动
   try {
-    await app.listen({ port: 3001, host: '0.0.0.0' })
+    await app.listen({ port: 3002, host: '0.0.0.0' })
     console.log('Server running at http://localhost:3000')
   } catch (err) {
     app.log.error(err)

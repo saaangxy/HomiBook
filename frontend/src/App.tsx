@@ -1,9 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { NextUIProvider } from '@heroui/react'
+import { HeroUIProvider } from '@heroui/react'
 import { MainLayout } from './layouts/MainLayout'
 import { LoginPage } from './pages/LoginPage'
-import { RegisterPage } from './pages/RegisterPage'
 import { HomePage } from './pages/HomePage'
 import { useAuthStore } from './stores/auth'
 
@@ -20,11 +19,10 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <NextUIProvider>
+      <HeroUIProvider>
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
             <Route
               path="/"
               element={
@@ -37,7 +35,7 @@ function App() {
             </Route>
           </Routes>
         </BrowserRouter>
-      </NextUIProvider>
+      </HeroUIProvider>
     </QueryClientProvider>
   )
 }
