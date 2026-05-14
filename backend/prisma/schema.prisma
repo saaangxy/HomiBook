@@ -1,0 +1,129 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// 用户
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ownedBooks   AccountBook[] @relation("BookOwner")
+  memberships  AccountBookMember[]
+}
+
+// 账本
+model AccountBook {
+  id          String   @id @default(uuid())
+  name        String
+  ownerId     String
+  owner       User     @relation("BookOwner", fields: [ownerId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members     AccountBookMember[]
+  accounts    Account[]
+  records     Record[]
+  categories  CategoryMapping[]
+  shareCodes  ShareCode[]
+}
+
+// 账本成员
+model AccountBookMember {
+  id           String      @id @default(uuid())
+  accountBookId String
+  accountBook   AccountBook @relation(fields: [accountBookId], references: [id])
+  userId       String
+  user         User        @relation(fields: [userId], references: [id])
+  role         String      @default("member")
+  joinedAt     DateTime    @default(now())
+
+  @@unique([accountBookId, userId])
+}
+
+// 账户
+model Account {
+  id            String      @id @default(uuid())
+  accountBookId String
+  accountBook   AccountBook @relation(fields: [accountBookId], references: [id])
+  name          String
+  type          String
+  currency      String      @default("CNY")
+  balance       Float       @default(0)
+  balanceAt     DateTime?
+  accountNo     String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  records       Record[]
+  recordsFrom   Record[]    @relation("FromAccount")
+  recordsTo     Record[]    @relation("ToAccount")
+}
+
+// 流水记录
+model Record {
+  id            String      @id @default(uuid())
+  accountBookId String
+  accountBook   AccountBook @relation(fields: [accountBookId], references: [id])
+  type          String
+  amount        Float
+  accountId     String
+  fromAccountId String?
+  toAccountId   String?
+  categoryId    String?
+  date          DateTime
+  remark        String?
+  tags          String      @default("[]")
+  attachments   String      @default("[]")
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  account       Account     @relation(fields: [accountId], references: [id])
+  fromAccount   Account?    @relation("FromAccount", fields: [fromAccountId], references: [id])
+  toAccount     Account?    @relation("ToAccount", fields: [toAccountId], references: [id])
+  category      CategoryMapping? @relation(fields: [categoryId], references: [id])
+}
+
+// 系统分类
+model Category {
+  id       String   @id @default(uuid())
+  type     String
+  name     String   @unique
+  icon     String?
+  order    Int      @default(0)
+  createdAt DateTime @default(now())
+
+  mappings CategoryMapping[]
+}
+
+// 分类映射
+model CategoryMapping {
+  id             String      @id @default(uuid())
+  accountBookId  String
+  accountBook    AccountBook @relation(fields: [accountBookId], references: [id])
+  userCategory   String
+  systemCategoryId String
+  systemCategory Category    @relation(fields: [systemCategoryId], references: [id])
+  createdAt     DateTime    @default(now())
+
+  records        Record[]
+  @@unique([accountBookId, userCategory])
+}
+
+// 分享码
+model ShareCode {
+  id           String      @id @default(uuid())
+  accountBookId String
+  accountBook   AccountBook @relation(fields: [accountBookId], references: [id])
+  code         String      @unique
+  expiresAt    DateTime?
+  createdAt    DateTime    @default(now())
+}
