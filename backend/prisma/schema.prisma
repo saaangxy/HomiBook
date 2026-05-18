@@ -13,6 +13,8 @@ model User {
   email     String   @unique
   password  String
   name      String?
+  role      String   @default("USER")
+  status    String   @default("ACTIVE")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

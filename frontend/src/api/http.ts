@@ -1,8 +1,22 @@
+function getToken(): string | null {
+  try {
+    const raw = localStorage.getItem('auth-storage')
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    return parsed?.state?.token || null
+  } catch {
+    return null
+  }
+}
+
 async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
-  const token = localStorage.getItem('token')
+  const token = getToken()
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     ...options.headers as Record<string, string>,
+  }
+  // 有 body 时才设置 Content-Type，避免 DELETE 等无 body 请求被 Fastify 拒绝
+  if (options.body) {
+    headers['Content-Type'] = 'application/json'
   }
   if (token) {
     headers['Authorization'] = `Bearer ${token}`
@@ -20,5 +34,6 @@ export const api = {
   get: <T>(url: string) => request<T>(url),
   post: <T>(url: string, data: unknown) => request<T>(url, { method: 'POST', body: JSON.stringify(data) }),
   put: <T>(url: string, data: unknown) => request<T>(url, { method: 'PUT', body: JSON.stringify(data) }),
+  patch: <T>(url: string, data: unknown) => request<T>(url, { method: 'PATCH', body: JSON.stringify(data) }),
   delete: <T>(url: string) => request<T>(url, { method: 'DELETE' }),
 }
