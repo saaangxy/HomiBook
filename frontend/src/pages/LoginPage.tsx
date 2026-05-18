@@ -10,7 +10,7 @@ const styles = {
     justifyContent: 'center',
     alignItems: 'center',
     minHeight: '100vh',
-    background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
+    background: 'linear-gradient(135deg, #0c0c0f 0%, #1a1a2e 50%, #0f172a 100%)',
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     position: 'relative' as const,
     overflow: 'hidden' as const,
@@ -21,7 +21,7 @@ const styles = {
     left: '-20%',
     width: '600px',
     height: '600px',
-    background: 'radial-gradient(circle, rgba(102, 126, 234, 0.4) 0%, transparent 70%)',
+    background: 'radial-gradient(circle, rgba(249, 115, 22, 0.3) 0%, transparent 70%)',
     borderRadius: '50%',
     filter: 'blur(80px)',
   },
@@ -31,31 +31,31 @@ const styles = {
     right: '-20%',
     width: '800px',
     height: '800px',
-    background: 'radial-gradient(circle, rgba(240, 147, 251, 0.3) 0%, transparent 70%)',
+    background: 'radial-gradient(circle, rgba(234, 88, 12, 0.25) 0%, transparent 70%)',
     borderRadius: '50%',
     filter: 'blur(100px)',
   },
   header: {
     position: 'absolute' as const,
-    top: '8%',
+    top: '6%',
     display: 'flex',
     alignItems: 'center',
-    gap: '12px',
+    gap: '14px',
   },
   logoContainer: {
     width: '56px',
     height: '56px',
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    background: 'linear-gradient(135deg, #f97316 0%, #fb923c 50%, #fbbf24 100%)',
     borderRadius: '16px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    boxShadow: '0 8px 32px rgba(102, 126, 234, 0.4)',
+    boxShadow: '0 8px 32px rgba(249, 115, 22, 0.35)',
   },
   headerTitle: {
-    fontSize: '36px',
+    fontSize: '38px',
     fontWeight: 800,
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    background: 'linear-gradient(135deg, #fed7aa 0%, #fbbf24 50%, #f97316 100%)',
     WebkitBackgroundClip: 'text',
     WebkitTextFillColor: 'transparent',
     backgroundClip: 'text',
@@ -64,27 +64,28 @@ const styles = {
   },
   card: {
     position: 'relative' as const,
-    width: '850px',
-    height: '540px',
-    borderRadius: '24px',
+    width: '900px',
+    height: '560px',
+    borderRadius: '28px',
     overflow: 'hidden',
-    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6)',
+    border: '1px solid rgba(249, 115, 22, 0.12)',
   },
   formContainer: {
     position: 'absolute' as const,
     top: 0,
     width: '50%',
     height: '100%',
-    background: 'rgba(255, 255, 255, 0.08)',
-    backdropFilter: 'blur(20px)',
-    WebkitBackdropFilter: 'blur(20px)',
-    border: '1px solid rgba(255, 255, 255, 0.15)',
+    background: 'rgba(15, 23, 42, 0.75)',
+    backdropFilter: 'blur(24px)',
+    WebkitBackdropFilter: 'blur(24px)',
+    border: '1px solid rgba(249, 115, 22, 0.1)',
     transition: 'all 0.6s ease-in-out',
     display: 'flex',
     flexDirection: 'column' as const,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: '0 50px',
+    padding: '0 60px',
   },
   signUpContainer: {
     left: 0,
@@ -96,62 +97,69 @@ const styles = {
   },
   formTitle: {
     fontSize: '28px',
-    marginBottom: '24px',
-    textTransform: 'capitalize' as const,
-    color: '#fff',
+    marginBottom: '28px',
+    color: '#fef3c7',
     fontWeight: 700,
     letterSpacing: '-0.5px',
   },
+  formSubtitle: {
+    fontSize: '14px',
+    color: 'rgba(254, 243, 199, 0.5)',
+    marginBottom: '32px',
+    marginTop: '-20px',
+  },
   input: {
     width: '100%',
-    margin: '10px 0',
-    padding: '14px 16px',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    border: '1px solid rgba(255, 255, 255, 0.15)',
-    borderRadius: '12px',
+    margin: '12px 0',
+    padding: '16px 18px',
+    backgroundColor: 'rgba(254, 235, 200, 0.04)',
+    border: '1px solid rgba(249, 115, 22, 0.15)',
+    borderRadius: '14px',
     fontSize: '15px',
-    color: '#fff',
+    color: '#fef3c7',
     outline: 'none',
     transition: 'all 0.3s ease',
   },
   inputFocus: {
-    borderColor: 'rgba(102, 126, 234, 0.8)',
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    boxShadow: '0 0 0 3px rgba(102, 126, 234, 0.2)',
+    borderColor: 'rgba(249, 115, 22, 0.6)',
+    backgroundColor: 'rgba(254, 235, 200, 0.08)',
+    boxShadow: '0 0 0 4px rgba(249, 115, 22, 0.12)',
   },
   forgetPassword: {
-    display: 'inline-block',
+    display: 'block',
     textDecoration: 'none',
-    color: 'rgba(255, 255, 255, 0.6)',
-    textTransform: 'capitalize' as const,
-    fontSize: '12px',
-    marginTop: '8px',
+    color: 'rgba(254, 243, 199, 0.45)',
+    fontSize: '13px',
+    marginTop: '16px',
+    marginBottom: '24px',
     cursor: 'pointer',
     transition: 'all 0.2s ease',
+    textAlign: 'center' as const,
   },
   forgetPasswordHover: {
-    color: 'rgba(255, 255, 255, 0.9)',
+    color: 'rgba(254, 243, 199, 0.8)',
+  },
+  buttonWrapper: {
+    display: 'flex',
+    justifyContent: 'center',
+    width: '100%',
   },
   button: {
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-    padding: '12px 50px',
+    background: 'linear-gradient(135deg, #f97316 0%, #fb923c 50%, #fbbf24 100%)',
+    padding: '14px 48px',
     border: 'none',
-    borderRadius: '25px',
-    textTransform: 'uppercase' as const,
-    color: 'white',
-    marginTop: '16px',
-    marginLeft: '50px',
-    outline: 'none',
-    cursor: 'pointer',
-    fontSize: '13px',
+    borderRadius: '14px',
+    color: '#1c1917',
+    fontSize: '14px',
     fontWeight: 700,
-    letterSpacing: '1px',
+    cursor: 'pointer',
     transition: 'all 0.3s ease',
-    boxShadow: '0 8px 24px rgba(102, 126, 234, 0.4)',
+    boxShadow: '0 8px 24px rgba(249, 115, 22, 0.4)',
+    fontFamily: 'inherit',
   },
   buttonHover: {
     transform: 'translateY(-2px)',
-    boxShadow: '0 12px 32px rgba(102, 126, 234, 0.5)',
+    boxShadow: '0 12px 32px rgba(249, 115, 22, 0.5)',
   },
   overlayContainer: {
     position: 'absolute' as const,
@@ -168,7 +176,7 @@ const styles = {
     width: '200%',
     height: '100%',
     left: '-100%',
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    background: 'linear-gradient(135deg, #f97316 0%, #ea580c 50%, #c2410c 100%)',
     transition: 'all 0.6s ease-in-out',
   },
   overlayPanel: {
@@ -191,37 +199,42 @@ const styles = {
   },
   overlayTitle: {
     fontSize: '26px',
-    marginBottom: '12px',
+    marginBottom: '14px',
     fontWeight: 700,
   },
   overlayText: {
     fontSize: '14px',
-    margin: '12px 0 24px 0',
+    margin: '14px 0 28px 0',
     lineHeight: 1.6,
     opacity: 0.9,
   },
   overlayButton: {
     backgroundColor: 'transparent',
-    border: '2px solid rgba(255, 255, 255, 0.8)',
-    padding: '12px 40px',
-    borderRadius: '25px',
-    textTransform: 'uppercase' as const,
+    border: '2px solid rgba(255, 255, 255, 0.75)',
+    padding: '12px 36px',
+    borderRadius: '28px',
     color: 'white',
     cursor: 'pointer',
     fontSize: '13px',
     fontWeight: 700,
-    letterSpacing: '1px',
+    letterSpacing: '0.5px',
     transition: 'all 0.3s ease',
+    fontFamily: 'inherit',
   },
   overlayButtonHover: {
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     borderColor: 'rgba(255, 255, 255, 1)',
+    transform: 'scale(1.05)',
   },
   errorText: {
-    color: '#ff6b6b',
-    fontSize: '12px',
-    marginTop: '8px',
+    color: '#fca5a5',
+    fontSize: '13px',
+    marginTop: '12px',
     textAlign: 'center' as const,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    padding: '12px 16px',
+    borderRadius: '10px',
+    border: '1px solid rgba(239, 68, 68, 0.2)',
   },
 }
 
@@ -302,11 +315,12 @@ export function LoginPage() {
             zIndex: isActive ? 5 : 2,
           }}
         >
-          <form onSubmit={handleRegister} style={{ width: '100%' }}>
+          <form onSubmit={handleRegister} style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
             <h2 style={styles.formTitle}>创建账号</h2>
+            <p style={styles.formSubtitle}>开始管理你的家庭财务</p>
             <input
               type="text"
-              placeholder="Username..."
+              placeholder="用户名"
               value={registerName}
               onChange={(e) => setRegisterName(e.target.value)}
               style={getInputStyle('regName')}
@@ -315,7 +329,7 @@ export function LoginPage() {
             />
             <input
               type="email"
-              placeholder="Email..."
+              placeholder="邮箱地址"
               value={registerEmail}
               onChange={(e) => setRegisterEmail(e.target.value)}
               style={getInputStyle('regEmail')}
@@ -325,7 +339,7 @@ export function LoginPage() {
             />
             <input
               type="password"
-              placeholder="Password..."
+              placeholder="密码"
               value={registerPassword}
               onChange={(e) => setRegisterPassword(e.target.value)}
               style={getInputStyle('regPass')}
@@ -334,19 +348,21 @@ export function LoginPage() {
               required
             />
             {error && <div style={styles.errorText}>{error}</div>}
-            <button
-              type="submit"
-              style={{
-                ...styles.button,
-                ...(hoverStates.signUp ? styles.buttonHover : {}),
-                opacity: isLoading ? 0.7 : 1,
-              }}
-              onMouseEnter={() => setHoverStates({ ...hoverStates, signUp: true })}
-              onMouseLeave={() => setHoverStates({ ...hoverStates, signUp: false })}
-              disabled={isLoading}
-            >
-              {isLoading ? '注册中...' : '注册'}
-            </button>
+            <div style={styles.buttonWrapper}>
+              <button
+                type="submit"
+                style={{
+                  ...styles.button,
+                  ...(hoverStates.signUp ? styles.buttonHover : {}),
+                  opacity: isLoading ? 0.7 : 1,
+                }}
+                onMouseEnter={() => setHoverStates({ ...hoverStates, signUp: true })}
+                onMouseLeave={() => setHoverStates({ ...hoverStates, signUp: false })}
+                disabled={isLoading}
+              >
+                {isLoading ? '创建中...' : '立即创建'}
+              </button>
+            </div>
           </form>
         </div>
 
@@ -357,11 +373,12 @@ export function LoginPage() {
             ...styles.signInContainer,
           }}
         >
-          <form onSubmit={handleLogin} style={{ width: '100%' }}>
-            <h2 style={styles.formTitle}>登录</h2>
+          <form onSubmit={handleLogin} style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <h2 style={styles.formTitle}>欢迎回来</h2>
+            <p style={styles.formSubtitle}>登录以继续管理你的账本</p>
             <input
               type="email"
-              placeholder="Email..."
+              placeholder="邮箱地址"
               value={loginEmail}
               onChange={(e) => setLoginEmail(e.target.value)}
               style={getInputStyle('loginEmail')}
@@ -371,7 +388,7 @@ export function LoginPage() {
             />
             <input
               type="password"
-              placeholder="Password..."
+              placeholder="密码"
               value={loginPassword}
               onChange={(e) => setLoginPassword(e.target.value)}
               style={getInputStyle('loginPass')}
@@ -391,19 +408,21 @@ export function LoginPage() {
               忘记密码?
             </a>
             {error && <div style={styles.errorText}>{error}</div>}
-            <button
-              type="submit"
-              style={{
-                ...styles.button,
-                ...(hoverStates.signIn ? styles.buttonHover : {}),
-                opacity: isLoading ? 0.7 : 1,
-              }}
-              onMouseEnter={() => setHoverStates({ ...hoverStates, signIn: true })}
-              onMouseLeave={() => setHoverStates({ ...hoverStates, signIn: false })}
-              disabled={isLoading}
-            >
-              {isLoading ? '登录中...' : '登录'}
-            </button>
+            <div style={styles.buttonWrapper}>
+              <button
+                type="submit"
+                style={{
+                  ...styles.button,
+                  ...(hoverStates.signIn ? styles.buttonHover : {}),
+                  opacity: isLoading ? 0.7 : 1,
+                }}
+                onMouseEnter={() => setHoverStates({ ...hoverStates, signIn: true })}
+                onMouseLeave={() => setHoverStates({ ...hoverStates, signIn: false })}
+                disabled={isLoading}
+              >
+                {isLoading ? '登录中...' : '登录'}
+              </button>
+            </div>
           </form>
         </div>
 
@@ -422,8 +441,9 @@ export function LoginPage() {
           >
             {/* Left Overlay */}
             <div style={{ ...styles.overlayPanel, ...styles.overlayLeft }}>
-              <h2 style={styles.overlayTitle}>欢迎回来</h2>
-              <p style={styles.overlayText}>登录账号开始记账</p>
+
+              <h2 style={styles.overlayTitle}>已有账户?</h2>
+              <p style={styles.overlayText}>登录后继续管理你的家庭财务</p>
               <button
                 style={{
                   ...styles.overlayButton,
@@ -438,8 +458,8 @@ export function LoginPage() {
             </div>
             {/* Right Overlay */}
             <div style={{ ...styles.overlayPanel, ...styles.overlayRight }}>
-              <h2 style={styles.overlayTitle}>欢迎!</h2>
-              <p style={styles.overlayText}>注册账号管理财务</p>
+              <h2 style={styles.overlayTitle}>还没有账户?</h2>
+              <p style={styles.overlayText}>立即注册,和家人一起管理财务</p>
               <button
                 style={{
                   ...styles.overlayButton,
