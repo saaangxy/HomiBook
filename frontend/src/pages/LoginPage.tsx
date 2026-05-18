@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Book } from 'lucide-react'
 import { authApi } from '../api/auth'
@@ -243,6 +243,10 @@ export function LoginPage() {
   const [focusedInput, setFocusedInput] = useState<string | null>(null)
   const navigate = useNavigate()
   const { setAuth } = useAuthStore()
+
+  useEffect(() => {
+    setError('')
+  }, [isActive])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
