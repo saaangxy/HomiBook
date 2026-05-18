@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../stores/auth'
+import { useBookStore } from '../stores/book'
+import { BookSwitcher } from '../components/BookSwitcher'
 import {
   Book,
   LayoutDashboard,
@@ -197,6 +199,12 @@ const s = {
     color: '#e2e8f0',
   },
 
+  topBarRight: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+  } as React.CSSProperties,
+
   logoutBtn: {
     display: 'flex',
     alignItems: 'center',
@@ -225,6 +233,13 @@ export function MainLayout() {
   const location = useLocation()
   const [collapsed, setCollapsed] = useState(false)
   const isAdmin = user?.role === 'ADMIN'
+  const { fetchBooks, booksLoaded } = useBookStore()
+
+  useEffect(() => {
+    if (!booksLoaded) {
+      fetchBooks()
+    }
+  }, [booksLoaded, fetchBooks])
 
   const navItems = allNavItems.filter((item) => !item.adminOnly || isAdmin)
 
@@ -310,21 +325,24 @@ export function MainLayout() {
             <span style={s.pageTitle}>{pageTitle}</span>
           </div>
 
-          <button
-            style={s.logoutBtn}
-            onClick={handleLogout}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = '#1e293b'
-              e.currentTarget.style.color = '#f97316'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = 'transparent'
-              e.currentTarget.style.color = '#94a3b8'
-            }}
-          >
-            <LogOut size={16} />
-            退出登录
-          </button>
+          <div style={s.topBarRight}>
+            <BookSwitcher />
+            <button
+              style={s.logoutBtn}
+              onClick={handleLogout}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#1e293b'
+                e.currentTarget.style.color = '#f97316'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent'
+                e.currentTarget.style.color = '#94a3b8'
+              }}
+            >
+              <LogOut size={16} />
+              退出登录
+            </button>
+          </div>
         </div>
 
         {/* 内容区域 */}

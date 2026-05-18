@@ -1,4 +1,5 @@
 import { Book, Users, Wallet, ArrowUpCircle, ArrowDownCircle } from 'lucide-react'
+import { useBookStore } from '../stores/book'
 
 const s = {
   grid: {
@@ -64,8 +65,46 @@ const s = {
 }
 
 export function HomePage() {
+  const { currentBookId, books } = useBookStore()
+  const currentBook = books.find((b) => b.id === currentBookId)
+
   return (
     <div>
+      {currentBook && (
+        <div
+          style={{
+            marginBottom: 20,
+            padding: '12px 20px',
+            background: '#1e293b',
+            border: '1px solid #334155',
+            borderRadius: 12,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+          }}
+        >
+          <Book size={18} style={{ color: '#f97316' }} />
+          <span style={{ color: '#94a3b8', fontSize: 14 }}>当前账本：</span>
+          <span style={{ color: '#f97316', fontSize: 14, fontWeight: 600 }}>{currentBook.name}</span>
+        </div>
+      )}
+      {!currentBook && (
+        <div
+          style={{
+            marginBottom: 20,
+            padding: '20px',
+            background: '#1e293b',
+            border: '1px solid #334155',
+            borderRadius: 12,
+            textAlign: 'center',
+            color: '#64748b',
+            fontSize: 14,
+          }}
+        >
+          请选择或创建账本开始记账
+        </div>
+      )}
+
       {/* 统计卡片 */}
       <div style={s.grid}>
         <div style={s.statCard}>

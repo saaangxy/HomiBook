@@ -6,6 +6,7 @@ import { LoginPage } from './pages/LoginPage'
 import { HomePage } from './pages/HomePage'
 import { PlaceholderPage } from './pages/PlaceholderPage'
 import { AdminUsersPage } from './pages/AdminUsersPage'
+import { BooksPage } from './pages/BooksPage'
 import { useAuthStore } from './stores/auth'
 
 const queryClient = new QueryClient()
@@ -34,7 +35,7 @@ function App() {
               }
             >
               <Route index element={<HomePage />} />
-              <Route path="books" element={<PlaceholderPage title="账本管理" />} />
+              <Route path="books" element={<BooksPage />} />
               <Route path="stats" element={<PlaceholderPage title="统计分析" />} />
               <Route path="settings" element={<PlaceholderPage title="设置" />} />
               <Route path="admin/users" element={<AdminUsersPage />} />

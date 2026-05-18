@@ -1,6 +1,7 @@
 import { buildApp } from './app.js'
 import { authRoutes } from './routes/auth.js'
 import { adminRoutes } from './routes/admin.js'
+import { bookRoutes } from './routes/book.js'
 
 async function main() {
   const app = await buildApp()
@@ -8,6 +9,7 @@ async function main() {
   // 注册路由
   app.register(authRoutes, { prefix: '/api/auth' })
   app.register(adminRoutes, { prefix: '/api/admin' })
+  app.register(bookRoutes, { prefix: '/api/books' })
 
   // 健康检查
   app.get('/health', async () => ({ status: 'ok' }))

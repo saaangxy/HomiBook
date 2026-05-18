@@ -28,6 +28,17 @@ export class AuthService {
       },
     })
 
+    // 为新用户创建默认账本
+    await prisma.accountBook.create({
+      data: {
+        name: '我的账本',
+        ownerId: user.id,
+        members: {
+          create: { userId: user.id },
+        },
+      },
+    })
+
     return user
   }
 
