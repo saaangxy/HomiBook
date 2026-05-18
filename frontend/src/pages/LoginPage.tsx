@@ -140,6 +140,7 @@ const styles = {
     textTransform: 'uppercase' as const,
     color: 'white',
     marginTop: '16px',
+    marginLeft: '50px',
     outline: 'none',
     cursor: 'pointer',
     fontSize: '13px',
@@ -298,12 +299,11 @@ export function LoginPage() {
           style={{
             ...styles.formContainer,
             ...styles.signUpContainer,
-            transform: isActive ? 'translateX(100%)' : 'translateX(0)',
             zIndex: isActive ? 5 : 2,
           }}
         >
           <form onSubmit={handleRegister} style={{ width: '100%' }}>
-            <h2 style={styles.formTitle}>sign up</h2>
+            <h2 style={styles.formTitle}>创建账号</h2>
             <input
               type="text"
               placeholder="Username..."
@@ -345,7 +345,7 @@ export function LoginPage() {
               onMouseLeave={() => setHoverStates({ ...hoverStates, signUp: false })}
               disabled={isLoading}
             >
-              {isLoading ? 'signing up...' : 'sign up'}
+              {isLoading ? '注册中...' : '注册'}
             </button>
           </form>
         </div>
@@ -355,11 +355,10 @@ export function LoginPage() {
           style={{
             ...styles.formContainer,
             ...styles.signInContainer,
-            transform: isActive ? 'translateX(100%)' : 'translateX(0)',
           }}
         >
           <form onSubmit={handleLogin} style={{ width: '100%' }}>
-            <h2 style={styles.formTitle}>sign in</h2>
+            <h2 style={styles.formTitle}>登录</h2>
             <input
               type="email"
               placeholder="Email..."
@@ -389,7 +388,7 @@ export function LoginPage() {
               onMouseEnter={() => setHoverStates({ ...hoverStates, forgetPass: true })}
               onMouseLeave={() => setHoverStates({ ...hoverStates, forgetPass: false })}
             >
-              forget your password
+              忘记密码?
             </a>
             {error && <div style={styles.errorText}>{error}</div>}
             <button
@@ -403,7 +402,7 @@ export function LoginPage() {
               onMouseLeave={() => setHoverStates({ ...hoverStates, signIn: false })}
               disabled={isLoading}
             >
-              {isLoading ? 'signing in...' : 'sign in'}
+              {isLoading ? '登录中...' : '登录'}
             </button>
           </form>
         </div>
@@ -423,8 +422,8 @@ export function LoginPage() {
           >
             {/* Left Overlay */}
             <div style={{ ...styles.overlayPanel, ...styles.overlayLeft }}>
-              <h2 style={styles.overlayTitle}>welcome back!</h2>
-              <p style={styles.overlayText}>To keep connected with us please login with your personal info</p>
+              <h2 style={styles.overlayTitle}>欢迎回来</h2>
+              <p style={styles.overlayText}>登录账号开始记账</p>
               <button
                 style={{
                   ...styles.overlayButton,
@@ -434,13 +433,13 @@ export function LoginPage() {
                 onMouseLeave={() => setHoverStates({ ...hoverStates, overlaySignIn: false })}
                 onClick={() => setIsActive(false)}
               >
-                sign in
+                没有账号?注册一个!
               </button>
             </div>
             {/* Right Overlay */}
             <div style={{ ...styles.overlayPanel, ...styles.overlayRight }}>
-              <h2 style={styles.overlayTitle}>hello friend!</h2>
-              <p style={styles.overlayText}>Enter your personal details and start journey with us</p>
+              <h2 style={styles.overlayTitle}>欢迎!</h2>
+              <p style={styles.overlayText}>注册账号管理财务</p>
               <button
                 style={{
                   ...styles.overlayButton,
@@ -450,7 +449,7 @@ export function LoginPage() {
                 onMouseLeave={() => setHoverStates({ ...hoverStates, overlaySignUp: false })}
                 onClick={() => setIsActive(true)}
               >
-                sign up
+                已有账号?去登录
               </button>
             </div>
           </div>
