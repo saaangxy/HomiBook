@@ -299,70 +299,12 @@ export function LoginPage() {
 
       {/* Card */}
       <div style={styles.card}>
-        {/* Sign Up Form */}
+        {/* Sign In Form — 默认显示在左侧 */}
         <div
           style={{
             ...styles.formContainer,
             ...styles.signUpContainer,
-            zIndex: isActive ? 5 : 2,
-          }}
-        >
-          <form onSubmit={handleRegister} style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <h2 style={styles.formTitle}>创建账号</h2>
-            <p style={styles.formSubtitle}>开始管理你的家庭财务</p>
-            <input
-              type="text"
-              placeholder="用户名"
-              value={registerName}
-              onChange={(e) => setRegisterName(e.target.value)}
-              style={getInputStyle('regName')}
-              onFocus={() => setFocusedInput('regName')}
-              onBlur={() => setFocusedInput(null)}
-            />
-            <input
-              type="email"
-              placeholder="邮箱地址"
-              value={registerEmail}
-              onChange={(e) => setRegisterEmail(e.target.value)}
-              style={getInputStyle('regEmail')}
-              onFocus={() => setFocusedInput('regEmail')}
-              onBlur={() => setFocusedInput(null)}
-              required
-            />
-            <input
-              type="password"
-              placeholder="密码"
-              value={registerPassword}
-              onChange={(e) => setRegisterPassword(e.target.value)}
-              style={getInputStyle('regPass')}
-              onFocus={() => setFocusedInput('regPass')}
-              onBlur={() => setFocusedInput(null)}
-              required
-            />
-            {error && <div style={styles.errorText}>{error}</div>}
-            <div style={styles.buttonWrapper}>
-              <button
-                type="submit"
-                style={{
-                  ...styles.button,
-                  ...(hoverStates.signUp ? styles.buttonHover : {}),
-                  opacity: isLoading ? 0.7 : 1,
-                }}
-                onMouseEnter={() => setHoverStates({ ...hoverStates, signUp: true })}
-                onMouseLeave={() => setHoverStates({ ...hoverStates, signUp: false })}
-                disabled={isLoading}
-              >
-                {isLoading ? '创建中...' : '立即创建'}
-              </button>
-            </div>
-          </form>
-        </div>
-
-        {/* Sign In Form */}
-        <div
-          style={{
-            ...styles.formContainer,
-            ...styles.signInContainer,
+            zIndex: isActive ? 2 : 5,
           }}
         >
           <form onSubmit={handleLogin} style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -418,6 +360,64 @@ export function LoginPage() {
           </form>
         </div>
 
+        {/* Sign Up Form — 默认隐藏在右侧,切换后显示 */}
+        <div
+          style={{
+            ...styles.formContainer,
+            ...styles.signInContainer,
+          }}
+        >
+          <form onSubmit={handleRegister} style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <h2 style={styles.formTitle}>创建账号</h2>
+            <p style={styles.formSubtitle}>开始管理你的家庭财务</p>
+            <input
+              type="text"
+              placeholder="用户名"
+              value={registerName}
+              onChange={(e) => setRegisterName(e.target.value)}
+              style={getInputStyle('regName')}
+              onFocus={() => setFocusedInput('regName')}
+              onBlur={() => setFocusedInput(null)}
+            />
+            <input
+              type="email"
+              placeholder="邮箱地址"
+              value={registerEmail}
+              onChange={(e) => setRegisterEmail(e.target.value)}
+              style={getInputStyle('regEmail')}
+              onFocus={() => setFocusedInput('regEmail')}
+              onBlur={() => setFocusedInput(null)}
+              required
+            />
+            <input
+              type="password"
+              placeholder="密码"
+              value={registerPassword}
+              onChange={(e) => setRegisterPassword(e.target.value)}
+              style={getInputStyle('regPass')}
+              onFocus={() => setFocusedInput('regPass')}
+              onBlur={() => setFocusedInput(null)}
+              required
+            />
+            {error && <div style={styles.errorText}>{error}</div>}
+            <div style={styles.buttonWrapper}>
+              <button
+                type="submit"
+                style={{
+                  ...styles.button,
+                  ...(hoverStates.signUp ? styles.buttonHover : {}),
+                  opacity: isLoading ? 0.7 : 1,
+                }}
+                onMouseEnter={() => setHoverStates({ ...hoverStates, signUp: true })}
+                onMouseLeave={() => setHoverStates({ ...hoverStates, signUp: false })}
+                disabled={isLoading}
+              >
+                {isLoading ? '创建中...' : '立即创建'}
+              </button>
+            </div>
+          </form>
+        </div>
+
         {/* Overlay */}
         <div
           style={{
@@ -431,9 +431,8 @@ export function LoginPage() {
               transform: isActive ? 'translateX(50%)' : 'translateX(0)',
             }}
           >
-            {/* Left Overlay */}
+            {/* Left Overlay — 切换后显示,点击回到登录 */}
             <div style={{ ...styles.overlayPanel, ...styles.overlayLeft }}>
-
               <h2 style={styles.overlayTitle}>已有账户?</h2>
               <p style={styles.overlayText}>登录后继续管理你的家庭财务</p>
               <button
@@ -445,10 +444,10 @@ export function LoginPage() {
                 onMouseLeave={() => setHoverStates({ ...hoverStates, overlaySignIn: false })}
                 onClick={() => setIsActive(false)}
               >
-                没有账号?注册一个!
+                登录
               </button>
             </div>
-            {/* Right Overlay */}
+            {/* Right Overlay — 默认显示,点击切换到注册 */}
             <div style={{ ...styles.overlayPanel, ...styles.overlayRight }}>
               <h2 style={styles.overlayTitle}>还没有账户?</h2>
               <p style={styles.overlayText}>立即注册,和家人一起管理财务</p>
@@ -461,7 +460,7 @@ export function LoginPage() {
                 onMouseLeave={() => setHoverStates({ ...hoverStates, overlaySignUp: false })}
                 onClick={() => setIsActive(true)}
               >
-                已有账号?去登录
+                创建账户
               </button>
             </div>
           </div>
