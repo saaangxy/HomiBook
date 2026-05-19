@@ -441,7 +441,7 @@ export function BooksPage() {
                               style={{ fontFamily: 'inherit' }}
                               onClick={() => { if (confirm('确定退出该账本？')) handleRemoveMember(m) }}
                             >
-                              <LogOut size={14} className="mr-1" /> 退出
+                              <LogOut size={14} className="mr-1" />
                             </button>
                           )}
                         </div>
