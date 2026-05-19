@@ -62,7 +62,7 @@ export function BookSwitcher() {
               }
               endContent={
                 <span
-                  className={`text-[11px] px-2 py-0.5 rounded-full font-semibold ${
+                  className={`shrink-0 text-[11px] px-2 py-0.5 rounded-full font-semibold whitespace-nowrap ${
                     book.role === 'owner'
                       ? 'bg-[#f97316]/15 text-[#f97316]'
                       : 'bg-[#64748b]/15 text-[#94a3b8]'
