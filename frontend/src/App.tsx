@@ -22,7 +22,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <HeroUIProvider>
+      <HeroUIProvider className="dark h-full">
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<LoginPage />} />

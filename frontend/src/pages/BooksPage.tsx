@@ -1,300 +1,126 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import {
+  Card,
+  CardBody,
+  Modal,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
+  useDisclosure,
+} from '@heroui/react'
 import { useBookStore } from '../stores/book'
 import { useAuthStore } from '../stores/auth'
 import { bookApi, type BookItem, type BookMember, type ShareCode, type ShareCodeLookup } from '../api/book'
-import { Plus, Users, Settings, Share, Trash2, Copy, X, LogOut, Shield, ShieldOff } from 'lucide-react'
-import type React from 'react'
+import { Plus, Users, Settings, Share, Trash2, Copy, LogOut, Shield, ShieldOff } from 'lucide-react'
 
-/* ===== 内联样式 ===== */
-const st = {
-  header: {
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24,
-  } as React.CSSProperties,
-  title: {
-    fontSize: 20, fontWeight: 700, color: '#e2e8f0',
-  } as React.CSSProperties,
-  headerBtns: {
-    display: 'flex', gap: 10,
-  } as React.CSSProperties,
-  btnSecondary: {
-    display: 'flex', alignItems: 'center', gap: 6,
-    padding: '8px 18px', borderRadius: 8,
-    border: '1px solid #334155', background: '#1e293b', color: '#e2e8f0',
-    cursor: 'pointer', fontSize: 14, fontWeight: 500,
-  } as React.CSSProperties,
-  btnPrimary: {
-    display: 'flex', alignItems: 'center', gap: 6,
-    padding: '8px 18px', borderRadius: 8,
-    border: 'none', background: '#f97316', color: '#fff',
-    cursor: 'pointer', fontSize: 14, fontWeight: 600,
-  } as React.CSSProperties,
-  grid: {
-    display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16,
-  } as React.CSSProperties,
-  card: {
-    background: '#1e293b', border: '1px solid #334155', borderRadius: 12, padding: '20px 24px',
-    display: 'flex', flexDirection: 'column', gap: 16, transition: 'border-color 0.2s',
-  } as React.CSSProperties,
-  cardTop: {
-    display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
-  } as React.CSSProperties,
-  cardName: {
-    fontSize: 17, fontWeight: 600, color: '#e2e8f0',
-  } as React.CSSProperties,
-  cardInfo: {
-    display: 'flex', alignItems: 'center', gap: 16, fontSize: 13, color: '#94a3b8',
-  } as React.CSSProperties,
-  cardActions: {
-    display: 'flex', gap: 6,
-  } as React.CSSProperties,
-  iconBtn: (danger: boolean) => ({
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    width: 34, height: 34, borderRadius: 8, cursor: 'pointer',
-    border: '1px solid #334155', background: '#0f172a', color: danger ? '#ef4444' : '#94a3b8',
-    transition: 'border-color 0.15s',
-  }),
-  badge: (role: string) => ({
-    fontSize: 11, padding: '2px 10px', borderRadius: 10, fontWeight: 600,
-    background: role === 'owner' ? 'rgba(249,115,22,0.15)' : 'rgba(100,116,139,0.15)',
-    color: role === 'owner' ? '#f97316' : '#94a3b8',
-  }),
+const roleLabels: Record<string, string> = { owner: '归属人', admin: '管理员', member: '成员' }
 
-  // 弹窗
-  overlay: {
-    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-    background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-    zIndex: 200,
-  } as React.CSSProperties,
-  modal: {
-    background: '#1e293b', border: '1px solid #334155', borderRadius: 16,
-    padding: 28, width: 440, maxHeight: '80vh', overflow: 'auto',
-  } as React.CSSProperties,
-  modalWide: {
-    background: '#1e293b', border: '1px solid #334155', borderRadius: 16,
-    padding: 28, width: 560, maxHeight: '80vh', overflow: 'auto',
-  } as React.CSSProperties,
-  modalTitle: {
-    fontSize: 18, fontWeight: 700, color: '#e2e8f0', marginBottom: 20,
-  } as React.CSSProperties,
-  input: {
-    width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #334155',
-    background: '#0f172a', color: '#e2e8f0', fontSize: 14, outline: 'none',
-    boxSizing: 'border-box' as const,
-  },
-  modalActions: {
-    display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20,
-  } as React.CSSProperties,
-  cancelBtn: {
-    padding: '8px 20px', borderRadius: 8, border: '1px solid #334155',
-    background: 'transparent', color: '#94a3b8', cursor: 'pointer', fontSize: 14,
-  } as React.CSSProperties,
-  submitBtn: {
-    padding: '8px 20px', borderRadius: 8, border: 'none',
-    background: '#f97316', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600,
-  } as React.CSSProperties,
-  errorText: {
-    color: '#ef4444', fontSize: 13, marginTop: 6,
-  } as React.CSSProperties,
-  tipText: {
-    color: '#64748b', fontSize: 12, marginTop: 6,
-  } as React.CSSProperties,
-
-  // 成员/分享码面板
-  tabs: {
-    display: 'flex', gap: 0, borderBottom: '1px solid #334155', marginBottom: 16,
-  } as React.CSSProperties,
-  tab: (active: boolean) => ({
-    padding: '8px 16px', fontSize: 14, fontWeight: active ? 600 : 400,
-    color: active ? '#f97316' : '#94a3b8',
-    borderBottom: active ? '2px solid #f97316' : '2px solid transparent',
-    cursor: 'pointer', background: 'none', border: 'none', outline: 'none',
-  }),
-  memberRow: {
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    padding: '10px 0', borderBottom: '1px solid #1e293b',
-  } as React.CSSProperties,
-  memberInfo: {
-    display: 'flex', flexDirection: 'column', gap: 2,
-  } as React.CSSProperties,
-  memberName: {
-    fontSize: 14, fontWeight: 500, color: '#e2e8f0',
-  } as React.CSSProperties,
-  memberEmail: {
-    fontSize: 12, color: '#64748b',
-  } as React.CSSProperties,
-  codeRow: {
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    padding: '10px 14px', background: '#0f172a', borderRadius: 8, border: '1px solid #334155',
-    marginBottom: 8,
-  } as React.CSSProperties,
-  codeText: {
-    fontSize: 16, fontWeight: 700, color: '#f97316', fontFamily: 'monospace', letterSpacing: 2,
-  } as React.CSSProperties,
-  btnSmall: (danger: boolean) => ({
-    padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: 'pointer',
-    border: danger ? '1px solid #7f1d1d' : '1px solid #334155',
-    background: danger ? 'rgba(239,68,68,0.1)' : 'transparent',
-    color: danger ? '#ef4444' : '#94a3b8',
-  }),
-  emptyState: {
-    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-    padding: 48, color: '#64748b',
-  } as React.CSSProperties,
-  addMemberForm: {
-    display: 'flex', gap: 8, marginTop: 12,
-  } as React.CSSProperties,
-}
-
-const roleLabels: Record<string, string> = {
-  owner: '归属人',
-  admin: '管理员',
-  member: '成员',
-}
-
-/* ===== Modal 组件 ===== */
-function Modal({ title, children, onClose, wide }: { title: string; children: React.ReactNode; onClose: () => void; wide?: boolean }) {
-  return (
-    <div style={st.overlay} onClick={onClose}>
-      <div style={wide ? st.modalWide : st.modal} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <h2 style={st.modalTitle}>{title}</h2>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: 4 }}>
-            <X size={18} />
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
-  )
-}
-
-/* ===== 主组件 ===== */
 export function BooksPage() {
-  const navigate = useNavigate()
-  const { books, fetchBooks, removeBook, setCurrentBook } = useBookStore()
+  const { books, fetchBooks, removeBook } = useBookStore()
   const currentUser = useAuthStore((s) => s.user)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  // 创建账本
-  const [showCreate, setShowCreate] = useState(false)
+  const createModal = useDisclosure()
+  const joinModal = useDisclosure()
+  const manageModal = useDisclosure()
+  const deleteModal = useDisclosure()
+
   const [createName, setCreateName] = useState('')
   const [createError, setCreateError] = useState('')
+  const [creating, setCreating] = useState(false)
 
-  // 加入账本
-  const [showJoin, setShowJoin] = useState(false)
   const [joinStep, setJoinStep] = useState<'input' | 'confirm'>('input')
   const [joinCode, setJoinCode] = useState('')
   const [joinLookup, setJoinLookup] = useState<ShareCodeLookup | null>(null)
   const [joinError, setJoinError] = useState('')
+  const [joining, setJoining] = useState(false)
 
-  // 管理面板
   const [manageBook, setManageBook] = useState<BookItem | null>(null)
   const [manageTab, setManageTab] = useState<'members' | 'share'>('members')
   const [members, setMembers] = useState<BookMember[]>([])
   const [shareCodes, setShareCodes] = useState<ShareCode[]>([])
   const [manageLoading, setManageLoading] = useState(false)
-
-  // 添加成员
   const [addEmail, setAddEmail] = useState('')
   const [addError, setAddError] = useState('')
+  const [expireHours, setExpireHours] = useState('')
 
-  // 删除确认
-  const [showDelete, setShowDelete] = useState<BookItem | null>(null)
+  const [deleteBook, setDeleteBook] = useState<BookItem | null>(null)
   const [deleteInput, setDeleteInput] = useState('')
-
-  // 分享码过期时间
-  const [expireHours, setExpireHours] = useState<number | undefined>(undefined)
+  const [deleting, setDeleting] = useState(false)
 
   const loadBooks = useCallback(async () => {
     setLoading(true)
     setError('')
-    try {
-      await fetchBooks()
-    } catch {
-      setError('获取账本列表失败')
-    } finally {
-      setLoading(false)
-    }
+    try { await fetchBooks() } catch { setError('获取账本列表失败') }
+    finally { setLoading(false) }
   }, [fetchBooks])
 
   useEffect(() => { loadBooks() }, [loadBooks])
 
-  // ===== 创建账本 =====
   const handleCreate = async () => {
-    if (!createName.trim()) {
-      setCreateError('请输入账本名称')
-      return
-    }
+    if (!createName.trim()) { setCreateError('请输入账本名称'); return }
+    setCreating(true)
     try {
       await bookApi.createBook(createName.trim())
       await fetchBooks()
-      setShowCreate(false)
+      createModal.onClose()
       setCreateName('')
       setCreateError('')
-    } catch (e: any) {
-      setCreateError(e.message || '创建失败')
-    }
+    } catch (e: any) { setCreateError(e.message || '创建失败') }
+    finally { setCreating(false) }
   }
 
-  // ===== 加入账本 =====
   const handleLookup = async () => {
     setJoinError('')
     try {
       const result = await bookApi.lookupCode(joinCode.trim().toUpperCase())
       setJoinLookup(result)
       setJoinStep('confirm')
-    } catch (e: any) {
-      setJoinError(e.message || '分享码无效')
-    }
+    } catch (e: any) { setJoinError(e.message || '分享码无效') }
   }
 
   const handleJoin = async () => {
     setJoinError('')
+    setJoining(true)
     try {
       await bookApi.joinByCode(joinCode.trim().toUpperCase())
       await fetchBooks()
-      setShowJoin(false)
+      joinModal.onClose()
       setJoinStep('input')
       setJoinCode('')
       setJoinLookup(null)
-    } catch (e: any) {
-      setJoinError(e.message || '加入失败')
-    }
+    } catch (e: any) { setJoinError(e.message || '加入失败') }
+    finally { setJoining(false) }
   }
 
-  // ===== 管理面板 =====
   const openManage = async (book: BookItem) => {
     setManageBook(book)
     setManageTab('members')
     setAddEmail('')
     setAddError('')
     setManageLoading(true)
+    manageModal.onOpen()
     try {
-      const [m, ...rest] = await Promise.all([bookApi.listMembers(book.id)])
+      const [m] = await Promise.all([bookApi.listMembers(book.id)])
       setMembers(m)
-      if (book.role === 'owner') {
+      if (book.role === 'owner' || book.role === 'admin') {
         const codes = await bookApi.listShareCodes(book.id)
         setShareCodes(codes)
       }
-    } catch {
-      // ignore
-    } finally {
-      setManageLoading(false)
-    }
+    } catch { /* ignore */ }
+    finally { setManageLoading(false) }
   }
 
   const refreshMembers = async () => {
     if (!manageBook) return
-    const m = await bookApi.listMembers(manageBook.id)
-    setMembers(m)
+    setMembers(await bookApi.listMembers(manageBook.id))
   }
 
   const refreshShareCodes = async () => {
     if (!manageBook) return
-    const codes = await bookApi.listShareCodes(manageBook.id)
-    setShareCodes(codes)
+    setShareCodes(await bookApi.listShareCodes(manageBook.id))
   }
 
   const handleAddMember = async () => {
@@ -305,20 +131,13 @@ export function BooksPage() {
       setAddEmail('')
       await refreshMembers()
       await fetchBooks()
-    } catch (e: any) {
-      setAddError(e.message || '添加失败')
-    }
+    } catch (e: any) { setAddError(e.message || '添加失败') }
   }
 
   const handleRemoveMember = async (member: BookMember) => {
     if (!manageBook) return
-    try {
-      await bookApi.removeMember(manageBook.id, member.id)
-      await refreshMembers()
-      await fetchBooks()
-    } catch (e: any) {
-      alert(e.message)
-    }
+    try { await bookApi.removeMember(manageBook.id, member.id); await refreshMembers(); await fetchBooks() }
+    catch (e: any) { alert(e.message) }
   }
 
   const handleToggleMemberRole = async (member: BookMember) => {
@@ -327,400 +146,405 @@ export function BooksPage() {
       const newRole = member.role === 'admin' ? 'member' : 'admin'
       await bookApi.updateMemberRole(manageBook.id, member.id, newRole)
       await refreshMembers()
-    } catch (e: any) {
-      alert(e.message)
-    }
+    } catch (e: any) { alert(e.message) }
   }
 
   const handleGenerateCode = async () => {
     if (!manageBook) return
     try {
-      await bookApi.generateShareCode(manageBook.id, expireHours)
-      setExpireHours(undefined)
+      const hours = expireHours ? parseInt(expireHours) : undefined
+      await bookApi.generateShareCode(manageBook.id, hours)
+      setExpireHours('')
       await refreshShareCodes()
-    } catch (e: any) {
-      alert(e.message)
-    }
+    } catch (e: any) { alert(e.message) }
   }
 
   const handleDelete = async () => {
-    if (!showDelete) return
-    if (deleteInput !== showDelete.name) {
-      return
-    }
+    if (!deleteBook || deleteInput !== deleteBook.name) return
+    setDeleting(true)
     try {
-      await bookApi.deleteBook(showDelete.id)
-      removeBook(showDelete.id)
-      setShowDelete(null)
+      await bookApi.deleteBook(deleteBook.id)
+      removeBook(deleteBook.id)
+      deleteModal.onClose()
+      setDeleteBook(null)
       setDeleteInput('')
-    } catch (e: any) {
-      alert(e.message)
-    }
+    } catch (e: any) { alert(e.message) }
+    finally { setDeleting(false) }
   }
 
-  const copyCode = (code: string) => {
-    navigator.clipboard.writeText(code).then(() => {
-      // 简单反馈
-    }).catch(() => {})
-  }
+  const copyCode = (code: string) => { navigator.clipboard.writeText(code).catch(() => {}) }
+
+  const inputClass = 'w-full px-3.5 py-2.5 bg-[#0f172a] border border-[#334155] rounded-lg text-[#e2e8f0] text-sm outline-none focus:border-[#f97316] transition-colors'
 
   if (loading && books.length === 0) {
-    return <div style={{ color: '#64748b', textAlign: 'center', padding: 48 }}>加载中...</div>
+    return <div className="text-center py-12 text-sm text-[#64748b]">加载中...</div>
   }
 
   return (
     <div>
-      {/* ===== Header ===== */}
-      <div style={st.header}>
-        <h1 style={st.title}>账本管理</h1>
-        <div style={st.headerBtns}>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-xl font-bold text-[#e2e8f0]">账本管理</h1>
+        <div className="flex gap-2.5">
           <button
-            style={st.btnSecondary}
-            onClick={() => { setShowJoin(true); setJoinStep('input'); setJoinCode(''); setJoinError(''); setJoinLookup(null) }}
-            onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#f97316' }}
-            onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#334155' }}
+            className="flex items-center gap-1.5 px-[18px] py-2 rounded-lg border border-[#334155] bg-[#1e293b] text-[#e2e8f0] text-sm font-medium cursor-pointer hover:border-[#f97316] transition-colors"
+            style={{ fontFamily: 'inherit' }}
+            onClick={() => { setJoinStep('input'); setJoinCode(''); setJoinError(''); setJoinLookup(null); joinModal.onOpen() }}
           >
             <Share size={16} /> 加入账本
           </button>
           <button
-            style={st.btnPrimary}
-            onClick={() => { setShowCreate(true); setCreateName(''); setCreateError('') }}
+            className="flex items-center gap-1.5 px-[18px] py-2 rounded-lg bg-[#f97316] text-white text-sm font-semibold cursor-pointer transition-colors"
+            style={{ border: 'none', fontFamily: 'inherit' }}
+            onClick={() => { setCreateName(''); setCreateError(''); createModal.onOpen() }}
           >
             <Plus size={16} /> 创建账本
           </button>
         </div>
       </div>
 
-      {error && <div style={st.errorText}>{error}</div>}
-
-      {/* ===== 账本列表 ===== */}
-      {books.length === 0 ? (
-        <div style={st.emptyState}>
-          <p style={{ fontSize: 16, marginBottom: 8 }}>暂无账本</p>
-          <p style={{ fontSize: 13 }}>创建你的第一个账本，或通过分享码加入他人的账本</p>
+      {error && (
+        <div className="text-[13px] text-[#fca5a5] bg-[#ef4444]/10 border border-[#ef4444]/20 rounded-[10px] px-4 py-3 mb-6">
+          {error}
         </div>
+      )}
+
+      {/* 账本列表 */}
+      {books.length === 0 ? (
+        <Card className="bg-[#1e293b] border border-[#334155] rounded-2xl">
+          <CardBody className="flex flex-col items-center justify-center py-12 text-center gap-2">
+            <p className="text-base text-[#e2e8f0]">暂无账本</p>
+            <p className="text-[13px] text-[#64748b]">创建你的第一个账本，或通过分享码加入他人的账本</p>
+          </CardBody>
+        </Card>
       ) : (
-        <div style={st.grid}>
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-4">
           {books.map((book) => (
-            <div
-              key={book.id}
-              style={st.card}
-              onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#475569' }}
-              onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#334155' }}
-            >
-              <div style={st.cardTop}>
-                <div>
-                  <div style={st.cardName}>{book.name}</div>
-                  <span style={st.badge(book.role)}>{roleLabels[book.role] || book.role}</span>
+            <Card key={book.id} className="bg-[#1e293b] border border-[#334155] rounded-xl hover:border-[#475569] transition-colors">
+              <CardBody className="flex flex-col gap-4 p-5">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="text-[17px] font-semibold text-[#e2e8f0]">{book.name}</div>
+                    <span className={`inline-block text-[11px] px-2.5 py-0.5 rounded-full font-semibold mt-1 ${
+                      book.role === 'owner' ? 'bg-[#f97316]/15 text-[#f97316]' : 'bg-[#64748b]/15 text-[#94a3b8]'
+                    }`}>
+                      {roleLabels[book.role] || book.role}
+                    </span>
+                  </div>
+                  <div className="flex gap-1.5">
+                    {(book.role === 'owner' || book.role === 'admin') && (
+                      <button
+                        className="w-[34px] h-[34px] flex items-center justify-center rounded-lg border border-[#334155] bg-[#0f172a] text-[#94a3b8] cursor-pointer hover:border-[#f97316] hover:text-[#f97316] transition-colors"
+                        style={{ fontFamily: 'inherit' }}
+                        title="管理账本"
+                        onClick={() => openManage(book)}
+                      >
+                        <Settings size={16} />
+                      </button>
+                    )}
+                    {book.role === 'owner' && (
+                      <button
+                        className="w-[34px] h-[34px] flex items-center justify-center rounded-lg border border-[#334155] bg-[#0f172a] text-[#ef4444] cursor-pointer hover:border-[#ef4444] transition-colors"
+                        style={{ fontFamily: 'inherit' }}
+                        title="删除账本"
+                        onClick={() => { setDeleteBook(book); setDeleteInput(''); deleteModal.onOpen() }}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )}
+                    {book.role !== 'owner' && (
+                      <button
+                        className="w-[34px] h-[34px] flex items-center justify-center rounded-lg border border-[#334155] bg-[#0f172a] text-[#ef4444] cursor-pointer hover:border-[#ef4444] transition-colors"
+                        style={{ fontFamily: 'inherit' }}
+                        title="退出账本"
+                        onClick={async () => {
+                          if (!confirm('确定退出该账本吗？')) return
+                          try {
+                            const m = await bookApi.listMembers(book.id)
+                            const self = m.find((m) => m.userId === currentUser?.id)
+                            if (self) { await bookApi.removeMember(book.id, self.id); await fetchBooks() }
+                          } catch (e: any) { alert(e.message) }
+                        }}
+                      >
+                        <LogOut size={16} />
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div style={st.cardActions}>
-                  {/* 管理（归属人） */}
-                  {book.role === 'owner' && (
-                    <button
-                      style={st.iconBtn(false)}
-                      title="管理账本"
-                      onClick={() => openManage(book)}
-                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#f97316'; e.currentTarget.style.color = '#f97316' }}
-                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#334155'; e.currentTarget.style.color = '#94a3b8' }}
-                    >
-                      <Settings size={16} />
-                    </button>
-                  )}
-                  {/* 删除（归属人） */}
-                  {book.role === 'owner' && (
-                    <button
-                      style={st.iconBtn(true)}
-                      title="删除账本"
-                      onClick={() => { setShowDelete(book); setDeleteInput('') }}
-                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#ef4444' }}
-                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#334155' }}
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  )}
-                  {/* 退出（非归属人） */}
-                  {book.role !== 'owner' && (
-                    <button
-                      style={st.iconBtn(true)}
-                      title="退出账本"
-                      onClick={async () => {
-                        if (!confirm('确定退出该账本吗？')) return
-                        try {
-                          // 找到自己的 member 并移除
-                          const m = await bookApi.listMembers(book.id)
-                          const self = m.find((m) => m.userId === currentUser?.id)
-                          if (self) {
-                            await bookApi.removeMember(book.id, self.id)
-                            await fetchBooks()
-                          }
-                        } catch (e: any) { alert(e.message) }
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#ef4444' }}
-                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#334155' }}
-                    >
-                      <LogOut size={16} />
-                    </button>
-                  )}
+                <div className="flex items-center gap-4 text-[13px] text-[#94a3b8]">
+                  <span className="flex items-center gap-1"><Users size={14} /> {book.memberCount} 人</span>
+                  <span>{new Date(book.createdAt).toLocaleDateString('zh-CN')}</span>
                 </div>
-              </div>
-              <div style={st.cardInfo}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <Users size={14} /> {book.memberCount} 人
-                </span>
-                <span>{new Date(book.createdAt).toLocaleDateString('zh-CN')}</span>
-              </div>
-            </div>
+              </CardBody>
+            </Card>
           ))}
         </div>
       )}
 
-      {/* ========== 创建账本弹窗 ========== */}
-      {showCreate && (
-        <Modal title="创建账本" onClose={() => setShowCreate(false)}>
-          <input
-            style={st.input}
-            placeholder="输入账本名称"
-            value={createName}
-            onChange={(e) => { setCreateName(e.target.value); setCreateError('') }}
-            onFocus={(e) => { e.currentTarget.style.borderColor = '#f97316' }}
-            onBlur={(e) => { e.currentTarget.style.borderColor = '#334155' }}
-            autoFocus
-          />
-          {createError && <div style={st.errorText}>{createError}</div>}
-          <div style={st.modalActions}>
-            <button style={st.cancelBtn} onClick={() => setShowCreate(false)}>取消</button>
-            <button style={st.submitBtn} onClick={handleCreate}>创建</button>
-          </div>
-        </Modal>
-      )}
+      {/* 创建账本弹窗 */}
+      <Modal isOpen={createModal.isOpen} onClose={createModal.onClose} size="md" classNames={{ base: 'bg-[#1e293b] border border-[#334155] rounded-2xl', header: 'text-lg font-bold text-[#e2e8f0]' }}>
+        <ModalContent>
+          <ModalHeader>创建账本</ModalHeader>
+          <ModalBody className="flex flex-col gap-4">
+            <input
+              className={inputClass}
+              placeholder="输入账本名称"
+              value={createName}
+              onChange={(e) => { setCreateName(e.target.value); setCreateError('') }}
+              autoFocus
+            />
+            {createError && <div className="text-[13px] text-[#fca5a5]">{createError}</div>}
+          </ModalBody>
+          <ModalFooter>
+            <button className="px-5 py-2 rounded-lg border border-[#334155] bg-transparent text-[#94a3b8] cursor-pointer text-sm" style={{ fontFamily: 'inherit' }} onClick={createModal.onClose}>取消</button>
+            <button className="px-5 py-2 rounded-lg bg-[#f97316] text-white cursor-pointer text-sm font-semibold disabled:opacity-50" style={{ border: 'none', fontFamily: 'inherit' }} onClick={handleCreate} disabled={creating}>
+              {creating ? '创建中...' : '创建'}
+            </button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
 
-      {/* ========== 加入账本弹窗 ========== */}
-      {showJoin && (
-        <Modal title="加入账本" onClose={() => setShowJoin(false)}>
+      {/* 加入账本弹窗 */}
+      <Modal isOpen={joinModal.isOpen} onClose={() => { joinModal.onClose(); setJoinStep('input'); setJoinError('') }} size="md" classNames={{ base: 'bg-[#1e293b] border border-[#334155] rounded-2xl', header: 'text-lg font-bold text-[#e2e8f0]' }}>
+        <ModalContent>
+          <ModalHeader>加入账本</ModalHeader>
           {joinStep === 'input' ? (
             <>
-              <input
-                style={{ ...st.input, textTransform: 'uppercase', letterSpacing: 4, textAlign: 'center' } as React.CSSProperties}
-                placeholder="输入8位分享码"
-                value={joinCode}
-                onChange={(e) => { setJoinCode(e.target.value.toUpperCase()); setJoinError('') }}
-                onFocus={(e) => { e.currentTarget.style.borderColor = '#f97316' }}
-                onBlur={(e) => { e.currentTarget.style.borderColor = '#334155' }}
-                autoFocus
-                maxLength={8}
-              />
-              {joinError && <div style={st.errorText}>{joinError}</div>}
-              <div style={st.tipText}>由账本归属人在管理面板生成分享码</div>
-              <div style={st.modalActions}>
-                <button style={st.cancelBtn} onClick={() => setShowJoin(false)}>取消</button>
-                <button style={st.submitBtn} onClick={handleLookup} disabled={joinCode.length < 1}>验证</button>
-              </div>
+              <ModalBody className="flex flex-col gap-4">
+                <input
+                  className={inputClass}
+                  style={{ textTransform: 'uppercase', letterSpacing: 4, textAlign: 'center' }}
+                  placeholder="输入8位分享码"
+                  value={joinCode}
+                  onChange={(e) => { setJoinCode(e.target.value.toUpperCase()); setJoinError('') }}
+                  autoFocus
+                  maxLength={8}
+                />
+                {joinError && <div className="text-[13px] text-[#fca5a5]">{joinError}</div>}
+                <p className="text-xs text-[#64748b]">由账本归属人在管理面板生成分享码</p>
+              </ModalBody>
+              <ModalFooter>
+                <button className="px-5 py-2 rounded-lg border border-[#334155] bg-transparent text-[#94a3b8] cursor-pointer text-sm" style={{ fontFamily: 'inherit' }} onClick={joinModal.onClose}>取消</button>
+                <button className="px-5 py-2 rounded-lg bg-[#f97316] text-white cursor-pointer text-sm font-semibold disabled:opacity-50" style={{ border: 'none', fontFamily: 'inherit' }} onClick={handleLookup} disabled={joinCode.length < 1}>
+                  验证
+                </button>
+              </ModalFooter>
             </>
           ) : (
             <>
-              <div style={{ textAlign: 'center', marginBottom: 20 }}>
-                <p style={{ fontSize: 16, color: '#e2e8f0', marginBottom: 8 }}>
-                  确认加入 <strong style={{ color: '#f97316' }}>{joinLookup?.bookName}</strong>？
+              <ModalBody className="flex flex-col gap-4 text-center">
+                <p className="text-base text-[#e2e8f0]">
+                  确认加入 <strong className="text-[#f97316]">{joinLookup?.bookName}</strong>？
                 </p>
                 {joinLookup?.expiresAt && (
-                  <p style={{ fontSize: 13, color: '#64748b' }}>
-                    分享码有效期至 {new Date(joinLookup.expiresAt).toLocaleString('zh-CN')}
-                  </p>
+                  <p className="text-[13px] text-[#64748b]">分享码有效期至 {new Date(joinLookup.expiresAt).toLocaleString('zh-CN')}</p>
                 )}
-              </div>
-              {joinError && <div style={st.errorText}>{joinError}</div>}
-              <div style={st.modalActions}>
-                <button style={st.cancelBtn} onClick={() => { setJoinStep('input'); setJoinError('') }}>返回</button>
-                <button style={st.submitBtn} onClick={handleJoin}>确认加入</button>
-              </div>
+                {joinError && <div className="text-[13px] text-[#fca5a5]">{joinError}</div>}
+              </ModalBody>
+              <ModalFooter>
+                <button className="px-5 py-2 rounded-lg border border-[#334155] bg-transparent text-[#94a3b8] cursor-pointer text-sm" style={{ fontFamily: 'inherit' }} onClick={() => { setJoinStep('input'); setJoinError('') }}>返回</button>
+                <button className="px-5 py-2 rounded-lg bg-[#f97316] text-white cursor-pointer text-sm font-semibold disabled:opacity-50" style={{ border: 'none', fontFamily: 'inherit' }} onClick={handleJoin} disabled={joining}>
+                  {joining ? '加入中...' : '确认加入'}
+                </button>
+              </ModalFooter>
             </>
           )}
-        </Modal>
-      )}
+        </ModalContent>
+      </Modal>
 
-      {/* ========== 管理面板弹窗 ========== */}
-      {manageBook && (
-        <Modal title={manageBook.name} onClose={() => setManageBook(null)} wide>
-          {/* Tabs */}
-          <div style={st.tabs}>
-            <button style={st.tab(manageTab === 'members')} onClick={() => setManageTab('members')}>
-              成员管理
-            </button>
-            {manageBook.role === 'owner' && (
-              <button style={st.tab(manageTab === 'share')} onClick={() => setManageTab('share')}>
-                分享码
+      {/* 管理面板弹窗 */}
+      <Modal isOpen={manageModal.isOpen} onClose={() => { manageModal.onClose(); setManageBook(null) }} size="2xl" classNames={{ base: 'bg-[#1e293b] border border-[#334155] rounded-2xl', header: 'text-lg font-bold text-[#e2e8f0]' }}>
+        <ModalContent>
+          <ModalHeader>{manageBook?.name}</ModalHeader>
+          <ModalBody className="flex flex-col gap-4">
+            {/* Tabs */}
+            <div className="flex border-b border-[#334155] mb-4">
+              <button
+                className={`px-4 py-2 text-sm font-medium cursor-pointer outline-none border-b-2 transition-colors ${
+                  manageTab === 'members' ? 'text-[#f97316] border-[#f97316]' : 'text-[#94a3b8] border-transparent'
+                }`}
+                style={{ background: 'none', fontFamily: 'inherit' }}
+                onClick={() => setManageTab('members')}
+              >
+                成员管理
               </button>
-            )}
-          </div>
+              {manageBook && (manageBook.role === 'owner' || manageBook.role === 'admin') && (
+                <button
+                  className={`px-4 py-2 text-sm font-medium cursor-pointer outline-none border-b-2 transition-colors ${
+                    manageTab === 'share' ? 'text-[#f97316] border-[#f97316]' : 'text-[#94a3b8] border-transparent'
+                  }`}
+                  style={{ background: 'none', fontFamily: 'inherit' }}
+                  onClick={() => setManageTab('share')}
+                >
+                  分享码
+                </button>
+              )}
+            </div>
 
-          {manageLoading ? (
-            <div style={{ color: '#64748b', textAlign: 'center', padding: 24 }}>加载中...</div>
-          ) : (
-            <>
-              {/* 成员管理 */}
-              {manageTab === 'members' && (
-                <div>
-                  {manageBook.role === 'owner' && (
-                    <>
-                      <div style={st.addMemberForm}>
+            {manageLoading ? (
+              <div className="text-center py-6 text-sm text-[#64748b]">加载中...</div>
+            ) : (
+              <>
+                {/* 成员管理 */}
+                {manageTab === 'members' && (
+                  <div className="flex flex-col gap-3">
+                    {(manageBook?.role === 'owner' || manageBook?.role === 'admin') && (
+                      <div className="flex gap-2 mb-2">
                         <input
-                          style={{ ...st.input, flex: 1 }}
+                          className={`${inputClass} flex-1`}
                           placeholder="输入用户邮箱添加成员"
                           value={addEmail}
                           onChange={(e) => { setAddEmail(e.target.value); setAddError('') }}
-                          onFocus={(e) => { e.currentTarget.style.borderColor = '#f97316' }}
-                          onBlur={(e) => { e.currentTarget.style.borderColor = '#334155' }}
                         />
-                        <button style={st.submitBtn} onClick={handleAddMember}>添加</button>
+                        <button className="px-5 py-2 rounded-lg bg-[#f97316] text-white cursor-pointer text-sm font-semibold" style={{ border: 'none', fontFamily: 'inherit' }} onClick={handleAddMember}>
+                          添加
+                        </button>
                       </div>
-                      {addError && <div style={st.errorText}>{addError}</div>}
-                    </>
-                  )}
-                  <div style={{ marginTop: 12 }}>
+                    )}
+                    {addError && <div className="text-[13px] text-[#fca5a5] -mt-1">{addError}</div>}
+
                     {members.map((m) => (
-                      <div key={m.id} style={st.memberRow}>
-                        <div style={st.memberInfo}>
-                          <span style={st.memberName}>
+                      <div key={m.id} className="flex items-center justify-between py-2.5 border-b border-[#1e293b] last:border-0">
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-sm font-medium text-[#e2e8f0]">
                             {m.user.name || m.user.email}
-                            {m.userId === manageBook.ownerId && (
-                              <span style={{ ...st.badge('owner'), marginLeft: 8, fontSize: 10 }}>归属人</span>
+                            {m.userId === manageBook?.ownerId && (
+                              <span className="ml-2 text-[10px] px-2 py-0.5 rounded-full font-semibold bg-[#f97316]/15 text-[#f97316]">归属人</span>
                             )}
                           </span>
-                          <span style={st.memberEmail}>{m.user.email}</span>
+                          <span className="text-xs text-[#64748b]">{m.user.email}</span>
                         </div>
-                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                          {manageBook.role === 'owner' && m.userId !== manageBook.ownerId && (
-                            <>
-                              <button
-                                style={st.btnSmall(false)}
-                                onClick={() => handleToggleMemberRole(m)}
-                                title={m.role === 'admin' ? '降为成员' : '提升为管理员'}
-                              >
-                                {m.role === 'admin' ? <ShieldOff size={14} /> : <Shield size={14} />}
-                                <span style={{ marginLeft: 4 }}>{m.role === 'admin' ? '降为成员' : '提升管理'}</span>
-                              </button>
-                              <button
-                                style={st.btnSmall(true)}
-                                onClick={() => { if (confirm(`确定移除 ${m.user.name || m.user.email}？`)) handleRemoveMember(m) }}
-                              >
-                                移除
-                              </button>
-                            </>
-                          )}
-                          {manageBook.role !== 'owner' && currentUser?.id === m.userId && (
+                        <div className="flex gap-1.5 items-center">
+                          {manageBook?.role === 'owner' && m.userId !== manageBook.ownerId && (
                             <button
-                              style={st.btnSmall(true)}
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium cursor-pointer border border-[#334155] bg-transparent text-[#94a3b8] hover:bg-[#1e293b] transition-colors"
+                              style={{ fontFamily: 'inherit' }}
+                              onClick={() => handleToggleMemberRole(m)}
+                              title={m.role === 'admin' ? '降为成员' : '提升为管理员'}
+                            >
+                              {m.role === 'admin' ? <ShieldOff size={14} /> : <Shield size={14} />}
+                              <span className="ml-1">{m.role === 'admin' ? '降为成员' : '提升管理'}</span>
+                            </button>
+                          )}
+                          {(manageBook?.role === 'owner' || manageBook?.role === 'admin') && m.userId !== manageBook.ownerId && m.userId !== currentUser?.id && (
+                            <button
+                              className="px-2.5 py-1 rounded-md text-xs font-medium cursor-pointer border border-[#7f1d1d] bg-[#ef4444]/10 text-[#ef4444] transition-colors"
+                              style={{ fontFamily: 'inherit' }}
+                              onClick={() => { if (confirm(`确定移除 ${m.user.name || m.user.email}？`)) handleRemoveMember(m) }}
+                            >
+                              移除
+                            </button>
+                          )}
+                          {manageBook?.role !== 'owner' && currentUser?.id === m.userId && (
+                            <button
+                              className="px-2.5 py-1 rounded-md text-xs font-medium cursor-pointer border border-[#7f1d1d] bg-[#ef4444]/10 text-[#ef4444] transition-colors"
+                              style={{ fontFamily: 'inherit' }}
                               onClick={() => { if (confirm('确定退出该账本？')) handleRemoveMember(m) }}
                             >
-                              <LogOut size={14} /> 退出
+                              <LogOut size={14} className="mr-1" /> 退出
                             </button>
                           )}
                         </div>
                       </div>
                     ))}
-                    {members.length === 0 && <div style={{ color: '#64748b', textAlign: 'center', padding: 16 }}>暂无成员</div>}
+                    {members.length === 0 && (
+                      <div className="text-center py-4 text-sm text-[#64748b]">暂无成员</div>
+                    )}
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* 分享码 */}
-              {manageTab === 'share' && (
-                <div>
-                  <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'flex-end' }}>
-                    <div style={{ flex: 1 }}>
-                      <label style={{ fontSize: 12, color: '#64748b', display: 'block', marginBottom: 4 }}>有效期（小时，留空永久）</label>
-                      <input
-                        type="number" min={1} max={720}
-                        style={st.input}
-                        placeholder="留空 = 永久有效"
-                        value={expireHours ?? ''}
-                        onChange={(e) => setExpireHours(e.target.value ? parseInt(e.target.value) : undefined)}
-                        onFocus={(e) => { e.currentTarget.style.borderColor = '#f97316' }}
-                        onBlur={(e) => { e.currentTarget.style.borderColor = '#334155' }}
-                      />
+                {/* 分享码 */}
+                {manageTab === 'share' && (
+                  <div className="flex flex-col gap-3">
+                    <div className="flex gap-2 items-end mb-4">
+                      <div className="flex-1">
+                        <label className="block text-xs text-[#64748b] mb-1">有效期（小时，留空永久）</label>
+                        <input
+                          type="number" min={1} max={720}
+                          className={inputClass}
+                          placeholder="留空 = 永久有效"
+                          value={expireHours}
+                          onChange={(e) => setExpireHours(e.target.value)}
+                        />
+                      </div>
+                      <button className="px-5 h-[42px] rounded-lg bg-[#f97316] text-white cursor-pointer text-sm font-semibold" style={{ border: 'none', fontFamily: 'inherit' }} onClick={handleGenerateCode}>
+                        生成
+                      </button>
                     </div>
-                    <button style={{ ...st.submitBtn, height: 42 }} onClick={handleGenerateCode}>
-                      生成
-                    </button>
-                  </div>
 
-                  {shareCodes.map((sc) => (
-                    <div key={sc.id} style={st.codeRow}>
-                      <div>
-                        <div style={st.codeText}>{sc.code}</div>
-                        <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
-                          {sc.expiresAt ? `有效期至 ${new Date(sc.expiresAt).toLocaleString('zh-CN')}` : '永久有效'}
-                          {sc.isExpired && <span style={{ color: '#ef4444', marginLeft: 8 }}>已过期</span>}
+                    {shareCodes.map((sc) => (
+                      <div key={sc.id} className="flex items-center justify-between px-3.5 py-2.5 bg-[#0f172a] border border-[#334155] rounded-lg">
+                        <div>
+                          <div className="text-base font-bold text-[#f97316] tracking-[2px]" style={{ fontFamily: 'monospace' }}>{sc.code}</div>
+                          <div className="text-xs text-[#64748b] mt-0.5">
+                            {sc.expiresAt ? `有效期至 ${new Date(sc.expiresAt).toLocaleString('zh-CN')}` : '永久有效'}
+                            {sc.isExpired && <span className="text-[#ef4444] ml-2">已过期</span>}
+                          </div>
+                        </div>
+                        <div className="flex gap-1.5">
+                          <button
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium cursor-pointer border border-[#334155] bg-transparent text-[#94a3b8] hover:bg-[#1e293b] transition-colors"
+                            style={{ fontFamily: 'inherit' }}
+                            onClick={() => copyCode(sc.code)}
+                          >
+                            <Copy size={14} /> 复制
+                          </button>
+                          <button
+                            className="px-2.5 py-1 rounded-md text-xs font-medium cursor-pointer border border-[#7f1d1d] bg-[#ef4444]/10 text-[#ef4444] transition-colors"
+                            style={{ fontFamily: 'inherit' }}
+                            onClick={async () => {
+                              if (!manageBook) return
+                              try { await bookApi.deleteShareCode(manageBook.id, sc.id); await refreshShareCodes() }
+                              catch (e: any) { alert(e.message) }
+                            }}
+                          >
+                            <Trash2 size={14} />
+                          </button>
                         </div>
                       </div>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button
-                          style={st.btnSmall(false)}
-                          onClick={() => copyCode(sc.code)}
-                          title="复制分享码"
-                        >
-                          <Copy size={14} /> 复制
-                        </button>
-                        <button
-                          style={st.btnSmall(true)}
-                          onClick={async () => {
-                            if (!confirm('确定删除该分享码？')) return
-                            try {
-                              await bookApi.deleteShareCode(manageBook.id, sc.id)
-                              await refreshShareCodes()
-                            } catch (e: any) { alert(e.message) }
-                          }}
-                          title="删除分享码"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                  {shareCodes.length === 0 && (
-                    <div style={{ color: '#64748b', textAlign: 'center', padding: 16 }}>暂无分享码</div>
-                  )}
-                </div>
-              )}
-            </>
-          )}
-        </Modal>
-      )}
+                    ))}
+                    {shareCodes.length === 0 && (
+                      <div className="text-center py-4 text-sm text-[#64748b]">暂无分享码</div>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </ModalBody>
+        </ModalContent>
+      </Modal>
 
-      {/* ========== 删除确认弹窗 ========== */}
-      {showDelete && (
-        <Modal title="删除账本" onClose={() => setShowDelete(null)}>
-          <p style={{ fontSize: 14, color: '#e2e8f0', marginBottom: 12 }}>
-            确定要删除 <strong style={{ color: '#ef4444' }}>{showDelete.name}</strong> 吗？所有记录将被永久删除，此操作不可撤销。
-          </p>
-          <p style={{ fontSize: 13, color: '#64748b', marginBottom: 12 }}>
-            请输入账本名称 <strong>{showDelete.name}</strong> 确认删除
-          </p>
-          <input
-            style={st.input}
-            placeholder="输入账本名称确认"
-            value={deleteInput}
-            onChange={(e) => setDeleteInput(e.target.value)}
-            onFocus={(e) => { e.currentTarget.style.borderColor = '#f97316' }}
-            onBlur={(e) => { e.currentTarget.style.borderColor = '#334155' }}
-          />
-          <div style={st.modalActions}>
-            <button style={st.cancelBtn} onClick={() => setShowDelete(null)}>取消</button>
+      {/* 删除确认弹窗 */}
+      <Modal isOpen={deleteModal.isOpen} onClose={() => { deleteModal.onClose(); setDeleteBook(null) }} size="md" classNames={{ base: 'bg-[#1e293b] border border-[#334155] rounded-2xl', header: 'text-lg font-bold text-[#e2e8f0]' }}>
+        <ModalContent>
+          <ModalHeader>删除账本</ModalHeader>
+          <ModalBody className="flex flex-col gap-4">
+            <p className="text-sm text-[#e2e8f0]">
+              确定要删除 <strong className="text-[#ef4444]">{deleteBook?.name}</strong> 吗？所有记录将被永久删除，此操作不可撤销。
+            </p>
+            <p className="text-[13px] text-[#64748b]">
+              请输入账本名称 <strong>{deleteBook?.name}</strong> 确认删除
+            </p>
+            <input
+              className={inputClass}
+              placeholder="输入账本名称确认"
+              value={deleteInput}
+              onChange={(e) => setDeleteInput(e.target.value)}
+            />
+          </ModalBody>
+          <ModalFooter>
+            <button className="px-5 py-2 rounded-lg border border-[#334155] bg-transparent text-[#94a3b8] cursor-pointer text-sm" style={{ fontFamily: 'inherit' }} onClick={deleteModal.onClose}>取消</button>
             <button
-              style={{
-                ...st.submitBtn,
-                background: deleteInput === showDelete.name ? '#ef4444' : '#4b5563',
-                cursor: deleteInput === showDelete.name ? 'pointer' : 'not-allowed',
-                opacity: deleteInput === showDelete.name ? 1 : 0.5,
-              }}
+              className="px-5 py-2 rounded-lg text-white cursor-pointer text-sm font-semibold disabled:opacity-50 transition-colors"
+              style={{ border: 'none', fontFamily: 'inherit', background: deleteInput === deleteBook?.name ? '#ef4444' : '#4b5563' }}
               onClick={handleDelete}
-              disabled={deleteInput !== showDelete.name}
+              disabled={deleteInput !== deleteBook?.name || deleting}
             >
-              确认删除
+              {deleting ? '删除中...' : '确认删除'}
             </button>
-          </div>
-        </Modal>
-      )}
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </div>
   )
 }

@@ -30,6 +30,26 @@ async function assertIsOwner(bookId: string, userId: string) {
   return book
 }
 
+async function assertCanManage(bookId: string, userId: string) {
+  const book = await prisma.accountBook.findUnique({ where: { id: bookId } })
+  if (!book) {
+    throw Object.assign(new Error('账本不存在'), { statusCode: 404 })
+  }
+  // 归属人始终可以管理
+  if (book.ownerId === userId) return book
+  // 检查是否为管理员
+  const member = await prisma.accountBookMember.findUnique({
+    where: { accountBookId_userId: { accountBookId: bookId, userId } },
+  })
+  if (!member) {
+    throw Object.assign(new Error('你不是该账本的成员'), { statusCode: 403 })
+  }
+  if (member.role !== 'admin') {
+    throw Object.assign(new Error('只有归属人或管理员可以执行此操作'), { statusCode: 403 })
+  }
+  return book
+}
+
 async function assertIsMember(bookId: string, userId: string) {
   const member = await prisma.accountBookMember.findUnique({
     where: { accountBookId_userId: { accountBookId: bookId, userId } },
@@ -313,7 +333,7 @@ export async function bookRoutes(app: FastifyInstance) {
       return reply.status(400).send({ message: '请输入有效的邮箱地址' })
     }
 
-    await assertIsOwner(id, payload.id)
+    await assertCanManage(id, payload.id)
 
     const targetUser = await prisma.user.findUnique({ where: { email: parsed.data.email } })
     if (!targetUser) {
@@ -355,14 +375,23 @@ export async function bookRoutes(app: FastifyInstance) {
       return reply.status(404).send({ message: '成员不存在' })
     }
 
-    // owner 可以删除任何人，成员只能删除自己（退出）
+    // owner/admin 可以删除成员，普通成员只能删除自己（退出）
     const book = await prisma.accountBook.findUnique({ where: { id } })
-    if (payload.id !== member.userId && book?.ownerId !== payload.id) {
+    if (!book) {
+      return reply.status(404).send({ message: '账本不存在' })
+    }
+
+    // 检查操作者权限：归属人、管理员、或成员本人
+    const actorMember = await prisma.accountBookMember.findUnique({
+      where: { accountBookId_userId: { accountBookId: id, userId: payload.id } },
+    })
+    const canManage = payload.id === book.ownerId || actorMember?.role === 'admin'
+    if (payload.id !== member.userId && !canManage) {
       return reply.status(403).send({ message: '无权操作' })
     }
 
     // 不能移除账本归属人
-    if (book?.ownerId === member.userId) {
+    if (book.ownerId === member.userId) {
       return reply.status(400).send({ message: '不能移除账本归属人' })
     }
 
@@ -388,8 +417,8 @@ export async function bookRoutes(app: FastifyInstance) {
 
     // 不能修改归属人的角色
     const book = await prisma.accountBook.findUnique({ where: { id } })
-    if (book?.ownerId === member.userId && parsed.data.role !== 'member') {
-      // 其实 owner 在 member 表中的 role 是 member，但不应修改它
+    if (book?.ownerId === member.userId) {
+      return reply.status(400).send({ message: '不能修改账本归属人的角色' })
     }
 
     const updated = await prisma.accountBookMember.update({
@@ -418,7 +447,7 @@ export async function bookRoutes(app: FastifyInstance) {
       return reply.status(400).send({ message: '请求参数无效' })
     }
 
-    await assertIsOwner(id, payload.id)
+    await assertCanManage(id, payload.id)
 
     const expiresAt = parsed.data.expiresInHours
       ? new Date(Date.now() + parsed.data.expiresInHours * 3600000)
@@ -448,7 +477,7 @@ export async function bookRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string }
     const payload = req.user as { id: string }
 
-    await assertIsOwner(id, payload.id)
+    await assertCanManage(id, payload.id)
 
     const codes = await prisma.shareCode.findMany({
       where: { accountBookId: id },
@@ -469,7 +498,7 @@ export async function bookRoutes(app: FastifyInstance) {
     const { id, codeId } = req.params as { id: string; codeId: string }
     const payload = req.user as { id: string }
 
-    await assertIsOwner(id, payload.id)
+    await assertCanManage(id, payload.id)
 
     const shareCode = await prisma.shareCode.findUnique({ where: { id: codeId } })
     if (!shareCode || shareCode.accountBookId !== id) {
