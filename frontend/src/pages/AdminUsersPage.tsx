@@ -17,7 +17,7 @@ import {
   SelectItem,
   useDisclosure,
 } from '@heroui/react'
-import { Trash2, Key, Shield, ShieldOff } from 'lucide-react'
+import { Trash2, Key, Shield, ShieldOff, Eye, EyeOff } from 'lucide-react'
 import { adminApi, type AdminUser } from '../api/admin'
 import { useAuthStore } from '../stores/auth'
 
@@ -39,6 +39,7 @@ export function AdminUsersPage() {
   const [submitting, setSubmitting] = useState(false)
   const [targetUserId, setTargetUserId] = useState<string | null>(null)
   const [targetUser, setTargetUser] = useState<AdminUser | null>(null)
+  const [showPassword, setShowPassword] = useState(false)
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -61,6 +62,7 @@ export function AdminUsersPage() {
     setFormRole('USER')
     setFormError('')
     setSubmitting(false)
+    setShowPassword(false)
   }
 
   const handleCreate = async () => {
@@ -213,7 +215,7 @@ export function AdminUsersPage() {
                       <button
                         className="p-1.5 border border-[#334155] rounded-lg bg-transparent text-[#94a3b8] cursor-pointer text-xs hover:bg-[#1e293b] hover:text-[#e2e8f0] transition-colors"
                         style={{ fontFamily: 'inherit' }}
-                        onClick={() => { setFormPassword(''); setFormError(''); setTargetUserId(user.id); passwordModal.onOpen() }}
+                        onClick={() => { setFormPassword(''); setFormError(''); setShowPassword(false); setTargetUserId(user.id); passwordModal.onOpen() }}
                       >
                         <Key size={14} />
                       </button>
@@ -242,7 +244,13 @@ export function AdminUsersPage() {
           <ModalBody className="flex flex-col gap-3">
             {formError && <div className="text-[13px] text-[#fca5a5] bg-[#ef4444]/10 border border-[#ef4444]/20 rounded-lg px-4 py-2.5">{formError}</div>}
             <Input type="email" placeholder="邮箱地址" value={formEmail} onValueChange={setFormEmail} classNames={inputClassNames} />
-            <Input type="password" placeholder="密码（至少6位）" value={formPassword} onValueChange={setFormPassword} classNames={inputClassNames} />
+            <Input type={showPassword ? 'text' : 'password'} placeholder="密码（至少6位）" value={formPassword} onValueChange={setFormPassword} classNames={inputClassNames}
+              endContent={
+                <button type="button" className="bg-transparent border-none cursor-pointer p-0 flex items-center text-[#64748b]" onClick={() => setShowPassword(!showPassword)}>
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              }
+            />
             <Input placeholder="用户名（可选）" value={formName} onValueChange={setFormName} classNames={inputClassNames} />
             <Select
               selectedKeys={[formRole]}
@@ -268,7 +276,13 @@ export function AdminUsersPage() {
           <ModalHeader>修改密码</ModalHeader>
           <ModalBody className="flex flex-col gap-3">
             {formError && <div className="text-[13px] text-[#fca5a5] bg-[#ef4444]/10 border border-[#ef4444]/20 rounded-lg px-4 py-2.5">{formError}</div>}
-            <Input type="password" placeholder="新密码（至少6位）" value={formPassword} onValueChange={setFormPassword} classNames={inputClassNames} />
+            <Input type={showPassword ? 'text' : 'password'} placeholder="新密码（至少6位）" value={formPassword} onValueChange={setFormPassword} classNames={inputClassNames}
+              endContent={
+                <button type="button" className="bg-transparent border-none cursor-pointer p-0 flex items-center text-[#64748b]" onClick={() => setShowPassword(!showPassword)}>
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              }
+            />
           </ModalBody>
           <ModalFooter>
             <button className="px-6 py-2.5 border border-[#334155] rounded-[10px] bg-transparent text-[#94a3b8] cursor-pointer text-sm" style={{ fontFamily: 'inherit' }} onClick={passwordModal.onClose}>取消</button>

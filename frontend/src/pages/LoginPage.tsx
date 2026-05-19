@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Book } from 'lucide-react'
+import { Book, Eye, EyeOff } from 'lucide-react'
 import { authApi } from '../api/auth'
 import { useAuthStore } from '../stores/auth'
 
@@ -239,6 +239,8 @@ export function LoginPage() {
   const [registerPassword, setRegisterPassword] = useState('')
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [showLoginPass, setShowLoginPass] = useState(false)
+  const [showRegPass, setShowRegPass] = useState(false)
   const [hoverStates, setHoverStates] = useState<Record<string, boolean>>({})
   const [focusedInput, setFocusedInput] = useState<string | null>(null)
   const navigate = useNavigate()
@@ -324,16 +326,37 @@ export function LoginPage() {
               onBlur={() => setFocusedInput(null)}
               required
             />
-            <input
-              type="password"
-              placeholder="密码"
-              value={loginPassword}
-              onChange={(e) => setLoginPassword(e.target.value)}
-              style={getInputStyle('loginPass')}
-              onFocus={() => setFocusedInput('loginPass')}
-              onBlur={() => setFocusedInput(null)}
-              required
-            />
+            <div style={{ position: 'relative', width: '100%' }}>
+              <input
+                type={showLoginPass ? 'text' : 'password'}
+                placeholder="密码"
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
+                style={{ ...getInputStyle('loginPass'), paddingRight: '44px' }}
+                onFocus={() => setFocusedInput('loginPass')}
+                onBlur={() => setFocusedInput(null)}
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowLoginPass(!showLoginPass)}
+                style={{
+                  position: 'absolute',
+                  right: '14px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: '#64748b',
+                  padding: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                }}
+              >
+                {showLoginPass ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
             <a
               href="#"
               style={{
@@ -393,16 +416,37 @@ export function LoginPage() {
               onBlur={() => setFocusedInput(null)}
               required
             />
-            <input
-              type="password"
-              placeholder="密码"
-              value={registerPassword}
-              onChange={(e) => setRegisterPassword(e.target.value)}
-              style={getInputStyle('regPass')}
-              onFocus={() => setFocusedInput('regPass')}
-              onBlur={() => setFocusedInput(null)}
-              required
-            />
+            <div style={{ position: 'relative', width: '100%' }}>
+              <input
+                type={showRegPass ? 'text' : 'password'}
+                placeholder="密码"
+                value={registerPassword}
+                onChange={(e) => setRegisterPassword(e.target.value)}
+                style={{ ...getInputStyle('regPass'), paddingRight: '44px' }}
+                onFocus={() => setFocusedInput('regPass')}
+                onBlur={() => setFocusedInput(null)}
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowRegPass(!showRegPass)}
+                style={{
+                  position: 'absolute',
+                  right: '14px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: '#64748b',
+                  padding: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                }}
+              >
+                {showRegPass ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
             {error && <div style={styles.errorText}>{error}</div>}
             <div style={styles.buttonWrapper}>
               <button
