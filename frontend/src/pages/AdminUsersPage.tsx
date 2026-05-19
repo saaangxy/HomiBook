@@ -2,21 +2,28 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   Table,
   TableHeader,
-  TableColumn,
   TableBody,
   TableRow,
+  TableHead,
   TableCell,
-  Tooltip,
-  Modal,
-  ModalContent,
-  ModalHeader,
-  ModalBody,
-  ModalFooter,
-  Input,
+} from '@/components/ui/table'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import {
   Select,
+  SelectContent,
   SelectItem,
-  useDisclosure,
-} from '@heroui/react'
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { Trash2, Key, Shield, ShieldOff, Eye, EyeOff } from 'lucide-react'
 import { adminApi, type AdminUser } from '../api/admin'
 import { useAuthStore } from '../stores/auth'
@@ -27,9 +34,9 @@ export function AdminUsersPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  const createModal = useDisclosure()
-  const passwordModal = useDisclosure()
-  const deleteModal = useDisclosure()
+  const [createOpen, setCreateOpen] = useState(false)
+  const [passwordOpen, setPasswordOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
 
   const [formEmail, setFormEmail] = useState('')
   const [formPassword, setFormPassword] = useState('')
@@ -72,7 +79,7 @@ export function AdminUsersPage() {
     setSubmitting(true)
     try {
       await adminApi.createUser({ email: formEmail, password: formPassword, name: formName || undefined, role: formRole })
-      createModal.onClose()
+      setCreateOpen(false)
       resetForm()
       fetchUsers()
     } catch (err: any) { setFormError(err.message || '创建失败') }
@@ -102,7 +109,7 @@ export function AdminUsersPage() {
     setSubmitting(true)
     try {
       await adminApi.changePassword(targetUserId, formPassword)
-      passwordModal.onClose()
+      setPasswordOpen(false)
       resetForm()
     } catch (err: any) { setFormError(err.message || '修改失败') }
     finally { setSubmitting(false) }
@@ -113,33 +120,26 @@ export function AdminUsersPage() {
     setSubmitting(true)
     try {
       await adminApi.deleteUser(targetUser.id)
-      deleteModal.onClose()
+      setDeleteOpen(false)
       setTargetUser(null)
       fetchUsers()
     } catch (err: any) { setFormError(err.message || '删除失败') }
     finally { setSubmitting(false) }
   }
 
-  const inputClassNames = {
-    inputWrapper: 'bg-[#0f172a] border border-[#334155] rounded-[10px] group-data-[focus=true]:border-[#f97316] h-[48px]',
-    input: 'text-[#e2e8f0] text-sm',
-    label: 'text-[#94a3b8]',
-  }
-
-  if (loading) return <div className="text-center py-12 text-sm text-[#64748b]">加载中...</div>
+  if (loading) return <div className="text-center py-12 text-sm text-muted-foreground">加载中...</div>
 
   return (
     <div>
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-semibold text-[#e2e8f0]">用户管理</h1>
-        <button
-          className="flex items-center gap-2 px-5 py-2.5 bg-[#f97316] rounded-[10px] text-white text-[13px] font-semibold hover:bg-[#ea580c] transition-colors"
-          style={{ border: 'none', fontFamily: 'inherit', cursor: 'pointer' }}
-          onClick={() => { resetForm(); createModal.onOpen() }}
+        <h1 className="text-xl font-semibold">用户管理</h1>
+        <Button
+          className="bg-[#f97316] hover:bg-[#ea580c] text-white rounded-[10px]"
+          onClick={() => { resetForm(); setCreateOpen(true) }}
         >
           + 创建用户
-        </button>
+        </Button>
       </div>
 
       {error && (
@@ -149,168 +149,211 @@ export function AdminUsersPage() {
       )}
 
       {/* Table */}
-      <Table
-        aria-label="用户列表"
-        className="bg-[#1e293b] border border-[#334155] rounded-2xl overflow-hidden"
-        removeWrapper
-        classNames={{
-          th: 'text-left px-5 py-3.5 text-xs font-semibold text-[#64748b] uppercase tracking-wider border-b border-[#334155] bg-[#0f172a]',
-          td: 'px-5 py-3.5 text-sm text-[#e2e8f0] border-b border-[#1e293b]',
-        }}
-      >
-        <TableHeader>
-          <TableColumn>用户</TableColumn>
-          <TableColumn>角色</TableColumn>
-          <TableColumn>状态</TableColumn>
-          <TableColumn>创建时间</TableColumn>
-          <TableColumn className="text-right">操作</TableColumn>
-        </TableHeader>
-        <TableBody items={users} emptyContent={<div className="text-center py-12 text-sm text-[#64748b]">暂无用户</div>}>
-          {(user) => (
-            <TableRow key={user.id}>
-              <TableCell>
-                <div className="font-semibold">{user.name || '未命名'}</div>
-                <div className="text-xs text-[#64748b] mt-0.5">{user.email}</div>
-              </TableCell>
-              <TableCell>
-                <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${
-                  user.role === 'ADMIN' ? 'bg-[#f97316]/15 text-[#f97316]' : 'bg-[#64748b]/15 text-[#94a3b8]'
-                }`}>
-                  {user.role === 'ADMIN' ? <Shield size={12} /> : <ShieldOff size={12} />}
-                  {user.role === 'ADMIN' ? '管理员' : '普通用户'}
-                </span>
-              </TableCell>
-              <TableCell>
-                <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-semibold ${
-                  user.status === 'ACTIVE' ? 'bg-[#22c55e]/15 text-[#22c55e]' : 'bg-[#ef4444]/15 text-[#ef4444]'
-                }`}>
-                  {user.status === 'ACTIVE' ? '正常' : '已禁用'}
-                </span>
-              </TableCell>
-              <TableCell className="text-[13px] text-[#64748b]">
-                {new Date(user.createdAt).toLocaleDateString('zh-CN')}
-              </TableCell>
-              <TableCell>
-                {user.id !== currentUser?.id && (
-                  <div className="flex justify-end gap-2">
-                    <Tooltip content={user.role === 'ADMIN' ? '降为普通用户' : '提升为管理员'} classNames={{ content: 'bg-[#1e293b] border border-[#334155] text-[#e2e8f0] text-xs rounded-lg' }}>
-                      <button
-                        className="p-1.5 border border-[#334155] rounded-lg bg-transparent text-[#94a3b8] cursor-pointer text-xs hover:bg-[#1e293b] hover:text-[#e2e8f0] transition-colors"
-                        style={{ fontFamily: 'inherit' }}
-                        onClick={() => handleToggleRole(user)}
-                      >
-                        {user.role === 'ADMIN' ? <ShieldOff size={14} /> : <Shield size={14} />}
-                      </button>
-                    </Tooltip>
-                    <Tooltip content={user.status === 'ACTIVE' ? '禁用' : '启用'} classNames={{ content: 'bg-[#1e293b] border border-[#334155] text-[#e2e8f0] text-xs rounded-lg' }}>
-                      <button
-                        className="p-1.5 border border-[#334155] rounded-lg bg-transparent text-[#94a3b8] cursor-pointer text-xs hover:bg-[#1e293b] hover:text-[#e2e8f0] transition-colors"
-                        style={{ fontFamily: 'inherit' }}
-                        onClick={() => handleToggleStatus(user)}
-                      >
-                        {user.status === 'ACTIVE' ? '禁用' : '启用'}
-                      </button>
-                    </Tooltip>
-                    <Tooltip content="修改密码" classNames={{ content: 'bg-[#1e293b] border border-[#334155] text-[#e2e8f0] text-xs rounded-lg' }}>
-                      <button
-                        className="p-1.5 border border-[#334155] rounded-lg bg-transparent text-[#94a3b8] cursor-pointer text-xs hover:bg-[#1e293b] hover:text-[#e2e8f0] transition-colors"
-                        style={{ fontFamily: 'inherit' }}
-                        onClick={() => { setFormPassword(''); setFormError(''); setShowPassword(false); setTargetUserId(user.id); passwordModal.onOpen() }}
-                      >
-                        <Key size={14} />
-                      </button>
-                    </Tooltip>
-                    <Tooltip content="删除用户" classNames={{ content: 'bg-[#1e293b] border border-[#334155] text-[#e2e8f0] text-xs rounded-lg' }}>
-                      <button
-                        className="p-1.5 border border-[#ef4444]/30 rounded-lg bg-transparent text-[#ef4444] cursor-pointer text-xs hover:bg-[#ef4444]/15 transition-colors"
-                        style={{ fontFamily: 'inherit' }}
-                        onClick={() => { setFormError(''); setTargetUser(user); deleteModal.onOpen() }}
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </Tooltip>
-                  </div>
-                )}
-              </TableCell>
+      <div className="bg-card border border-border rounded-2xl overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow className="border-b border-border bg-background hover:bg-background">
+              <TableHead className="text-left px-5 py-3.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">用户</TableHead>
+              <TableHead className="text-left px-5 py-3.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">角色</TableHead>
+              <TableHead className="text-left px-5 py-3.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">状态</TableHead>
+              <TableHead className="text-left px-5 py-3.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">创建时间</TableHead>
+              <TableHead className="text-right px-5 py-3.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">操作</TableHead>
             </TableRow>
-          )}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {users.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center py-12 text-sm text-muted-foreground">暂无用户</TableCell>
+              </TableRow>
+            ) : (
+              users.map((user) => (
+                <TableRow key={user.id} className="border-b border-border">
+                  <TableCell className="px-5 py-3.5 text-sm">
+                    <div className="font-semibold">{user.name || '未命名'}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">{user.email}</div>
+                  </TableCell>
+                  <TableCell className="px-5 py-3.5 text-sm">
+                    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${
+                      user.role === 'ADMIN' ? 'bg-[#f97316]/15 text-[#f97316]' : 'bg-muted text-muted-foreground'
+                    }`}>
+                      {user.role === 'ADMIN' ? <Shield size={12} /> : <ShieldOff size={12} />}
+                      {user.role === 'ADMIN' ? '管理员' : '普通用户'}
+                    </span>
+                  </TableCell>
+                  <TableCell className="px-5 py-3.5 text-sm">
+                    <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-semibold ${
+                      user.status === 'ACTIVE' ? 'bg-[#22c55e]/15 text-[#22c55e]' : 'bg-[#ef4444]/15 text-[#ef4444]'
+                    }`}>
+                      {user.status === 'ACTIVE' ? '正常' : '已禁用'}
+                    </span>
+                  </TableCell>
+                  <TableCell className="px-5 py-3.5 text-[13px] text-muted-foreground">
+                    {new Date(user.createdAt).toLocaleDateString('zh-CN')}
+                  </TableCell>
+                  <TableCell className="px-5 py-3.5 text-sm">
+                    {user.id !== currentUser?.id && (
+                      <div className="flex justify-end gap-2">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              onClick={() => handleToggleRole(user)}
+                              className="h-8 w-8 border-border text-muted-foreground hover:bg-accent hover:text-foreground rounded-lg"
+                            >
+                              {user.role === 'ADMIN' ? <ShieldOff size={14} /> : <Shield size={14} />}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>{user.role === 'ADMIN' ? '降为普通用户' : '提升为管理员'}</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              onClick={() => handleToggleStatus(user)}
+                              className="h-8 w-8 border-border text-muted-foreground hover:bg-accent hover:text-foreground rounded-lg"
+                            >
+                              {user.status === 'ACTIVE' ? '禁用' : '启用'}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>{user.status === 'ACTIVE' ? '禁用' : '启用'}</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              onClick={() => { setFormPassword(''); setFormError(''); setShowPassword(false); setTargetUserId(user.id); setPasswordOpen(true) }}
+                              className="h-8 w-8 border-border text-muted-foreground hover:bg-accent hover:text-foreground rounded-lg"
+                            >
+                              <Key size={14} />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>修改密码</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              onClick={() => { setFormError(''); setTargetUser(user); setDeleteOpen(true) }}
+                              className="h-8 w-8 border-[#ef4444]/30 text-[#ef4444] hover:bg-[#ef4444]/15 rounded-lg"
+                            >
+                              <Trash2 size={14} />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>删除用户</TooltipContent>
+                        </Tooltip>
+                      </div>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
 
       {/* 创建用户弹窗 */}
-      <Modal isOpen={createModal.isOpen} onClose={createModal.onClose} size="md" classNames={{ base: 'bg-[#1e293b] border border-[#334155] rounded-[20px]', header: 'text-lg font-semibold text-[#e2e8f0]' }}>
-        <ModalContent>
-          <ModalHeader>创建用户</ModalHeader>
-          <ModalBody className="flex flex-col gap-3">
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>创建用户</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-3">
             {formError && <div className="text-[13px] text-[#fca5a5] bg-[#ef4444]/10 border border-[#ef4444]/20 rounded-lg px-4 py-2.5">{formError}</div>}
-            <Input type="email" placeholder="邮箱地址" value={formEmail} onValueChange={setFormEmail} classNames={inputClassNames} />
-            <Input type={showPassword ? 'text' : 'password'} placeholder="密码（至少6位）" value={formPassword} onValueChange={setFormPassword} classNames={inputClassNames}
-              endContent={
-                <button type="button" className="bg-transparent border-none cursor-pointer p-0 flex items-center text-[#64748b]" onClick={() => setShowPassword(!showPassword)}>
-                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-              }
-            />
-            <Input placeholder="用户名（可选）" value={formName} onValueChange={setFormName} classNames={inputClassNames} />
-            <Select
-              selectedKeys={[formRole]}
-              onSelectionChange={(keys) => { const val = Array.from(keys)[0] as string; if (val) setFormRole(val) }}
-              classNames={{ trigger: 'bg-[#0f172a] border border-[#334155] rounded-[10px] h-[48px] text-[#e2e8f0]', popoverContent: 'bg-[#1e293b] border border-[#334155]' }}
-            >
-              <SelectItem key="USER">普通用户</SelectItem>
-              <SelectItem key="ADMIN">管理员</SelectItem>
+            <Input type="email" placeholder="邮箱地址" value={formEmail} onChange={(e) => setFormEmail(e.target.value)} className="bg-background border-border h-11 rounded-[10px]" />
+            <div className="relative">
+              <Input
+                type={showPassword ? 'text' : 'password'}
+                placeholder="密码（至少6位）"
+                value={formPassword}
+                onChange={(e) => setFormPassword(e.target.value)}
+                className="bg-background border-border h-11 rounded-[10px] pr-10"
+              />
+              <button
+                type="button"
+                className="absolute right-3 top-1/2 -translate-y-1/2 bg-transparent border-none cursor-pointer text-muted-foreground"
+                onClick={() => setShowPassword(!showPassword)}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
+            <Input placeholder="用户名（可选）" value={formName} onChange={(e) => setFormName(e.target.value)} className="bg-background border-border h-11 rounded-[10px]" />
+            <Select value={formRole} onValueChange={setFormRole}>
+              <SelectTrigger className="bg-background border-border h-11 rounded-[10px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-card border-border">
+                <SelectItem value="USER">普通用户</SelectItem>
+                <SelectItem value="ADMIN">管理员</SelectItem>
+              </SelectContent>
             </Select>
-          </ModalBody>
-          <ModalFooter>
-            <button className="px-6 py-2.5 border border-[#334155] rounded-[10px] bg-transparent text-[#94a3b8] cursor-pointer text-sm" style={{ fontFamily: 'inherit' }} onClick={createModal.onClose}>取消</button>
-            <button className="px-6 py-2.5 bg-[#f97316] rounded-[10px] text-white cursor-pointer text-sm font-semibold disabled:opacity-50" style={{ border: 'none', fontFamily: 'inherit' }} onClick={handleCreate} disabled={submitting}>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>取消</Button>
+            <Button className="bg-[#f97316] hover:bg-[#ea580c] text-white" onClick={handleCreate} disabled={submitting}>
               {submitting ? '创建中...' : '创建'}
-            </button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* 修改密码弹窗 */}
-      <Modal isOpen={passwordModal.isOpen} onClose={passwordModal.onClose} size="md" classNames={{ base: 'bg-[#1e293b] border border-[#334155] rounded-[20px]', header: 'text-lg font-semibold text-[#e2e8f0]' }}>
-        <ModalContent>
-          <ModalHeader>修改密码</ModalHeader>
-          <ModalBody className="flex flex-col gap-3">
+      <Dialog open={passwordOpen} onOpenChange={setPasswordOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>修改密码</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-3">
             {formError && <div className="text-[13px] text-[#fca5a5] bg-[#ef4444]/10 border border-[#ef4444]/20 rounded-lg px-4 py-2.5">{formError}</div>}
-            <Input type={showPassword ? 'text' : 'password'} placeholder="新密码（至少6位）" value={formPassword} onValueChange={setFormPassword} classNames={inputClassNames}
-              endContent={
-                <button type="button" className="bg-transparent border-none cursor-pointer p-0 flex items-center text-[#64748b]" onClick={() => setShowPassword(!showPassword)}>
-                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-              }
-            />
-          </ModalBody>
-          <ModalFooter>
-            <button className="px-6 py-2.5 border border-[#334155] rounded-[10px] bg-transparent text-[#94a3b8] cursor-pointer text-sm" style={{ fontFamily: 'inherit' }} onClick={passwordModal.onClose}>取消</button>
-            <button className="px-6 py-2.5 bg-[#f97316] rounded-[10px] text-white cursor-pointer text-sm font-semibold disabled:opacity-50" style={{ border: 'none', fontFamily: 'inherit' }} onClick={handleChangePassword} disabled={submitting}>
+            <div className="relative">
+              <Input
+                type={showPassword ? 'text' : 'password'}
+                placeholder="新密码（至少6位）"
+                value={formPassword}
+                onChange={(e) => setFormPassword(e.target.value)}
+                className="bg-background border-border h-11 rounded-[10px] pr-10"
+              />
+              <button
+                type="button"
+                className="absolute right-3 top-1/2 -translate-y-1/2 bg-transparent border-none cursor-pointer text-muted-foreground"
+                onClick={() => setShowPassword(!showPassword)}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPasswordOpen(false)}>取消</Button>
+            <Button className="bg-[#f97316] hover:bg-[#ea580c] text-white" onClick={handleChangePassword} disabled={submitting}>
               {submitting ? '修改中...' : '确认修改'}
-            </button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* 删除确认弹窗 */}
-      <Modal isOpen={deleteModal.isOpen} onClose={deleteModal.onClose} size="md" classNames={{ base: 'bg-[#1e293b] border border-[#334155] rounded-[20px]', header: 'text-lg font-semibold text-[#e2e8f0]' }}>
-        <ModalContent>
-          <ModalHeader>确认删除</ModalHeader>
-          <ModalBody className="flex flex-col gap-3">
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>确认删除</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-3">
             {formError && <div className="text-[13px] text-[#fca5a5] bg-[#ef4444]/10 border border-[#ef4444]/20 rounded-lg px-4 py-2.5">{formError}</div>}
-            <p className="text-sm text-[#94a3b8] leading-relaxed">
-              确定要删除用户 <strong className="text-[#e2e8f0]">{targetUser?.name || targetUser?.email}</strong> 吗？此操作不可撤销。
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              确定要删除用户 <strong className="text-foreground">{targetUser?.name || targetUser?.email}</strong> 吗？此操作不可撤销。
             </p>
-          </ModalBody>
-          <ModalFooter>
-            <button className="px-6 py-2.5 border border-[#334155] rounded-[10px] bg-transparent text-[#94a3b8] cursor-pointer text-sm" style={{ fontFamily: 'inherit' }} onClick={deleteModal.onClose}>取消</button>
-            <button className="px-6 py-2.5 bg-[#ef4444] rounded-[10px] text-white cursor-pointer text-sm font-semibold disabled:opacity-50" style={{ border: 'none', fontFamily: 'inherit' }} onClick={handleDelete} disabled={submitting}>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)}>取消</Button>
+            <Button className="bg-[#ef4444] hover:bg-[#dc2626] text-white" onClick={handleDelete} disabled={submitting}>
               {submitting ? '删除中...' : '确认删除'}
-            </button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -1,15 +1,9 @@
 import { useState, useEffect } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
-import {
-  Button,
-  Avatar,
-  Listbox,
-  ListboxItem,
-  Navbar,
-  NavbarContent,
-  NavbarItem,
-  Divider,
-} from '@heroui/react'
+import { Button } from '@/components/ui/button'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
+import { Separator } from '@/components/ui/separator'
 import { useAuthStore } from '../stores/auth'
 import { useBookStore } from '../stores/book'
 import { BookSwitcher } from '../components/BookSwitcher'
@@ -23,6 +17,7 @@ import {
   Menu,
   Users,
 } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 const allNavItems = [
   { path: '/', label: '首页', icon: LayoutDashboard },
@@ -57,12 +52,13 @@ export function MainLayout() {
   const pageTitle = currentPage?.label || '首页'
 
   return (
-    <div className="flex h-screen bg-[#0f172a] text-[#e2e8f0] overflow-hidden" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
+    <div className="flex h-screen bg-background text-foreground overflow-hidden">
       {/* 侧边栏 */}
       <aside
-        className={`flex flex-col border-r border-[#1e293b] bg-[#0f172a] transition-all duration-300 ${
-          collapsed ? 'w-[72px] min-w-[72px]' : 'w-[240px] min-w-[240px]'
-        }`}
+        className={cn(
+          'flex flex-col border-r border-border bg-background transition-all duration-300',
+          collapsed ? 'w-[72px] min-w-[72px]' : 'w-[240px] min-w-[240px]',
+        )}
       >
         {/* Logo */}
         <div className="flex items-center gap-3 px-5 pt-5 pb-7">
@@ -76,57 +72,53 @@ export function MainLayout() {
           )}
         </div>
 
-        {/* 导航 — 使用 Listbox */}
-        <nav className="flex-1 px-3 overflow-y-auto">
-          <Listbox
-            aria-label="主导航"
-            selectedKeys={new Set([location.pathname])}
-            disallowEmptySelection
-            onAction={(key) => navigate(key as string)}
-            variant="light"
-            className="gap-1"
-            classNames={{
-              base: 'p-0 gap-1',
-              list: 'gap-1',
-            }}
-            itemClasses={{
-              base: [
-                'rounded-xl px-4 h-11 text-sm data-[hover=true]:bg-[#1e293b] data-[hover=true]:!text-[#e2e8f0]',
-                'data-[selected=true]:!bg-[#f97316]/10 data-[selected=true]:!text-[#f97316] data-[selected=true]:font-semibold',
-                'text-[#94a3b8]',
-              ],
-              title: 'text-sm font-medium',
-            }}
-          >
-            {navItems.map((item) => (
-              <ListboxItem
-                key={item.path}
-                startContent={<item.icon size={20} />}
-                title={collapsed ? item.label : undefined}
+        {/* 导航 */}
+        <nav className="flex-1 flex flex-col gap-1 px-3">
+          {navItems.map((item) => {
+            const Icon = item.icon
+            const active = location.pathname === item.path
+            const button = (
+              <Button
+                variant="ghost"
+                onClick={() => navigate(item.path)}
+                className={cn(
+                  'justify-start px-4 h-11 rounded-xl text-sm w-full',
+                  active
+                    ? 'bg-[#f97316]/10 text-[#f97316] font-semibold hover:bg-[#f97316]/15 hover:text-[#f97316]'
+                    : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                )}
               >
-                {collapsed ? '' : item.label}
-              </ListboxItem>
-            ))}
-          </Listbox>
+                <Icon size={20} className="shrink-0" />
+                {!collapsed && <span className="ml-3">{item.label}</span>}
+              </Button>
+            )
+
+            if (collapsed) {
+              return (
+                <Tooltip key={item.path}>
+                  <TooltipTrigger asChild>{button}</TooltipTrigger>
+                  <TooltipContent side="right">{item.label}</TooltipContent>
+                </Tooltip>
+              )
+            }
+            return <div key={item.path}>{button}</div>
+          })}
         </nav>
 
-        <Divider className="bg-[#1e293b]" />
+        <Separator />
 
         {/* 用户信息 */}
         <div className="p-3">
           <div className="flex items-center gap-3 p-3 rounded-xl">
-            <Avatar
-              name={user?.name || user?.email || 'U'}
-              size="sm"
-              classNames={{
-                base: 'w-9 h-9 min-w-9 rounded-[10px] bg-[#f97316] shrink-0',
-                name: 'text-white text-sm font-bold',
-              }}
-            />
+            <Avatar className="w-9 h-9 rounded-[10px] bg-[#f97316] shrink-0">
+              <AvatarFallback className="text-white text-sm font-bold bg-[#f97316]">
+                {(user?.name?.[0] || user?.email?.[0] || 'U').toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
             {!collapsed && (
               <div className="overflow-hidden whitespace-nowrap">
                 <div className="text-sm font-semibold">{user?.name || '用户'}</div>
-                <div className="text-xs text-[#64748b] mt-0.5 overflow-hidden text-ellipsis">
+                <div className="text-xs text-muted-foreground mt-0.5 overflow-hidden text-ellipsis">
                   {user?.email || ''}
                 </div>
               </div>
@@ -137,46 +129,32 @@ export function MainLayout() {
 
       {/* 主区域 */}
       <main className="flex-1 flex flex-col overflow-hidden">
-        {/* 顶部栏 — 使用 Navbar */}
-        <Navbar
-          maxWidth="full"
-          position="static"
-          className="h-16 min-h-16 border-b border-[#1e293b] bg-[#0f172a]"
-          classNames={{ wrapper: 'px-8 h-full max-w-full' }}
-        >
-          <NavbarContent className="gap-4" justify="start">
-            <NavbarItem>
-              <Button
-                isIconOnly
-                variant="bordered"
-                size="sm"
-                onPress={() => setCollapsed(!collapsed)}
-                className="w-9 h-9 min-w-9 rounded-[10px] border-[#334155] text-[#94a3b8] hover:!bg-[#1e293b] hover:!text-[#e2e8f0]"
-              >
-                {collapsed ? <Menu size={18} /> : <ChevronLeft size={18} />}
-              </Button>
-            </NavbarItem>
-            <NavbarItem className="text-lg font-semibold text-[#e2e8f0]">
-              {pageTitle}
-            </NavbarItem>
-          </NavbarContent>
+        {/* 顶部栏 */}
+        <header className="flex items-center justify-between px-8 py-4 border-b border-border h-16 min-h-16 bg-background">
+          <div className="flex items-center gap-4">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setCollapsed(!collapsed)}
+              className="w-9 h-9 rounded-[10px] border-border text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              {collapsed ? <Menu size={18} /> : <ChevronLeft size={18} />}
+            </Button>
+            <span className="text-lg font-semibold">{pageTitle}</span>
+          </div>
 
-          <NavbarContent className="gap-3" justify="end">
-            <NavbarItem>
-              <BookSwitcher />
-            </NavbarItem>
-            <NavbarItem>
-              <Button
-                variant="bordered"
-                startContent={<LogOut size={16} />}
-                onPress={handleLogout}
-                className="rounded-[10px] border-[#334155] text-[#94a3b8] text-[13px] hover:!text-[#f97316] hover:!bg-[#1e293b]"
-              >
-                退出登录
-              </Button>
-            </NavbarItem>
-          </NavbarContent>
-        </Navbar>
+          <div className="flex items-center gap-3">
+            <BookSwitcher />
+            <Button
+              variant="outline"
+              onClick={handleLogout}
+              className="rounded-[10px] border-border text-muted-foreground text-[13px] hover:text-[#f97316] hover:bg-accent"
+            >
+              <LogOut size={16} />
+              退出登录
+            </Button>
+          </div>
+        </header>
 
         {/* 内容区域 */}
         <div className="flex-1 overflow-auto p-8">
