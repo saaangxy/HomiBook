@@ -1,7 +1,8 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { BookOpen, ChevronDown, Users } from 'lucide-react'
+import { BookOpen, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -56,16 +57,12 @@ export function BookSwitcher() {
             >
               <BookOpen size={16} className="text-muted-foreground shrink-0" />
               <span className="flex-1">{book.name}</span>
-              <span
-                className={cn(
-                  'shrink-0 text-[11px] px-2 py-0.5 rounded-full font-semibold',
-                  book.role === 'owner'
-                    ? 'bg-[#f97316]/15 text-[#f97316]'
-                    : 'bg-muted text-muted-foreground',
-                )}
+              <Badge
+                variant={book.role === 'owner' ? 'default' : 'secondary'}
+                className="shrink-0 text-[11px]"
               >
                 {roleLabels[book.role] || book.role}
-              </span>
+              </Badge>
             </DropdownMenuItem>
           ))
         )}

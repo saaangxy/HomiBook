@@ -24,11 +24,14 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
+import { Badge } from '@/components/ui/badge'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Spinner } from '@/components/ui/spinner'
 import { Trash2, Key, Shield, ShieldOff, Eye, EyeOff } from 'lucide-react'
 import { adminApi, type AdminUser } from '../api/admin'
 import { useAuthStore } from '../stores/auth'
 
-export function AdminUsersPage() {
+export function UsersPage() {
   const currentUser = useAuthStore((s) => s.user)
   const [users, setUsers] = useState<AdminUser[]>([])
   const [loading, setLoading] = useState(true)
@@ -127,7 +130,7 @@ export function AdminUsersPage() {
     finally { setSubmitting(false) }
   }
 
-  if (loading) return <div className="text-center py-12 text-sm text-muted-foreground">加载中...</div>
+  if (loading) return <Spinner className="py-12" />
 
   return (
     <div>
@@ -143,9 +146,9 @@ export function AdminUsersPage() {
       </div>
 
       {error && (
-        <div className="text-[13px] text-[#fca5a5] bg-[#ef4444]/10 border border-[#ef4444]/20 rounded-lg px-4 py-2.5 mb-6">
-          {error}
-        </div>
+        <Alert variant="destructive" className="mb-6">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
       {/* Table */}
@@ -173,19 +176,18 @@ export function AdminUsersPage() {
                     <div className="text-xs text-muted-foreground mt-0.5">{user.email}</div>
                   </TableCell>
                   <TableCell className="px-5 py-3.5 text-sm">
-                    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${
-                      user.role === 'ADMIN' ? 'bg-[#f97316]/15 text-[#f97316]' : 'bg-muted text-muted-foreground'
-                    }`}>
+                    <Badge variant={user.role === 'ADMIN' ? 'default' : 'secondary'} className="inline-flex items-center gap-1 text-xs">
                       {user.role === 'ADMIN' ? <Shield size={12} /> : <ShieldOff size={12} />}
                       {user.role === 'ADMIN' ? '管理员' : '普通用户'}
-                    </span>
+                    </Badge>
                   </TableCell>
                   <TableCell className="px-5 py-3.5 text-sm">
-                    <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-semibold ${
-                      user.status === 'ACTIVE' ? 'bg-[#22c55e]/15 text-[#22c55e]' : 'bg-[#ef4444]/15 text-[#ef4444]'
-                    }`}>
+                    <Badge
+                      variant={user.status === 'ACTIVE' ? 'secondary' : 'destructive'}
+                      className={user.status === 'ACTIVE' ? 'bg-[#22c55e]/15 text-[#22c55e] hover:bg-[#22c55e]/20' : 'text-xs'}
+                    >
                       {user.status === 'ACTIVE' ? '正常' : '已禁用'}
-                    </span>
+                    </Badge>
                   </TableCell>
                   <TableCell className="px-5 py-3.5 text-[13px] text-muted-foreground">
                     {new Date(user.createdAt).toLocaleDateString('zh-CN')}
@@ -262,7 +264,7 @@ export function AdminUsersPage() {
             <DialogTitle>创建用户</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-3">
-            {formError && <div className="text-[13px] text-[#fca5a5] bg-[#ef4444]/10 border border-[#ef4444]/20 rounded-lg px-4 py-2.5">{formError}</div>}
+            {formError && <Alert variant="destructive"><AlertDescription>{formError}</AlertDescription></Alert>}
             <Input type="email" placeholder="邮箱地址" value={formEmail} onChange={(e) => setFormEmail(e.target.value)} className="bg-background border-border h-11 rounded-[10px]" />
             <div className="relative">
               <Input
@@ -307,7 +309,7 @@ export function AdminUsersPage() {
             <DialogTitle>修改密码</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-3">
-            {formError && <div className="text-[13px] text-[#fca5a5] bg-[#ef4444]/10 border border-[#ef4444]/20 rounded-lg px-4 py-2.5">{formError}</div>}
+            {formError && <Alert variant="destructive"><AlertDescription>{formError}</AlertDescription></Alert>}
             <div className="relative">
               <Input
                 type={showPassword ? 'text' : 'password'}
@@ -341,7 +343,7 @@ export function AdminUsersPage() {
             <DialogTitle>确认删除</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-3">
-            {formError && <div className="text-[13px] text-[#fca5a5] bg-[#ef4444]/10 border border-[#ef4444]/20 rounded-lg px-4 py-2.5">{formError}</div>}
+            {formError && <Alert variant="destructive"><AlertDescription>{formError}</AlertDescription></Alert>}
             <p className="text-sm text-muted-foreground leading-relaxed">
               确定要删除用户 <strong className="text-foreground">{targetUser?.name || targetUser?.email}</strong> 吗？此操作不可撤销。
             </p>

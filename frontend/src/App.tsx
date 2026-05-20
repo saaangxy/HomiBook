@@ -5,7 +5,7 @@ import { MainLayout } from './layouts/MainLayout'
 import { LoginPage } from './pages/LoginPage'
 import { HomePage } from './pages/HomePage'
 import { PlaceholderPage } from './pages/PlaceholderPage'
-import { AdminUsersPage } from './pages/AdminUsersPage'
+import { UsersPage } from './pages/UsersPage.tsx'
 import { BooksPage } from './pages/BooksPage'
 import { useAuthStore } from './stores/auth'
 
@@ -38,7 +38,7 @@ function App() {
               <Route path="books" element={<BooksPage />} />
               <Route path="stats" element={<PlaceholderPage title="统计分析" />} />
               <Route path="settings" element={<PlaceholderPage title="设置" />} />
-              <Route path="admin/users" element={<AdminUsersPage />} />
+              <Route path="admin/users" element={<UsersPage />} />
             </Route>
           </Routes>
         </BrowserRouter>

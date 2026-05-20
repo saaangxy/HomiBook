@@ -9,6 +9,21 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { Label } from '@/components/ui/label'
+import { Spinner } from '@/components/ui/spinner'
 import { useBookStore } from '../stores/book'
 import { useAuthStore } from '../stores/auth'
 import { bookApi, type BookItem, type BookMember, type ShareCode, type ShareCodeLookup } from '../api/book'
@@ -49,6 +64,10 @@ export function BooksPage() {
   const [deleteBook, setDeleteBook] = useState<BookItem | null>(null)
   const [deleteInput, setDeleteInput] = useState('')
   const [deleting, setDeleting] = useState(false)
+
+  const [confirmAction, setConfirmAction] = useState<{
+    title: string; description: string; onConfirm: () => void
+  } | null>(null)
 
   const loadBooks = useCallback(async () => {
     setLoading(true)
@@ -137,7 +156,7 @@ export function BooksPage() {
   const handleRemoveMember = async (member: BookMember) => {
     if (!manageBook) return
     try { await bookApi.removeMember(manageBook.id, member.id); await refreshMembers(); await fetchBooks() }
-    catch (e: any) { alert(e.message) }
+    catch (e: any) { setError(e.message) }
   }
 
   const handleToggleMemberRole = async (member: BookMember) => {
@@ -146,7 +165,7 @@ export function BooksPage() {
       const newRole = member.role === 'admin' ? 'member' : 'admin'
       await bookApi.updateMemberRole(manageBook.id, member.id, newRole)
       await refreshMembers()
-    } catch (e: any) { alert(e.message) }
+    } catch (e: any) { setError(e.message) }
   }
 
   const handleGenerateCode = async () => {
@@ -156,7 +175,7 @@ export function BooksPage() {
       await bookApi.generateShareCode(manageBook.id, hours)
       setExpireHours('')
       await refreshShareCodes()
-    } catch (e: any) { alert(e.message) }
+    } catch (e: any) { setError(e.message) }
   }
 
   const handleDelete = async () => {
@@ -168,14 +187,14 @@ export function BooksPage() {
       setDeleteOpen(false)
       setDeleteBook(null)
       setDeleteInput('')
-    } catch (e: any) { alert(e.message) }
+    } catch (e: any) { setError(e.message) }
     finally { setDeleting(false) }
   }
 
   const copyCode = (code: string) => { navigator.clipboard.writeText(code).catch(() => {}) }
 
   if (loading && books.length === 0) {
-    return <div className="text-center py-12 text-sm text-muted-foreground">加载中...</div>
+    return <Spinner className="py-12" />
   }
 
   return (
@@ -201,9 +220,9 @@ export function BooksPage() {
       </div>
 
       {error && (
-        <div className="text-[13px] text-[#fca5a5] bg-[#ef4444]/10 border border-[#ef4444]/20 rounded-[10px] px-4 py-3 mb-6">
-          {error}
-        </div>
+        <Alert variant="destructive" className="mb-6">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
       {/* 账本列表 */}
@@ -222,11 +241,9 @@ export function BooksPage() {
                 <div className="flex items-start justify-between">
                   <div>
                     <div className="text-[17px] font-semibold">{book.name}</div>
-                    <span className={`inline-block text-[11px] px-2.5 py-0.5 rounded-full font-semibold mt-1 ${
-                      book.role === 'owner' ? 'bg-[#f97316]/15 text-[#f97316]' : 'bg-muted text-muted-foreground'
-                    }`}>
+                    <Badge variant={book.role === 'owner' ? 'default' : 'secondary'} className="text-[11px] mt-1">
                       {roleLabels[book.role] || book.role}
-                    </span>
+                    </Badge>
                   </div>
                   <div className="flex gap-1.5">
                     {(book.role === 'owner' || book.role === 'admin') && (
@@ -256,14 +273,18 @@ export function BooksPage() {
                         variant="outline"
                         size="icon"
                         title="退出账本"
-                        onClick={async () => {
-                          if (!confirm('确定退出该账本吗？')) return
-                          try {
-                            const m = await bookApi.listMembers(book.id)
-                            const self = m.find((m) => m.userId === currentUser?.id)
-                            if (self) { await bookApi.removeMember(book.id, self.id); await fetchBooks() }
-                          } catch (e: any) { alert(e.message) }
-                        }}
+                        onClick={() => setConfirmAction({
+                          title: '退出账本',
+                          description: '确定退出该账本吗？',
+                          onConfirm: async () => {
+                            try {
+                              const m = await bookApi.listMembers(book.id)
+                              const self = m.find((m) => m.userId === currentUser?.id)
+                              if (self) { await bookApi.removeMember(book.id, self.id); await fetchBooks() }
+                            } catch (e: any) { setError(e.message) }
+                            setConfirmAction(null)
+                          },
+                        })}
                         className="w-[34px] h-[34px] rounded-lg border-border bg-background text-[#ef4444] hover:border-[#ef4444]"
                       >
                         <LogOut size={16} />
@@ -295,7 +316,7 @@ export function BooksPage() {
               autoFocus
               className="bg-background border-border"
             />
-            {createError && <div className="text-[13px] text-[#fca5a5]">{createError}</div>}
+            {createError && <Alert variant="destructive"><AlertDescription>{createError}</AlertDescription></Alert>}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>取消</Button>
@@ -324,7 +345,7 @@ export function BooksPage() {
                   autoFocus
                   maxLength={8}
                 />
-                {joinError && <div className="text-[13px] text-[#fca5a5]">{joinError}</div>}
+                {joinError && <Alert variant="destructive"><AlertDescription>{joinError}</AlertDescription></Alert>}
                 <p className="text-xs text-muted-foreground">由账本归属人在管理面板生成分享码</p>
               </div>
               <DialogFooter>
@@ -343,7 +364,7 @@ export function BooksPage() {
                 {joinLookup?.expiresAt && (
                   <p className="text-[13px] text-muted-foreground">分享码有效期至 {new Date(joinLookup.expiresAt).toLocaleString('zh-CN')}</p>
                 )}
-                {joinError && <div className="text-[13px] text-[#fca5a5]">{joinError}</div>}
+                {joinError && <Alert variant="destructive"><AlertDescription>{joinError}</AlertDescription></Alert>}
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => { setJoinStep('input'); setJoinError('') }}>返回</Button>
@@ -363,32 +384,17 @@ export function BooksPage() {
             <DialogTitle>{manageBook?.name}</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-4">
-            {/* Tabs */}
-            <div className="flex border-b border-border mb-4">
-              <button
-                className={`px-4 py-2 text-sm font-medium cursor-pointer outline-none border-b-2 transition-colors ${
-                  manageTab === 'members' ? 'text-[#f97316] border-[#f97316]' : 'text-muted-foreground border-transparent'
-                }`}
-                style={{ background: 'none', fontFamily: 'inherit' }}
-                onClick={() => setManageTab('members')}
-              >
-                成员管理
-              </button>
-              {manageBook && (manageBook.role === 'owner' || manageBook.role === 'admin') && (
-                <button
-                  className={`px-4 py-2 text-sm font-medium cursor-pointer outline-none border-b-2 transition-colors ${
-                    manageTab === 'share' ? 'text-[#f97316] border-[#f97316]' : 'text-muted-foreground border-transparent'
-                  }`}
-                  style={{ background: 'none', fontFamily: 'inherit' }}
-                  onClick={() => setManageTab('share')}
-                >
-                  分享码
-                </button>
-              )}
-            </div>
+            <Tabs value={manageTab} onValueChange={(v) => setManageTab(v as 'members' | 'share')}>
+              <TabsList className="w-full">
+                <TabsTrigger value="members" className="flex-1">成员管理</TabsTrigger>
+                {manageBook && (manageBook.role === 'owner' || manageBook.role === 'admin') && (
+                  <TabsTrigger value="share" className="flex-1">分享码</TabsTrigger>
+                )}
+              </TabsList>
+            </Tabs>
 
             {manageLoading ? (
-              <div className="text-center py-6 text-sm text-muted-foreground">加载中...</div>
+              <Spinner className="py-6" />
             ) : (
               <>
                 {manageTab === 'members' && (
@@ -406,7 +412,7 @@ export function BooksPage() {
                         </Button>
                       </div>
                     )}
-                    {addError && <div className="text-[13px] text-[#fca5a5] -mt-1">{addError}</div>}
+                    {addError && <Alert variant="destructive" className="mt-1"><AlertDescription>{addError}</AlertDescription></Alert>}
 
                     {members.map((m) => (
                       <div key={m.id} className="flex items-center justify-between py-2.5 border-b border-border last:border-0">
@@ -414,7 +420,7 @@ export function BooksPage() {
                           <span className="text-sm font-medium">
                             {m.user.name || m.user.email}
                             {m.userId === manageBook?.ownerId && (
-                              <span className="ml-2 text-[10px] px-2 py-0.5 rounded-full font-semibold bg-[#f97316]/15 text-[#f97316]">归属人</span>
+                              <Badge className="ml-2 text-[10px]">归属人</Badge>
                             )}
                           </span>
                           <span className="text-xs text-muted-foreground">{m.user.email}</span>
@@ -436,7 +442,11 @@ export function BooksPage() {
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => { if (confirm(`确定移除 ${m.user.name || m.user.email}？`)) handleRemoveMember(m) }}
+                              onClick={() => setConfirmAction({
+                                title: '移除成员',
+                                description: `确定移除 ${m.user.name || m.user.email}？`,
+                                onConfirm: () => { handleRemoveMember(m); setConfirmAction(null) },
+                              })}
                               className="text-xs border-[#7f1d1d] bg-[#ef4444]/10 text-[#ef4444] rounded-md"
                             >
                               移除
@@ -446,7 +456,11 @@ export function BooksPage() {
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => { if (confirm('确定退出该账本？')) handleRemoveMember(m) }}
+                              onClick={() => setConfirmAction({
+                                title: '退出账本',
+                                description: '确定退出该账本？',
+                                onConfirm: () => { handleRemoveMember(m); setConfirmAction(null) },
+                              })}
                               className="text-xs border-[#7f1d1d] bg-[#ef4444]/10 text-[#ef4444] rounded-md"
                             >
                               <LogOut size={14} className="mr-1" />
@@ -465,7 +479,7 @@ export function BooksPage() {
                   <div className="flex flex-col gap-3">
                     <div className="flex gap-2 items-end mb-4">
                       <div className="flex-1">
-                        <label className="block text-xs text-muted-foreground mb-1">有效期（小时，留空永久）</label>
+                        <Label className="block text-xs text-muted-foreground mb-1">有效期（小时，留空永久）</Label>
                         <Input
                           type="number" min={1} max={720}
                           className="bg-background border-border"
@@ -503,7 +517,7 @@ export function BooksPage() {
                             onClick={async () => {
                               if (!manageBook) return
                               try { await bookApi.deleteShareCode(manageBook.id, sc.id); await refreshShareCodes() }
-                              catch (e: any) { alert(e.message) }
+                              catch (e: any) { setError(e.message) }
                             }}
                             className="text-xs border-[#7f1d1d] bg-[#ef4444]/10 text-[#ef4444] rounded-md"
                           >
@@ -555,6 +569,25 @@ export function BooksPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* 确认弹窗 */}
+      <AlertDialog open={!!confirmAction} onOpenChange={() => setConfirmAction(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirmAction?.title}</AlertDialogTitle>
+            <AlertDialogDescription>{confirmAction?.description}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-[#f97316] hover:bg-[#ea580c]"
+              onClick={confirmAction?.onConfirm}
+            >
+              确认
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
