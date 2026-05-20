@@ -2,6 +2,7 @@ import { buildApp } from './app.js'
 import { authRoutes } from './routes/auth.js'
 import { adminRoutes } from './routes/admin.js'
 import { bookRoutes } from './routes/book.js'
+import { accountRoutes } from './routes/account.js'
 
 async function main() {
   const app = await buildApp()
@@ -10,6 +11,7 @@ async function main() {
   app.register(authRoutes, { prefix: '/api/auth' })
   app.register(adminRoutes, { prefix: '/api/admin' })
   app.register(bookRoutes, { prefix: '/api/books' })
+  app.register(accountRoutes, { prefix: '/api/accounts' })
 
   // 健康检查
   app.get('/health', async () => ({ status: 'ok' }))

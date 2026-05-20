@@ -25,12 +25,14 @@ import {
   Settings,
   LogOut,
   Users,
+  Wallet,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const allNavItems = [
   { path: '/', label: '首页', icon: LayoutDashboard },
   { path: '/books', label: '账本管理', icon: Book },
+  { path: '/accounts', label: '账户管理', icon: Wallet },
   { path: '/stats', label: '统计分析', icon: BarChart3 },
   { path: '/admin/users', label: '用户管理', icon: Users, adminOnly: true },
   { path: '/settings', label: '设置', icon: Settings },
@@ -57,10 +59,11 @@ function NavItems() {
               className={cn(
                 active && 'text-[#f97316] hover:text-[#f97316]',
                 '[&>svg]:size-5',
+                'group-data-[collapsible=icon]:justify-center',
               )}
             >
               <item.icon />
-              <span>{item.label}</span>
+              <span className="group-data-[collapsible=icon]:hidden">{item.label}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         )
@@ -74,8 +77,8 @@ function SidebarUserFooter() {
   const { state } = useSidebar()
 
   return (
-    <div className="flex items-center gap-3 p-3">
-      <Avatar className="w-9 h-9 rounded-[10px] bg-[#f97316] shrink-0">
+    <div className="flex items-center gap-3 p-3 group-data-[collapsible=icon]:p-1">
+      <Avatar className="w-9 h-9 group-data-[collapsible=icon]:w-7 group-data-[collapsible=icon]:h-7 rounded-[10px] bg-[#f97316] shrink-0">
         <AvatarFallback className="text-white text-sm font-bold bg-[#f97316]">
           {(user?.name?.[0] || user?.email?.[0] || 'U').toUpperCase()}
         </AvatarFallback>
@@ -118,9 +121,9 @@ export function MainLayout() {
     <SidebarProvider defaultOpen={true}>
       <Sidebar collapsible="icon">
         {/* Logo */}
-        <SidebarHeader className="px-5 pt-5 pb-7">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 min-w-10 rounded-xl bg-[#f97316] flex items-center justify-center">
+        <SidebarHeader className="px-5 pt-5 pb-7 group-data-[collapsible=icon]:px-2 group-data-[collapsible=icon]:pt-4 group-data-[collapsible=icon]:pb-4">
+          <div className="flex items-center gap-3 group-data-[collapsible=icon]:justify-center">
+            <div className="w-10 h-10 min-w-10 group-data-[collapsible=icon]:w-7 group-data-[collapsible=icon]:h-7 group-data-[collapsible=icon]:min-w-7 rounded-xl bg-[#f97316] flex items-center justify-center">
               <Book size={22} color="#fff" />
             </div>
             <span className="text-xl font-extrabold text-[#f97316] tracking-tight whitespace-nowrap group-data-[collapsible=icon]:hidden">
@@ -130,14 +133,14 @@ export function MainLayout() {
         </SidebarHeader>
 
         {/* 导航 */}
-        <SidebarContent className="px-3">
+        <SidebarContent className="px-3 group-data-[collapsible=icon]:px-1.5">
           <NavItems />
         </SidebarContent>
 
         <SidebarSeparator />
 
         {/* 用户信息 */}
-        <SidebarFooter>
+        <SidebarFooter className="group-data-[collapsible=icon]:p-1">
           <SidebarUserFooter />
         </SidebarFooter>
       </Sidebar>

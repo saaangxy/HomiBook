@@ -20,6 +20,7 @@ model User {
 
   ownedBooks   AccountBook[] @relation("BookOwner")
   memberships  AccountBookMember[]
+  accounts     Account[]
 }
 
 // 账本
@@ -53,21 +54,40 @@ model AccountBookMember {
 
 // 账户
 model Account {
-  id            String      @id @default(uuid())
-  accountBookId String
-  accountBook   AccountBook @relation(fields: [accountBookId], references: [id])
-  name          String
-  type          String
-  currency      String      @default("CNY")
-  balance       Float       @default(0)
-  balanceAt     DateTime?
-  accountNo     String?
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  id              String      @id @default(uuid())
+  accountBookId   String
+  accountBook     AccountBook @relation(fields: [accountBookId], references: [id])
+  ownerId         String
+  owner           User        @relation(fields: [ownerId], references: [id])
+  name            String
+  type            String
+  currency        String      @default("CNY")
+  initialBalance  Float       @default(0)
+  balance         Float       @default(0)
+  balanceAt       DateTime?
+  accountNo       String?
+  visibility      String      @default("PUBLIC")
+  status          String      @default("ACTIVE")
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
 
-  records       Record[]
-  recordsFrom   Record[]    @relation("FromAccount")
-  recordsTo     Record[]    @relation("ToAccount")
+  records         Record[]
+  recordsFrom     Record[]    @relation("FromAccount")
+  recordsTo       Record[]    @relation("ToAccount")
+  adjustments     BalanceAdjustment[]
+}
+
+// 余额调整记录
+model BalanceAdjustment {
+  id            String   @id @default(uuid())
+  accountId     String
+  account       Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  date          DateTime
+  amount        Float
+  balanceBefore Float
+  balanceAfter  Float
+  remark        String?
+  createdAt     DateTime @default(now())
 }
 
 // 流水记录

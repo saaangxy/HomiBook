@@ -7,6 +7,7 @@ import { HomePage } from './pages/HomePage'
 import { PlaceholderPage } from './pages/PlaceholderPage'
 import { UsersPage } from './pages/UsersPage.tsx'
 import { BooksPage } from './pages/BooksPage'
+import { AccountsPage } from './pages/AccountsPage'
 import { useAuthStore } from './stores/auth'
 
 const queryClient = new QueryClient()
@@ -36,6 +37,7 @@ function App() {
             >
               <Route index element={<HomePage />} />
               <Route path="books" element={<BooksPage />} />
+              <Route path="accounts" element={<AccountsPage />} />
               <Route path="stats" element={<PlaceholderPage title="统计分析" />} />
               <Route path="settings" element={<PlaceholderPage title="设置" />} />
               <Route path="admin/users" element={<UsersPage />} />
