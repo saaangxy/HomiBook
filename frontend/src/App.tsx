@@ -5,6 +5,7 @@ import { MainLayout } from './layouts/MainLayout'
 import { LoginPage } from './pages/LoginPage'
 import { HomePage } from './pages/HomePage'
 import { PlaceholderPage } from './pages/PlaceholderPage'
+import { SettingsPage } from './pages/SettingsPage'
 import { UsersPage } from './pages/UsersPage.tsx'
 import { BooksPage } from './pages/BooksPage'
 import { AccountsPage } from './pages/AccountsPage'
@@ -39,7 +40,7 @@ function App() {
               <Route path="books" element={<BooksPage />} />
               <Route path="accounts" element={<AccountsPage />} />
               <Route path="stats" element={<PlaceholderPage title="统计分析" />} />
-              <Route path="settings" element={<PlaceholderPage title="设置" />} />
+              <Route path="settings" element={<SettingsPage />} />
               <Route path="admin/users" element={<UsersPage />} />
             </Route>
           </Routes>

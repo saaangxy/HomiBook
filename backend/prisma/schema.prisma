@@ -150,3 +150,24 @@ model ShareCode {
   expiresAt    DateTime?
   createdAt    DateTime    @default(now())
 }
+
+// 系统配置
+model SystemConfig {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+// 字典
+model Dictionary {
+  id        String   @id @default(uuid())
+  group     String
+  code      String
+  label     String
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([group, code])
+}

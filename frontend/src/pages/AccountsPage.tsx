@@ -39,6 +39,7 @@ import {
   TableCell,
 } from '@/components/ui/table'
 import { Spinner } from '@/components/ui/spinner'
+import { DictCombobox } from '@/components/DictCombobox'
 import { useBookStore } from '../stores/book'
 import { useAuthStore } from '../stores/auth'
 import {
@@ -59,17 +60,6 @@ import {
   Archive,
   Trash2,
 } from 'lucide-react'
-
-const ACCOUNT_TYPE_LIST: { value: AccountType; label: string }[] = [
-  { value: 'BANK_DEBIT', label: '借记卡' },
-  { value: 'CREDIT_CARD', label: '信用卡' },
-  { value: 'ALIPAY', label: '支付宝' },
-  { value: 'WECHAT', label: '微信' },
-  { value: 'CASH', label: '现金' },
-  { value: 'RECHARGE_CARD', label: '充值卡' },
-  { value: 'INVESTMENT', label: '投资账户' },
-  { value: 'OTHER', label: '其他' },
-]
 
 function formatBalance(balance: number | undefined, currency = 'CNY'): string {
   if (balance === undefined || balance === null) return '****'
@@ -344,7 +334,7 @@ export function AccountsPage() {
                         </div>
                         <div className="flex items-center gap-2 mt-0.5">
                           <Badge variant="secondary" className="text-[10px]">
-                            {ACCOUNT_TYPE_LABELS[account.type]}
+                            {ACCOUNT_TYPE_LABELS[account.type] || account.type}
                           </Badge>
                           {account.visibility === 'PRIVATE' && (
                             <Badge variant="outline" className="text-[10px]">私密</Badge>
@@ -461,16 +451,12 @@ export function AccountsPage() {
             </div>
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">账户类型</Label>
-              <Select value={formType} onValueChange={(v) => setFormType(v as AccountType)}>
-                <SelectTrigger className="bg-background border-border">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-card border-border">
-                  {ACCOUNT_TYPE_LIST.map((t) => (
-                    <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <DictCombobox
+                group="account_type"
+                value={formType}
+                onChange={(v) => setFormType(v as AccountType)}
+                placeholder="选择账户类型"
+              />
             </div>
             {formType === 'CREDIT_CARD' && (
               <p className="text-[12px] text-muted-foreground">信用卡余额为负向余额，初始余额请填写 0 或负数</p>
@@ -497,11 +483,12 @@ export function AccountsPage() {
             {formType === 'BANK_DEBIT' && (
               <div>
                 <Label className="text-xs text-muted-foreground mb-1 block">开户行</Label>
-                <Input
-                  placeholder="如：工商银行、建设银行"
+                <DictCombobox
+                  group="bank_name"
                   value={formBankName}
-                  onChange={(e) => setFormBankName(e.target.value)}
-                  className="bg-background border-border"
+                  onChange={setFormBankName}
+                  valueKey="label"
+                  placeholder="选择开户行"
                 />
               </div>
             )}
@@ -546,16 +533,12 @@ export function AccountsPage() {
             </div>
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">账户类型</Label>
-              <Select value={formType} onValueChange={(v) => setFormType(v as AccountType)}>
-                <SelectTrigger className="bg-background border-border">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-card border-border">
-                  {ACCOUNT_TYPE_LIST.map((t) => (
-                    <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <DictCombobox
+                group="account_type"
+                value={formType}
+                onChange={(v) => setFormType(v as AccountType)}
+                placeholder="选择账户类型"
+              />
             </div>
             {formType === 'CREDIT_CARD' && (
               <p className="text-[12px] text-muted-foreground">注意：改为信用卡类型要求当前余额 ≤ 0</p>
@@ -572,11 +555,12 @@ export function AccountsPage() {
             {formType === 'BANK_DEBIT' && (
               <div>
                 <Label className="text-xs text-muted-foreground mb-1 block">开户行</Label>
-                <Input
-                  placeholder="如：工商银行、建设银行"
+                <DictCombobox
+                  group="bank_name"
                   value={formBankName}
-                  onChange={(e) => setFormBankName(e.target.value)}
-                  className="bg-background border-border"
+                  onChange={setFormBankName}
+                  valueKey="label"
+                  placeholder="选择开户行"
                 />
               </div>
             )}

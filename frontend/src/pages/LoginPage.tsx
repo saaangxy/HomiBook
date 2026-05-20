@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Book, Eye, EyeOff } from 'lucide-react'
 import { authApi } from '../api/auth'
+import { settingsApi } from '../api/settings'
 import { useAuthStore } from '../stores/auth'
 
 const styles = {
@@ -243,8 +244,15 @@ export function LoginPage() {
   const [showRegPass, setShowRegPass] = useState(false)
   const [hoverStates, setHoverStates] = useState<Record<string, boolean>>({})
   const [focusedInput, setFocusedInput] = useState<string | null>(null)
+  const [registrationOpen, setRegistrationOpen] = useState(true)
   const navigate = useNavigate()
   const { setAuth } = useAuthStore()
+
+  useEffect(() => {
+    settingsApi.getPublicConfig()
+      .then((cfg) => setRegistrationOpen(cfg.registrationOpen))
+      .catch(() => setRegistrationOpen(true))
+  }, [])
 
   useEffect(() => {
     setError('')
@@ -303,7 +311,94 @@ export function LoginPage() {
         <h2 style={styles.headerTitle}>Homibook</h2>
       </div>
 
-      {/* Card */}
+      {/* Card — 注册关闭时仅显示居中登录表单 */}
+      {!registrationOpen ? (
+        <div
+          style={{
+            position: 'relative' as const,
+            width: '420px',
+            borderRadius: '28px',
+            overflow: 'hidden',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6)',
+            border: '1px solid rgba(249, 115, 22, 0.1)',
+            backgroundColor: '#0f172a',
+            padding: '48px 40px',
+          }}
+        >
+          <form onSubmit={handleLogin} style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <h2 style={styles.formTitle}>登录</h2>
+            <p style={styles.formSubtitle}>登录以继续管理你的账本</p>
+            <input
+              type="email"
+              placeholder="邮箱地址"
+              value={loginEmail}
+              onChange={(e) => setLoginEmail(e.target.value)}
+              style={getInputStyle('loginEmail')}
+              onFocus={() => setFocusedInput('loginEmail')}
+              onBlur={() => setFocusedInput(null)}
+              required
+            />
+            <div style={{ position: 'relative', width: '100%' }}>
+              <input
+                type={showLoginPass ? 'text' : 'password'}
+                placeholder="密码"
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
+                style={{ ...getInputStyle('loginPass'), paddingRight: '44px' }}
+                onFocus={() => setFocusedInput('loginPass')}
+                onBlur={() => setFocusedInput(null)}
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowLoginPass(!showLoginPass)}
+                style={{
+                  position: 'absolute',
+                  right: '14px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: '#64748b',
+                  padding: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                }}
+              >
+                {showLoginPass ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
+            <a
+              href="#"
+              style={{
+                ...styles.forgetPassword,
+                ...(hoverStates.forgetPass ? styles.forgetPasswordHover : {}),
+              }}
+              onMouseEnter={() => setHoverStates({ ...hoverStates, forgetPass: true })}
+              onMouseLeave={() => setHoverStates({ ...hoverStates, forgetPass: false })}
+            >
+              忘记密码?
+            </a>
+            {error && <div style={styles.errorText}>{error}</div>}
+            <div style={styles.buttonWrapper}>
+              <button
+                type="submit"
+                style={{
+                  ...styles.button,
+                  ...(hoverStates.signIn ? styles.buttonHover : {}),
+                  opacity: isLoading ? 0.7 : 1,
+                }}
+                onMouseEnter={() => setHoverStates({ ...hoverStates, signIn: true })}
+                onMouseLeave={() => setHoverStates({ ...hoverStates, signIn: false })}
+                disabled={isLoading}
+              >
+                {isLoading ? '登录中...' : '登录'}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : (
       <div style={styles.card}>
         {/* Sign In Form — 默认显示在左侧 */}
         <div
@@ -514,6 +609,7 @@ export function LoginPage() {
           </div>
         </div>
       </div>
+      )}
     </div>
   )
 }

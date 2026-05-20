@@ -27,7 +27,7 @@ export const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
 export const createAccountSchema = z.object({
   accountBookId: z.string().min(1),
   name: z.string().min(1, '账户名称不能为空').max(30),
-  type: z.enum(ACCOUNT_TYPES),
+  type: z.string().min(1, '账户类型不能为空'),
   currency: z.string().default('CNY'),
   initialBalance: z.number().default(0),
   accountNo: z.string().optional(),
@@ -37,7 +37,7 @@ export const createAccountSchema = z.object({
 
 export const updateAccountSchema = z.object({
   name: z.string().min(1).max(30).optional(),
-  type: z.enum(ACCOUNT_TYPES).optional(),
+  type: z.string().min(1).optional(),
   visibility: z.enum(['PUBLIC', 'PRIVATE']).optional(),
   status: z.enum(['ACTIVE', 'ARCHIVED']).optional(),
   accountNo: z.string().optional(),
