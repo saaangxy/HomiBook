@@ -52,9 +52,11 @@ function NavItems() {
             <SidebarMenuButton
               onClick={() => navigate(item.path)}
               isActive={active}
+              size="lg"
               tooltip={item.label}
               className={cn(
                 active && 'text-[#f97316] hover:text-[#f97316]',
+                '[&>svg]:size-5',
               )}
             >
               <item.icon />
