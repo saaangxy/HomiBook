@@ -66,6 +66,7 @@ model Account {
   balance         Float       @default(0)
   balanceAt       DateTime?
   accountNo       String?
+  bankName        String?
   visibility      String      @default("PUBLIC")
   status          String      @default("ACTIVE")
   createdAt       DateTime    @default(now())
