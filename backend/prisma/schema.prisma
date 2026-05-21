@@ -21,6 +21,7 @@ model User {
   ownedBooks   AccountBook[] @relation("BookOwner")
   memberships  AccountBookMember[]
   accounts     Account[]
+  records      Record[]
 }
 
 // 账本
@@ -93,26 +94,32 @@ model BalanceAdjustment {
 
 // 流水记录
 model Record {
-  id            String      @id @default(uuid())
+  id            String    @id @default(uuid())
   accountBookId String
   accountBook   AccountBook @relation(fields: [accountBookId], references: [id])
-  type          String
+  type          String    // INCOME | EXPENSE | TRANSFER
   amount        Float
-  accountId     String
-  fromAccountId String?
-  toAccountId   String?
-  categoryId    String?
   date          DateTime
   remark        String?
-  tags          String      @default("[]")
-  attachments   String      @default("[]")
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  tags          String    @default("[]")
+  attachments   String    @default("[]")
+  // 账户
+  accountId     String    // 主账户（支出账户/收入账户）
+  fromAccountId String?   // 转账源账户
+  toAccountId   String?   // 转账目标账户
+  // 分类
+  categoryCode  String?   // 字典中的分类编码，如 餐饮、交通
+  // 交易方
+  payer         String?   // 交易对方（商家、对方账户名等）
+  // 归属人
+  ownerId       String    // 实际经手人
+  owner         User      @relation(fields: [ownerId], references: [id])
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  account       Account     @relation(fields: [accountId], references: [id])
-  fromAccount   Account?    @relation("FromAccount", fields: [fromAccountId], references: [id])
-  toAccount     Account?    @relation("ToAccount", fields: [toAccountId], references: [id])
-  category      CategoryMapping? @relation(fields: [categoryId], references: [id])
+  account       Account   @relation(fields: [accountId], references: [id])
+  fromAccount   Account?  @relation("FromAccount", fields: [fromAccountId], references: [id])
+  toAccount     Account?  @relation("ToAccount", fields: [toAccountId], references: [id])
 }
 
 // 系统分类
@@ -137,7 +144,6 @@ model CategoryMapping {
   systemCategory Category    @relation(fields: [systemCategoryId], references: [id])
   createdAt     DateTime    @default(now())
 
-  records        Record[]
   @@unique([accountBookId, userCategory])
 }
 

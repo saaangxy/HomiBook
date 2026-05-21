@@ -7,7 +7,6 @@ import {
   createAdjustmentSchema,
 } from '../schemas/account.js'
 
-// 校验用户是账本成员
 async function assertIsMember(bookId: string, userId: string) {
   const member = await prisma.accountBookMember.findUnique({
     where: { accountBookId_userId: { accountBookId: bookId, userId } },
@@ -19,7 +18,6 @@ async function assertIsMember(bookId: string, userId: string) {
   }
 }
 
-// 校验用户可管理账户（归属人、账本归属人、账本管理员）
 async function assertCanManageAccount(accountId: string, userId: string) {
   const account = await prisma.account.findUnique({ where: { id: accountId } })
   if (!account) {
@@ -38,7 +36,6 @@ async function assertCanManageAccount(accountId: string, userId: string) {
   throw Object.assign(new Error('无权管理该账户'), { statusCode: 403 })
 }
 
-// 根据可见性过滤敏感字段（余额、卡号），仅归属人可见
 function sanitizeAccount(account: any, userId: string) {
   if (account.visibility === 'PRIVATE' && account.ownerId !== userId) {
     return {
@@ -51,6 +48,53 @@ function sanitizeAccount(account: any, userId: string) {
     }
   }
   return account
+}
+
+// 计算账户实时余额（以 balanceAt 为时间分界，只计算之后的流水）
+export async function computeAccountBalance(accountId: string) {
+  const account = await prisma.account.findUnique({ where: { id: accountId } })
+  if (!account) throw Object.assign(new Error('账户不存在'), { statusCode: 404 })
+
+  // 找到最近一次余额调整记录
+  const latestAdjustment = await prisma.balanceAdjustment.findFirst({
+    where: { accountId },
+    orderBy: { date: 'desc' },
+  })
+
+  const baseBalance = latestAdjustment?.balanceAfter ?? account.initialBalance ?? 0
+  const baseDate = latestAdjustment?.date ?? null
+
+  // 以调整时间为起点，只计算该时间之后的流水
+  const dateFilter = baseDate
+    ? { gt: baseDate }
+    : undefined
+
+  const [incomeAgg, expenseAgg, transferOutAgg, transferInAgg] = await Promise.all([
+    prisma.record.aggregate({ where: { accountId, type: 'INCOME', ...(dateFilter ? { date: dateFilter } : {}) }, _sum: { amount: true } }),
+    prisma.record.aggregate({ where: { accountId, type: 'EXPENSE', ...(dateFilter ? { date: dateFilter } : {}) }, _sum: { amount: true } }),
+    prisma.record.aggregate({ where: { fromAccountId: accountId, type: 'TRANSFER', ...(dateFilter ? { date: dateFilter } : {}) }, _sum: { amount: true } }),
+    prisma.record.aggregate({ where: { toAccountId: accountId, type: 'TRANSFER', ...(dateFilter ? { date: dateFilter } : {}) }, _sum: { amount: true } }),
+  ])
+
+  const income = incomeAgg._sum.amount ?? 0
+  const expense = expenseAgg._sum.amount ?? 0
+  const transferOut = transferOutAgg._sum.amount ?? 0
+  const transferIn = transferInAgg._sum.amount ?? 0
+
+  return baseBalance + income - expense + transferIn - transferOut
+}
+
+// 刷新账户余额并写入数据库
+export async function refreshAccountBalance(accountId: string) {
+  const balance = await computeAccountBalance(accountId)
+  const latestAdjustment = await prisma.balanceAdjustment.findFirst({
+    where: { accountId },
+    orderBy: { date: 'desc' },
+  })
+  await prisma.account.update({
+    where: { id: accountId },
+    data: { balance, balanceAt: latestAdjustment?.date ?? null },
+  })
 }
 
 export async function accountRoutes(app: FastifyInstance) {
@@ -76,15 +120,21 @@ export async function accountRoutes(app: FastifyInstance) {
       orderBy: { createdAt: 'desc' },
     })
 
-    return accounts.map((a) => {
-      const base: Record<string, unknown> = {
-        ...a,
-        computedBalance: a.balance,
-        ownerName: a.owner.name || a.owner.email,
-      }
-      delete (base as any).owner
-      return sanitizeAccount(base, userId)
-    })
+    // 实时计算每个账户的余额
+    const enriched = await Promise.all(
+      accounts.map(async (a) => {
+        const computedBalance = await computeAccountBalance(a.id)
+        const base: Record<string, unknown> = {
+          ...a,
+          computedBalance,
+          ownerName: a.owner.name || a.owner.email,
+        }
+        delete (base as any).owner
+        return sanitizeAccount(base, userId)
+      })
+    )
+
+    return enriched
   })
 
   // 创建账户
@@ -102,7 +152,6 @@ export async function accountRoutes(app: FastifyInstance) {
       return reply.status(e.statusCode || 403).send({ message: e.message })
     }
 
-    // 信用卡余额必须 <= 0
     if (type === 'CREDIT_CARD' && initialBalance > 0) {
       return reply.status(400).send({ message: '信用卡初始余额不能大于0' })
     }
@@ -152,9 +201,11 @@ export async function accountRoutes(app: FastifyInstance) {
       return reply.status(e.statusCode || 403).send({ message: e.message })
     }
 
+    const computedBalance = await computeAccountBalance(id)
+
     const result: Record<string, unknown> = {
       ...account,
-      computedBalance: account.balance,
+      computedBalance,
       ownerName: account.owner.name || account.owner.email,
     }
     delete (result as any).owner
@@ -177,10 +228,12 @@ export async function accountRoutes(app: FastifyInstance) {
       return reply.status(e.statusCode || 403).send({ message: e.message })
     }
 
-    // 如果将类型改为信用卡，检查当前余额是否 <= 0
     const newType = parsed.data.type ?? currentAccount.type
-    if (newType === 'CREDIT_CARD' && currentAccount.balance > 0) {
-      return reply.status(400).send({ message: '信用卡余额不能大于0，请先调整余额再修改类型' })
+    if (newType === 'CREDIT_CARD') {
+      const computedBalance = await computeAccountBalance(id)
+      if (computedBalance > 0) {
+        return reply.status(400).send({ message: '信用卡余额不能大于0，请先调整余额再修改类型' })
+      }
     }
 
     const account = await prisma.account.update({
@@ -209,7 +262,6 @@ export async function accountRoutes(app: FastifyInstance) {
       return reply.status(e.statusCode || 403).send({ message: e.message })
     }
 
-    // 先删除关联的余额调整记录
     await prisma.balanceAdjustment.deleteMany({ where: { accountId: id } })
     await prisma.account.delete({ where: { id } })
 
@@ -259,7 +311,6 @@ export async function accountRoutes(app: FastifyInstance) {
       return reply.status(404).send({ message: '账户不存在' })
     }
 
-    // 信用卡余额必须 <= 0
     if (account.type === 'CREDIT_CARD' && balanceAfter > 0) {
       return reply.status(400).send({ message: '信用卡余额不能大于0' })
     }
@@ -267,7 +318,7 @@ export async function accountRoutes(app: FastifyInstance) {
     const balanceBefore = account.balance
     const amount = balanceAfter - balanceBefore
 
-    const adjustment = await prisma.$transaction([
+    await prisma.$transaction([
       prisma.balanceAdjustment.create({
         data: {
           accountId: id,
@@ -284,6 +335,6 @@ export async function accountRoutes(app: FastifyInstance) {
       }),
     ])
 
-    return adjustment[0]
+    return { success: true }
   })
 }

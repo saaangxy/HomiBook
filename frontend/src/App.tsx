@@ -9,6 +9,7 @@ import { SettingsPage } from './pages/SettingsPage'
 import { UsersPage } from './pages/UsersPage.tsx'
 import { BooksPage } from './pages/BooksPage'
 import { AccountsPage } from './pages/AccountsPage'
+import { RecordsPage } from './pages/RecordsPage'
 import { useAuthStore } from './stores/auth'
 
 const queryClient = new QueryClient()
@@ -39,6 +40,7 @@ function App() {
               <Route index element={<HomePage />} />
               <Route path="books" element={<BooksPage />} />
               <Route path="accounts" element={<AccountsPage />} />
+              <Route path="records" element={<RecordsPage />} />
               <Route path="stats" element={<PlaceholderPage title="统计分析" />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="admin/users" element={<UsersPage />} />

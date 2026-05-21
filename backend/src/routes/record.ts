@@ -1,0 +1,373 @@
+import type { FastifyInstance } from 'fastify'
+import { prisma } from '../app.js'
+import { authenticate } from '../middleware/auth.js'
+import { createRecordSchema, updateRecordSchema, listRecordsSchema } from '../schemas/record.js'
+
+async function assertIsMember(bookId: string, userId: string) {
+  const book = await prisma.accountBook.findUnique({ where: { id: bookId } })
+  if (!book) throw Object.assign(new Error('账本不存在'), { statusCode: 404 })
+  if (book.ownerId === userId) return
+  const member = await prisma.accountBookMember.findUnique({
+    where: { accountBookId_userId: { accountBookId: bookId, userId } },
+  })
+  if (!member) throw Object.assign(new Error('无权访问该账本'), { statusCode: 403 })
+}
+
+// 计算账户实时余额：以 balanceAt 为时间分界，只计算之后的流水
+async function computeBalance(accountId: string): Promise<{ balance: number; balanceAt: Date | null }> {
+  const account = await prisma.account.findUnique({ where: { id: accountId } })
+  if (!account) throw Object.assign(new Error('账户不存在'), { statusCode: 404 })
+
+  // 找到最近一次余额调整记录
+  const latestAdjustment = await prisma.balanceAdjustment.findFirst({
+    where: { accountId },
+    orderBy: { date: 'desc' },
+  })
+
+  const baseBalance = latestAdjustment?.balanceAfter ?? account.initialBalance ?? 0
+  const baseDate = latestAdjustment?.date ?? null
+
+  // 以调整时间为起点，只计算该时间之后的流水（排除调整时间点本身）
+  const dateFilter = baseDate
+    ? { gt: baseDate }
+    : undefined
+
+  const [incomeResult, expenseResult, transferOutResult, transferInResult] = await Promise.all([
+    prisma.record.aggregate({ where: { accountId, type: 'INCOME', ...(dateFilter ? { date: dateFilter } : {}) }, _sum: { amount: true } }),
+    prisma.record.aggregate({ where: { accountId, type: 'EXPENSE', ...(dateFilter ? { date: dateFilter } : {}) }, _sum: { amount: true } }),
+    prisma.record.aggregate({ where: { fromAccountId: accountId, type: 'TRANSFER', ...(dateFilter ? { date: dateFilter } : {}) }, _sum: { amount: true } }),
+    prisma.record.aggregate({ where: { toAccountId: accountId, type: 'TRANSFER', ...(dateFilter ? { date: dateFilter } : {}) }, _sum: { amount: true } }),
+  ])
+
+  const income = incomeResult._sum.amount ?? 0
+  const expense = expenseResult._sum.amount ?? 0
+  const transferOut = transferOutResult._sum.amount ?? 0
+  const transferIn = transferInResult._sum.amount ?? 0
+
+  const balance = baseBalance + income - expense + transferIn - transferOut
+
+  return { balance, balanceAt: baseDate }
+}
+
+// 批量更新账户余额
+async function refreshAccountBalance(accountId: string) {
+  const { balance, balanceAt } = await computeBalance(accountId)
+  await prisma.account.update({
+    where: { id: accountId },
+    data: { balance, balanceAt },
+  })
+}
+
+export async function recordRoutes(app: FastifyInstance) {
+  app.addHook('onRequest', authenticate)
+
+  // 列表查询（分页 + 筛选）
+  app.get('/', async (req, reply) => {
+    const parsed = listRecordsSchema.safeParse(req.query)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: parsed.error.issues[0].message })
+    }
+    const { bookId, page, pageSize, type, accountId, categoryCode, dateFrom, dateTo, ownerId, keyword, payer } = parsed.data
+    const userId = (req as any).user.id as string
+
+    try {
+      await assertIsMember(bookId, userId)
+    } catch (e: any) {
+      return reply.status(e.statusCode || 403).send({ message: e.message })
+    }
+
+    const where: any = { accountBookId: bookId }
+    if (type) where.type = type
+    if (accountId) where.accountId = accountId
+    if (categoryCode) where.categoryCode = categoryCode
+    if (ownerId) where.ownerId = ownerId
+    if (dateFrom || dateTo) where.date = {}
+    if (dateFrom) where.date.gte = new Date(dateFrom)
+    if (dateTo) where.date.lte = new Date(dateTo + 'T23:59:59.999Z')
+    if (keyword) where.OR = [
+      { remark: { contains: keyword } },
+      { payer: { contains: keyword } },
+      { categoryCode: { contains: keyword } },
+      { account: { name: { contains: keyword } } },
+      { fromAccount: { name: { contains: keyword } } },
+      { toAccount: { name: { contains: keyword } } },
+    ]
+    if (payer) where.payer = { contains: payer }
+
+    const [records, total] = await Promise.all([
+      prisma.record.findMany({
+        where,
+        include: {
+          account: { select: { id: true, name: true, type: true } },
+          fromAccount: { select: { id: true, name: true } },
+          toAccount: { select: { id: true, name: true } },
+          owner: { select: { id: true, name: true, email: true } },
+        },
+        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.record.count({ where }),
+    ])
+
+    return {
+      records: records.map((r) => ({
+        ...r,
+        tags: JSON.parse(r.tags),
+        attachments: JSON.parse(r.attachments),
+        ownerName: r.owner.name || r.owner.email,
+      })),
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
+    }
+  })
+
+  // 汇总统计
+  app.get('/summary', async (req, reply) => {
+    const { bookId, dateFrom, dateTo } = req.query as any
+    if (!bookId) return reply.status(400).send({ message: '缺少 bookId 参数' })
+    const userId = (req as any).user.id as string
+
+    try {
+      await assertIsMember(bookId, userId)
+    } catch (e: any) {
+      return reply.status(e.statusCode || 403).send({ message: e.message })
+    }
+
+    const dateFilter: any = {}
+    if (dateFrom) dateFilter.gte = new Date(dateFrom)
+    if (dateTo) dateFilter.lte = new Date(dateTo + 'T23:59:59.999Z')
+
+    const where = { accountBookId: bookId, ...(Object.keys(dateFilter).length ? { date: dateFilter } : {}) }
+
+    const [incomeAgg, expenseAgg, transferAgg] = await Promise.all([
+      prisma.record.aggregate({ where: { ...where, type: 'INCOME' }, _sum: { amount: true } }),
+      prisma.record.aggregate({ where: { ...where, type: 'EXPENSE' }, _sum: { amount: true } }),
+      prisma.record.aggregate({ where: { ...where, type: 'TRANSFER' }, _sum: { amount: true } }),
+    ])
+
+    const income = incomeAgg._sum.amount ?? 0
+    const expense = expenseAgg._sum.amount ?? 0
+    const transfer = transferAgg._sum.amount ?? 0
+
+    return {
+      income,
+      expense,
+      transfer,
+      netIncome: income - expense,
+    }
+  })
+
+  // 创建流水
+  app.post('/', async (req, reply) => {
+    const parsed = createRecordSchema.safeParse(req.body)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: parsed.error.issues[0].message })
+    }
+    const userId = (req as any).user.id as string
+    const data = parsed.data
+
+    try {
+      await assertIsMember(data.accountBookId, userId)
+    } catch (e: any) {
+      return reply.status(e.statusCode || 403).send({ message: e.message })
+    }
+
+    // 转账类型校验
+    if (data.type === 'TRANSFER') {
+      if (!data.fromAccountId || !data.toAccountId) {
+        return reply.status(400).send({ message: '转账记录需要填写源账户和目标账户' })
+      }
+    }
+
+    // 信用卡支出校验：余额不能低于负数上限
+    if (data.type === 'EXPENSE') {
+      const account = await prisma.account.findUnique({ where: { id: data.accountId } })
+      if (account?.type === 'CREDIT_CARD') {
+        const { balance } = await computeBalance(data.accountId)
+        if (balance - data.amount < -account.initialBalance) {
+          return reply.status(400).send({ message: '信用卡余额不能超限' })
+        }
+      }
+    }
+
+    const record = await prisma.record.create({
+      data: {
+        accountBookId: data.accountBookId,
+        type: data.type,
+        amount: data.amount,
+        date: new Date(data.date),
+        remark: data.remark,
+        tags: JSON.stringify(data.tags ?? []),
+        attachments: JSON.stringify(data.attachments ?? []),
+        accountId: data.accountId,
+        fromAccountId: data.fromAccountId,
+        toAccountId: data.toAccountId,
+        categoryCode: data.categoryCode,
+        payer: data.payer,
+        ownerId: data.ownerId || userId,
+      },
+      include: {
+        account: { select: { id: true, name: true, type: true } },
+        fromAccount: { select: { id: true, name: true } },
+        toAccount: { select: { id: true, name: true } },
+        owner: { select: { id: true, name: true, email: true } },
+      },
+    })
+
+    // 更新涉及的账户余额
+    const affectedAccounts = [data.accountId, data.fromAccountId, data.toAccountId].filter(Boolean) as string[]
+    for (const accId of [...new Set(affectedAccounts)]) {
+      await refreshAccountBalance(accId)
+    }
+
+    return {
+      ...record,
+      tags: JSON.parse(record.tags),
+      attachments: JSON.parse(record.attachments),
+      ownerName: record.owner.name || record.owner.email,
+    }
+  })
+
+  // 批量更新
+  app.patch('/batch', async (req, reply) => {
+    const { ids, data } = req.body as { ids: string[]; data: Partial<{ type: string; categoryCode: string; remark: string }> }
+    if (!ids?.length) return reply.status(400).send({ message: '请选择要更新的记录' })
+
+    await prisma.record.updateMany({
+      where: { id: { in: ids } },
+      data,
+    })
+
+    return { success: true, updated: ids.length }
+  })
+
+  // 更新单条
+  app.patch('/:id', async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const parsed = updateRecordSchema.safeParse(req.body)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: parsed.error.issues[0].message })
+    }
+    const userId = (req as any).user.id as string
+
+    const existing = await prisma.record.findUnique({ where: { id } })
+    if (!existing) return reply.status(404).send({ message: '记录不存在' })
+
+    try {
+      await assertIsMember(existing.accountBookId, userId)
+    } catch (e: any) {
+      return reply.status(e.statusCode || 403).send({ message: e.message })
+    }
+
+    const updateData: any = { ...parsed.data }
+    if (parsed.data.tags) updateData.tags = JSON.stringify(parsed.data.tags)
+    if (parsed.data.attachments) updateData.attachments = JSON.stringify(parsed.data.attachments)
+    if (parsed.data.date) updateData.date = new Date(parsed.data.date)
+
+    const record = await prisma.record.update({
+      where: { id },
+      data: updateData,
+      include: {
+        account: { select: { id: true, name: true, type: true } },
+        fromAccount: { select: { id: true, name: true } },
+        toAccount: { select: { id: true, name: true } },
+        owner: { select: { id: true, name: true, email: true } },
+      },
+    })
+
+    // 刷新所有相关账户余额
+    const affectedAccounts = [
+      existing.accountId, existing.fromAccountId, existing.toAccountId,
+      record.accountId, record.fromAccountId, record.toAccountId,
+    ].filter(Boolean) as string[]
+    for (const accId of [...new Set(affectedAccounts)]) {
+      await refreshAccountBalance(accId)
+    }
+
+    return {
+      ...record,
+      tags: JSON.parse(record.tags),
+      attachments: JSON.parse(record.attachments),
+      ownerName: record.owner.name || record.owner.email,
+    }
+  })
+
+  // 删除
+  app.delete('/:id', async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const userId = (req as any).user.id as string
+
+    const existing = await prisma.record.findUnique({ where: { id } })
+    if (!existing) return reply.status(404).send({ message: '记录不存在' })
+
+    try {
+      await assertIsMember(existing.accountBookId, userId)
+    } catch (e: any) {
+      return reply.status(e.statusCode || 403).send({ message: e.message })
+    }
+
+    await prisma.record.delete({ where: { id } })
+
+    // 刷新相关账户余额
+    const affectedAccounts = [existing.accountId, existing.fromAccountId, existing.toAccountId].filter(Boolean) as string[]
+    for (const accId of [...new Set(affectedAccounts)]) {
+      await refreshAccountBalance(accId)
+    }
+
+    return { success: true }
+  })
+
+  // 复制记录
+  app.post('/:id/clone', async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const userId = (req as any).user.id as string
+
+    const existing = await prisma.record.findUnique({ where: { id } })
+    if (!existing) return reply.status(404).send({ message: '记录不存在' })
+
+    try {
+      await assertIsMember(existing.accountBookId, userId)
+    } catch (e: any) {
+      return reply.status(e.statusCode || 403).send({ message: e.message })
+    }
+
+    const cloned = await prisma.record.create({
+      data: {
+        accountBookId: existing.accountBookId,
+        type: existing.type,
+        amount: existing.amount,
+        date: new Date(), // 复制时用当前时间
+        remark: existing.remark,
+        tags: existing.tags,
+        attachments: existing.attachments,
+        accountId: existing.accountId,
+        fromAccountId: existing.fromAccountId,
+        toAccountId: existing.toAccountId,
+        categoryCode: existing.categoryCode,
+        payer: existing.payer,
+        ownerId: userId,
+      },
+      include: {
+        account: { select: { id: true, name: true, type: true } },
+        fromAccount: { select: { id: true, name: true } },
+        toAccount: { select: { id: true, name: true } },
+        owner: { select: { id: true, name: true, email: true } },
+      },
+    })
+
+    const affectedAccounts = [existing.accountId, existing.fromAccountId, existing.toAccountId].filter(Boolean) as string[]
+    for (const accId of [...new Set(affectedAccounts)]) {
+      await refreshAccountBalance(accId)
+    }
+
+    return {
+      ...cloned,
+      tags: JSON.parse(cloned.tags),
+      attachments: JSON.parse(cloned.attachments),
+      ownerName: cloned.owner.name || cloned.owner.email,
+    }
+  })
+}

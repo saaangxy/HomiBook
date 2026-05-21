@@ -39,6 +39,7 @@ import {
   TableCell,
 } from '@/components/ui/table'
 import { Spinner } from '@/components/ui/spinner'
+import { DateTimePicker } from '@/components/ui/datetime-picker'
 import { DictCombobox } from '@/components/DictCombobox'
 import { useBookStore } from '../stores/book'
 import { useAuthStore } from '../stores/auth'
@@ -617,11 +618,9 @@ export function AccountsPage() {
             </div>
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">调整日期</Label>
-              <Input
-                type="datetime-local"
+              <DateTimePicker
                 value={adjustDate}
-                onChange={(e) => { setAdjustDate(e.target.value); setAdjustError('') }}
-                className="bg-background border-border"
+                onChange={(v) => { setAdjustDate(v); setAdjustError('') }}
               />
             </div>
             <div>

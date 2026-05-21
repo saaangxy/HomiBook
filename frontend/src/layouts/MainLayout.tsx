@@ -26,6 +26,7 @@ import {
   LogOut,
   Users,
   Wallet,
+  ArrowLeftRight,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -33,6 +34,7 @@ const allNavItems = [
   { path: '/', label: '首页', icon: LayoutDashboard },
   { path: '/books', label: '账本管理', icon: Book },
   { path: '/accounts', label: '账户管理', icon: Wallet },
+  { path: '/records', label: '流水管理', icon: ArrowLeftRight },
   { path: '/stats', label: '统计分析', icon: BarChart3 },
   { path: '/admin/users', label: '用户管理', icon: Users, adminOnly: true },
   { path: '/settings', label: '设置', icon: Settings, adminOnly: true },

@@ -36,17 +36,19 @@ export function DictCombobox({ group, value, onChange, placeholder = '选择或�
   const creatingRef = useRef(false)
 
   useEffect(() => {
-    if (!open) return
     setLoading(true)
     setError('')
     settingsApi.getDictionary(group)
       .then(setItems)
       .catch((e) => setError(e.message || '加载失败'))
       .finally(() => setLoading(false))
-  }, [group, open])
+  }, [group])
 
   const getItemValue = (item: DictItem) => item[valueKey]
-  const selectedLabel = items.find((item) => getItemValue(item) === value)?.label || value
+  const selectedLabel = items.length > 0
+    ? items.find((item) => getItemValue(item) === value)?.label
+    : undefined
+  const displayLabel = selectedLabel || (value ? placeholder : '')
 
   const handleCreate = async () => {
     if (creatingRef.current) return
@@ -86,7 +88,7 @@ export function DictCombobox({ group, value, onChange, placeholder = '选择或�
             !value && 'text-muted-foreground',
           )}
         >
-          {value ? selectedLabel : placeholder}
+          {value ? (selectedLabel ?? placeholder) : placeholder}
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
