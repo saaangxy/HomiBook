@@ -43,6 +43,8 @@ import { DatePicker } from '@/components/ui/date-picker'
 import { DateTimePicker } from '@/components/ui/datetime-picker'
 import dayjs from 'dayjs'
 import { Spinner } from '@/components/ui/spinner'
+import { Textarea } from '@/components/ui/textarea'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { DictCombobox } from '@/components/DictCombobox'
 import { recordApi, type RecordItem, type RecordType, type RecordSummary } from '@/api/record'
 import { accountApi, type AccountItem } from '@/api/account'
@@ -576,9 +578,16 @@ export function RecordsPage() {
                     }`}>
                       {record.type === 'EXPENSE' ? '-' : record.type === 'INCOME' ? '+' : ''}{formatMoney(record.amount)}
                     </TableCell>
-                    <TableCell className="text-xs py-2.5 text-muted-foreground max-w-32 truncate">
-                      {record.remark || '-'}
-                    </TableCell>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <TableCell className="text-xs py-2.5 text-muted-foreground max-w-32 truncate cursor-default">
+                          {record.remark || '-'}
+                        </TableCell>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-xs">
+                        <p className="break-all">{record.remark || '无备注'}</p>
+                      </TooltipContent>
+                    </Tooltip>
                     <TableCell className="text-right py-2.5">
                       <div className="flex items-center justify-end gap-0.5">
                         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(record)}>
@@ -859,11 +868,12 @@ export function RecordsPage() {
 
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">备注</Label>
-              <Input
+              <Textarea
                 placeholder="备注信息（可选）"
                 value={formRemark}
                 onChange={(e) => setFormRemark(e.target.value)}
-                className="bg-background border-border"
+                className="bg-background border-border min-h-[80px]"
+                rows={3}
               />
             </div>
           </div>
@@ -916,11 +926,12 @@ export function RecordsPage() {
             </div>
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">备注</Label>
-              <Input
+              <Textarea
                 placeholder="留空则不更新备注"
                 value={batchRemark}
                 onChange={(e) => setBatchRemark(e.target.value)}
-                className="bg-background border-border"
+                className="bg-background border-border min-h-[60px]"
+                rows={2}
               />
             </div>
           </div>
