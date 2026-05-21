@@ -6,8 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
-import { format } from "date-fns"
-import { zhCN } from "date-fns/locale"
+import dayjs from "dayjs"
 import { Calendar as CalendarIcon } from "lucide-react"
 
 interface DateTimePickerProps {
@@ -19,35 +18,32 @@ interface DateTimePickerProps {
 
 export function DateTimePicker({ value, onChange, placeholder = "选择日期时间", className }: DateTimePickerProps) {
   const [open, setOpen] = React.useState(false)
-  const selectedDate = value ? new Date(value) : undefined
+
+  const selectedDate = value ? dayjs(value).toDate() : undefined
 
   const [timeValue, setTimeValue] = React.useState(() => {
-    if (value) {
-      const d = new Date(value)
-      return format(d, 'HH:mm')
-    }
-    return ''
+    if (value) return dayjs(value).format("HH:mm")
+    return ""
   })
 
   const handleSelect = (date: Date | undefined) => {
-    if (date) {
-      const [h, m] = timeValue ? timeValue.split(':') : ['00', '00']
-      date.setHours(parseInt(h), parseInt(m))
-      onChange(format(date, "yyyy-MM-dd'T'HH:mm"))
-    }
+    if (!date) { setOpen(false); return }
+    const [h, m] = timeValue ? timeValue.split(":").map(Number) : [0, 0]
+    const result = dayjs(date).hour(h).minute(m).second(0)
+    onChange(result.format("YYYY-MM-DDTHH:mm"))
     setOpen(false)
   }
 
   const handleTimeChange = (time: string) => {
     setTimeValue(time)
     if (selectedDate) {
-      const [h, m] = time.split(':')
-      selectedDate.setHours(parseInt(h), parseInt(m))
-      onChange(format(selectedDate, "yyyy-MM-dd'T'HH:mm"))
+      const [h, m] = time.split(":").map(Number)
+      const result = dayjs(selectedDate).hour(h).minute(m).second(0)
+      onChange(result.format("YYYY-MM-DDTHH:mm"))
     }
   }
 
-  const displayValue = value ? format(new Date(value), 'yyyy年MM月dd日 HH:mm', { locale: zhCN }) : ''
+  const displayValue = value ? dayjs(value).format("YYYY年MM月DD日 HH:mm") : ""
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

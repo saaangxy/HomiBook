@@ -40,6 +40,7 @@ import {
 } from '@/components/ui/table'
 import { Spinner } from '@/components/ui/spinner'
 import { DateTimePicker } from '@/components/ui/datetime-picker'
+import dayjs from 'dayjs'
 import { DictCombobox } from '@/components/DictCombobox'
 import { useBookStore } from '../stores/book'
 import { useAuthStore } from '../stores/auth'
@@ -230,7 +231,7 @@ export function AccountsPage() {
 
   const openAdjust = (account: AccountItem) => {
     setAdjustAccount(account)
-    setAdjustDate(new Date().toISOString().slice(0, 16))
+    setAdjustDate(dayjs().format('YYYY-MM-DDTHH:mm'))
     setAdjustBalanceAfter(account.computedBalance?.toString() || '0')
     setAdjustRemark('')
     setAdjustError('')

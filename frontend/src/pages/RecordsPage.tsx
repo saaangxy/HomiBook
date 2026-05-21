@@ -41,6 +41,7 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { DatePicker } from '@/components/ui/date-picker'
 import { DateTimePicker } from '@/components/ui/datetime-picker'
+import dayjs from 'dayjs'
 import { Spinner } from '@/components/ui/spinner'
 import { DictCombobox } from '@/components/DictCombobox'
 import { recordApi, type RecordItem, type RecordType, type RecordSummary } from '@/api/record'
@@ -246,7 +247,7 @@ export function RecordsPage() {
   const openCreate = () => {
     setFormType('EXPENSE')
     setFormAmount('')
-    setFormDate(new Date().toISOString().slice(0, 16))
+    setFormDate(dayjs().format('YYYY-MM-DDTHH:mm'))
     setFormAccountId('')
     setFormFromAccountId('')
     setFormToAccountId('')
@@ -263,7 +264,7 @@ export function RecordsPage() {
   const openEdit = (record: RecordItem) => {
     setFormType(record.type)
     setFormAmount(record.amount.toString())
-    setFormDate(new Date(record.date).toISOString().slice(0, 16))
+    setFormDate(dayjs(record.date).format('YYYY-MM-DDTHH:mm'))
     setFormAccountId(record.accountId)
     setFormFromAccountId(record.fromAccountId || '')
     setFormToAccountId(record.toAccountId || '')

@@ -5,8 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
-import { format } from "date-fns"
-import { zhCN } from "date-fns/locale"
+import dayjs from "dayjs"
 import { Calendar as CalendarIcon } from "lucide-react"
 
 interface DatePickerProps {
@@ -18,12 +17,14 @@ interface DatePickerProps {
 
 export function DatePicker({ value, onChange, placeholder = "选择日期", className }: DatePickerProps) {
   const [open, setOpen] = React.useState(false)
-  const selectedDate = value ? new Date(value) : undefined
+  const selectedDate = value ? dayjs(value).toDate() : undefined
 
   const handleSelect = (date: Date | undefined) => {
-    if (date) onChange(format(date, 'yyyy-MM-dd'))
+    if (date) onChange(dayjs(date).format("YYYY-MM-DD"))
     setOpen(false)
   }
+
+  const displayValue = value ? dayjs(value).format("YYYY年MM月DD日") : ""
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -37,7 +38,7 @@ export function DatePicker({ value, onChange, placeholder = "选择日期", clas
           )}
         >
           <CalendarIcon className="mr-2 h-4 w-4 text-[#f97316]" />
-          {value ? format(new Date(value), 'yyyy年MM月dd日', { locale: zhCN }) : <span>{placeholder}</span>}
+          {value ? <span>{displayValue}</span> : <span>{placeholder}</span>}
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto overflow-hidden p-0" align="start" side="bottom">
