@@ -25,7 +25,10 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+
+    /* Ignore deprecations */
+    "ignoreDeprecations": "6.0"
   },
   "include": ["src"]
 }

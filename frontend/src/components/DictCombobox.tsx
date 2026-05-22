@@ -48,8 +48,6 @@ export function DictCombobox({ group, value, onChange, placeholder = '选择或�
   const selectedLabel = items.length > 0
     ? items.find((item) => getItemValue(item) === value)?.label
     : undefined
-  const displayLabel = selectedLabel || (value ? placeholder : '')
-
   const handleCreate = async () => {
     if (creatingRef.current) return
     creatingRef.current = true

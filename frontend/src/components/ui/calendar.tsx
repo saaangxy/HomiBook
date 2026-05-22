@@ -46,10 +46,10 @@ export function Calendar({
 
   const years = React.useMemo(() => Array.from({ length: 10 }, (_, i) => dayjs().year() - 5 + i), [])
   const months = [
-    { value: 0, label: '1 月' }, { value: 1, label: '2 月' }, { value: 2, label: '3 月' },
-    { value: 3, label: '4 月' }, { value: 4, label: '5 月' }, { value: 5, label: '6 月' },
-    { value: 6, label: '7 月' }, { value: 7, label: '8 月' }, { value: 8, label: '9 月' },
-    { value: 9, label: '10 月' }, { value: 10, label: '11 月' }, { value: 11, label: '12 月' },
+    { value: 0, label: '1' }, { value: 1, label: '2' }, { value: 2, label: '3' },
+    { value: 3, label: '4' }, { value: 4, label: '5' }, { value: 5, label: '6' },
+    { value: 6, label: '7' }, { value: 7, label: '8' }, { value: 8, label: '9' },
+    { value: 9, label: '10' }, { value: 10, label: '11' }, { value: 11, label: '12' },
   ]
 
   const goToPrevMonth = () => setViewDate(dayjs(viewDate).subtract(1, 'month').toDate())
@@ -58,7 +58,7 @@ export function Calendar({
   const selectedDayjs = selected ? dayjs(selected) : null
   const today = dayjs()
 
-  const isSameDay = (d1: Date, d2: Date) => dayjs(d1).isSame(dayjs(d2), 'day')
+  const isSameDay = (d1: Date | dayjs.Dayjs, d2: Date | dayjs.Dayjs) => dayjs(d1).isSame(dayjs(d2), 'day')
 
   return (
     <div className={cn("p-3", className)}>
@@ -73,7 +73,7 @@ export function Calendar({
             </SelectTrigger>
             <SelectContent>
               {years.map((y) => (
-                <SelectItem key={y} value={y.toString()}>{y} 年</SelectItem>
+                <SelectItem key={y} value={y.toString()}>{y}</SelectItem>
               ))}
             </SelectContent>
           </Select>
