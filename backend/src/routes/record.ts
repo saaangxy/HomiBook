@@ -67,7 +67,7 @@ export async function recordRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.status(400).send({ message: parsed.error.issues[0].message })
     }
-    const { bookId, page, pageSize, type, accountId, categoryCode, dateFrom, dateTo, ownerId, keyword, payer } = parsed.data
+    const { bookId, page, pageSize, type, accountId, categoryCode, dateFrom, dateTo, ownerId, payer, amountFrom, amountTo, remark } = parsed.data
     const userId = (req as any).user.id as string
 
     try {
@@ -77,22 +77,34 @@ export async function recordRoutes(app: FastifyInstance) {
     }
 
     const where: any = { accountBookId: bookId }
-    if (type) where.type = type
-    if (accountId) where.accountId = accountId
-    if (categoryCode) where.categoryCode = categoryCode
-    if (ownerId) where.ownerId = ownerId
+    if (type) {
+      const ids = type.split(',').map((s: string) => s.trim()).filter(Boolean)
+      if (ids.length === 1) where.type = ids[0]
+      else if (ids.length > 1) where.type = { in: ids }
+    }
+    if (accountId) {
+      const ids = accountId.split(',').map((s: string) => s.trim()).filter(Boolean)
+      if (ids.length === 1) where.accountId = ids[0]
+      else if (ids.length > 1) where.accountId = { in: ids }
+    }
+    if (categoryCode) {
+      const ids = categoryCode.split(',').map((s: string) => s.trim()).filter(Boolean)
+      if (ids.length === 1) where.categoryCode = ids[0]
+      else if (ids.length > 1) where.categoryCode = { in: ids }
+    }
+    if (ownerId) {
+      const ids = ownerId.split(',').map((s: string) => s.trim()).filter(Boolean)
+      if (ids.length === 1) where.ownerId = ids[0]
+      else if (ids.length > 1) where.ownerId = { in: ids }
+    }
     if (dateFrom || dateTo) where.date = {}
     if (dateFrom) where.date.gte = new Date(dateFrom)
     if (dateTo) where.date.lte = new Date(dateTo + 'T23:59:59.999Z')
-    if (keyword) where.OR = [
-      { remark: { contains: keyword } },
-      { payer: { contains: keyword } },
-      { categoryCode: { contains: keyword } },
-      { account: { name: { contains: keyword } } },
-      { fromAccount: { name: { contains: keyword } } },
-      { toAccount: { name: { contains: keyword } } },
-    ]
     if (payer) where.payer = { contains: payer }
+    if (amountFrom !== undefined || amountTo !== undefined) where.amount = {}
+    if (amountFrom !== undefined) where.amount.gte = amountFrom
+    if (amountTo !== undefined) where.amount.lte = amountTo
+    if (remark) where.remark = { contains: remark }
 
     const [records, total] = await Promise.all([
       prisma.record.findMany({

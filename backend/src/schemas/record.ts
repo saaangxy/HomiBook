@@ -38,12 +38,14 @@ export const listRecordsSchema = z.object({
   bookId: z.string().min(1),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
-  type: z.enum(RECORD_TYPES).optional(),
-  accountId: z.string().optional(),
-  categoryCode: z.string().optional(),
+  type: z.string().optional(),   // 逗号分隔多选，如 "INCOME,EXPENSE"
+  accountId: z.string().optional(),   // 逗号分隔多选
+  categoryCode: z.string().optional(), // 逗号分隔多选
   dateFrom: z.string().optional(),
   dateTo: z.string().optional(),
-  ownerId: z.string().optional(),
-  keyword: z.string().optional(),
+  ownerId: z.string().optional(),     // 逗号分隔多选
   payer: z.string().optional(),
+  amountFrom: z.coerce.number().optional(),
+  amountTo: z.coerce.number().optional(),
+  remark: z.string().optional(),
 })

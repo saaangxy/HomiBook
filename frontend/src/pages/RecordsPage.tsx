@@ -41,6 +41,7 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { DatePicker } from '@/components/ui/date-picker'
 import { DateTimePicker } from '@/components/ui/datetime-picker'
+import { MultiSelect } from '@/components/ui/multi-select'
 import dayjs from 'dayjs'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
@@ -49,6 +50,7 @@ import { DictCombobox } from '@/components/DictCombobox'
 import { recordApi, type RecordItem, type RecordType, type RecordSummary } from '@/api/record'
 import { accountApi, type AccountItem } from '@/api/account'
 import { adminApi, type AdminUser } from '@/api/admin'
+import { settingsApi, type DictItem } from '@/api/settings'
 import { useBookStore } from '../stores/book'
 import {
   Plus, ArrowUpRight, ArrowDownRight, ArrowLeftRight,
@@ -71,28 +73,51 @@ function formatMoney(amount: number): string {
 }
 
 interface FilterState {
-  type: RecordType | ''
-  accountId: string
-  categoryCode: string
+  types: string[]         // 多选类型 INCOME/EXPENSE/TRANSFER
+  accountIds: string[]    // 多选账户
+  categoryCodes: string[] // 多选分类
   dateFrom: string
   dateTo: string
-  ownerId: string
-  keyword: string
+  ownerIds: string[]      // 多选归属人
   payer: string
+  amountFrom: string
+  amountTo: string
+  remark: string
 }
 
-function filterValueLabel(key: keyof FilterState, value: string, accounts: AccountItem[], users: AdminUser[]): string {
-  if (!value) return ''
+function filterValueLabel(key: keyof FilterState, value: string[] | string, accounts: AccountItem[], users: AdminUser[]): string {
+  if (!value || (Array.isArray(value) && value.length === 0)) return ''
+  const v = Array.isArray(value) ? value.join(',') : value
   switch (key) {
-    case 'type': return TYPE_LABELS[value as RecordType] || value
-    case 'accountId': return accounts.find((a) => a.id === value)?.name || value
-    case 'ownerId': return users.find((u) => u.id === value)?.name || users.find((u) => u.id === value)?.email || value
-    case 'dateFrom': return `${value} 起`
-    case 'dateTo': return `至 ${value}`
-    case 'keyword': return `关键词: ${value}`
-    case 'payer': return `交易方: ${value}`
-    case 'categoryCode': return `分类: ${value}`
-    default: return value
+    case 'types': {
+      const ids = value as string[]
+      const labels = ids.map((t) => TYPE_LABELS[t as RecordType] || t)
+      return `类型: ${labels.join(', ')}`
+    }
+    case 'accountIds': {
+      const ids = value as string[]
+      const labels = ids.map((id) => accounts.find((a) => a.id === id)?.name || id)
+      return `账户: ${labels.join(', ')}`
+    }
+    case 'categoryCodes': {
+      const ids = value as string[]
+      return `分类: ${ids.join(', ')}`
+    }
+    case 'ownerIds': {
+      const ids = value as string[]
+      const labels = ids.map((id) => {
+        const u = users.find((u) => u.id === id)
+        return u?.name || u?.email || id
+      })
+      return `归属人: ${labels.join(', ')}`
+    }
+    case 'dateFrom': return `${v} 起`
+    case 'dateTo': return `至 ${v}`
+    case 'payer': return `交易方: ${v}`
+    case 'amountFrom': return `金额 ≥ ${v}`
+    case 'amountTo': return `金额 ≤ ${v}`
+    case 'remark': return `备注: ${v}`
+    default: return v
   }
 }
 
@@ -114,14 +139,16 @@ export function RecordsPage() {
 
   // 筛选
   const [filters, setFilters] = useState<FilterState>({
-    type: '',
-    accountId: '',
-    categoryCode: '',
+    types: [],
+    accountIds: [],
+    categoryCodes: [],
     dateFrom: '',
     dateTo: '',
-    ownerId: '',
-    keyword: '',
+    ownerIds: [],
     payer: '',
+    amountFrom: '',
+    amountTo: '',
+    remark: '',
   })
 
   // 抽屉
@@ -132,6 +159,8 @@ export function RecordsPage() {
   const [accounts, setAccounts] = useState<AccountItem[]>([])
   // 用户列表
   const [users, setUsers] = useState<AdminUser[]>([])
+  // 全部分类（用于筛选多选）
+  const [allCategories, setAllCategories] = useState<DictItem[]>([])
 
   // 选择
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -177,7 +206,22 @@ export function RecordsPage() {
     } catch { /* ignore */ }
   }, [])
 
-  useEffect(() => { loadAccounts(); loadUsers() }, [loadAccounts, loadUsers])
+  const loadCategories = useCallback(async () => {
+    try {
+      const groups = ['transaction_category_income', 'transaction_category_expense', 'transaction_category_transfer']
+      const results = await Promise.all(groups.map((g) => settingsApi.getDictionary(g)))
+      const merged: DictItem[] = []
+      const seen = new Set<string>()
+      for (const arr of results) {
+        for (const item of arr) {
+          if (!seen.has(item.code)) { seen.add(item.code); merged.push(item) }
+        }
+      }
+      setAllCategories(merged)
+    } catch { /* ignore */ }
+  }, [])
+
+  useEffect(() => { loadAccounts(); loadUsers(); loadCategories() }, [loadAccounts, loadUsers, loadCategories])
 
   // 加载汇总
   const loadSummary = useCallback(async () => {
@@ -201,13 +245,16 @@ export function RecordsPage() {
         bookId: currentBookId,
         page,
         pageSize,
-        type: filters.type || undefined,
-        accountId: filters.accountId || undefined,
-        categoryCode: filters.categoryCode || undefined,
+        type: filters.types.length > 0 ? filters.types.join(',') : undefined,
+        accountId: filters.accountIds.length > 0 ? filters.accountIds.join(',') : undefined,
+        categoryCode: filters.categoryCodes.length > 0 ? filters.categoryCodes.join(',') : undefined,
         dateFrom: filters.dateFrom || undefined,
         dateTo: filters.dateTo || undefined,
-        ownerId: filters.ownerId || undefined,
-        keyword: filters.keyword || undefined,
+        ownerId: filters.ownerIds.length > 0 ? filters.ownerIds.join(',') : undefined,
+        payer: filters.payer || undefined,
+        amountFrom: filters.amountFrom ? parseFloat(filters.amountFrom) : undefined,
+        amountTo: filters.amountTo ? parseFloat(filters.amountTo) : undefined,
+        remark: filters.remark || undefined,
       })
       setRecords(res.records)
       setTotal(res.total)
@@ -222,8 +269,9 @@ export function RecordsPage() {
   useEffect(() => { loadSummary() }, [loadSummary])
 
   const resetFilters = () => {
-    setFilters({ type: '', accountId: '', categoryCode: '', dateFrom: '', dateTo: '', ownerId: '', keyword: '', payer: '' })
-    setDraftFilters({ type: '', accountId: '', categoryCode: '', dateFrom: '', dateTo: '', ownerId: '', keyword: '', payer: '' })
+    const empty: FilterState = { types: [], accountIds: [], categoryCodes: [], dateFrom: '', dateTo: '', ownerIds: [], payer: '', amountFrom: '', amountTo: '', remark: '' }
+    setFilters(empty)
+    setDraftFilters({ ...empty })
     setPage(1)
   }
 
@@ -239,12 +287,16 @@ export function RecordsPage() {
   }
 
   const removeFilter = (key: keyof FilterState) => {
-    setFilters((prev) => ({ ...prev, [key]: '' }))
-    setDraftFilters((prev) => ({ ...prev, [key]: '' }))
+    const emptyVal = key === 'types' || key === 'accountIds' || key === 'categoryCodes' || key === 'ownerIds' ? [] : ''
+    setFilters((prev) => ({ ...prev, [key]: emptyVal }))
+    setDraftFilters((prev) => ({ ...prev, [key]: emptyVal }))
     setPage(1)
   }
 
-  const activeFilterCount = (Object.keys(filters) as (keyof FilterState)[]).filter((k) => filters[k]).length
+  const activeFilterCount = (Object.keys(filters) as (keyof FilterState)[]).filter((k) => {
+    const v = filters[k]
+    return Array.isArray(v) ? v.length > 0 : !!v
+  }).length
 
   const openCreate = () => {
     setFormType('EXPENSE')
@@ -404,7 +456,10 @@ export function RecordsPage() {
   }
 
   const totalPages = Math.ceil(total / pageSize)
-  const activeFilterKeys = (Object.keys(filters) as (keyof FilterState)[]).filter((k) => filters[k])
+  const activeFilterKeys = (Object.keys(filters) as (keyof FilterState)[]).filter((k) => {
+    const v = filters[k]
+    return Array.isArray(v) ? v.length > 0 : !!v
+  })
 
   return (
     <div>
@@ -634,52 +689,40 @@ export function RecordsPage() {
             <SheetTitle>筛选条件</SheetTitle>
           </SheetHeader>
           <div className="flex flex-col gap-4 flex-1 overflow-y-auto py-4">
-            {/* 类型 */}
+            {/* 类型（多选） */}
             <div>
               <Label className="text-xs text-muted-foreground mb-1.5 block">类型</Label>
-              <Select
-                value={draftFilters.type}
-                onValueChange={(v) => setDraftFilters((p) => ({ ...p, type: v as RecordType | '' }))}
-              >
-                <SelectTrigger className="bg-background border-border h-9 text-sm">
-                  <SelectValue placeholder="全部类型" />
-                </SelectTrigger>
-                <SelectContent className="bg-card border-border">
-                  <SelectItem value="__all__">全部类型</SelectItem>
-                  <SelectItem value="INCOME">收入</SelectItem>
-                  <SelectItem value="EXPENSE">支出</SelectItem>
-                  <SelectItem value="TRANSFER">转账</SelectItem>
-                </SelectContent>
-              </Select>
+              <MultiSelect
+                items={[
+                  { value: 'INCOME', label: '收入' },
+                  { value: 'EXPENSE', label: '支出' },
+                  { value: 'TRANSFER', label: '转账' },
+                ]}
+                selected={draftFilters.types}
+                onChange={(v) => setDraftFilters((p) => ({ ...p, types: v }))}
+                placeholder="全部类型"
+              />
             </div>
 
-            {/* 账户 */}
+            {/* 账户（多选） */}
             <div>
               <Label className="text-xs text-muted-foreground mb-1.5 block">账户</Label>
-              <Select
-                value={draftFilters.accountId}
-                onValueChange={(v) => setDraftFilters((p) => ({ ...p, accountId: v === '__all__' ? '' : v }))}
-              >
-                <SelectTrigger className="bg-background border-border h-9 text-sm">
-                  <SelectValue placeholder="全部账户" />
-                </SelectTrigger>
-                <SelectContent className="bg-card border-border">
-                  <SelectItem value="__all__">全部账户</SelectItem>
-                  {accounts.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <MultiSelect
+                items={accounts.map((a) => ({ value: a.id, label: a.name }))}
+                selected={draftFilters.accountIds}
+                onChange={(v) => setDraftFilters((p) => ({ ...p, accountIds: v }))}
+                placeholder="全部账户"
+              />
             </div>
 
-            {/* 分类 */}
+            {/* 分类（多选，不关联类型） */}
             <div>
               <Label className="text-xs text-muted-foreground mb-1.5 block">分类</Label>
-              <DictCombobox
-                group={draftFilters.type === 'INCOME' ? 'transaction_category_income' : draftFilters.type === 'EXPENSE' ? 'transaction_category_expense' : 'transaction_category_transfer'}
-                value={draftFilters.categoryCode}
-                onChange={(v) => setDraftFilters((p) => ({ ...p, categoryCode: v }))}
-                placeholder="选择分类（可选）"
+              <MultiSelect
+                items={allCategories.map((c) => ({ value: c.code, label: c.label }))}
+                selected={draftFilters.categoryCodes}
+                onChange={(v) => setDraftFilters((p) => ({ ...p, categoryCodes: v }))}
+                placeholder="全部分类"
               />
             </div>
 
@@ -701,45 +744,101 @@ export function RecordsPage() {
               />
             </div>
 
-            {/* 归属人 */}
+            {/* 归属人（多选） */}
             <div>
               <Label className="text-xs text-muted-foreground mb-1.5 block">归属人</Label>
-              <Select
-                value={draftFilters.ownerId}
-                onValueChange={(v) => setDraftFilters((p) => ({ ...p, ownerId: v === '__all__' ? '' : v }))}
-              >
-                <SelectTrigger className="bg-background border-border h-9 text-sm">
-                  <SelectValue placeholder="全部成员" />
-                </SelectTrigger>
-                <SelectContent className="bg-card border-border">
-                  <SelectItem value="__all__">全部成员</SelectItem>
-                  {users.map((u) => (
-                    <SelectItem key={u.id} value={u.id}>{u.name || u.email}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <MultiSelect
+                items={users.map((u) => ({ value: u.id, label: u.name || u.email || u.id }))}
+                selected={draftFilters.ownerIds}
+                onChange={(v) => setDraftFilters((p) => ({ ...p, ownerIds: v }))}
+                placeholder="全部成员"
+              />
             </div>
 
             {/* 交易方 */}
             <div>
               <Label className="text-xs text-muted-foreground mb-1.5 block">交易方</Label>
-              <Input
-                placeholder="模糊搜索交易方..."
-                value={draftFilters.payer}
-                onChange={(e) => setDraftFilters((p) => ({ ...p, payer: e.target.value }))}
-                className="bg-background border-border h-9 text-sm"
-              />
+              <div className="relative">
+                <Input
+                  placeholder="模糊搜索交易方..."
+                  value={draftFilters.payer}
+                  onChange={(e) => setDraftFilters((p) => ({ ...p, payer: e.target.value }))}
+                  className="bg-background border-border h-9 text-sm pr-8"
+                />
+                {draftFilters.payer && (
+                  <button
+                    className="absolute right-2 top-1/2 -translate-y-1/2 h-5 w-5 rounded-full opacity-50 hover:opacity-100 flex items-center justify-center"
+                    onClick={() => setDraftFilters((p) => ({ ...p, payer: '' }))}
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
             </div>
 
-            {/* 关键词 */}
+            {/* 金额范围 */}
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <Label className="text-xs text-muted-foreground mb-1.5 block">金额 ≥</Label>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    placeholder="最低金额"
+                    value={draftFilters.amountFrom}
+                    onChange={(e) => setDraftFilters((p) => ({ ...p, amountFrom: e.target.value }))}
+                    className="bg-background border-border h-9 text-sm pr-8"
+                  />
+                  {draftFilters.amountFrom && (
+                    <button
+                      className="absolute right-2 top-1/2 -translate-y-1/2 h-5 w-5 rounded-full opacity-50 hover:opacity-100 flex items-center justify-center"
+                      onClick={() => setDraftFilters((p) => ({ ...p, amountFrom: '' }))}
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="flex-1">
+                <Label className="text-xs text-muted-foreground mb-1.5 block">金额 ≤</Label>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    placeholder="最高金额"
+                    value={draftFilters.amountTo}
+                    onChange={(e) => setDraftFilters((p) => ({ ...p, amountTo: e.target.value }))}
+                    className="bg-background border-border h-9 text-sm pr-8"
+                  />
+                  {draftFilters.amountTo && (
+                    <button
+                      className="absolute right-2 top-1/2 -translate-y-1/2 h-5 w-5 rounded-full opacity-50 hover:opacity-100 flex items-center justify-center"
+                      onClick={() => setDraftFilters((p) => ({ ...p, amountTo: '' }))}
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* 备注模糊搜索 */}
             <div>
-              <Label className="text-xs text-muted-foreground mb-1.5 block">关键词</Label>
-              <Input
-                placeholder="备注、分类、账户名..."
-                value={draftFilters.keyword}
-                onChange={(e) => setDraftFilters((p) => ({ ...p, keyword: e.target.value }))}
-                className="bg-background border-border h-9 text-sm"
-              />
+              <Label className="text-xs text-muted-foreground mb-1.5 block">备注</Label>
+              <div className="relative">
+                <Input
+                  placeholder="模糊搜索备注..."
+                  value={draftFilters.remark}
+                  onChange={(e) => setDraftFilters((p) => ({ ...p, remark: e.target.value }))}
+                  className="bg-background border-border h-9 text-sm pr-8"
+                />
+                {draftFilters.remark && (
+                  <button
+                    className="absolute right-2 top-1/2 -translate-y-1/2 h-5 w-5 rounded-full opacity-50 hover:opacity-100 flex items-center justify-center"
+                    onClick={() => setDraftFilters((p) => ({ ...p, remark: '' }))}
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 

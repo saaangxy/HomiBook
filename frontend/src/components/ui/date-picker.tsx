@@ -6,7 +6,7 @@ import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
 import dayjs from "dayjs"
-import { Calendar as CalendarIcon } from "lucide-react"
+import { Calendar as CalendarIcon, X } from "lucide-react"
 
 interface DatePickerProps {
   value: string
@@ -39,6 +39,14 @@ export function DatePicker({ value, onChange, placeholder = "选择日期", clas
         >
           <CalendarIcon className="mr-2 h-4 w-4 text-[#f97316]" />
           {value ? <span>{displayValue}</span> : <span>{placeholder}</span>}
+          {value && (
+            <span
+              className="ml-auto h-4 w-4 shrink-0 rounded-full opacity-50 hover:opacity-100 flex items-center justify-center"
+              onClick={(e) => { e.stopPropagation(); onChange('') }}
+            >
+              <X size={14} />
+            </span>
+          )}
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto overflow-hidden p-0" align="start" side="bottom">

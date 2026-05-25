@@ -45,14 +45,16 @@ export const recordApi = {
     bookId: string
     page?: number
     pageSize?: number
-    type?: RecordType
+    type?: string        // 逗号分隔多选
     accountId?: string
     categoryCode?: string
     dateFrom?: string
     dateTo?: string
     ownerId?: string
-    keyword?: string
     payer?: string
+    amountFrom?: number
+    amountTo?: number
+    remark?: string
   }) => api.get<RecordListResult>('/api/records?' + new URLSearchParams(
     Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))
   ).toString()),
