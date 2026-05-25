@@ -249,7 +249,7 @@ export function RecordsPage() {
   const openCreate = () => {
     setFormType('EXPENSE')
     setFormAmount('')
-    setFormDate(dayjs().format('YYYY-MM-DDTHH:mm'))
+    setFormDate(dayjs().format('YYYY-MM-DDTHH:mm:ss'))
     setFormAccountId('')
     setFormFromAccountId('')
     setFormToAccountId('')
@@ -266,7 +266,7 @@ export function RecordsPage() {
   const openEdit = (record: RecordItem) => {
     setFormType(record.type)
     setFormAmount(record.amount.toString())
-    setFormDate(dayjs(record.date).format('YYYY-MM-DDTHH:mm'))
+    setFormDate(dayjs(record.date).format('YYYY-MM-DDTHH:mm:ss'))
     setFormAccountId(record.accountId)
     setFormFromAccountId(record.fromAccountId || '')
     setFormToAccountId(record.toAccountId || '')

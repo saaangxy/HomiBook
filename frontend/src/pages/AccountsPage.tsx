@@ -231,7 +231,7 @@ export function AccountsPage() {
 
   const openAdjust = (account: AccountItem) => {
     setAdjustAccount(account)
-    setAdjustDate(dayjs().format('YYYY-MM-DDTHH:mm'))
+    setAdjustDate(dayjs().format('YYYY-MM-DDTHH:mm:ss'))
     setAdjustBalanceAfter(account.computedBalance?.toString() || '0')
     setAdjustRemark('')
     setAdjustError('')
