@@ -55,6 +55,7 @@ import { useBookStore } from '../stores/book'
 import {
   Plus, ArrowUpRight, ArrowDownRight, ArrowLeftRight,
   Pencil, Trash2, Copy, Filter, X, ChevronLeft, ChevronRight,
+  Upload, Download,
 } from 'lucide-react'
 
 const TYPE_COLORS: Record<RecordType, string> = {
@@ -187,6 +188,8 @@ export function RecordsPage() {
   const [formRemark, setFormRemark] = useState('')
   const [formOwnerId, setFormOwnerId] = useState('')
   const [formAttachments, setFormAttachments] = useState<string[]>([])
+  const [uploadingAttachment, setUploadingAttachment] = useState(false)
+  const [previewImage, setPreviewImage] = useState<string | null>(null)
   const [formError, setFormError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
@@ -395,6 +398,23 @@ export function RecordsPage() {
       loadSummary()
       loadAccounts()
     } catch (e: any) { setError(e.message) }
+  }
+
+  const handleDownload = async (url: string, filename?: string) => {
+    try {
+      const res = await fetch(url)
+      const blob = await res.blob()
+      const blobUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = blobUrl
+      a.download = filename || url.split('/').pop() || 'download'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(blobUrl)
+    } catch (err: any) {
+      setError(err.message || '下载失败')
+    }
   }
 
   const handleClone = async (record: RecordItem) => {
@@ -975,6 +995,76 @@ export function RecordsPage() {
                 rows={3}
               />
             </div>
+
+            {/* 附件上传 */}
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">附件</Label>
+              <div className="flex flex-col gap-2">
+                {formAttachments.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {formAttachments.map((url, idx) => {
+                      const isImage = /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(url)
+                      return (
+                        <div key={idx} className="relative group">
+                          {isImage ? (
+                            <button
+                              className="w-16 h-16 rounded-md border overflow-hidden"
+                              onClick={() => setPreviewImage(url)}
+                            >
+                              <img
+                                src={url}
+                                alt="附件"
+                                className="w-full h-full object-cover"
+                              />
+                            </button>
+                          ) : (
+                            <div className="w-16 h-16 rounded-md border bg-muted flex items-center justify-center">
+                              <span className="text-xs text-muted-foreground truncate px-1">{url.split('/').pop()}</span>
+                            </div>
+                          )}
+                          <button
+                            className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[#ef4444] text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={() => setFormAttachments((prev) => prev.filter((_, i) => i !== idx))}
+                          >
+                            <X size={10} />
+                          </button>
+                          <button
+                            className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-[#3b82f6] text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={(e) => { e.stopPropagation(); handleDownload(url) }}
+                          >
+                            <Download size={10} />
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+                <label className="flex items-center gap-2 px-3 py-2 border border-dashed border-border rounded-md cursor-pointer hover:bg-accent text-sm text-muted-foreground">
+                  <Upload size={14} />
+                  <span>{uploadingAttachment ? '上传中...' : '添加附件'}</span>
+                  <input
+                    type="file"
+                    multiple
+                    className="hidden"
+                    disabled={uploadingAttachment}
+                    onChange={async (e) => {
+                      const files = Array.from(e.target.files || [])
+                      if (!files.length) return
+                      setUploadingAttachment(true)
+                      try {
+                        const results = await Promise.all(files.map((f) => recordApi.uploadAttachment(f)))
+                        setFormAttachments((prev) => [...prev, ...results.map((r) => r.fullUrl)])
+                      } catch (err: any) {
+                        setFormError(err.message || '上传失败')
+                      } finally {
+                        setUploadingAttachment(false)
+                        e.target.value = ''
+                      }
+                    }}
+                  />
+                </label>
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setCreateOpen(false); setEditRecord(null) }}>取消</Button>
@@ -1006,6 +1096,35 @@ export function RecordsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* 图片预览弹窗 */}
+      {previewImage && (
+        <Dialog open={!!previewImage} onOpenChange={() => setPreviewImage(null)}>
+          <DialogContent className="max-w-3xl p-0 bg-transparent border-0">
+            <div className="relative">
+              <img
+                src={previewImage}
+                alt="预览"
+                className="max-h-[80vh] max-w-full rounded-lg"
+              />
+              <div className="absolute top-2 right-2 flex gap-2">
+                <button
+                  onClick={() => handleDownload(previewImage)}
+                  className="w-8 h-8 rounded-full bg-black/50 flex items-center justify-center text-white hover:bg-black/70"
+                >
+                  <Download size={14} />
+                </button>
+                <button
+                  onClick={() => setPreviewImage(null)}
+                  className="w-8 h-8 rounded-full bg-black/50 flex items-center justify-center text-white hover:bg-black/70"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* 批量更新弹窗 */}
       <Dialog open={batchOpen} onOpenChange={setBatchOpen}>

@@ -2,6 +2,10 @@ import type { FastifyInstance } from 'fastify'
 import { prisma } from '../app.js'
 import { authenticate } from '../middleware/auth.js'
 import { createRecordSchema, updateRecordSchema, listRecordsSchema } from '../schemas/record.js'
+import path from 'path'
+import fs from 'fs'
+import { randomUUID } from 'crypto'
+import { fileURLToPath } from 'url'
 
 async function assertIsMember(bookId: string, userId: string) {
   const book = await prisma.accountBook.findUnique({ where: { id: bookId } })
@@ -381,5 +385,25 @@ export async function recordRoutes(app: FastifyInstance) {
       attachments: JSON.parse(cloned.attachments),
       ownerName: cloned.owner.name || cloned.owner.email,
     }
+  })
+
+  // 附件上传
+  app.post('/upload', async (req, reply) => {
+    const data = await req.file()
+    if (!data) return reply.status(400).send({ message: '未上传文件' })
+
+    const ext = path.extname(data.filename)
+    const filename = `${randomUUID()}${ext}`
+    const uploadsDir = path.join(process.cwd(), 'uploads')
+    if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true })
+    const filePath = path.join(uploadsDir, filename)
+
+    // 使用 toBuffer() 可靠读取整个文件
+    const buffer = await data.toBuffer()
+    await fs.promises.writeFile(filePath, buffer)
+
+    const origin = (req.headers.origin || 'http://localhost:3002').replace(/\/$/, '')
+    const url = `/api/uploads/${filename}`
+    return { url, fullUrl: `${origin}${url}`, originalFilename: data.filename }
   })
 }

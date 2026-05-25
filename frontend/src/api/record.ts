@@ -1,5 +1,11 @@
 import { api } from './http'
 
+export interface AttachmentUploadResult {
+  url: string        // 相对路径，如 /api/uploads/xxx.png
+  fullUrl: string    // 完整路径，如 http://localhost:3002/api/uploads/xxx.png
+  originalFilename: string
+}
+
 export type RecordType = 'INCOME' | 'EXPENSE' | 'TRANSFER'
 
 export interface RecordItem {
@@ -103,4 +109,7 @@ export const recordApi = {
 
   clone: (id: string) =>
     api.post<RecordItem>(`/api/records/${id}/clone`, {}),
+
+  uploadAttachment: (file: File) =>
+    api.uploadFile('/api/records/upload', file) as Promise<AttachmentUploadResult>,
 }
