@@ -63,4 +63,15 @@
   input[type="number"] {
     -moz-appearance: textfield;
   }
+
+  /* 隐藏滚动条保留滚动能力 */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
 }

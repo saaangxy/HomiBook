@@ -4,7 +4,6 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 import { Calendar } from "@/components/ui/calendar"
 import { Input } from "@/components/ui/input"
-import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import {
   Popover,
   PopoverContent,
@@ -17,6 +16,128 @@ export interface DateTimePickerProps {
   onChange: (value: string) => void
   placeholder?: string
   className?: string
+}
+
+const ITEM_H = 36
+const COL_W = 56
+const CONTAINER_H = 176 // h-44
+
+function PickerColumn({
+  items,
+  value,
+  onChange,
+}: {
+  items: number[]
+  value: number
+  onChange: (v: number) => void
+}) {
+  const listRef = React.useRef<HTMLDivElement>(null)
+  const containerRef = React.useRef<HTMLDivElement>(null)
+  const scrollingRef = React.useRef(false)
+  const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // pad = (CONTAINER_H - ITEM_H) / 2，首尾填塞使所有项都能滚到中央
+  const [pad, setPad] = React.useState(70)
+
+  // 测量实际 pad，因为 DOM 可能有误差
+  React.useEffect(() => {
+    if (containerRef.current) {
+      const measured = (containerRef.current.clientHeight - ITEM_H) / 2
+      if (Math.abs(measured - pad) > 1) setPad(measured)
+    }
+  })
+
+  // 数学推导：scrollTop = val * ITEM_H / pad 在两侧抵消
+  const scrollTo = React.useCallback((val: number) => {
+    if (listRef.current) {
+      listRef.current.scrollTop = val * ITEM_H
+    }
+  }, [])
+
+  const calcCenter = React.useCallback(() => {
+    if (!listRef.current) return
+    const st = listRef.current.scrollTop
+    const val = Math.round(st / ITEM_H)
+    return Math.min(items.length - 1, Math.max(0, val))
+  }, [items.length])
+
+  // 初始居中
+  React.useEffect(() => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => scrollTo(value))
+    })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 外部 value 变化同步滚动
+  const prevValue = React.useRef(value)
+  React.useEffect(() => {
+    if (prevValue.current !== value && !scrollingRef.current) {
+      scrollTo(value)
+    }
+    prevValue.current = value
+  }, [value, scrollTo])
+
+  const snapToCenter = React.useCallback(() => {
+    const clamped = calcCenter()
+    if (clamped !== undefined) onChange(clamped)
+  }, [calcCenter, onChange])
+
+  const handleScroll = React.useCallback(() => {
+    scrollingRef.current = true
+    if (timerRef.current !== null) clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(() => {
+      scrollingRef.current = false
+      snapToCenter()
+    }, 150)
+  }, [snapToCenter])
+
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault()
+    if (listRef.current) {
+      listRef.current.scrollTop += e.deltaY
+      scrollingRef.current = true
+      if (timerRef.current !== null) clearTimeout(timerRef.current)
+      timerRef.current = setTimeout(() => {
+        scrollingRef.current = false
+        snapToCenter()
+      }, 150)
+    }
+  }
+
+  const handleClick = (v: number) => {
+    scrollTo(v)
+    onChange(v)
+  }
+
+  return (
+    <div ref={containerRef} className="relative shrink-0 overflow-hidden rounded-md" style={{ width: COL_W, height: CONTAINER_H }}>
+      {/* 渐变遮罩 */}
+      <div className="absolute top-0 left-0 right-0 h-10 bg-gradient-to-b from-background to-transparent pointer-events-none z-10" />
+      <div className="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-b from-transparent to-background pointer-events-none z-10" />
+      {/* 居中选择框 */}
+      <div className="absolute top-1/2 left-1 right-1 h-9 -translate-y-1/2 pointer-events-none border-2 border-[#f97316] rounded-md z-0" />
+      {/* 滚动列表 */}
+      <div
+        ref={listRef}
+        className="w-full overflow-y-scroll no-scrollbar"
+        style={{ height: CONTAINER_H }}
+        onScroll={handleScroll}
+        onWheel={handleWheel}
+      >
+        <div style={{ height: pad }} />
+        {items.map((v) => (
+          <div
+            key={v}
+            className="h-9 flex items-center justify-center text-sm text-muted-foreground font-medium cursor-pointer hover:text-foreground transition-colors"
+            onClick={() => handleClick(v)}
+          >
+            {String(v).padStart(2, '0')}
+          </div>
+        ))}
+        <div style={{ height: pad }} />
+      </div>
+    </div>
+  )
 }
 
 export function DateTimePicker({ value, onChange, placeholder = "选择日期时间", className }: DateTimePickerProps) {
@@ -33,36 +154,23 @@ export function DateTimePicker({ value, onChange, placeholder = "选择日期时
   const [minute, setMinute] = React.useState(() => value ? dayjs(value).minute() : dayjs().minute())
   const [second, setSecond] = React.useState(() => value ? dayjs(value).second() : dayjs().second())
 
-  const hourScrollRef = React.useRef<HTMLDivElement>(null)
-  const minuteScrollRef = React.useRef<HTMLDivElement>(null)
-  const secondScrollRef = React.useRef<HTMLDivElement>(null)
-
   React.useEffect(() => {
     if (value) {
       setInputValue(dayjs(value).format("YYYY-MM-DD HH:mm:ss"))
+      setHour(dayjs(value).hour())
+      setMinute(dayjs(value).minute())
+      setSecond(dayjs(value).second())
     }
   }, [value])
 
-  const handleDateSelect = (date: Date | undefined) => {
-    if (date) {
-      const result = dayjs(date).hour(hour).minute(minute).second(second)
-      onChange(result.format("YYYY-MM-DDTHH:mm:ss"))
-    }
+  const emit = (h: number, m: number, s: number) => {
+    const date = selectedDate || new Date()
+    onChange(dayjs(date).hour(h).minute(m).second(s).format("YYYY-MM-DDTHH:mm:ss"))
   }
 
-  const handleTimeChange = (type: "hour" | "minute" | "second", val: number) => {
-    if (type === "hour") {
-      setHour(val)
-      const newDate = selectedDate ? dayjs(selectedDate).hour(val).minute(minute).second(second) : dayjs().hour(val).minute(minute).second(second)
-      onChange(newDate.format("YYYY-MM-DDTHH:mm:ss"))
-    } else if (type === "minute") {
-      setMinute(val)
-      const newDate = selectedDate ? dayjs(selectedDate).hour(hour).minute(val).second(second) : dayjs().hour(hour).minute(val).second(second)
-      onChange(newDate.format("YYYY-MM-DDTHH:mm:ss"))
-    } else {
-      setSecond(val)
-      const newDate = selectedDate ? dayjs(selectedDate).hour(hour).minute(minute).second(val) : dayjs().hour(hour).minute(minute).second(val)
-      onChange(newDate.format("YYYY-MM-DDTHH:mm:ss"))
+  const handleDateSelect = (date: Date | undefined) => {
+    if (date) {
+      onChange(dayjs(date).hour(hour).minute(minute).second(second).format("YYYY-MM-DDTHH:mm:ss"))
     }
   }
 
@@ -73,45 +181,17 @@ export function DateTimePicker({ value, onChange, placeholder = "选择日期时
   const handleInputBlur = () => {
     const parsed = dayjs(inputValue, "YYYY-MM-DD HH:mm:ss", true)
     if (parsed.isValid()) {
-      const result = parsed.hour(hour).minute(minute).second(second)
-      onChange(result.format("YYYY-MM-DDTHH:mm:ss"))
+      setHour(parsed.hour())
+      setMinute(parsed.minute())
+      setSecond(parsed.second())
+      onChange(parsed.format("YYYY-MM-DDTHH:mm:ss"))
     } else {
       setInputValue(value ? dayjs(value).format("YYYY-MM-DD HH:mm:ss") : "")
     }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      handleInputBlur()
-    }
-  }
-
-  const scrollToTime = React.useCallback((scrollRef: React.RefObject<HTMLDivElement | null>, value: number) => {
-    if (scrollRef.current) {
-      // parentElement is ScrollArea -> parentElement is ScrollAreaRoot
-      const scrollAreaRoot = scrollRef.current.parentElement?.parentElement as HTMLElement | null
-      if (scrollAreaRoot) {
-        const itemHeight = 44
-        const targetScrollTop = value * itemHeight
-        scrollAreaRoot.scrollTop = Math.max(0, targetScrollTop)
-      }
-    }
-  }, [])
-
-  React.useEffect(() => {
-    if (open) {
-      setTimeout(() => {
-        scrollToTime(hourScrollRef, hour)
-        scrollToTime(minuteScrollRef, minute)
-        scrollToTime(secondScrollRef, second)
-      }, 0)
-    }
-  }, [open, hour, minute, second, scrollToTime])
-
-  const handleWheel = (e: React.WheelEvent<HTMLDivElement>, _type: "hour" | "minute" | "second") => {
-    e.preventDefault()
-    e.stopPropagation()
-    // Only scroll, do not change selected time
+    if (e.key === "Enter") handleInputBlur()
   }
 
   return (
@@ -142,85 +222,12 @@ export function DateTimePicker({ value, onChange, placeholder = "选择日期时
               onSelect={handleDateSelect}
             />
           </div>
-          <div className="flex flex-col sm:flex-row sm:h-[300px] divide-y sm:divide-y-0 sm:divide-x">
-            {/* 小时 */}
-            <ScrollArea className="w-48 sm:w-auto sm:h-full">
-              <div
-                ref={hourScrollRef}
-                className="flex sm:flex-col p-2"
-                onWheel={(e) => handleWheel(e, "hour")}
-              >
-                {hours.map((h) => (
-                  <button
-                    key={h}
-                    type="button"
-                    onClick={() => handleTimeChange("hour", h)}
-                    className={cn(
-                      "h-9 w-9 rounded-md text-sm font-medium transition-colors shrink-0",
-                      hour === h
-                        ? "bg-[#f97316] text-white hover:bg-[#ea580c]"
-                        : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                    )}
-                  >
-                    {String(h).padStart(2, '0')}
-                  </button>
-                ))}
-              </div>
-              <ScrollBar orientation="horizontal" />
-              <ScrollBar orientation="vertical" />
-            </ScrollArea>
-            {/* 分钟 */}
-            <ScrollArea className="w-48 sm:w-auto sm:h-full">
-              <div
-                ref={minuteScrollRef}
-                className="flex sm:flex-col p-2"
-                onWheel={(e) => handleWheel(e, "minute")}
-              >
-                {minutes.map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => handleTimeChange("minute", m)}
-                    className={cn(
-                      "h-9 w-9 rounded-md text-sm font-medium transition-colors shrink-0",
-                      minute === m
-                        ? "bg-[#f97316] text-white hover:bg-[#ea580c]"
-                        : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                    )}
-                  >
-                    {String(m).padStart(2, '0')}
-                  </button>
-                ))}
-              </div>
-              <ScrollBar orientation="horizontal" />
-              <ScrollBar orientation="vertical" />
-            </ScrollArea>
-            {/* 秒 */}
-            <ScrollArea className="w-48 sm:w-auto sm:h-full">
-              <div
-                ref={secondScrollRef}
-                className="flex sm:flex-col p-2"
-                onWheel={(e) => handleWheel(e, "second")}
-              >
-                {seconds.map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => handleTimeChange("second", s)}
-                    className={cn(
-                      "h-9 w-9 rounded-md text-sm font-medium transition-colors shrink-0",
-                      second === s
-                        ? "bg-[#f97316] text-white hover:bg-[#ea580c]"
-                        : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                    )}
-                  >
-                    {String(s).padStart(2, '0')}
-                  </button>
-                ))}
-              </div>
-              <ScrollBar orientation="horizontal" />
-              <ScrollBar orientation="vertical" />
-            </ScrollArea>
+          <div className="flex items-center p-3 gap-1.5">
+            <PickerColumn items={hours} value={hour} onChange={(v) => { setHour(v); emit(v, minute, second) }} />
+            <span className="text-sm text-muted-foreground shrink-0 -mt-1">:</span>
+            <PickerColumn items={minutes} value={minute} onChange={(v) => { setMinute(v); emit(hour, v, second) }} />
+            <span className="text-sm text-muted-foreground shrink-0 -mt-1">:</span>
+            <PickerColumn items={seconds} value={second} onChange={(v) => { setSecond(v); emit(hour, minute, v) }} />
           </div>
         </div>
       </PopoverContent>
