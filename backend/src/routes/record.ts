@@ -118,6 +118,7 @@ export async function recordRoutes(app: FastifyInstance) {
           fromAccount: { select: { id: true, name: true } },
           toAccount: { select: { id: true, name: true } },
           owner: { select: { id: true, name: true, email: true } },
+          recordAttachments: { select: { id: true, path: true, originalFilename: true } },
         },
         orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
         skip: (page - 1) * pageSize,
@@ -130,7 +131,7 @@ export async function recordRoutes(app: FastifyInstance) {
       records: records.map((r) => ({
         ...r,
         tags: JSON.parse(r.tags),
-        attachments: JSON.parse(r.attachments),
+        attachments: r.recordAttachments.map((a) => ({ id: a.id, url: a.path, originalFilename: a.originalFilename })),
         ownerName: r.owner.name || r.owner.email,
       })),
       total,
@@ -217,7 +218,9 @@ export async function recordRoutes(app: FastifyInstance) {
         date: new Date(data.date),
         remark: data.remark,
         tags: JSON.stringify(data.tags ?? []),
-        attachments: JSON.stringify(data.attachments ?? []),
+        recordAttachments: {
+          connect: (data.attachmentIds ?? []).map((id: string) => ({ id })),
+        },
         accountId: data.accountId,
         fromAccountId: data.fromAccountId,
         toAccountId: data.toAccountId,
@@ -230,6 +233,7 @@ export async function recordRoutes(app: FastifyInstance) {
         fromAccount: { select: { id: true, name: true } },
         toAccount: { select: { id: true, name: true } },
         owner: { select: { id: true, name: true, email: true } },
+        recordAttachments: { select: { id: true, path: true, originalFilename: true } },
       },
     })
 
@@ -242,7 +246,7 @@ export async function recordRoutes(app: FastifyInstance) {
     return {
       ...record,
       tags: JSON.parse(record.tags),
-      attachments: JSON.parse(record.attachments),
+      attachments: record.recordAttachments.map((a) => ({ id: a.id, url: a.path, originalFilename: a.originalFilename })),
       ownerName: record.owner.name || record.owner.email,
     }
   })
@@ -279,9 +283,23 @@ export async function recordRoutes(app: FastifyInstance) {
     }
 
     const updateData: any = { ...parsed.data }
+    delete updateData.attachmentIds
     if (parsed.data.tags) updateData.tags = JSON.stringify(parsed.data.tags)
-    if (parsed.data.attachments) updateData.attachments = JSON.stringify(parsed.data.attachments)
     if (parsed.data.date) updateData.date = new Date(parsed.data.date)
+
+    // 附件关联：断开旧附件，连接新附件
+    if (parsed.data.attachmentIds !== undefined) {
+      await prisma.recordAttachment.updateMany({
+        where: { recordId: id },
+        data: { recordId: null },
+      })
+      if (parsed.data.attachmentIds.length > 0) {
+        await prisma.recordAttachment.updateMany({
+          where: { id: { in: parsed.data.attachmentIds } },
+          data: { recordId: id },
+        })
+      }
+    }
 
     const record = await prisma.record.update({
       where: { id },
@@ -291,6 +309,7 @@ export async function recordRoutes(app: FastifyInstance) {
         fromAccount: { select: { id: true, name: true } },
         toAccount: { select: { id: true, name: true } },
         owner: { select: { id: true, name: true, email: true } },
+        recordAttachments: { select: { id: true, path: true, originalFilename: true } },
       },
     })
 
@@ -306,7 +325,7 @@ export async function recordRoutes(app: FastifyInstance) {
     return {
       ...record,
       tags: JSON.parse(record.tags),
-      attachments: JSON.parse(record.attachments),
+      attachments: record.recordAttachments.map((a) => ({ id: a.id, url: a.path, originalFilename: a.originalFilename })),
       ownerName: record.owner.name || record.owner.email,
     }
   })
@@ -350,27 +369,39 @@ export async function recordRoutes(app: FastifyInstance) {
       return reply.status(e.statusCode || 403).send({ message: e.message })
     }
 
+    // 复制附件关联
+    const existingAttachments = await prisma.recordAttachment.findMany({
+      where: { recordId: id },
+      select: { path: true, originalFilename: true },
+    })
+
     const cloned = await prisma.record.create({
       data: {
         accountBookId: existing.accountBookId,
         type: existing.type,
         amount: existing.amount,
-        date: new Date(), // 复制时用当前时间
+        date: new Date(),
         remark: existing.remark,
         tags: existing.tags,
-        attachments: existing.attachments,
         accountId: existing.accountId,
         fromAccountId: existing.fromAccountId,
         toAccountId: existing.toAccountId,
         categoryCode: existing.categoryCode,
         payer: existing.payer,
         ownerId: userId,
+        recordAttachments: {
+          create: existingAttachments.map((a) => ({
+            path: a.path,
+            originalFilename: a.originalFilename,
+          })),
+        },
       },
       include: {
         account: { select: { id: true, name: true, type: true } },
         fromAccount: { select: { id: true, name: true } },
         toAccount: { select: { id: true, name: true } },
         owner: { select: { id: true, name: true, email: true } },
+        recordAttachments: { select: { id: true, path: true, originalFilename: true } },
       },
     })
 
@@ -382,7 +413,7 @@ export async function recordRoutes(app: FastifyInstance) {
     return {
       ...cloned,
       tags: JSON.parse(cloned.tags),
-      attachments: JSON.parse(cloned.attachments),
+      attachments: cloned.recordAttachments.map((a) => ({ id: a.id, url: a.path, originalFilename: a.originalFilename })),
       ownerName: cloned.owner.name || cloned.owner.email,
     }
   })
@@ -402,8 +433,40 @@ export async function recordRoutes(app: FastifyInstance) {
     const buffer = await data.toBuffer()
     await fs.promises.writeFile(filePath, buffer)
 
-    const origin = (req.headers.origin || 'http://localhost:3002').replace(/\/$/, '')
     const url = `/api/uploads/${filename}`
-    return { url, fullUrl: `${origin}${url}`, originalFilename: data.filename }
+    // 持久化原文件名
+    const attachment = await prisma.recordAttachment.create({
+      data: { path: url, originalFilename: data.filename },
+    })
+
+    const origin = (req.headers.origin || 'http://localhost:3002').replace(/\/$/, '')
+    return { id: attachment.id, url, fullUrl: `${origin}${url}`, originalFilename: data.filename }
   })
+
+  // 附件下载（支持还原原始文件名）
+  app.get('/download', async (req, reply) => {
+    const { path: filePath, name } = req.query as { path: string; name?: string }
+    if (!filePath) return reply.status(400).send({ message: '缺少 path 参数' })
+
+    const uploadsDir = path.join(process.cwd(), 'uploads')
+    const absolutePath = path.join(uploadsDir, path.basename(filePath))
+    if (!absolutePath.startsWith(uploadsDir)) {
+      return reply.status(403).send({ message: '非法路径' })
+    }
+    if (!fs.existsSync(absolutePath)) return reply.status(404).send({ message: '文件不存在' })
+
+    // 从数据库查找原文件名，优先于 query 参数
+    const normalizePath = (p: string) => p.startsWith('/api/') ? p : `/api/uploads/${path.basename(p)}`
+    const normalized = normalizePath(filePath)
+    const attachment = await prisma.recordAttachment.findFirst({
+      where: { path: normalized },
+    })
+
+    const buffer = await fs.promises.readFile(absolutePath)
+    const filename = attachment?.originalFilename || name || path.basename(filePath)
+    reply.header('Content-Type', 'application/octet-stream')
+    reply.header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`)
+    return reply.send(buffer)
+  })
+
 }

@@ -187,7 +187,7 @@ export function RecordsPage() {
   const [formPayer, setFormPayer] = useState('')
   const [formRemark, setFormRemark] = useState('')
   const [formOwnerId, setFormOwnerId] = useState('')
-  const [formAttachments, setFormAttachments] = useState<string[]>([])
+  const [formAttachments, setFormAttachments] = useState<{ id: string; url: string; fullUrl: string; originalFilename: string }[]>([])
   const [uploadingAttachment, setUploadingAttachment] = useState(false)
   const [previewImage, setPreviewImage] = useState<string | null>(null)
   const [formError, setFormError] = useState('')
@@ -329,7 +329,12 @@ export function RecordsPage() {
     setFormPayer(record.payer || '')
     setFormRemark(record.remark || '')
     setFormOwnerId(record.ownerId)
-    setFormAttachments(record.attachments)
+    // 附件数据已包含 id + url + originalFilename，补 fullUrl
+    const origin = window.location.origin
+    setFormAttachments(record.attachments.map((a) => {
+      const fullUrl = a.url.startsWith('http') ? a.url : `${origin}${a.url}`
+      return { id: a.id, url: a.url, fullUrl, originalFilename: a.originalFilename }
+    }))
     setFormError('')
     setSubmitting(false)
     setEditRecord(record)
@@ -353,7 +358,7 @@ export function RecordsPage() {
         payer: formPayer || undefined,
         remark: formRemark || undefined,
         ownerId: formOwnerId || undefined,
-        attachments: formAttachments,
+        attachmentIds: formAttachments.map((a) => a.id),
       })
       setCreateOpen(false)
       loadRecords()
@@ -379,7 +384,7 @@ export function RecordsPage() {
         payer: formPayer || undefined,
         remark: formRemark || undefined,
         ownerId: formOwnerId || undefined,
-        attachments: formAttachments,
+        attachmentIds: formAttachments.map((a) => a.id),
       })
       setEditRecord(null)
       loadRecords()
@@ -400,14 +405,30 @@ export function RecordsPage() {
     } catch (e: any) { setError(e.message) }
   }
 
-  const handleDownload = async (url: string, filename?: string) => {
+  const handleDownload = async (url: string, originalFilename: string) => {
     try {
-      const res = await fetch(url)
+      const relativePath = url.includes('/api/uploads/')
+        ? `/api/uploads/${url.split('/api/uploads/').pop()}`
+        : url
+      const downloadUrl = `/api/records/download?path=${encodeURIComponent(relativePath)}&name=${encodeURIComponent(originalFilename)}`
+
+      const token = (() => {
+        try {
+          const raw = localStorage.getItem('auth-storage')
+          if (!raw) return null
+          return JSON.parse(raw)?.state?.token || null
+        } catch { return null }
+      })()
+      const headers: Record<string, string> = {}
+      if (token) headers['Authorization'] = `Bearer ${token}`
+
+      const res = await fetch(downloadUrl, { headers })
+      if (!res.ok) throw new Error('下载失败')
       const blob = await res.blob()
       const blobUrl = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = blobUrl
-      a.download = filename || url.split('/').pop() || 'download'
+      a.download = originalFilename
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
@@ -1002,24 +1023,24 @@ export function RecordsPage() {
               <div className="flex flex-col gap-2">
                 {formAttachments.length > 0 && (
                   <div className="flex flex-wrap gap-2">
-                    {formAttachments.map((url, idx) => {
-                      const isImage = /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(url)
+                    {formAttachments.map((att, idx) => {
+                      const isImage = /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(att.url)
                       return (
                         <div key={idx} className="relative group">
                           {isImage ? (
                             <button
                               className="w-16 h-16 rounded-md border overflow-hidden"
-                              onClick={() => setPreviewImage(url)}
+                              onClick={() => setPreviewImage(att.fullUrl)}
                             >
                               <img
-                                src={url}
+                                src={att.fullUrl}
                                 alt="附件"
                                 className="w-full h-full object-cover"
                               />
                             </button>
                           ) : (
                             <div className="w-16 h-16 rounded-md border bg-muted flex items-center justify-center">
-                              <span className="text-xs text-muted-foreground truncate px-1">{url.split('/').pop()}</span>
+                              <span className="text-xs text-muted-foreground truncate px-1">{att.originalFilename}</span>
                             </div>
                           )}
                           <button
@@ -1030,7 +1051,7 @@ export function RecordsPage() {
                           </button>
                           <button
                             className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-[#3b82f6] text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                            onClick={(e) => { e.stopPropagation(); handleDownload(url) }}
+                            onClick={(e) => { e.stopPropagation(); handleDownload(att.url, att.originalFilename) }}
                           >
                             <Download size={10} />
                           </button>
@@ -1053,7 +1074,12 @@ export function RecordsPage() {
                       setUploadingAttachment(true)
                       try {
                         const results = await Promise.all(files.map((f) => recordApi.uploadAttachment(f)))
-                        setFormAttachments((prev) => [...prev, ...results.map((r) => r.fullUrl)])
+                        setFormAttachments((prev) => [...prev, ...results.map((r) => ({
+                          id: r.id,
+                          url: r.url,
+                          fullUrl: r.fullUrl,
+                          originalFilename: r.originalFilename,
+                        }))])
                       } catch (err: any) {
                         setFormError(err.message || '上传失败')
                       } finally {
@@ -1109,7 +1135,10 @@ export function RecordsPage() {
               />
               <div className="absolute top-2 right-2 flex gap-2">
                 <button
-                  onClick={() => handleDownload(previewImage)}
+                  onClick={() => {
+                    const att = formAttachments.find((a) => a.fullUrl === previewImage)
+                    handleDownload(previewImage, att?.originalFilename || '图片.png')
+                  }}
                   className="w-8 h-8 rounded-full bg-black/50 flex items-center justify-center text-white hover:bg-black/70"
                 >
                   <Download size={14} />

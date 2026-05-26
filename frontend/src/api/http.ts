@@ -30,7 +30,7 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
   return res.json()
 }
 
-async function uploadFile(url: string, file: File): Promise<{ url: string; filename: string }> {
+async function uploadFile(url: string, file: File): Promise<{ id: string; url: string; fullUrl: string; originalFilename: string }> {
   const token = getToken()
   const formData = new FormData()
   formData.append('file', file)

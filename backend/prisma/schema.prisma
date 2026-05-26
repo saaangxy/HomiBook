@@ -102,7 +102,6 @@ model Record {
   date          DateTime
   remark        String?
   tags          String    @default("[]")
-  attachments   String    @default("[]")
   // 账户
   accountId     String    // 主账户（支出账户/收入账户）
   fromAccountId String?   // 转账源账户
@@ -120,6 +119,17 @@ model Record {
   account       Account   @relation(fields: [accountId], references: [id])
   fromAccount   Account?  @relation("FromAccount", fields: [fromAccountId], references: [id])
   toAccount     Account?  @relation("ToAccount", fields: [toAccountId], references: [id])
+  recordAttachments RecordAttachment[]
+}
+
+// 流水附件
+model RecordAttachment {
+  id               String   @id @default(uuid())
+  recordId         String?  // 关联的流水 ID（创建前为 null）
+  path             String   // 文件存储路径
+  originalFilename String   // 原始文件名
+  createdAt        DateTime @default(now())
+  record           Record?  @relation(fields: [recordId], references: [id], onDelete: Cascade)
 }
 
 // 系统分类

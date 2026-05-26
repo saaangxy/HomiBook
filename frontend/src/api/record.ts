@@ -1,6 +1,7 @@
 import { api } from './http'
 
 export interface AttachmentUploadResult {
+  id: string         // RecordAttachment ID
   url: string        // 相对路径，如 /api/uploads/xxx.png
   fullUrl: string    // 完整路径，如 http://localhost:3002/api/uploads/xxx.png
   originalFilename: string
@@ -16,7 +17,7 @@ export interface RecordItem {
   date: string
   remark: string | null
   tags: string[]
-  attachments: string[]
+  attachments: { id: string; url: string; originalFilename: string }[]
   accountId: string
   fromAccountId: string | null
   toAccountId: string | null
@@ -111,5 +112,5 @@ export const recordApi = {
     api.post<RecordItem>(`/api/records/${id}/clone`, {}),
 
   uploadAttachment: (file: File) =>
-    api.uploadFile('/api/records/upload', file) as Promise<AttachmentUploadResult>,
+    api.uploadFile('/api/records/upload', file),
 }
