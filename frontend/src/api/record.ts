@@ -78,7 +78,7 @@ export const recordApi = {
     date: string
     remark?: string
     tags?: string[]
-    attachments?: string[]
+    attachmentIds?: string[]
     accountId: string
     fromAccountId?: string
     toAccountId?: string
@@ -93,7 +93,7 @@ export const recordApi = {
     date?: string
     remark?: string
     tags?: string[]
-    attachments?: string[]
+    attachmentIds?: string[]
     accountId?: string
     fromAccountId?: string
     toAccountId?: string
@@ -111,6 +111,6 @@ export const recordApi = {
   clone: (id: string) =>
     api.post<RecordItem>(`/api/records/${id}/clone`, {}),
 
-  uploadAttachment: (file: File) =>
+  uploadAttachment: (file: File): Promise<AttachmentUploadResult> =>
     api.uploadFile('/api/records/upload', file),
 }

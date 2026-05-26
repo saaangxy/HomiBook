@@ -2,6 +2,8 @@ import type { FastifyInstance } from 'fastify'
 import { prisma } from '../app.js'
 import { authenticate, requireAdmin } from '../middleware/auth.js'
 import { updateConfigSchema, createDictionarySchema, updateDictionarySchema } from '../schemas/settings.js'
+import path from 'path'
+import fs from 'fs'
 
 export async function settingsRoutes(app: FastifyInstance) {
   // 公开端点 — 无需认证，独立作用域避免被下方 hook 影响
@@ -107,6 +109,52 @@ export async function settingsRoutes(app: FastifyInstance) {
 
         await prisma.dictionary.delete({ where: { id } })
         return { success: true }
+      })
+
+      // 查询孤儿附件（recordId 为 null）
+      adminChild.get('/attachments/orphans', async () => {
+        const orphans = await prisma.recordAttachment.findMany({
+          where: { recordId: null },
+          select: { id: true, path: true, originalFilename: true, createdAt: true },
+          orderBy: { createdAt: 'asc' },
+        })
+        // 检查文件是否还存在
+        const uploadsDir = path.join(process.cwd(), 'uploads')
+        return orphans.map((a) => ({
+          ...a,
+          fileExists: fs.existsSync(path.join(uploadsDir, path.basename(a.path))),
+        }))
+      })
+
+      // 清理孤儿附件（删除文件 + DB 记录）
+      adminChild.post('/attachments/clean-orphans', async () => {
+        const orphans = await prisma.recordAttachment.findMany({
+          where: { recordId: null },
+          select: { id: true, path: true },
+        })
+        const uploadsDir = path.join(process.cwd(), 'uploads')
+        let deletedFiles = 0
+        let deletedRecords = 0
+
+        for (const att of orphans) {
+          const filePath = path.join(uploadsDir, path.basename(att.path))
+          if (fs.existsSync(filePath)) {
+            try {
+              fs.unlinkSync(filePath)
+              deletedFiles++
+            } catch {
+              // 单个文件删除失败不中断整体清理
+            }
+          }
+        }
+        if (orphans.length > 0) {
+          const result = await prisma.recordAttachment.deleteMany({
+            where: { recordId: null },
+          })
+          deletedRecords = result.count
+        }
+
+        return { deletedFiles, deletedRecords }
       })
     })
   })

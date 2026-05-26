@@ -35,4 +35,10 @@ export const settingsApi = {
 
   deleteDictionaryItem: (id: string) =>
     api.delete<{ success: boolean }>(`/api/settings/dictionary/${id}`),
+
+  getOrphanAttachments: () =>
+    api.get<Array<{ id: string; path: string; originalFilename: string; createdAt: string; fileExists: boolean }>>('/api/settings/attachments/orphans'),
+
+  cleanOrphanAttachments: () =>
+    api.post<{ deletedFiles: number; deletedRecords: number }>('/api/settings/attachments/clean-orphans'),
 }

@@ -5,7 +5,6 @@ import { createRecordSchema, updateRecordSchema, listRecordsSchema } from '../sc
 import path from 'path'
 import fs from 'fs'
 import { randomUUID } from 'crypto'
-import { fileURLToPath } from 'url'
 
 async function assertIsMember(bookId: string, userId: string) {
   const book = await prisma.accountBook.findUnique({ where: { id: bookId } })
@@ -287,12 +286,25 @@ export async function recordRoutes(app: FastifyInstance) {
     if (parsed.data.tags) updateData.tags = JSON.stringify(parsed.data.tags)
     if (parsed.data.date) updateData.date = new Date(parsed.data.date)
 
-    // 附件关联：断开旧附件，连接新附件
+    // 附件关联：找出被移除的附件，删除文件 + DB 记录
     if (parsed.data.attachmentIds !== undefined) {
-      await prisma.recordAttachment.updateMany({
-        where: { recordId: id },
-        data: { recordId: null },
-      })
+      const keptIds = new Set(parsed.data.attachmentIds)
+      const oldAttachments = await prisma.recordAttachment.findMany({ where: { recordId: id } })
+      const removed = oldAttachments.filter((a) => !keptIds.has(a.id))
+
+      // 删除被移除的附件文件
+      const uploadsDir = path.join(process.cwd(), 'uploads')
+      for (const att of removed) {
+        const filePath = path.join(uploadsDir, path.basename(att.path))
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+      }
+
+      // 删除被移除的记录，关联保留的
+      if (removed.length > 0) {
+        await prisma.recordAttachment.deleteMany({
+          where: { id: { in: removed.map((a) => a.id) } },
+        })
+      }
       if (parsed.data.attachmentIds.length > 0) {
         await prisma.recordAttachment.updateMany({
           where: { id: { in: parsed.data.attachmentIds } },
@@ -344,7 +356,16 @@ export async function recordRoutes(app: FastifyInstance) {
       return reply.status(e.statusCode || 403).send({ message: e.message })
     }
 
+    // 删除关联的附件文件
+    const attachments = await prisma.recordAttachment.findMany({ where: { recordId: id } })
+    const uploadsDir = path.join(process.cwd(), 'uploads')
+    for (const att of attachments) {
+      const filePath = path.join(uploadsDir, path.basename(att.path))
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+    }
+
     await prisma.record.delete({ where: { id } })
+    // Cascade 删除会清理 RecordAttachment DB 记录
 
     // 刷新相关账户余额
     const affectedAccounts = [existing.accountId, existing.fromAccountId, existing.toAccountId].filter(Boolean) as string[]
@@ -449,17 +470,14 @@ export async function recordRoutes(app: FastifyInstance) {
     if (!filePath) return reply.status(400).send({ message: '缺少 path 参数' })
 
     const uploadsDir = path.join(process.cwd(), 'uploads')
-    const absolutePath = path.join(uploadsDir, path.basename(filePath))
-    if (!absolutePath.startsWith(uploadsDir)) {
-      return reply.status(403).send({ message: '非法路径' })
-    }
+    const safeFilename = path.basename(filePath) // 防路径遍历
+    const absolutePath = path.join(uploadsDir, safeFilename)
     if (!fs.existsSync(absolutePath)) return reply.status(404).send({ message: '文件不存在' })
 
-    // 从数据库查找原文件名，优先于 query 参数
-    const normalizePath = (p: string) => p.startsWith('/api/') ? p : `/api/uploads/${path.basename(p)}`
-    const normalized = normalizePath(filePath)
+    // 从数据库查找原文件名
+    const storedPath = `/api/uploads/${safeFilename}`
     const attachment = await prisma.recordAttachment.findFirst({
-      where: { path: normalized },
+      where: { path: storedPath },
     })
 
     const buffer = await fs.promises.readFile(absolutePath)

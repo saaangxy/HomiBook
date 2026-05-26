@@ -3,9 +3,7 @@ import cors from '@fastify/cors'
 import jwt from '@fastify/jwt'
 import multipart from '@fastify/multipart'
 import { PrismaClient } from '@prisma/client'
-import { randomUUID } from 'crypto'
 import path from 'path'
-import { fileURLToPath } from 'url'
 import fs from 'fs'
 
 export const prisma = new PrismaClient()
@@ -37,8 +35,9 @@ export async function buildApp() {
   if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true })
   app.register(async (instance) => {
     instance.get('/uploads/:filename', async (req, reply) => {
-      const filename = (req.params as any).filename
+      const filename = path.basename((req.params as any).filename)
       const filePath = path.join(uploadsDir, filename)
+      if (!filePath.startsWith(uploadsDir)) return reply.status(403).send({ message: '非法路径' })
       if (!fs.existsSync(filePath)) return reply.status(404).send({ message: '文件不存在' })
 
       const ext = path.extname(filename).toLowerCase()
