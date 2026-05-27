@@ -653,14 +653,15 @@ export function RecordsPage() {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-xs py-2.5">
-                      <div className="flex flex-col gap-0.5">
+                      {record.type === 'TRANSFER' && record.fromAccount ? (
+                        <span>
+                          <span className="text-[#ef4444]">{record.fromAccount.name}</span>
+                          {' → '}
+                          <span className="text-[#22c55e]">{record.toAccount?.name}</span>
+                        </span>
+                      ) : (
                         <span>{record.account.name}</span>
-                        {record.type === 'TRANSFER' && record.fromAccount && (
-                          <span className="text-muted-foreground text-[10px]">
-                            → {record.toAccount?.name}
-                          </span>
-                        )}
-                      </div>
+                      )}
                     </TableCell>
                     <TableCell className="text-xs py-2.5 text-muted-foreground">
                       {record.categoryCode || '-'}
