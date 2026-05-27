@@ -5,6 +5,7 @@ import { bookRoutes } from './routes/book.js'
 import { accountRoutes } from './routes/account.js'
 import { recordRoutes } from './routes/record.js'
 import { settingsRoutes } from './routes/settings.js'
+import { holidayRoutes } from './routes/holiday.js'
 import { seedDefaults } from './seed.js'
 
 async function main() {
@@ -20,6 +21,7 @@ async function main() {
   app.register(accountRoutes, { prefix: '/api/accounts' })
   app.register(recordRoutes, { prefix: '/api/records' })
   app.register(settingsRoutes, { prefix: '/api/settings' })
+  app.register(holidayRoutes, { prefix: '/api/holidays' })
 
   // 健康检查
   app.get('/health', async () => ({ status: 'ok' }))

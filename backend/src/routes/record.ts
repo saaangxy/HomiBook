@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { prisma } from '../app.js'
 import { authenticate } from '../middleware/auth.js'
-import { createRecordSchema, updateRecordSchema, listRecordsSchema } from '../schemas/record.js'
+import { createRecordSchema, updateRecordSchema, listRecordsSchema, calendarQuerySchema } from '../schemas/record.js'
 import path from 'path'
 import fs from 'fs'
 import { randomUUID } from 'crypto'
@@ -174,6 +174,57 @@ export async function recordRoutes(app: FastifyInstance) {
       transfer,
       netIncome: income - expense,
     }
+  })
+
+  // 日历聚合：按天汇总当月收支
+  app.get('/calendar', async (req, reply) => {
+    const parsed = calendarQuerySchema.safeParse(req.query)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: parsed.error.issues[0].message })
+    }
+    const { bookId, year, month } = parsed.data
+    const userId = (req as any).user.id as string
+
+    try {
+      await assertIsMember(bookId, userId)
+    } catch (e: any) {
+      return reply.status(e.statusCode || 403).send({ message: e.message })
+    }
+
+    // 当月起止时间
+    const start = new Date(Date.UTC(year, month - 1, 1))
+    const end = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999))
+
+    const records = await prisma.record.findMany({
+      where: { accountBookId: bookId, date: { gte: start, lte: end } },
+      select: { type: true, amount: true, date: true },
+    })
+
+    // 按天分组聚合
+    const dayMap: Record<string, { income: number; expense: number; count: number }> = {}
+    for (const r of records) {
+      const day = r.date.toISOString().slice(0, 10)
+      if (!dayMap[day]) dayMap[day] = { income: 0, expense: 0, count: 0 }
+      dayMap[day].count++
+      if (r.type === 'INCOME') dayMap[day].income += r.amount
+      else if (r.type === 'EXPENSE') dayMap[day].expense += r.amount
+      // TRANSFER 不计入收支汇总
+    }
+
+    // 补全当月所有日期
+    const daysInMonth = new Date(year, month, 0).getDate()
+    const result = []
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+      result.push({
+        date: dateStr,
+        income: dayMap[dateStr]?.income ?? 0,
+        expense: dayMap[dateStr]?.expense ?? 0,
+        count: dayMap[dateStr]?.count ?? 0,
+      })
+    }
+
+    return result
   })
 
   // 创建流水

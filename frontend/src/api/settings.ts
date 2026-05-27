@@ -21,7 +21,7 @@ export const settingsApi = {
   getConfig: () =>
     api.get<Record<string, unknown>>('/api/settings/config'),
 
-  updateConfig: (data: { registrationOpen?: boolean; defaultCurrency?: string }) =>
+  updateConfig: (data: { registrationOpen?: boolean; defaultCurrency?: string; amountHighlightThreshold?: number; holidayApiUrl?: string }) =>
     api.put<{ success: boolean }>('/api/settings/config', data),
 
   getDictionary: (group: string) =>

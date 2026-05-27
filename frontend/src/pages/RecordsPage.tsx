@@ -47,6 +47,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { DictCombobox } from '@/components/DictCombobox'
+import { AttachmentViewer } from '@/components/AttachmentViewer'
 import { recordApi, type RecordItem, type RecordType, type RecordSummary } from '@/api/record'
 import { accountApi, type AccountItem } from '@/api/account'
 import { adminApi, type AdminUser } from '@/api/admin'
@@ -55,7 +56,7 @@ import { useBookStore } from '../stores/book'
 import {
   Plus, ArrowUpRight, ArrowDownRight, ArrowLeftRight,
   Pencil, Trash2, Copy, Filter, X, ChevronLeft, ChevronRight,
-  Upload, Download,
+  Upload, Download, Paperclip,
 } from 'lucide-react'
 
 const TYPE_COLORS: Record<RecordType, string> = {
@@ -190,6 +191,7 @@ export function RecordsPage() {
   const [formAttachments, setFormAttachments] = useState<{ id: string; url: string; fullUrl: string; originalFilename: string }[]>([])
   const [uploadingAttachment, setUploadingAttachment] = useState(false)
   const [previewImage, setPreviewImage] = useState<string | null>(null)
+  const [viewingAttachments, setViewingAttachments] = useState<{ id: string; url: string; originalFilename: string }[] | null>(null)
   const [formError, setFormError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
@@ -687,6 +689,11 @@ export function RecordsPage() {
                     </Tooltip>
                     <TableCell className="text-right py-2.5">
                       <div className="flex items-center justify-end gap-0.5">
+                        {record.attachments?.length > 0 && (
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setViewingAttachments(record.attachments)}>
+                            <Paperclip size={13} />
+                          </Button>
+                        )}
                         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(record)}>
                           <Pencil size={13} />
                         </Button>
@@ -1191,6 +1198,13 @@ export function RecordsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* 附件查看 */}
+      <AttachmentViewer
+        open={viewingAttachments !== null}
+        onOpenChange={() => setViewingAttachments(null)}
+        attachments={viewingAttachments || []}
+      />
     </div>
   )
 }

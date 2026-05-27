@@ -120,6 +120,8 @@ model Record {
   fromAccount   Account?  @relation("FromAccount", fields: [fromAccountId], references: [id])
   toAccount     Account?  @relation("ToAccount", fields: [toAccountId], references: [id])
   recordAttachments RecordAttachment[]
+
+  @@index([accountBookId, date])
 }
 
 // 流水附件
@@ -186,4 +188,13 @@ model Dictionary {
   updatedAt DateTime @updatedAt
 
   @@unique([group, code])
+}
+
+// 节假日
+model Holiday {
+  id        String   @id @default(uuid())
+  date      DateTime @unique
+  name      String
+  isWorkday Boolean  @default(false) // true=调休工作日, false=假日
+  createdAt DateTime @default(now())
 }

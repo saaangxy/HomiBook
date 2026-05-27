@@ -3,6 +3,8 @@ import { z } from 'zod'
 export const updateConfigSchema = z.object({
   registrationOpen: z.boolean().optional(),
   defaultCurrency: z.string().optional(),
+  amountHighlightThreshold: z.number().optional(),
+  holidayApiUrl: z.string().optional(),
 })
 
 export const createDictionarySchema = z.object({

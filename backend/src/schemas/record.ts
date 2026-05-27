@@ -49,3 +49,9 @@ export const listRecordsSchema = z.object({
   amountTo: z.coerce.number().optional(),
   remark: z.string().optional(),
 })
+
+export const calendarQuerySchema = z.object({
+  bookId: z.string().min(1),
+  year: z.coerce.number().int(),
+  month: z.coerce.number().int().min(1).max(12),
+})

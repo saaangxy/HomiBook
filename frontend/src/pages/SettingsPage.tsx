@@ -44,7 +44,8 @@ import {
 } from '@/components/ui/table'
 import { Spinner } from '@/components/ui/spinner'
 import { settingsApi, type DictItem } from '@/api/settings'
-import { Plus, Pencil, Trash2, Settings, BookOpen, Check, FolderOpen, FileSearch } from 'lucide-react'
+import { holidayApi } from '@/api/holiday'
+import { Plus, Pencil, Trash2, Settings, BookOpen, Check, FolderOpen, FileSearch, RefreshCw } from 'lucide-react'
 
 const DICT_GROUPS: { key: string; label: string }[] = [
   { key: 'account_type', label: '账户类型' },
@@ -56,13 +57,22 @@ const DICT_GROUPS: { key: string; label: string }[] = [
 
 const CURRENCIES = ['CNY', 'USD', 'EUR', 'JPY', 'GBP', 'HKD']
 
+const HOLIDAY_API_OPTIONS = [
+  { value: 'https://timor.tech/api/holiday/year/{year}', label: 'timor.tech（免费，推荐）' },
+  { value: 'https://api.jiejiariapi.com/v1/holidays/{year}', label: 'jiejiariapi.com（备选）' },
+]
+
 export function SettingsPage() {
   // 通用设置
   const [registrationOpen, setRegistrationOpen] = useState(true)
   const [defaultCurrency, setDefaultCurrency] = useState('CNY')
+  const [amountHighlightThreshold, setAmountHighlightThreshold] = useState(1000)
+  const [holidayApiUrl, setHolidayApiUrl] = useState('https://timor.tech/api/holiday/year/{year}')
   const [configLoading, setConfigLoading] = useState(true)
   const [configSaving, setConfigSaving] = useState(false)
   const [configError, setConfigError] = useState('')
+  const [syncingHolidays, setSyncingHolidays] = useState(false)
+  const [syncResult, setSyncResult] = useState('')
 
   // 字典管理
   const [dictTab, setDictTab] = useState('account_type')
@@ -95,6 +105,8 @@ export function SettingsPage() {
       .then((config) => {
         if (typeof config.registrationOpen === 'boolean') setRegistrationOpen(config.registrationOpen)
         if (typeof config.defaultCurrency === 'string') setDefaultCurrency(config.defaultCurrency)
+        if (typeof config.amountHighlightThreshold === 'number') setAmountHighlightThreshold(config.amountHighlightThreshold)
+        if (typeof config.holidayApiUrl === 'string') setHolidayApiUrl(config.holidayApiUrl)
       })
       .catch(() => setConfigError('加载配置失败'))
       .finally(() => setConfigLoading(false))
@@ -115,12 +127,26 @@ export function SettingsPage() {
 
   useEffect(() => { loadDict(dictTab) }, [dictTab, loadDict])
 
+  // 同步节假日
+  const handleSyncHolidays = async () => {
+    setSyncingHolidays(true)
+    setSyncResult('')
+    try {
+      const result = await holidayApi.sync()
+      setSyncResult(`同步完成，导入了 ${result.imported} 条节假日数据`)
+    } catch (e: any) {
+      setSyncResult(`同步失败：${e.message}`)
+    } finally {
+      setSyncingHolidays(false)
+    }
+  }
+
   // 保存配置
   const handleSaveConfig = async () => {
     setConfigSaving(true)
     setConfigError('')
     try {
-      await settingsApi.updateConfig({ registrationOpen, defaultCurrency })
+      await settingsApi.updateConfig({ registrationOpen, defaultCurrency, amountHighlightThreshold, holidayApiUrl })
     } catch (e: any) {
       setConfigError(e.message)
     } finally {
@@ -317,6 +343,77 @@ export function SettingsPage() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+
+              {/* 分隔 */}
+              <div className="border-t" />
+
+              {/* 支出高亮阈值 */}
+              <div className="flex items-start justify-between gap-8">
+                <div className="flex-1">
+                  <h4 className="text-sm font-medium">支出高亮阈值</h4>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    流水日历中当日支出超过此金额的日期将高亮显示（单位：元）
+                  </p>
+                </div>
+                <Input
+                  type="number"
+                  min="0"
+                  step="100"
+                  placeholder="1000"
+                  value={amountHighlightThreshold}
+                  onChange={(e) => setAmountHighlightThreshold(parseFloat(e.target.value) || 0)}
+                  className="w-28 bg-background border-border h-9"
+                />
+              </div>
+
+              {/* 分隔 */}
+              <div className="border-t" />
+
+              {/* 节假日 API */}
+              <div className="space-y-3">
+                <div className="flex items-start justify-between gap-8">
+                  <div className="flex-1">
+                    <h4 className="text-sm font-medium">节假日数据源</h4>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      选择节假日 API 地址，用于同步和显示节假日/调休信息
+                    </p>
+                  </div>
+                  <Select value={holidayApiUrl} onValueChange={setHolidayApiUrl}>
+                    <SelectTrigger className="w-56 bg-background border-border h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-card border-border">
+                      {HOLIDAY_API_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Input
+                  placeholder="或输入自定义 API 地址，{year} 为年份占位符"
+                  value={holidayApiUrl}
+                  onChange={(e) => setHolidayApiUrl(e.target.value)}
+                  className="bg-background border-border h-9"
+                />
+                <div className="flex items-center gap-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSyncHolidays}
+                    disabled={syncingHolidays}
+                  >
+                    <RefreshCw size={14} className="mr-1" />
+                    {syncingHolidays ? '同步中...' : '同步节假日'}
+                  </Button>
+                  {syncResult && (
+                    <span className={`text-xs ${syncResult.includes('失败') ? 'text-[#ef4444]' : 'text-[#22c55e]'}`}>
+                      {syncResult}
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* 保存按钮 */}
