@@ -230,7 +230,13 @@ export function CalendarPage() {
     if (!currentBookId || !selectedDate) return
     const amount = parseFloat(formAmount)
     if (!amount || amount <= 0) { setFormError('请输入有效金额'); return }
-    if (!formAccountId) { setFormError('请选择账户'); return }
+    if (formType === 'TRANSFER') {
+      if (!formFromAccountId) { setFormError('请选择转出账户'); return }
+      if (!formToAccountId) { setFormError('请选择转入账户'); return }
+      if (formFromAccountId === formToAccountId) { setFormError('转出和转入账户不能相同'); return }
+    } else {
+      if (!formAccountId) { setFormError('请选择账户'); return }
+    }
 
     setSubmitting(true)
     setFormError('')
@@ -240,7 +246,7 @@ export function CalendarPage() {
         type: formType,
         amount,
         date: new Date(selectedDate + 'T12:00:00').toISOString(),
-        accountId: formAccountId,
+        accountId: formType === 'TRANSFER' ? formFromAccountId : formAccountId,
         fromAccountId: formType === 'TRANSFER' ? formFromAccountId : undefined,
         toAccountId: formType === 'TRANSFER' ? formToAccountId : undefined,
         categoryCode: formCategoryCode || undefined,

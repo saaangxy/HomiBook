@@ -139,7 +139,7 @@ export function TransactionCalendar({
               if (isToday) {
                 bgClass = 'bg-amber-50/70 ring-2 ring-amber-500'
               } else if (expenseOverThreshold) {
-                bgClass = 'bg-rose-50/40'
+                bgClass = 'bg-orange-50/40'
               }
 
               // 日期颜色：仅今天和假日特殊
