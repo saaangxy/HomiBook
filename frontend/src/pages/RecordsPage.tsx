@@ -137,8 +137,9 @@ export function RecordsPage() {
 
   // 分页
   const [page, setPage] = useState(1)
-  const [pageSize] = useState(20)
+  const [pageSize, setPageSize] = useState(20)
   const [total, setTotal] = useState(0)
+  const [jumpInput, setJumpInput] = useState('')
 
   // 筛选
   const [filters, setFilters] = useState<FilterState>({
@@ -730,22 +731,56 @@ export function RecordsPage() {
             </Table>
 
             {/* 分页 */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between p-4 border-t">
+            <div className="flex items-center justify-between p-4 border-t">
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-muted-foreground">每页</span>
+                <Select
+                  value={String(pageSize)}
+                  onValueChange={(v) => { setPageSize(Number(v)); setPage(1) }}
+                >
+                  <SelectTrigger className="h-8 w-20 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[10, 20, 50, 100].map((n) => (
+                      <SelectItem key={n} value={String(n)}>{n} 条</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <span className="text-sm text-muted-foreground">
-                  共 {total} 条，第 {page}/{totalPages} 页
+                  共 {total} 条
                 </span>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
-                    <ChevronLeft size={14} />
-                  </Button>
-                  <span className="text-sm">{page} / {totalPages}</span>
-                  <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>
-                    <ChevronRight size={14} />
-                  </Button>
-                </div>
               </div>
-            )}
+
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
+                  <ChevronLeft size={14} />
+                </Button>
+
+                <span className="text-sm min-w-[3.5rem] text-center">
+                  {page} / {Math.max(totalPages, 1)}
+                </span>
+
+                <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>
+                  <ChevronRight size={14} />
+                </Button>
+
+                <span className="text-sm text-muted-foreground ml-2">跳至</span>
+                <Input
+                  className="h-8 w-14 text-sm text-center"
+                  placeholder={String(page)}
+                  value={jumpInput}
+                  onChange={(e) => setJumpInput(e.target.value.replace(/\D/g, ''))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      const n = parseInt(jumpInput)
+                      if (n >= 1 && n <= totalPages) { setPage(n); setJumpInput('') }
+                    }
+                  }}
+                />
+                <span className="text-sm text-muted-foreground">页</span>
+              </div>
+            </div>
           </>
         )}
       </Card>
