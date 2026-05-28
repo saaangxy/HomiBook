@@ -201,14 +201,14 @@ export async function recordRoutes(app: FastifyInstance) {
     })
 
     // 按天分组聚合
-    const dayMap: Record<string, { income: number; expense: number; count: number }> = {}
+    const dayMap: Record<string, { income: number; expense: number; transfer: number; count: number }> = {}
     for (const r of records) {
       const day = r.date.toISOString().slice(0, 10)
-      if (!dayMap[day]) dayMap[day] = { income: 0, expense: 0, count: 0 }
+      if (!dayMap[day]) dayMap[day] = { income: 0, expense: 0, transfer: 0, count: 0 }
       dayMap[day].count++
       if (r.type === 'INCOME') dayMap[day].income += r.amount
       else if (r.type === 'EXPENSE') dayMap[day].expense += r.amount
-      // TRANSFER 不计入收支汇总
+      else if (r.type === 'TRANSFER') dayMap[day].transfer += r.amount
     }
 
     // 补全当月所有日期
@@ -220,6 +220,7 @@ export async function recordRoutes(app: FastifyInstance) {
         date: dateStr,
         income: dayMap[dateStr]?.income ?? 0,
         expense: dayMap[dateStr]?.expense ?? 0,
+        transfer: dayMap[dateStr]?.transfer ?? 0,
         count: dayMap[dateStr]?.count ?? 0,
       })
     }

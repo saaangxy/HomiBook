@@ -1,11 +1,13 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import type { HolidayItem } from '@/api/holiday'
 
 interface DayData {
   income: number
   expense: number
+  transfer: number
   count: number
 }
 
@@ -36,6 +38,9 @@ export function TransactionCalendar({
 }: TransactionCalendarProps) {
   const today = new Date()
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [pickerYear, setPickerYear] = useState(year)
+  const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1)
 
   const holidayMap = useMemo(() => {
     const map: Record<string, HolidayItem> = {}
@@ -89,9 +94,45 @@ export function TransactionCalendar({
           <ChevronLeft size={18} />
         </Button>
         <div className="flex items-center gap-2">
-          <span className="text-xl font-semibold tracking-tight">
-            {year}年{month}月
-          </span>
+          <Popover open={pickerOpen} onOpenChange={(open) => { if (open) setPickerYear(year); setPickerOpen(open) }}>
+            <PopoverTrigger asChild>
+              <button className="text-xl font-semibold tracking-tight cursor-pointer hover:text-amber-600 transition-colors rounded-lg px-2 py-1 hover:bg-accent/50">
+                {year}年{month}月
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-64 p-3" align="center">
+              {/* 年份选择器 */}
+              <div className="flex items-center justify-between mb-3">
+                <Button variant="outline" size="icon" className="h-7 w-7 rounded-md"
+                  onClick={() => setPickerYear((y) => y - 1)}>
+                  <ChevronLeft size={14} />
+                </Button>
+                <span className="text-base font-semibold">{pickerYear}年</span>
+                <Button variant="outline" size="icon" className="h-7 w-7 rounded-md"
+                  onClick={() => setPickerYear((y) => y + 1)}>
+                  <ChevronRight size={14} />
+                </Button>
+              </div>
+              {/* 月份网格 */}
+              <div className="grid grid-cols-4 gap-1.5">
+                {MONTHS.map((m) => {
+                  const isCurrent = pickerYear === year && m === month
+                  const isTodayMonth = pickerYear === today.getFullYear() && m === today.getMonth() + 1
+                  return (
+                    <button
+                      key={m}
+                      onClick={() => { onMonthChange(pickerYear, m); setPickerOpen(false) }}
+                      className={`py-2 text-sm rounded-lg font-medium transition-colors
+                        ${isCurrent ? 'bg-amber-500 text-white' : isTodayMonth ? 'bg-accent text-foreground' : 'hover:bg-accent/50 text-muted-foreground'}
+                      `}
+                    >
+                      {m}月
+                    </button>
+                  )
+                })}
+              </div>
+            </PopoverContent>
+          </Popover>
           <Button
             variant="ghost"
             size="sm"
@@ -137,9 +178,9 @@ export function TransactionCalendar({
               // 背景色：仅今天和超出阈值高亮
               let bgClass = ''
               if (isToday) {
-                bgClass = 'bg-amber-50/70 ring-2 ring-amber-500'
+                bgClass = 'bg-amber-50/20 ring-2 ring-amber-500'
               } else if (expenseOverThreshold) {
-                bgClass = 'bg-orange-50/40'
+                bgClass = 'bg-rose-50/20'
               }
 
               // 日期颜色：仅今天和假日特殊
@@ -201,6 +242,13 @@ export function TransactionCalendar({
                     {data && data.income > 0 && (
                       <span className="text-sm text-emerald-500 leading-tight font-semibold truncate max-w-full">
                         +{formatAmount(data.income)}
+                      </span>
+                    )}
+
+                    {/* 转账金额 */}
+                    {data && data.transfer > 0 && (
+                      <span className="text-sm text-blue-500 leading-tight font-semibold truncate max-w-full">
+                        {formatAmount(data.transfer)}
                       </span>
                     )}
                   </div>

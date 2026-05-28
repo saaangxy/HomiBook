@@ -67,7 +67,7 @@ export function CalendarPage() {
   const [month, setMonth] = useState(today.getMonth() + 1)
 
   // 日历数据
-  const [dayData, setDayData] = useState<Record<string, { income: number; expense: number; count: number }>>({})
+  const [dayData, setDayData] = useState<Record<string, { income: number; expense: number; transfer: number; count: number }>>({})
   const [loading, setLoading] = useState(false)
 
   // 月汇总
@@ -138,9 +138,9 @@ export function CalendarPage() {
         }),
         holidayApi.getByYear(year),
       ])
-      const map: Record<string, { income: number; expense: number; count: number }> = {}
+      const map: Record<string, { income: number; expense: number; transfer: number; count: number }> = {}
       for (const d of data) {
-        map[d.date] = { income: d.income, expense: d.expense, count: d.count }
+        map[d.date] = { income: d.income, expense: d.expense, transfer: d.transfer, count: d.count }
       }
       setDayData(map)
       setSummary(monthSummary)

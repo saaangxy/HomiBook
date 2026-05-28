@@ -112,7 +112,7 @@ export const recordApi = {
     api.post<RecordItem>(`/api/records/${id}/clone`, {}),
 
   calendar: (params: { bookId: string; year: number; month: number }) =>
-    api.get<Array<{ date: string; income: number; expense: number; count: number }>>('/api/records/calendar?' + new URLSearchParams({
+    api.get<Array<{ date: string; income: number; expense: number; transfer: number; count: number }>>('/api/records/calendar?' + new URLSearchParams({
       bookId: params.bookId,
       year: String(params.year),
       month: String(params.month),
