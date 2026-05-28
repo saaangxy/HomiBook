@@ -103,19 +103,20 @@ export async function computeBudgetSummary(
       actualAmount = agg._sum.amount ?? 0
     }
 
+    const roundedAmount = Math.round(budget.amount * 100) / 100
     return {
       id: budget.id,
       name: budget.name,
       type: budget.type,
       year: budget.year,
       month: budget.month,
-      amount: budget.amount,
+      amount: roundedAmount,
       categoryCode: budget.categoryCode,
       tag: budget.tag,
       remark: budget.remark,
       actualAmount: Math.round(actualAmount * 100) / 100,
-      usagePercent: budget.amount > 0 ? Math.round((actualAmount / budget.amount) * 10000) / 100 : 0,
-      remaining: Math.round((budget.amount - actualAmount) * 100) / 100,
+      usagePercent: roundedAmount > 0 ? Math.round((actualAmount / roundedAmount) * 10000) / 100 : 0,
+      remaining: Math.round((roundedAmount - actualAmount) * 100) / 100,
     }
   }))
 

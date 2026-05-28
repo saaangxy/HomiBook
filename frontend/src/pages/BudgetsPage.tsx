@@ -67,8 +67,8 @@ function UsageBar({ percent, remaining }: { percent: number; remaining: number }
           style={{ width: `${Math.min(percent, 100)}%` }}
         />
       </div>
-      <span className={`text-xs tabular-nums w-16 text-right ${remaining < 0 ? 'text-[#ef4444]' : 'text-muted-foreground'}`}>
-        {remaining < 0 ? `超支 ¥${Math.abs(remaining).toFixed(0)}` : `剩余 ¥${remaining.toFixed(0)}`}
+      <span className={`text-xs tabular-nums w-20 text-right ${remaining < 0 ? 'text-[#ef4444]' : 'text-muted-foreground'}`}>
+        {remaining < 0 ? `超支 ¥${Math.abs(remaining).toFixed(2)}` : `剩余 ¥${remaining.toFixed(2)}`}
       </span>
     </div>
   )
@@ -346,8 +346,8 @@ export function BudgetsPage() {
                   {b.type === 'FIXED' ? b.categoryCode : b.tag}
                 </TableCell>
               )}
-              <TableCell className="text-right tabular-nums">¥{b.amount.toFixed(0)}</TableCell>
-              <TableCell className="text-right tabular-nums">¥{actual.toFixed(0)}</TableCell>
+              <TableCell className="text-right tabular-nums">¥{b.amount.toFixed(2)}</TableCell>
+              <TableCell className="text-right tabular-nums">¥{actual.toFixed(2)}</TableCell>
               <TableCell>
                 <UsageBar percent={percent} remaining={remaining} />
               </TableCell>
@@ -439,20 +439,20 @@ export function BudgetsPage() {
           <Card>
             <CardContent className="pt-6">
               <div className="text-xs text-muted-foreground mb-1">{month ? `${month}月` : '年度'}总预算</div>
-              <div className="text-2xl font-bold tabular-nums">¥{summaryData.totalBudget.toFixed(0)}</div>
+              <div className="text-2xl font-bold tabular-nums">¥{summaryData.totalBudget.toFixed(2)}</div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-6">
               <div className="text-xs text-muted-foreground mb-1">实际支出</div>
-              <div className="text-2xl font-bold tabular-nums">¥{summaryData.totalActual.toFixed(0)}</div>
+              <div className="text-2xl font-bold tabular-nums">¥{summaryData.totalActual.toFixed(2)}</div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-6">
               <div className="text-xs text-muted-foreground mb-1">剩余预算</div>
               <div className={`text-2xl font-bold tabular-nums ${summaryData.totalRemaining < 0 ? 'text-[#ef4444]' : 'text-[#22c55e]'}`}>
-                ¥{summaryData.totalRemaining.toFixed(0)}
+                ¥{summaryData.totalRemaining.toFixed(2)}
               </div>
             </CardContent>
           </Card>
