@@ -47,6 +47,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { DictCombobox } from '@/components/DictCombobox'
+import { TagCombobox } from '@/components/TagCombobox'
 import { AttachmentViewer } from '@/components/AttachmentViewer'
 import { recordApi, type RecordItem, type RecordType, type RecordSummary } from '@/api/record'
 import { accountApi, type AccountItem } from '@/api/account'
@@ -187,6 +188,7 @@ export function RecordsPage() {
   const [formCategoryCode, setFormCategoryCode] = useState('')
   const [formPayer, setFormPayer] = useState('')
   const [formRemark, setFormRemark] = useState('')
+  const [formTags, setFormTags] = useState<string[]>([])
   const [formOwnerId, setFormOwnerId] = useState('')
   const [formAttachments, setFormAttachments] = useState<{ id: string; url: string; fullUrl: string; originalFilename: string }[]>([])
   const [uploadingAttachment, setUploadingAttachment] = useState(false)
@@ -315,6 +317,7 @@ export function RecordsPage() {
     setFormRemark('')
     setFormOwnerId('')
     setFormAttachments([])
+    setFormTags([])
     setFormError('')
     setSubmitting(false)
     setCreateOpen(true)
@@ -330,6 +333,7 @@ export function RecordsPage() {
     setFormCategoryCode(record.categoryCode || '')
     setFormPayer(record.payer || '')
     setFormRemark(record.remark || '')
+    setFormTags(record.tags || [])
     setFormOwnerId(record.ownerId)
     // 附件数据已包含 id + url + originalFilename，补 fullUrl
     const origin = window.location.origin
@@ -365,11 +369,11 @@ export function RecordsPage() {
         categoryCode: formCategoryCode || undefined,
         payer: formPayer || undefined,
         remark: formRemark || undefined,
+        tags: formTags.length > 0 ? formTags : undefined,
         ownerId: formOwnerId || undefined,
         attachmentIds: formAttachments.map((a) => a.id),
       })
       setCreateOpen(false)
-      loadRecords()
       loadSummary()
       loadAccounts()
     } catch (e: any) { setFormError(e.message) }
@@ -391,6 +395,7 @@ export function RecordsPage() {
         categoryCode: formCategoryCode || undefined,
         payer: formPayer || undefined,
         remark: formRemark || undefined,
+        tags: formTags.length > 0 ? formTags : undefined,
         ownerId: formOwnerId || undefined,
         attachmentIds: formAttachments.map((a) => a.id),
       })
@@ -1017,6 +1022,16 @@ export function RecordsPage() {
                 value={formPayer}
                 onChange={(e) => setFormPayer(e.target.value)}
                 className="bg-background border-border"
+              />
+            </div>
+
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">标签</Label>
+              <TagCombobox
+                value={formTags}
+                onChange={setFormTags}
+                bookId={currentBookId || ''}
+                placeholder="选择或输入标签..."
               />
             </div>
 

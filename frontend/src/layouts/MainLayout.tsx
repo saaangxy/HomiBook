@@ -28,6 +28,7 @@ import {
   Wallet,
   ArrowLeftRight,
   CalendarDays,
+  Target,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -37,6 +38,7 @@ const allNavItems = [
   { path: '/records/calendar', label: '流水日历', icon: CalendarDays },
   { path: '/records', label: '流水管理', icon: ArrowLeftRight },
   { path: '/accounts', label: '账户管理', icon: Wallet },
+  { path: '/budgets', label: '预算管理', icon: Target },
   { path: '/books', label: '账本管理', icon: Book },
   { path: '/admin/users', label: '用户管理', icon: Users, adminOnly: true },
   { path: '/settings', label: '设置', icon: Settings, adminOnly: true },

@@ -11,6 +11,7 @@ import { BooksPage } from './pages/BooksPage'
 import { AccountsPage } from './pages/AccountsPage'
 import { RecordsPage } from './pages/RecordsPage'
 import { CalendarPage } from './pages/CalendarPage'
+import { BudgetsPage } from './pages/BudgetsPage'
 import { useAuthStore } from './stores/auth'
 
 const queryClient = new QueryClient()
@@ -44,6 +45,7 @@ function App() {
               <Route path="records" element={<RecordsPage />} />
               <Route path="books" element={<BooksPage />} />
               <Route path="accounts" element={<AccountsPage />} />
+              <Route path="budgets" element={<BudgetsPage />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="admin/users" element={<UsersPage />} />
             </Route>

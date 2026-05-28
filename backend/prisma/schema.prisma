@@ -38,6 +38,7 @@ model AccountBook {
   records     Record[]
   categories  CategoryMapping[]
   shareCodes  ShareCode[]
+  budgets     Budget[]
 }
 
 // 账本成员
@@ -197,4 +198,24 @@ model Holiday {
   name      String
   isWorkday Boolean  @default(false) // true=调休工作日, false=假日
   createdAt DateTime @default(now())
+}
+
+// 预算
+model Budget {
+  id            String      @id @default(uuid())
+  accountBookId String
+  accountBook   AccountBook @relation(fields: [accountBookId], references: [id], onDelete: Cascade)
+  name          String
+  type          String      // FIXED | FREE
+  year          Int
+  month         Int         // 1-12
+  amount        Float
+  categoryCode  String?     // 固定预算关联字典分类code
+  tag           String?     // 自由预算关联标签
+  remark        String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([accountBookId, type, year, month, name])
+  @@index([accountBookId, year, month])
 }

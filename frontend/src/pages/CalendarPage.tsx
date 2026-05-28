@@ -33,6 +33,7 @@ import {
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import { DictCombobox } from '@/components/DictCombobox'
+import { TagCombobox } from '@/components/TagCombobox'
 import { TransactionCalendar } from '@/components/TransactionCalendar'
 import { AttachmentViewer, type AttachmentItem } from '@/components/AttachmentViewer'
 import { recordApi, type RecordItem, type RecordType } from '@/api/record'
@@ -104,6 +105,7 @@ export function CalendarPage() {
   const [formCategoryCode, setFormCategoryCode] = useState('')
   const [formPayer, setFormPayer] = useState('')
   const [formRemark, setFormRemark] = useState('')
+  const [formTags, setFormTags] = useState<string[]>([])
   const [formError, setFormError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
@@ -203,6 +205,7 @@ export function CalendarPage() {
     setFormCategoryCode(r.categoryCode || '')
     setFormPayer(r.payer || '')
     setFormRemark(r.remark || '')
+    setFormTags(r.tags || [])
     setFormError('')
     setFormOpen(true)
   }
@@ -220,6 +223,7 @@ export function CalendarPage() {
     setFormCategoryCode('')
     setFormPayer('')
     setFormRemark('')
+    setFormTags([])
     setFormError('')
   }
 
@@ -252,6 +256,7 @@ export function CalendarPage() {
         categoryCode: formCategoryCode || undefined,
         payer: formPayer || undefined,
         remark: formRemark || undefined,
+        tags: formTags.length > 0 ? formTags : undefined,
         ownerId: userId,
       }
 
@@ -658,6 +663,17 @@ export function CalendarPage() {
                 value={formPayer}
                 onChange={(e) => setFormPayer(e.target.value)}
                 className="bg-background border-border rounded-xl"
+              />
+            </div>
+
+            {/* 标签 */}
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">标签</Label>
+              <TagCombobox
+                value={formTags}
+                onChange={setFormTags}
+                bookId={currentBookId || ''}
+                placeholder="选择或输入标签..."
               />
             </div>
 
