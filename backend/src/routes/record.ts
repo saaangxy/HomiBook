@@ -140,10 +140,13 @@ export async function recordRoutes(app: FastifyInstance) {
     }
   })
 
-  // 汇总统计
+  // 汇总统计（与列表查询共用相同的筛选条件）
   app.get('/summary', async (req, reply) => {
-    const { bookId, dateFrom, dateTo } = req.query as any
-    if (!bookId) return reply.status(400).send({ message: '缺少 bookId 参数' })
+    const parsed = listRecordsSchema.safeParse(req.query)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: parsed.error.issues[0].message })
+    }
+    const { bookId, type, accountId, categoryCode, dateFrom, dateTo, ownerId, payer, amountFrom, amountTo, remark } = parsed.data
     const userId = (req as any).user.id as string
 
     try {
@@ -152,21 +155,50 @@ export async function recordRoutes(app: FastifyInstance) {
       return reply.status(e.statusCode || 403).send({ message: e.message })
     }
 
-    const dateFilter: any = {}
-    if (dateFrom) dateFilter.gte = new Date(dateFrom)
-    if (dateTo) dateFilter.lte = new Date(dateTo + 'T23:59:59.999Z')
+    // 解析用户类型筛选（不放入 where，由各聚合自行判断）
+    const typeFilter: string[] | null = type
+      ? type.split(',').map((s: string) => s.trim()).filter(Boolean)
+      : null
 
-    const where = { accountBookId: bookId, ...(Object.keys(dateFilter).length ? { date: dateFilter } : {}) }
+    const where: any = { accountBookId: bookId }
+    if (accountId) {
+      const ids = accountId.split(',').map((s: string) => s.trim()).filter(Boolean)
+      if (ids.length === 1) where.accountId = ids[0]
+      else if (ids.length > 1) where.accountId = { in: ids }
+    }
+    if (categoryCode) {
+      const ids = categoryCode.split(',').map((s: string) => s.trim()).filter(Boolean)
+      if (ids.length === 1) where.categoryCode = ids[0]
+      else if (ids.length > 1) where.categoryCode = { in: ids }
+    }
+    if (ownerId) {
+      const ids = ownerId.split(',').map((s: string) => s.trim()).filter(Boolean)
+      if (ids.length === 1) where.ownerId = ids[0]
+      else if (ids.length > 1) where.ownerId = { in: ids }
+    }
+    if (dateFrom || dateTo) where.date = {}
+    if (dateFrom) where.date.gte = new Date(dateFrom)
+    if (dateTo) where.date.lte = new Date(dateTo + 'T23:59:59.999Z')
+    if (payer) where.payer = { contains: payer }
+    if (amountFrom !== undefined || amountTo !== undefined) where.amount = {}
+    if (amountFrom !== undefined) where.amount.gte = amountFrom
+    if (amountTo !== undefined) where.amount.lte = amountTo
+    if (remark) where.remark = { contains: remark }
 
-    const [incomeAgg, expenseAgg, transferAgg] = await Promise.all([
-      prisma.record.aggregate({ where: { ...where, type: 'INCOME' }, _sum: { amount: true } }),
-      prisma.record.aggregate({ where: { ...where, type: 'EXPENSE' }, _sum: { amount: true } }),
-      prisma.record.aggregate({ where: { ...where, type: 'TRANSFER' }, _sum: { amount: true } }),
+    // 如果用户筛选了类型，只聚合匹配的类型；否则聚合全部
+    const shouldAgg = (recordType: string) => !typeFilter || typeFilter.includes(recordType)
+
+    const [income, expense, transfer] = await Promise.all([
+      shouldAgg('INCOME')
+        ? prisma.record.aggregate({ where: { ...where, type: 'INCOME' }, _sum: { amount: true } }).then(r => r._sum.amount ?? 0)
+        : Promise.resolve(0),
+      shouldAgg('EXPENSE')
+        ? prisma.record.aggregate({ where: { ...where, type: 'EXPENSE' }, _sum: { amount: true } }).then(r => r._sum.amount ?? 0)
+        : Promise.resolve(0),
+      shouldAgg('TRANSFER')
+        ? prisma.record.aggregate({ where: { ...where, type: 'TRANSFER' }, _sum: { amount: true } }).then(r => r._sum.amount ?? 0)
+        : Promise.resolve(0),
     ])
-
-    const income = incomeAgg._sum.amount ?? 0
-    const expense = expenseAgg._sum.amount ?? 0
-    const transfer = transferAgg._sum.amount ?? 0
 
     return {
       income,

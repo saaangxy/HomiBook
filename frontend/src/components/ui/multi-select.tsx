@@ -120,8 +120,8 @@ export function MultiSelect({
               {allSelected ? '取消全选' : '全选'}
             </button>
           )}
-          {/* 选项列表 */}
-          <div className="max-h-48 overflow-y-auto">
+          {/* 选项列表（onWheel 阻止事件冒泡到 document，避免 react-remove-scroll 拦截） */}
+          <div className="max-h-48 overflow-y-auto" onWheel={(e) => e.stopPropagation()}>
             {filtered.length === 0 ? (
               <div className="py-4 text-center text-sm text-muted-foreground">无匹配选项</div>
             ) : (

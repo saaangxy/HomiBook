@@ -66,10 +66,21 @@ export const recordApi = {
     Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))
   ).toString()),
 
-  summary: (params: { bookId: string; dateFrom?: string; dateTo?: string }) =>
-    api.get<RecordSummary>('/api/records/summary?' + new URLSearchParams(
-      Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))
-    ).toString()),
+  summary: (params: {
+    bookId: string
+    type?: string
+    accountId?: string
+    categoryCode?: string
+    dateFrom?: string
+    dateTo?: string
+    ownerId?: string
+    payer?: string
+    amountFrom?: number
+    amountTo?: number
+    remark?: string
+  }) => api.get<RecordSummary>('/api/records/summary?' + new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))
+  ).toString()),
 
   create: (data: {
     accountBookId: string

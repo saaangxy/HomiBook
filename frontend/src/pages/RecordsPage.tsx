@@ -236,11 +236,19 @@ export function RecordsPage() {
     try {
       setSummary(await recordApi.summary({
         bookId: currentBookId,
+        type: filters.types.length > 0 ? filters.types.join(',') : undefined,
+        accountId: filters.accountIds.length > 0 ? filters.accountIds.join(',') : undefined,
+        categoryCode: filters.categoryCodes.length > 0 ? filters.categoryCodes.join(',') : undefined,
         dateFrom: filters.dateFrom || undefined,
         dateTo: filters.dateTo || undefined,
+        ownerId: filters.ownerIds.length > 0 ? filters.ownerIds.join(',') : undefined,
+        payer: filters.payer || undefined,
+        amountFrom: filters.amountFrom ? parseFloat(filters.amountFrom) : undefined,
+        amountTo: filters.amountTo ? parseFloat(filters.amountTo) : undefined,
+        remark: filters.remark || undefined,
       }))
     } catch { /* ignore */ }
-  }, [currentBookId, filters.dateFrom, filters.dateTo])
+  }, [currentBookId, filters.types, filters.accountIds, filters.categoryCodes, filters.dateFrom, filters.dateTo, filters.ownerIds, filters.payer, filters.amountFrom, filters.amountTo, filters.remark])
 
   // 加载列表
   const loadRecords = useCallback(async () => {
