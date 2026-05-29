@@ -384,12 +384,27 @@ export async function recordRoutes(app: FastifyInstance) {
 
   // 批量更新
   app.patch('/batch', async (req, reply) => {
-    const { ids, data } = req.body as { ids: string[]; data: Partial<{ type: string; categoryCode: string; remark: string }> }
+    const { ids, data } = req.body as {
+      ids: string[]
+      data: Record<string, any>
+    }
     if (!ids?.length) return reply.status(400).send({ message: '请选择要更新的记录' })
+
+    // 校验 data 字段（复用 updateRecordSchema，排除 attachmentIds 和 ownerId）
+    const parsed = updateRecordSchema.safeParse(data)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: parsed.error.issues[0].message })
+    }
+
+    const updateData: any = { ...parsed.data }
+    delete updateData.attachmentIds
+    delete updateData.ownerId
+    if (updateData.tags) updateData.tags = JSON.stringify(updateData.tags)
+    if (updateData.date) updateData.date = new Date(updateData.date)
 
     await prisma.record.updateMany({
       where: { id: { in: ids } },
-      data,
+      data: updateData,
     })
 
     return { success: true, updated: ids.length }

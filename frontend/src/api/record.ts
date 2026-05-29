@@ -115,7 +115,18 @@ export const recordApi = {
     ownerId?: string
   }) => api.patch<RecordItem>(`/api/records/${id}`, data),
 
-  batchUpdate: (ids: string[], data: { type?: string; categoryCode?: string; remark?: string }) =>
+  batchUpdate: (ids: string[], data: {
+    type?: string
+    amount?: number
+    date?: string
+    remark?: string | null
+    tags?: string[]
+    accountId?: string
+    fromAccountId?: string
+    toAccountId?: string
+    categoryCode?: string | null
+    payer?: string | null
+  }) =>
     api.patch<{ success: boolean; updated: number }>('/api/records/batch', { ids, data }),
 
   delete: (id: string) =>

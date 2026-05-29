@@ -184,8 +184,17 @@ export function RecordsPage() {
 
   // 批量更新弹窗
   const [batchOpen, setBatchOpen] = useState(false)
+  const [batchDate, setBatchDate] = useState('')
+  const [batchType, setBatchType] = useState('')
+  const [batchAccountId, setBatchAccountId] = useState('')
+  const [batchFromAccountId, setBatchFromAccountId] = useState('')
+  const [batchToAccountId, setBatchToAccountId] = useState('')
   const [batchCategory, setBatchCategory] = useState('')
+  const [batchTags, setBatchTags] = useState<string[]>([])
+  const [batchPayer, setBatchPayer] = useState('')
+  const [batchAmount, setBatchAmount] = useState('')
   const [batchRemark, setBatchRemark] = useState('')
+  const [batchError, setBatchError] = useState('')
 
   // 表单状态
   const [formType, setFormType] = useState<RecordType>('EXPENSE')
@@ -493,18 +502,57 @@ export function RecordsPage() {
 
   const handleBatchUpdate = async () => {
     if (selectedIds.size === 0) return
+
+    const data: any = {}
+    if (batchDate) data.date = new Date(batchDate).toISOString()
+    if (batchType) data.type = batchType
+    if (batchType === 'TRANSFER' || (!batchType && records.filter(r => selectedIds.has(r.id)).every(r => r.type === 'TRANSFER'))) {
+      if (batchFromAccountId) {
+        data.accountId = batchFromAccountId
+        data.fromAccountId = batchFromAccountId
+      }
+      if (batchToAccountId) data.toAccountId = batchToAccountId
+    } else if (batchAccountId) {
+      data.accountId = batchAccountId
+    }
+    if (batchCategory) data.categoryCode = batchCategory === '__clear__' ? null : batchCategory
+    if (batchTags.length > 0) data.tags = batchTags
+    if (batchPayer) data.payer = batchPayer === '__clear__' ? null : batchPayer
+    if (batchAmount) {
+      const amt = parseFloat(batchAmount)
+      if (isNaN(amt) || amt <= 0) { setBatchError('金额必须大于0'); return }
+      data.amount = amt
+    }
+    if (batchRemark) data.remark = batchRemark === '__clear__' ? null : batchRemark
+
+    if (Object.keys(data).length === 0) { setBatchError('请至少填写一个字段'); return }
+
     setSubmitting(true)
+    setBatchError('')
     try {
-      await recordApi.batchUpdate(
-        Array.from(selectedIds),
-        { categoryCode: batchCategory || undefined, remark: batchRemark || undefined }
-      )
+      await recordApi.batchUpdate(Array.from(selectedIds), data)
       setBatchOpen(false)
-      setBatchCategory('')
-      setBatchRemark('')
+      resetBatchForm()
+      setSelectedIds(new Set())
       loadRecords()
-    } catch (e: any) { setError(e.message) }
+      loadSummary()
+      loadAccounts()
+    } catch (e: any) { setBatchError(e.message) }
     finally { setSubmitting(false) }
+  }
+
+  const resetBatchForm = () => {
+    setBatchDate('')
+    setBatchType('')
+    setBatchAccountId('')
+    setBatchFromAccountId('')
+    setBatchToAccountId('')
+    setBatchCategory('')
+    setBatchTags([])
+    setBatchPayer('')
+    setBatchAmount('')
+    setBatchRemark('')
+    setBatchError('')
   }
 
   const toggleSelect = (id: string) => {
@@ -517,8 +565,17 @@ export function RecordsPage() {
   }
 
   const toggleSelectAll = () => {
-    if (selectedIds.size === records.length) setSelectedIds(new Set())
-    else setSelectedIds(new Set(records.map((r) => r.id)))
+    const currentIds = records.map((r) => r.id)
+    const allSelected = currentIds.every((id) => selectedIds.has(id))
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (allSelected) {
+        currentIds.forEach((id) => next.delete(id))
+      } else {
+        currentIds.forEach((id) => next.add(id))
+      }
+      return next
+    })
   }
 
   const getCategoryGroup = (type: RecordType) => {
@@ -763,7 +820,7 @@ export function RecordsPage() {
                     <TableHead className="w-8">
                       <input
                         type="checkbox"
-                        checked={selectedIds.size === records.length}
+                        checked={records.length > 0 && records.every((r) => selectedIds.has(r.id))}
                         onChange={toggleSelectAll}
                         className="rounded"
                       />
@@ -1287,19 +1344,50 @@ export function RecordsPage() {
             </div>
 
             <div className="flex gap-3">
-              <div className="flex-1">
-                <Label className="text-xs text-muted-foreground mb-1 block">账户</Label>
-                <Select value={formAccountId} onValueChange={(v) => { setFormAccountId(v); setFormError('') }}>
-                  <SelectTrigger className="bg-background border-border">
-                    <SelectValue placeholder="选择账户" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-card border-border">
-                    {accounts.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {formType === 'TRANSFER' ? (
+                <>
+                  <div className="flex-1">
+                    <Label className="text-xs text-muted-foreground mb-1 block">转出账户</Label>
+                    <Select value={formFromAccountId} onValueChange={setFormFromAccountId}>
+                      <SelectTrigger className="bg-background border-border">
+                        <SelectValue placeholder="选择转出账户" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-card border-border">
+                        {accounts.map((a) => (
+                          <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex-1">
+                    <Label className="text-xs text-muted-foreground mb-1 block">转入账户</Label>
+                    <Select value={formToAccountId} onValueChange={setFormToAccountId}>
+                      <SelectTrigger className="bg-background border-border">
+                        <SelectValue placeholder="选择转入账户" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-card border-border">
+                        {accounts.map((a) => (
+                          <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
+              ) : (
+                <div className="flex-1">
+                  <Label className="text-xs text-muted-foreground mb-1 block">账户</Label>
+                  <Select value={formAccountId} onValueChange={(v) => { setFormAccountId(v); setFormError('') }}>
+                    <SelectTrigger className="bg-background border-border">
+                      <SelectValue placeholder="选择账户" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-card border-border">
+                      {accounts.map((a) => (
+                        <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="flex-1">
                 <Label className="text-xs text-muted-foreground mb-1 block">日期</Label>
                 <DateTimePicker
@@ -1308,37 +1396,6 @@ export function RecordsPage() {
                 />
               </div>
             </div>
-
-            {formType === 'TRANSFER' && (
-              <div className="flex gap-3">
-                <div className="flex-1">
-                  <Label className="text-xs text-muted-foreground mb-1 block">源账户</Label>
-                  <Select value={formFromAccountId} onValueChange={setFormFromAccountId}>
-                    <SelectTrigger className="bg-background border-border">
-                      <SelectValue placeholder="选择转出账户" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-card border-border">
-                      {accounts.map((a) => (
-                        <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex-1">
-                  <Label className="text-xs text-muted-foreground mb-1 block">目标账户</Label>
-                  <Select value={formToAccountId} onValueChange={setFormToAccountId}>
-                    <SelectTrigger className="bg-background border-border">
-                      <SelectValue placeholder="选择转入账户" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-card border-border">
-                      {accounts.map((a) => (
-                        <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            )}
 
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">分类</Label>
@@ -1520,21 +1577,115 @@ export function RecordsPage() {
       )}
 
       {/* 批量更新弹窗 */}
-      <Dialog open={batchOpen} onOpenChange={setBatchOpen}>
-        <DialogContent>
+      <Dialog open={batchOpen} onOpenChange={(open) => { if (!open) { setBatchOpen(false); resetBatchForm() } }}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>批量更新 {selectedIds.size} 条记录</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-3">
+            {/* 日期 */}
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">日期</Label>
+              <DatePicker value={batchDate} onChange={setBatchDate} placeholder="留空则不更新日期" />
+            </div>
+
+            {/* 类型 */}
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">类型</Label>
+              <Select value={batchType} onValueChange={(v) => { setBatchType(v); setBatchAccountId(''); setBatchFromAccountId(''); setBatchToAccountId(''); setBatchCategory('') }}>
+                <SelectTrigger className="bg-background border-border h-9"><SelectValue placeholder="留空则不更新类型" /></SelectTrigger>
+                <SelectContent>
+                  {(['INCOME', 'EXPENSE', 'TRANSFER'] as RecordType[]).map((t) => (
+                    <SelectItem key={t} value={t}>{TYPE_LABELS[t]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* 账户 */}
+            {batchType === 'TRANSFER' ? (
+              <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <Label className="text-xs text-muted-foreground mb-1 block">转出账户</Label>
+                  <Select value={batchFromAccountId} onValueChange={setBatchFromAccountId} disabled={!batchType}>
+                    <SelectTrigger className="bg-background border-border h-9"><SelectValue placeholder="留空则不更新" /></SelectTrigger>
+                    <SelectContent>
+                      {accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <span className="text-muted-foreground mt-5">→</span>
+                <div className="flex-1">
+                  <Label className="text-xs text-muted-foreground mb-1 block">转入账户</Label>
+                  <Select value={batchToAccountId} onValueChange={setBatchToAccountId} disabled={!batchType}>
+                    <SelectTrigger className="bg-background border-border h-9"><SelectValue placeholder="留空则不更新" /></SelectTrigger>
+                    <SelectContent>
+                      {accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <Label className="text-xs text-muted-foreground mb-1 block">账户</Label>
+                <Select value={batchAccountId} onValueChange={setBatchAccountId} disabled={!batchType}>
+                  <SelectTrigger className="bg-background border-border h-9"><SelectValue placeholder={batchType ? '留空则不更新账户' : '请先选择类型'} /></SelectTrigger>
+                  <SelectContent>
+                    {accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* 分类 */}
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">分类</Label>
               <DictCombobox
-                group="transaction_category_expense"
+                group={getCategoryGroup((batchType || 'EXPENSE') as RecordType)}
                 value={batchCategory}
                 onChange={setBatchCategory}
-                placeholder="留空则不更新分类"
+                placeholder={batchType ? '留空则不更新分类' : '请先选择类型'}
+                disabled={!batchType}
               />
             </div>
+
+            {/* 标签 */}
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">标签</Label>
+              <TagCombobox
+                value={batchTags}
+                onChange={setBatchTags}
+                bookId={currentBookId || ''}
+                placeholder="留空则不更新标签"
+              />
+            </div>
+
+            {/* 交易方 */}
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">交易方</Label>
+              <Input
+                placeholder="留空则不更新交易方"
+                value={batchPayer}
+                onChange={(e) => setBatchPayer(e.target.value)}
+                className="bg-background border-border h-9"
+              />
+            </div>
+
+            {/* 金额 */}
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">金额</Label>
+              <Input
+                type="number"
+                placeholder="留空则不更新金额"
+                value={batchAmount}
+                onChange={(e) => setBatchAmount(e.target.value)}
+                className="bg-background border-border h-9"
+                min="0"
+                step="0.01"
+              />
+            </div>
+
+            {/* 备注 */}
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">备注</Label>
               <Textarea
@@ -1545,9 +1696,11 @@ export function RecordsPage() {
                 rows={2}
               />
             </div>
+
+            {batchError && <p className="text-sm text-[#ef4444]">{batchError}</p>}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setBatchOpen(false)}>取消</Button>
+            <Button variant="outline" onClick={() => { setBatchOpen(false); resetBatchForm() }}>取消</Button>
             <Button className="bg-[#f97316] hover:bg-[#ea580c] text-white" onClick={handleBatchUpdate} disabled={submitting}>
               {submitting ? '更新中...' : '确认更新'}
             </Button>
