@@ -5,6 +5,7 @@ import {
   createBudgetSchema,
   updateBudgetSchema,
   batchCreateSchema,
+  batchUpdateBudgetSchema,
   copyBudgetsSchema,
   listBudgetsQuerySchema,
   summaryQuerySchema,
@@ -131,6 +132,36 @@ export async function budgetRoutes(app: FastifyInstance) {
 
     const budget = await prisma.budget.update({ where: { id }, data })
     return budget
+  })
+
+  // 批量更新预算
+  app.patch('/batch', async (req, reply) => {
+    const parsed = batchUpdateBudgetSchema.safeParse(req.body)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: parsed.error.errors[0].message })
+    }
+
+    const { ids, data } = parsed.data
+
+    // 验证所有预算存在且属于同一账本
+    const budgets = await prisma.budget.findMany({ where: { id: { in: ids } } })
+    if (budgets.length !== ids.length) {
+      return reply.status(404).send({ message: '部分预算不存在' })
+    }
+
+    const accountBookId = budgets[0].accountBookId
+    if (budgets.some((b) => b.accountBookId !== accountBookId)) {
+      return reply.status(400).send({ message: '只能批量编辑同一账本的预算' })
+    }
+
+    await assertIsMember(accountBookId, (req.user as { id: string }).id)
+
+    await prisma.budget.updateMany({
+      where: { id: { in: ids } },
+      data,
+    })
+
+    return { updated: ids.length }
   })
 
   // 删除预算

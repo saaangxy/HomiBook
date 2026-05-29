@@ -99,4 +99,13 @@ export const budgetApi = {
 
   getTags: (bookId: string) =>
     api.get<string[]>(`/api/budgets/tags?bookId=${bookId}`),
+
+  batchUpdate: (data: {
+    ids: string[]
+    data: {
+      amount?: number
+      categoryCode?: string | null
+      remark?: string | null
+    }
+  }) => api.patch<{ updated: number }>('/api/budgets/batch', data),
 }

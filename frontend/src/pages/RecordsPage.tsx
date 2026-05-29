@@ -86,6 +86,7 @@ interface FilterState {
   amountFrom: string
   amountTo: string
   remark: string
+  tags: string[]          // 多选标签
 }
 
 function filterValueLabel(key: keyof FilterState, value: string[] | string, accounts: AccountItem[], users: AdminUser[]): string {
@@ -105,6 +106,10 @@ function filterValueLabel(key: keyof FilterState, value: string[] | string, acco
     case 'categoryCodes': {
       const ids = value as string[]
       return `分类: ${ids.join(', ')}`
+    }
+    case 'tags': {
+      const ids = value as string[]
+      return `标签: ${ids.join(', ')}`
     }
     case 'ownerIds': {
       const ids = value as string[]
@@ -153,6 +158,7 @@ export function RecordsPage() {
     amountFrom: '',
     amountTo: '',
     remark: '',
+    tags: [],
   })
 
   // 抽屉
@@ -165,6 +171,8 @@ export function RecordsPage() {
   const [users, setUsers] = useState<AdminUser[]>([])
   // 全部分类（用于筛选多选）
   const [allCategories, setAllCategories] = useState<DictItem[]>([])
+  // 全部标签（用于筛选多选）
+  const [availableTags, setAvailableTags] = useState<string[]>([])
 
   // 选择
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -214,7 +222,7 @@ export function RecordsPage() {
     } catch { /* ignore */ }
   }, [])
 
-  const loadCategories = useCallback(async () => {
+    const loadCategories = useCallback(async () => {
     try {
       const groups = ['transaction_category_income', 'transaction_category_expense', 'transaction_category_transfer']
       const results = await Promise.all(groups.map((g) => settingsApi.getDictionary(g)))
@@ -229,7 +237,14 @@ export function RecordsPage() {
     } catch { /* ignore */ }
   }, [])
 
-  useEffect(() => { loadAccounts(); loadUsers(); loadCategories() }, [loadAccounts, loadUsers, loadCategories])
+  const loadTags = useCallback(async () => {
+    if (!currentBookId) return
+    try {
+      setAvailableTags(await recordApi.getTags(currentBookId))
+    } catch { /* ignore */ }
+  }, [currentBookId])
+
+  useEffect(() => { loadAccounts(); loadUsers(); loadCategories(); loadTags() }, [loadAccounts, loadUsers, loadCategories, loadTags])
 
   // 加载汇总
   const loadSummary = useCallback(async () => {
@@ -247,9 +262,10 @@ export function RecordsPage() {
         amountFrom: filters.amountFrom ? parseFloat(filters.amountFrom) : undefined,
         amountTo: filters.amountTo ? parseFloat(filters.amountTo) : undefined,
         remark: filters.remark || undefined,
+        tags: filters.tags.length > 0 ? filters.tags.join(',') : undefined,
       }))
     } catch { /* ignore */ }
-  }, [currentBookId, filters.types, filters.accountIds, filters.categoryCodes, filters.dateFrom, filters.dateTo, filters.ownerIds, filters.payer, filters.amountFrom, filters.amountTo, filters.remark])
+  }, [currentBookId, filters.types, filters.accountIds, filters.categoryCodes, filters.dateFrom, filters.dateTo, filters.ownerIds, filters.payer, filters.amountFrom, filters.amountTo, filters.remark, filters.tags])
 
   // 加载列表
   const loadRecords = useCallback(async () => {
@@ -271,6 +287,7 @@ export function RecordsPage() {
         amountFrom: filters.amountFrom ? parseFloat(filters.amountFrom) : undefined,
         amountTo: filters.amountTo ? parseFloat(filters.amountTo) : undefined,
         remark: filters.remark || undefined,
+        tags: filters.tags.length > 0 ? filters.tags.join(',') : undefined,
       })
       setRecords(res.records)
       setTotal(res.total)
@@ -285,7 +302,7 @@ export function RecordsPage() {
   useEffect(() => { loadSummary() }, [loadSummary])
 
   const resetFilters = () => {
-    const empty: FilterState = { types: [], accountIds: [], categoryCodes: [], dateFrom: '', dateTo: '', ownerIds: [], payer: '', amountFrom: '', amountTo: '', remark: '' }
+    const empty: FilterState = { types: [], accountIds: [], categoryCodes: [], dateFrom: '', dateTo: '', ownerIds: [], payer: '', amountFrom: '', amountTo: '', remark: '', tags: [] }
     setFilters(empty)
     setDraftFilters({ ...empty })
     setPage(1)
@@ -303,7 +320,7 @@ export function RecordsPage() {
   }
 
   const removeFilter = (key: keyof FilterState) => {
-    const emptyVal = key === 'types' || key === 'accountIds' || key === 'categoryCodes' || key === 'ownerIds' ? [] : ''
+    const emptyVal = key === 'types' || key === 'accountIds' || key === 'categoryCodes' || key === 'ownerIds' || key === 'tags' ? [] : ''
     setFilters((prev) => ({ ...prev, [key]: emptyVal }))
     setDraftFilters((prev) => ({ ...prev, [key]: emptyVal }))
     setPage(1)
@@ -649,6 +666,7 @@ export function RecordsPage() {
                   <TableHead className="text-xs">类型</TableHead>
                   <TableHead className="text-xs">账户</TableHead>
                   <TableHead className="text-xs">分类</TableHead>
+                  <TableHead className="text-xs">标签</TableHead>
                   <TableHead className="text-xs">交易方</TableHead>
                   <TableHead className="text-xs text-right">金额</TableHead>
                   <TableHead className="text-xs">备注</TableHead>
@@ -687,6 +705,15 @@ export function RecordsPage() {
                     </TableCell>
                     <TableCell className="text-xs py-2.5 text-muted-foreground">
                       {record.categoryCode || '-'}
+                    </TableCell>
+                    <TableCell className="text-xs py-2.5 text-muted-foreground">
+                      {record.tags?.length > 0 ? (
+                        <div className="flex flex-wrap gap-0.5">
+                          {record.tags.map((tag) => (
+                            <Badge key={tag} variant="secondary" className="text-[10px] py-0 px-1">{tag}</Badge>
+                          ))}
+                        </div>
+                      ) : '-'}
                     </TableCell>
                     <TableCell className="text-xs py-2.5 text-muted-foreground">
                       {record.payer || '-'}
@@ -826,6 +853,17 @@ export function RecordsPage() {
                 selected={draftFilters.categoryCodes}
                 onChange={(v) => setDraftFilters((p) => ({ ...p, categoryCodes: v }))}
                 placeholder="全部分类"
+              />
+            </div>
+
+            {/* 标签（多选） */}
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">标签</Label>
+              <MultiSelect
+                items={availableTags.map((t) => ({ value: t, label: t }))}
+                selected={draftFilters.tags}
+                onChange={(v) => setDraftFilters((p) => ({ ...p, tags: v }))}
+                placeholder="全部标签"
               />
             </div>
 

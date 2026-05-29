@@ -49,14 +49,6 @@ export async function computeBudgetSummary(
     orderBy: [{ type: 'asc' }, { month: 'asc' }, { name: 'asc' }],
   })
 
-  // 日期范围
-  const startDate = month !== undefined
-    ? new Date(Date.UTC(year, month - 1, 1))
-    : new Date(Date.UTC(year, 0, 1))
-  const endDate = month !== undefined
-    ? new Date(Date.UTC(year, month, 0, 23, 59, 59, 999))
-    : new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999))
-
   // 获取分类字典，区分支出/收入
   const expenseDicts = await prisma.dictionary.findMany({
     where: { group: 'transaction_category_expense' },
@@ -72,6 +64,10 @@ export async function computeBudgetSummary(
   const details = await Promise.all(budgets.map(async (budget) => {
     let actualAmount = 0
 
+    // 每条预算使用自己的年月计算日期范围
+    const budgetStartDate = new Date(Date.UTC(budget.year, budget.month - 1, 1))
+    const budgetEndDate = new Date(Date.UTC(budget.year, budget.month, 0, 23, 59, 59, 999))
+
     if (budget.type === 'FIXED' && budget.categoryCode) {
       let recordType: string | undefined
       if (expenseCodes.has(budget.categoryCode)) recordType = 'EXPENSE'
@@ -79,7 +75,7 @@ export async function computeBudgetSummary(
 
       const where: any = {
         accountBookId,
-        date: { gte: startDate, lte: endDate },
+        date: { gte: budgetStartDate, lte: budgetEndDate },
         categoryCode: budget.categoryCode,
       }
       if (recordType) where.type = recordType
@@ -90,11 +86,10 @@ export async function computeBudgetSummary(
       })
       actualAmount = agg._sum.amount ?? 0
     } else if (budget.type === 'FREE' && budget.tag) {
-      // JSON字符串包含匹配：tags 存储为 ["tag1","tag2"]，用 contains 匹配
       const agg = await prisma.record.aggregate({
         where: {
           accountBookId,
-          date: { gte: startDate, lte: endDate },
+          date: { gte: budgetStartDate, lte: budgetEndDate },
           type: 'EXPENSE',
           tags: { contains: budget.tag },
         },

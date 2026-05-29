@@ -42,7 +42,8 @@ import { Spinner } from '@/components/ui/spinner'
 import { DictCombobox } from '@/components/DictCombobox'
 import { useBookStore } from '../stores/book'
 import { budgetApi, type BudgetItem, type BudgetType, type BudgetSummary } from '@/api/budget'
-import { Plus, Copy, Trash2, Pencil, Target, PiggyBank, TrendingUp } from 'lucide-react'
+import { Plus, Copy, Trash2, Pencil, Search, Check, Target, PiggyBank, TrendingUp } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1)
 const MONTH_LABELS = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月']
@@ -88,6 +89,7 @@ export function BudgetsPage() {
   const [month, setMonth] = useState<number | undefined>(now.getMonth() + 1)
   const [typeFilter, setTypeFilter] = useState<BudgetType | 'ALL'>('ALL')
   const [tabView, setTabView] = useState<'ALL' | 'FIXED' | 'FREE'>('ALL')
+  const [searchName, setSearchName] = useState('')
 
   // 对话框状态
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -95,6 +97,15 @@ export function BudgetsPage() {
   const [deleteTarget, setDeleteTarget] = useState<BudgetItem | null>(null)
   const [batchOpen, setBatchOpen] = useState(false)
   const [copyOpen, setCopyOpen] = useState(false)
+
+  // 批量编辑
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [batchEditOpen, setBatchEditOpen] = useState(false)
+  const [batchEditAmount, setBatchEditAmount] = useState('')
+  const [batchEditCategory, setBatchEditCategory] = useState('')
+  const [batchEditRemark, setBatchEditRemark] = useState('')
+  const [batchEditError, setBatchEditError] = useState('')
+  const [batchEditSaving, setBatchEditSaving] = useState(false)
 
   // 表单
   const [formName, setFormName] = useState('')
@@ -161,6 +172,9 @@ export function BudgetsPage() {
   const filteredBudgets = budgets.filter((b) => {
     if (tabView === 'ALL') return true
     return b.type === tabView
+  }).filter((b) => {
+    if (!searchName.trim()) return true
+    return b.name.toLowerCase().includes(searchName.trim().toLowerCase())
   })
 
   const fixedBudgets = filteredBudgets.filter((b) => b.type === 'FIXED')
@@ -290,6 +304,39 @@ export function BudgetsPage() {
     }
   }
 
+  // 批量编辑
+  const handleBatchEdit = async () => {
+    if (selectedIds.size === 0) return
+
+    if (!batchEditAmount.trim() && !batchEditCategory && !batchEditRemark.trim()) {
+      setBatchEditError('请至少填写一个要修改的字段')
+      return
+    }
+    if (batchEditAmount.trim() && (isNaN(Number(batchEditAmount)) || Number(batchEditAmount) <= 0)) {
+      setBatchEditError('请输入有效的金额')
+      return
+    }
+
+    setBatchEditSaving(true)
+    setBatchEditError('')
+    try {
+      const data: any = {}
+      if (batchEditAmount.trim()) data.amount = Number(batchEditAmount)
+      if (batchEditCategory) data.categoryCode = batchEditCategory
+      if (batchEditRemark.trim()) data.remark = batchEditRemark.trim()
+
+      await budgetApi.batchUpdate({ ids: Array.from(selectedIds), data })
+      setBatchEditOpen(false)
+      setSelectedIds(new Set())
+      loadData()
+      loadSummary()
+    } catch (e: any) {
+      setBatchEditError(e.message || '批量更新失败')
+    } finally {
+      setBatchEditSaving(false)
+    }
+  }
+
   const toggleBatchMonth = (m: number) => {
     setBatchMonths((prev) => prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m].sort())
   }
@@ -316,10 +363,38 @@ export function BudgetsPage() {
   // 将汇总详情与预算列表对齐（只显示选中tab的数据）
   const summaryDetailMap = new Map(summaryData.details.map((d) => [d.id, d]))
 
+  // 选择勾选
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAll = (items: BudgetItem[]) => {
+    if (items.length > 0 && items.every((b) => selectedIds.has(b.id))) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(items.map((b) => b.id)))
+    }
+  }
+
   const renderTable = (items: BudgetItem[]) => (
     <Table>
       <TableHeader>
         <TableRow>
+          <TableHead className="w-[40px]">
+            <button
+              className="flex h-4 w-4 items-center justify-center rounded border border-border hover:bg-muted"
+              onClick={() => toggleSelectAll(items)}
+            >
+              {items.length > 0 && items.every((b) => selectedIds.has(b.id)) && (
+                <Check className="h-3 w-3 text-[#f97316]" />
+              )}
+            </button>
+          </TableHead>
           <TableHead className="w-[140px]">名称</TableHead>
           <TableHead className="w-[60px]">月份</TableHead>
           <TableHead className="w-[80px]">类型</TableHead>
@@ -338,6 +413,17 @@ export function BudgetsPage() {
           const remaining = detail?.remaining ?? b.amount
           return (
             <TableRow key={b.id}>
+              <TableCell>
+                <button
+                  className={cn(
+                    'flex h-4 w-4 items-center justify-center rounded border border-border hover:bg-muted',
+                    selectedIds.has(b.id) && 'bg-[#f97316] border-[#f97316]',
+                  )}
+                  onClick={() => toggleSelect(b.id)}
+                >
+                  {selectedIds.has(b.id) && <Check className="h-3 w-3 text-white" />}
+                </button>
+              </TableCell>
               <TableCell className="font-medium">{b.name}</TableCell>
               <TableCell className="text-muted-foreground">{b.month}月</TableCell>
               <TableCell><BudgetTypeBadge type={b.type as BudgetType} /></TableCell>
@@ -366,7 +452,7 @@ export function BudgetsPage() {
         })}
         {items.length === 0 && (
           <TableRow>
-            <TableCell colSpan={tabView !== 'FIXED' ? 8 : 7} className="text-center text-muted-foreground py-8">
+            <TableCell colSpan={tabView !== 'FIXED' ? 9 : 8} className="text-center text-muted-foreground py-8">
               暂无预算数据
             </TableCell>
           </TableRow>
@@ -422,6 +508,16 @@ export function BudgetsPage() {
 
         <div className="flex-1" />
 
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            className="h-9 pl-8 w-[180px]"
+            placeholder="搜索预算名称..."
+            value={searchName}
+            onChange={(e) => setSearchName(e.target.value)}
+          />
+        </div>
+
         <Button variant="outline" size="sm" onClick={() => { setCopySourceYear(year); setCopySourceMonth(month ?? now.getMonth() + 1); setCopyTargets([]); setCopyOpen(true) }}>
           <Copy size={14} className="mr-1" />复制预算
         </Button>
@@ -432,6 +528,25 @@ export function BudgetsPage() {
           <Plus size={14} className="mr-1" />添加预算
         </Button>
       </div>
+
+      {/* 批量编辑操作栏 */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-3 px-4 py-2 bg-muted/50 rounded-lg">
+          <span className="text-sm">已选择 {selectedIds.size} 条预算</span>
+          <Button size="sm" variant="outline" onClick={() => {
+            setBatchEditAmount('')
+            setBatchEditCategory('')
+            setBatchEditRemark('')
+            setBatchEditError('')
+            setBatchEditOpen(true)
+          }}>
+            批量编辑
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>
+            取消选择
+          </Button>
+        </div>
+      )}
 
       {/* 汇总卡片 */}
       {summaryData.totalBudget > 0 && (
@@ -744,6 +859,50 @@ export function BudgetsPage() {
             <Button variant="outline" onClick={() => setCopyOpen(false)}>取消</Button>
             <Button onClick={handleCopy} disabled={copySaving || copyTargets.length === 0}>
               {copySaving ? <Spinner /> : `复制（${copyTargets.length}个目标）`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 批量编辑弹窗 */}
+      <Dialog open={batchEditOpen} onOpenChange={setBatchEditOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>批量编辑预算（{selectedIds.size} 条）</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>金额（留空则不修改）</Label>
+              <Input
+                type="number"
+                value={batchEditAmount}
+                onChange={(e) => setBatchEditAmount(e.target.value)}
+                placeholder="不修改"
+              />
+            </div>
+            <div>
+              <Label>关联分类（留空则不修改，仅对固定预算生效）</Label>
+              <DictCombobox
+                groups={['transaction_category_expense', 'transaction_category_income']}
+                value={batchEditCategory}
+                onChange={setBatchEditCategory}
+                placeholder="不修改"
+              />
+            </div>
+            <div>
+              <Label>备注（留空则不修改）</Label>
+              <Input
+                value={batchEditRemark}
+                onChange={(e) => setBatchEditRemark(e.target.value)}
+                placeholder="不修改"
+              />
+            </div>
+            {batchEditError && <p className="text-sm text-[#ef4444]">{batchEditError}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBatchEditOpen(false)}>取消</Button>
+            <Button onClick={handleBatchEdit} disabled={batchEditSaving}>
+              {batchEditSaving ? <Spinner /> : '确认更新'}
             </Button>
           </DialogFooter>
         </DialogContent>

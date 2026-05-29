@@ -48,6 +48,7 @@ export const listRecordsSchema = z.object({
   amountFrom: z.coerce.number().optional(),
   amountTo: z.coerce.number().optional(),
   remark: z.string().optional(),
+  tags: z.string().optional(),     // 逗号分隔多选
 })
 
 export const calendarQuerySchema = z.object({

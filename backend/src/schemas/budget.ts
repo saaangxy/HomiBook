@@ -42,6 +42,15 @@ export const copyBudgetsSchema = z.object({
   })).min(1),
 })
 
+export const batchUpdateBudgetSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1, '请选择要更新的预算'),
+  data: z.object({
+    amount: z.number().positive('金额必须大于0').optional(),
+    categoryCode: z.string().nullable().optional(),
+    remark: z.string().nullable().optional(),
+  }),
+})
+
 export const listBudgetsQuerySchema = z.object({
   bookId: z.string().min(1),
   year: z.coerce.number().int().optional(),

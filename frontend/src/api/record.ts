@@ -62,6 +62,7 @@ export const recordApi = {
     amountFrom?: number
     amountTo?: number
     remark?: string
+    tags?: string       // 逗号分隔多选
   }) => api.get<RecordListResult>('/api/records?' + new URLSearchParams(
     Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))
   ).toString()),
@@ -78,6 +79,7 @@ export const recordApi = {
     amountFrom?: number
     amountTo?: number
     remark?: string
+    tags?: string       // 逗号分隔多选
   }) => api.get<RecordSummary>('/api/records/summary?' + new URLSearchParams(
     Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))
   ).toString()),
@@ -131,4 +133,7 @@ export const recordApi = {
 
   uploadAttachment: (file: File): Promise<AttachmentUploadResult> =>
     api.uploadFile('/api/records/upload', file),
+
+  getTags: (bookId: string) =>
+    api.get<string[]>('/api/records/tags?' + new URLSearchParams({ bookId }).toString()),
 }

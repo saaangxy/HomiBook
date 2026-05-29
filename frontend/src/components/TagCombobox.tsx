@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/popover'
 import { Spinner } from '@/components/ui/spinner'
 import { budgetApi } from '@/api/budget'
+import { recordApi } from '@/api/record'
 
 interface Props {
   value: string[]
@@ -29,7 +30,8 @@ interface Props {
 
 export function TagCombobox({ value, onChange, bookId, placeholder = '选择或输入标签...', disabled }: Props) {
   const [open, setOpen] = useState(false)
-  const [tags, setTags] = useState<string[]>([])
+  const [budgetTags, setBudgetTags] = useState<string[]>([])
+  const [recordTags, setRecordTags] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
@@ -38,20 +40,29 @@ export function TagCombobox({ value, onChange, bookId, placeholder = '选择或�
     if (!bookId) return
     setLoading(true)
     setError('')
-    budgetApi.getTags(bookId)
-      .then(setTags)
+    Promise.all([
+      budgetApi.getTags(bookId),
+      recordApi.getTags(bookId),
+    ])
+      .then(([bTags, rTags]) => {
+        setBudgetTags(bTags)
+        setRecordTags(rTags)
+      })
       .catch((e) => setError(e.message || '加载失败'))
       .finally(() => setLoading(false))
   }, [bookId])
 
+  const allTags = [...new Set([...budgetTags, ...recordTags])]
+
   const filtered = search.trim()
-    ? tags.filter((t) => t.toLowerCase().includes(search.toLowerCase()))
-    : tags
+    ? allTags.filter((t) => t.toLowerCase().includes(search.toLowerCase()))
+    : allTags
 
-  // 过滤掉已选中的标签
-  const availableTags = filtered.filter((t) => !value.includes(t))
+  // 分组：预算标签 vs 流水已有标签（去重）
+  const budgetFiltered = filtered.filter((t) => budgetTags.includes(t) && !value.includes(t))
+  const recordFiltered = filtered.filter((t) => !budgetTags.includes(t) && !value.includes(t))
 
-  const isNewTag = search.trim() && !tags.includes(search.trim()) && !value.includes(search.trim())
+  const isNewTag = search.trim() && !allTags.includes(search.trim()) && !value.includes(search.trim())
 
   const addTag = (tag: string) => {
     if (!value.includes(tag)) {
@@ -129,9 +140,23 @@ export function TagCombobox({ value, onChange, bookId, placeholder = '选择或�
                       '无匹配标签'
                     )}
                   </CommandEmpty>
-                  {availableTags.length > 0 && (
-                    <CommandGroup heading="已有标签">
-                      {availableTags.map((tag) => (
+                  {budgetFiltered.length > 0 && (
+                    <CommandGroup heading="预算标签">
+                      {budgetFiltered.map((tag) => (
+                        <CommandItem
+                          key={tag}
+                          value={tag}
+                          onSelect={() => addTag(tag)}
+                        >
+                          <Check className="h-4 w-4 opacity-0" />
+                          {tag}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  )}
+                  {recordFiltered.length > 0 && (
+                    <CommandGroup heading="流水已有标签">
+                      {recordFiltered.map((tag) => (
                         <CommandItem
                           key={tag}
                           value={tag}

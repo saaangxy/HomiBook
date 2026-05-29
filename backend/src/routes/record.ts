@@ -70,7 +70,7 @@ export async function recordRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.status(400).send({ message: parsed.error.issues[0].message })
     }
-    const { bookId, page, pageSize, type, accountId, categoryCode, dateFrom, dateTo, ownerId, payer, amountFrom, amountTo, remark } = parsed.data
+    const { bookId, page, pageSize, type, accountId, categoryCode, dateFrom, dateTo, ownerId, payer, amountFrom, amountTo, remark, tags } = parsed.data
     const userId = (req as any).user.id as string
 
     try {
@@ -108,6 +108,14 @@ export async function recordRoutes(app: FastifyInstance) {
     if (amountFrom !== undefined) where.amount.gte = amountFrom
     if (amountTo !== undefined) where.amount.lte = amountTo
     if (remark) where.remark = { contains: remark }
+    if (tags) {
+      const tagList = tags.split(',').map((s: string) => s.trim()).filter(Boolean)
+      if (tagList.length > 0) {
+        where.AND = tagList.map((tag) => ({
+          tags: { contains: tag.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_') },
+        }))
+      }
+    }
 
     const [records, total] = await Promise.all([
       prisma.record.findMany({
@@ -146,7 +154,7 @@ export async function recordRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.status(400).send({ message: parsed.error.issues[0].message })
     }
-    const { bookId, type, accountId, categoryCode, dateFrom, dateTo, ownerId, payer, amountFrom, amountTo, remark } = parsed.data
+    const { bookId, type, accountId, categoryCode, dateFrom, dateTo, ownerId, payer, amountFrom, amountTo, remark, tags } = parsed.data
     const userId = (req as any).user.id as string
 
     try {
@@ -184,6 +192,14 @@ export async function recordRoutes(app: FastifyInstance) {
     if (amountFrom !== undefined) where.amount.gte = amountFrom
     if (amountTo !== undefined) where.amount.lte = amountTo
     if (remark) where.remark = { contains: remark }
+    if (tags) {
+      const tagList = tags.split(',').map((s: string) => s.trim()).filter(Boolean)
+      if (tagList.length > 0) {
+        where.AND = tagList.map((tag) => ({
+          tags: { contains: tag.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_') },
+        }))
+      }
+    }
 
     // 如果用户筛选了类型，只聚合匹配的类型；否则聚合全部
     const shouldAgg = (recordType: string) => !typeFilter || typeFilter.includes(recordType)
@@ -206,6 +222,38 @@ export async function recordRoutes(app: FastifyInstance) {
       transfer,
       netIncome: income - expense,
     }
+  })
+
+  // 获取记录标签列表（用于筛选器下拉）
+  app.get('/tags', async (req, reply) => {
+    const { bookId } = req.query as { bookId?: string }
+    if (!bookId) return reply.status(400).send({ message: '缺少 bookId 参数' })
+
+    const userId = (req as any).user.id as string
+    try {
+      await assertIsMember(bookId, userId)
+    } catch (e: any) {
+      return reply.status(e.statusCode || 403).send({ message: e.message })
+    }
+
+    const records = await prisma.record.findMany({
+      where: { accountBookId: bookId },
+      select: { tags: true },
+    })
+
+    const tagSet = new Set<string>()
+    for (const r of records) {
+      try {
+        const parsed = JSON.parse(r.tags)
+        if (Array.isArray(parsed)) {
+          for (const t of parsed) {
+            if (typeof t === 'string') tagSet.add(t)
+          }
+        }
+      } catch { /* skip malformed */ }
+    }
+
+    return Array.from(tagSet).sort()
   })
 
   // 日历聚合：按天汇总当月收支
