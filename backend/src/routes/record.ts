@@ -522,18 +522,12 @@ export async function recordRoutes(app: FastifyInstance) {
       return reply.status(e.statusCode || 403).send({ message: e.message })
     }
 
-    // 复制附件关联
-    const existingAttachments = await prisma.recordAttachment.findMany({
-      where: { recordId: id },
-      select: { path: true, originalFilename: true },
-    })
-
     const cloned = await prisma.record.create({
       data: {
         accountBookId: existing.accountBookId,
         type: existing.type,
         amount: existing.amount,
-        date: new Date(),
+        date: existing.date,
         remark: existing.remark,
         tags: existing.tags,
         accountId: existing.accountId,
@@ -542,12 +536,6 @@ export async function recordRoutes(app: FastifyInstance) {
         categoryCode: existing.categoryCode,
         payer: existing.payer,
         ownerId: userId,
-        recordAttachments: {
-          create: existingAttachments.map((a) => ({
-            path: a.path,
-            originalFilename: a.originalFilename,
-          })),
-        },
       },
       include: {
         account: { select: { id: true, name: true, type: true } },
