@@ -23,14 +23,14 @@ export const updateRecordSchema = z.object({
   type: z.enum(RECORD_TYPES).optional(),
   amount: z.number().positive('金额必须大于0').optional(),
   date: z.string().refine((v) => !isNaN(Date.parse(v)), { message: '无效的日期' }).optional(),
-  remark: z.string().optional(),
+  remark: z.string().nullable().optional(),
   tags: z.array(z.string()).optional(),
   attachmentIds: z.array(z.string()).optional(),
   accountId: z.string().min(1).optional(),
   fromAccountId: z.string().optional(),
   toAccountId: z.string().optional(),
-  categoryCode: z.string().optional(),
-  payer: z.string().optional(),
+  categoryCode: z.string().nullable().optional(),
+  payer: z.string().nullable().optional(),
   ownerId: z.string().optional(),
 })
 

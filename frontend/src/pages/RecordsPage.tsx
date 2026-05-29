@@ -57,7 +57,7 @@ import { useBookStore } from '../stores/book'
 import {
   Plus, ArrowUpRight, ArrowDownRight, ArrowLeftRight,
   Pencil, Trash2, Copy, Filter, X, ChevronLeft, ChevronRight,
-  Upload, Download, Paperclip,
+  Upload, Download, Paperclip, Save,
 } from 'lucide-react'
 
 const TYPE_COLORS: Record<RecordType, string> = {
@@ -205,6 +205,11 @@ export function RecordsPage() {
   const [viewingAttachments, setViewingAttachments] = useState<{ id: string; url: string; originalFilename: string }[] | null>(null)
   const [formError, setFormError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+
+  // 自由编辑模式
+  const [editMode, setEditMode] = useState(false)
+  const [editChanges, setEditChanges] = useState<Map<string, Record<string, string>>>(new Map())
+  const [savingEdits, setSavingEdits] = useState(false)
 
   // 加载账户
   const loadAccounts = useCallback(async () => {
@@ -522,6 +527,76 @@ export function RecordsPage() {
     return 'transaction_category_transfer'
   }
 
+  // 编辑模式辅助函数
+  const getEditValue = (record: RecordItem, field: string): string => {
+    const changes = editChanges.get(record.id)
+    if (changes && field in changes) return changes[field]
+    switch (field) {
+      case 'date': return dayjs(record.date).format('YYYY-MM-DD')
+      case 'amount': return String(record.amount)
+      case 'categoryCode': return record.categoryCode || ''
+      case 'payer': return record.payer || ''
+      case 'remark': return record.remark || ''
+      case 'type': return record.type
+      case 'accountId': return record.accountId
+      case 'fromAccountId': return record.fromAccountId || ''
+      case 'toAccountId': return record.toAccountId || ''
+      default: return ''
+    }
+  }
+
+  const getEditTags = (record: RecordItem): string[] => {
+    const changes = editChanges.get(record.id)
+    if (changes && 'tags' in changes) {
+      try { return JSON.parse(changes.tags) } catch { return [] }
+    }
+    return record.tags || []
+  }
+
+  const handleEditChange = (id: string, field: string, value: string) => {
+    setEditChanges((prev) => {
+      const next = new Map(prev)
+      const existing = { ...next.get(id) }
+      existing[field] = value
+      next.set(id, existing)
+      return next
+    })
+  }
+
+  const handleSaveEdits = async () => {
+    if (editChanges.size === 0) return
+    setSavingEdits(true)
+    try {
+      await Promise.all(
+        Array.from(editChanges.entries()).map(([id, changes]) => {
+          const data: any = {}
+          if ('date' in changes) data.date = new Date(changes.date).toISOString()
+          if ('amount' in changes) data.amount = parseFloat(changes.amount)
+          if ('type' in changes) data.type = changes.type
+          if ('categoryCode' in changes) data.categoryCode = changes.categoryCode || null
+          if ('payer' in changes) data.payer = changes.payer || null
+          if ('remark' in changes) data.remark = changes.remark || null
+          if ('accountId' in changes) data.accountId = changes.accountId
+          if ('fromAccountId' in changes) data.fromAccountId = changes.fromAccountId
+          if ('toAccountId' in changes) data.toAccountId = changes.toAccountId
+          if ('tags' in changes) data.tags = JSON.parse(changes.tags)
+          return recordApi.update(id, data)
+        })
+      )
+      setEditChanges(new Map())
+      setEditMode(false)
+      loadRecords()
+      loadSummary()
+      loadAccounts()
+    } catch (e: any) { setError(e.message) }
+    finally { setSavingEdits(false) }
+  }
+
+  const handleCancelEdits = () => {
+    setEditChanges(new Map())
+    setEditMode(false)
+  }
+
   // 空状态
   if (!currentBookId) {
     return (
@@ -603,6 +678,36 @@ export function RecordsPage() {
             >
               <Plus size={14} /> 记一笔
             </Button>
+            {editMode ? (
+              <>
+                <Button
+                  onClick={handleSaveEdits}
+                  disabled={editChanges.size === 0 || savingEdits}
+                  className="bg-[#f97316] hover:bg-[#ea580c] text-white rounded-lg h-8 text-xs"
+                >
+                  <Save size={14} /> {savingEdits ? '保存中...' : '保存修改'}
+                  {editChanges.size > 0 && (
+                    <span className="ml-1 bg-white/20 text-[10px] rounded-full px-1.5">{editChanges.size}</span>
+                  )}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleCancelEdits}
+                  disabled={savingEdits}
+                  className="h-8 text-xs rounded-lg"
+                >
+                  放弃修改
+                </Button>
+              </>
+            ) : (
+              <Button
+                variant="outline"
+                onClick={() => setEditMode(true)}
+                className="h-8 text-xs rounded-lg"
+              >
+                <Pencil size={14} /> 自由编辑
+              </Button>
+            )}
             <Button
               variant="outline"
               onClick={openDrawer}
@@ -628,7 +733,7 @@ export function RecordsPage() {
         </div>
 
         {/* 批量操作栏 */}
-        {selectedIds.size > 0 && (
+        {!editMode && selectedIds.size > 0 && (
           <div className="flex items-center gap-3 px-4 py-2 bg-muted/50 border-b">
             <span className="text-sm">已选择 {selectedIds.size} 条</span>
             <Button size="sm" variant="outline" onClick={() => setBatchOpen(true)} className="text-xs h-7">
@@ -654,86 +759,222 @@ export function RecordsPage() {
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="w-8">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.size === records.length}
-                      onChange={toggleSelectAll}
-                      className="rounded"
-                    />
-                  </TableHead>
-                  <TableHead className="text-xs">日期</TableHead>
-                  <TableHead className="text-xs">类型</TableHead>
-                  <TableHead className="text-xs">账户</TableHead>
-                  <TableHead className="text-xs">分类</TableHead>
-                  <TableHead className="text-xs">标签</TableHead>
-                  <TableHead className="text-xs">交易方</TableHead>
-                  <TableHead className="text-xs text-right">金额</TableHead>
-                  <TableHead className="text-xs">备注</TableHead>
-                  <TableHead className="text-xs w-24 text-right">操作</TableHead>
+                  {!editMode && (
+                    <TableHead className="w-8">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.size === records.length}
+                        onChange={toggleSelectAll}
+                        className="rounded"
+                      />
+                    </TableHead>
+                  )}
+                  <TableHead className="text-xs w-[100px]">日期</TableHead>
+                  <TableHead className="text-xs w-[108px]">类型</TableHead>
+                  <TableHead className="text-xs min-w-[150px]">账户</TableHead>
+                  <TableHead className="text-xs min-w-[90px]">分类</TableHead>
+                  <TableHead className="text-xs min-w-[70px]">标签</TableHead>
+                  <TableHead className="text-xs min-w-[90px]">交易方</TableHead>
+                  <TableHead className="text-xs w-[108px] text-right">金额</TableHead>
+                  <TableHead className="text-xs min-w-[110px]">备注</TableHead>
+                  <TableHead className="text-xs w-[80px] text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {records.map((record) => (
-                  <TableRow key={record.id} className="hover:bg-accent/50">
+                {records.map((record) => {
+                  const isChanged = editChanges.has(record.id)
+                  const effectiveType = (editChanges.get(record.id)?.type || record.type) as RecordType
+                  const catGroup = getCategoryGroup(effectiveType)
+                  const rowCategories = allCategories.filter((c) => c.group === catGroup)
+                  return (
+                  <TableRow key={record.id} className={isChanged ? 'shadow-[inset_3px_0_0_#f97316] hover:bg-accent/50' : 'hover:bg-accent/50'}>
+                    {!editMode && (
+                      <TableCell className="py-2.5">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(record.id)}
+                          onChange={() => toggleSelect(record.id)}
+                          className="rounded"
+                        />
+                      </TableCell>
+                    )}
+                    {/* 日期 */}
                     <TableCell className="py-2.5">
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.has(record.id)}
-                        onChange={() => toggleSelect(record.id)}
-                        className="rounded"
-                      />
+                      <div className="flex items-center gap-1.5">
+                        {editMode && isChanged && (
+                          <span className="w-2 h-2 rounded-full bg-[#f97316] shrink-0" title="已修改" />
+                        )}
+                        {editMode ? (
+                          <DatePicker
+                            value={getEditValue(record, 'date')}
+                            onChange={(v) => v && handleEditChange(record.id, 'date', v)}
+                            className="h-8 px-2 flex-1 min-w-0"
+                            compact
+                          />
+                        ) : (
+                          <span className="text-xs">{new Date(record.date).toLocaleDateString('zh-CN')}</span>
+                        )}
+                      </div>
                     </TableCell>
-                    <TableCell className="text-xs py-2.5">
-                      {new Date(record.date).toLocaleDateString('zh-CN')}
-                    </TableCell>
+                    {/* 类型 */}
                     <TableCell className="py-2.5">
-                      <Badge className={`text-[10px] ${TYPE_COLORS[record.type]}`}>
-                        {TYPE_LABELS[record.type]}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-xs py-2.5">
-                      {record.type === 'TRANSFER' && record.fromAccount ? (
-                        <span>
-                          <span className="text-[#ef4444]">{record.fromAccount.name}</span>
-                          {' → '}
-                          <span className="text-[#22c55e]">{record.toAccount?.name}</span>
-                        </span>
+                      {editMode ? (
+                        <Select value={getEditValue(record, 'type')} onValueChange={(v) => handleEditChange(record.id, 'type', v)}>
+                          <SelectTrigger className="h-7 text-xs w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(['INCOME', 'EXPENSE', 'TRANSFER'] as RecordType[]).map((t) => (
+                              <SelectItem key={t} value={t}>{TYPE_LABELS[t]}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       ) : (
-                        <span>{record.account.name}</span>
+                        <Badge className={`text-[10px] ${TYPE_COLORS[record.type]}`}>
+                          {TYPE_LABELS[record.type]}
+                        </Badge>
                       )}
                     </TableCell>
-                    <TableCell className="text-xs py-2.5 text-muted-foreground">
-                      {record.categoryCode || '-'}
+                    {/* 账户 */}
+                    <TableCell className="text-xs py-2.5">
+                      {editMode ? (
+                        effectiveType === 'TRANSFER' ? (
+                          <div className="flex items-center gap-1">
+                            <Select value={getEditValue(record, 'fromAccountId')} onValueChange={(v) => handleEditChange(record.id, 'fromAccountId', v)}>
+                              <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
+                                <SelectValue placeholder="转出" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                            <span className="text-[10px] text-muted-foreground shrink-0">→</span>
+                            <Select value={getEditValue(record, 'toAccountId')} onValueChange={(v) => handleEditChange(record.id, 'toAccountId', v)}>
+                              <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
+                                <SelectValue placeholder="转入" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        ) : (
+                          <Select value={getEditValue(record, 'accountId')} onValueChange={(v) => handleEditChange(record.id, 'accountId', v)}>
+                            <SelectTrigger className="h-7 text-xs w-full">
+                              <SelectValue placeholder="账户" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        )
+                      ) : (
+                        record.type === 'TRANSFER' && record.fromAccount ? (
+                          <span>
+                            <span className="text-[#ef4444]">{record.fromAccount.name}</span>
+                            {' → '}
+                            <span className="text-[#22c55e]">{record.toAccount?.name}</span>
+                          </span>
+                        ) : (
+                          <span>{record.account.name}</span>
+                        )
+                      )}
                     </TableCell>
-                    <TableCell className="text-xs py-2.5 text-muted-foreground">
-                      {record.tags?.length > 0 ? (
-                        <div className="flex flex-wrap gap-0.5">
-                          {record.tags.map((tag) => (
-                            <Badge key={tag} variant="secondary" className="text-[10px] py-0 px-1">{tag}</Badge>
-                          ))}
-                        </div>
-                      ) : '-'}
+                    {/* 分类 */}
+                    <TableCell className="text-xs py-2.5">
+                      {editMode ? (
+                        <Select value={getEditValue(record, 'categoryCode')} onValueChange={(v) => handleEditChange(record.id, 'categoryCode', v === '__clear__' ? '' : v)}>
+                          <SelectTrigger className="h-7 text-xs w-full">
+                            <SelectValue placeholder="分类" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__clear__">无</SelectItem>
+                            {rowCategories.map((c) => (
+                              <SelectItem key={c.code} value={c.code}>{c.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span className="text-muted-foreground">{record.categoryCode || '-'}</span>
+                      )}
                     </TableCell>
-                    <TableCell className="text-xs py-2.5 text-muted-foreground">
-                      {record.payer || '-'}
+                    {/* 标签 */}
+                    <TableCell className="text-xs py-2.5">
+                      {editMode ? (
+                        <TagCombobox
+                          value={getEditTags(record)}
+                          onChange={(tags) => handleEditChange(record.id, 'tags', JSON.stringify(tags))}
+                          bookId={currentBookId || ''}
+                          placeholder="标签..."
+                        />
+                      ) : (
+                        record.tags?.length > 0 ? (
+                          <div className="flex flex-wrap gap-0.5">
+                            {record.tags.map((tag) => (
+                              <Badge key={tag} variant="secondary" className="text-[10px] py-0 px-1">{tag}</Badge>
+                            ))}
+                          </div>
+                        ) : <span className="text-muted-foreground">-</span>
+                      )}
                     </TableCell>
-                    <TableCell className={`text-sm font-bold tabular-nums py-2.5 text-right ${
-                      record.type === 'INCOME' ? 'text-[#22c55e]' :
-                      record.type === 'EXPENSE' ? 'text-[#ef4444]' : 'text-[#3b82f6]'
-                    }`}>
-                      {record.type === 'EXPENSE' ? '-' : record.type === 'INCOME' ? '+' : ''}{formatMoney(record.amount)}
+                    {/* 交易方 */}
+                    <TableCell className="text-xs py-2.5">
+                      {editMode ? (
+                        <Input
+                          value={getEditValue(record, 'payer')}
+                          onChange={(e) => handleEditChange(record.id, 'payer', e.target.value)}
+                          className="h-7 text-xs w-full"
+                          placeholder="-"
+                        />
+                      ) : (
+                        <span className="text-muted-foreground">{record.payer || '-'}</span>
+                      )}
                     </TableCell>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <TableCell className="text-xs py-2.5 text-muted-foreground max-w-32 truncate cursor-default">
-                          {record.remark || '-'}
-                        </TableCell>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="max-w-xs">
-                        <p className="break-all">{record.remark || '无备注'}</p>
-                      </TooltipContent>
-                    </Tooltip>
+                    {/* 金额 */}
+                    <TableCell className="text-sm font-bold tabular-nums py-2.5 text-right">
+                      {editMode ? (
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={getEditValue(record, 'amount')}
+                          onChange={(e) => handleEditChange(record.id, 'amount', e.target.value)}
+                          className={`h-7 text-xs w-full text-right ${
+                            record.type === 'INCOME' ? 'text-[#22c55e]' :
+                            record.type === 'EXPENSE' ? 'text-[#ef4444]' : 'text-[#3b82f6]'
+                          }`}
+                        />
+                      ) : (
+                        <span className={
+                          record.type === 'INCOME' ? 'text-[#22c55e]' :
+                          record.type === 'EXPENSE' ? 'text-[#ef4444]' : 'text-[#3b82f6]'
+                        }>
+                          {record.type === 'EXPENSE' ? '-' : record.type === 'INCOME' ? '+' : ''}{formatMoney(record.amount)}
+                        </span>
+                      )}
+                    </TableCell>
+                    {/* 备注 */}
+                    <TableCell className="text-xs py-2.5">
+                      {editMode ? (
+                        <Input
+                          value={getEditValue(record, 'remark')}
+                          onChange={(e) => handleEditChange(record.id, 'remark', e.target.value)}
+                          className="h-7 text-xs w-full"
+                          placeholder="-"
+                        />
+                      ) : (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="text-muted-foreground max-w-32 truncate cursor-default block">
+                              {record.remark || '-'}
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-xs">
+                            <p className="break-all">{record.remark || '无备注'}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                    </TableCell>
+                    {/* 操作 */}
                     <TableCell className="text-right py-2.5">
                       <div className="flex items-center justify-end gap-0.5">
                         {record.attachments?.length > 0 && (
@@ -741,19 +982,32 @@ export function RecordsPage() {
                             <Paperclip size={13} />
                           </Button>
                         )}
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(record)}>
-                          <Pencil size={13} />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleClone(record)}>
-                          <Copy size={13} />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-[#ef4444]" onClick={() => setDeleteTarget(record)}>
-                          <Trash2 size={13} />
-                        </Button>
+                        {editMode ? (
+                          <>
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleClone(record)}>
+                              <Copy size={13} />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-[#ef4444]" onClick={() => setDeleteTarget(record)}>
+                              <Trash2 size={13} />
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(record)}>
+                              <Pencil size={13} />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleClone(record)}>
+                              <Copy size={13} />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-[#ef4444]" onClick={() => setDeleteTarget(record)}>
+                              <Trash2 size={13} />
+                            </Button>
+                          </>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
-                ))}
+                )})}
               </TableBody>
             </Table>
 

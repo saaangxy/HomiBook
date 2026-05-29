@@ -13,9 +13,10 @@ interface DatePickerProps {
   onChange: (value: string) => void
   placeholder?: string
   className?: string
+  compact?: boolean
 }
 
-export function DatePicker({ value, onChange, placeholder = "选择日期", className }: DatePickerProps) {
+export function DatePicker({ value, onChange, placeholder = "选择日期", className, compact }: DatePickerProps) {
   const [open, setOpen] = React.useState(false)
   const selectedDate = value ? dayjs(value).toDate() : undefined
 
@@ -24,7 +25,8 @@ export function DatePicker({ value, onChange, placeholder = "选择日期", clas
     setOpen(false)
   }
 
-  const displayValue = value ? dayjs(value).format("YYYY年MM月DD日") : ""
+  const displayFormat = compact ? "YYYY-MM-DD" : "YYYY年MM月DD日"
+  const displayValue = value ? dayjs(value).format(displayFormat) : ""
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -34,12 +36,13 @@ export function DatePicker({ value, onChange, placeholder = "选择日期", clas
           className={cn(
             "w-full justify-start text-left h-9 px-3 font-normal bg-background border-border hover:bg-accent",
             !value && "text-muted-foreground",
+            compact && "text-xs",
             className
           )}
         >
-          <CalendarIcon className="mr-2 h-4 w-4 text-[#f97316]" />
-          {value ? <span>{displayValue}</span> : <span>{placeholder}</span>}
-          {value && (
+          {!compact && <CalendarIcon className="mr-2 h-4 w-4 text-[#f97316]" />}
+          {value ? <span className={compact ? 'truncate' : ''}>{displayValue}</span> : <span>{placeholder}</span>}
+          {value && !compact && (
             <span
               className="ml-auto h-4 w-4 shrink-0 rounded-full opacity-50 hover:opacity-100 flex items-center justify-center"
               onClick={(e) => { e.stopPropagation(); onChange('') }}
