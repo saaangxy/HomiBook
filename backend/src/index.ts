@@ -7,7 +7,9 @@ import { recordRoutes } from './routes/record.js'
 import { settingsRoutes } from './routes/settings.js'
 import { holidayRoutes } from './routes/holiday.js'
 import { budgetRoutes } from './routes/budget.js'
+import { recurringRoutes } from './routes/recurring.js'
 import { seedDefaults } from './seed.js'
+import { startScheduler } from './services/scheduler.js'
 
 async function main() {
   const app = await buildApp()
@@ -24,6 +26,10 @@ async function main() {
   app.register(settingsRoutes, { prefix: '/api/settings' })
   app.register(holidayRoutes, { prefix: '/api/holidays' })
   app.register(budgetRoutes, { prefix: '/api/budgets' })
+  app.register(recurringRoutes, { prefix: '/api/recurring' })
+
+  // 启动固定收支调度器
+  startScheduler()
 
   // 健康检查
   app.get('/health', async () => ({ status: 'ok' }))

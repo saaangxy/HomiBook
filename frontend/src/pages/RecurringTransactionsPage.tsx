@@ -1,0 +1,586 @@
+import { useState, useEffect } from 'react'
+import { Card, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Badge } from '@/components/ui/badge'
+import { Spinner } from '@/components/ui/spinner'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from '@/components/ui/dialog'
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel,
+  AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
+import {
+  Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
+} from '@/components/ui/table'
+import { CronBuilder } from '@/components/CronBuilder'
+import { DatePicker } from '@/components/ui/date-picker'
+import { RepaymentPlanTable } from '@/components/RepaymentPlanTable'
+import { DictCombobox } from '@/components/DictCombobox'
+import { recurringApi, type RecurringTransaction, type LoanPreview } from '@/api/recurring'
+import { accountApi, type AccountItem } from '@/api/account'
+import { useBookStore } from '@/stores/book'
+import { Plus, Pencil, Trash2, Power, PowerOff, FileText } from 'lucide-react'
+
+const TYPE_LABELS: Record<string, string> = { INCOME: '收入', EXPENSE: '支出' }
+const TYPE_COLORS: Record<string, string> = {
+  INCOME: 'text-[#22c55e] bg-[#22c55e]/10',
+  EXPENSE: 'text-[#ef4444] bg-[#ef4444]/10',
+}
+const RECURRING_TYPE_LABELS: Record<string, string> = { PERIODIC: '周期', LOAN: '贷款' }
+const METHOD_LABELS: Record<string, string> = {
+  EQUAL_INSTALLMENT: '等额本息',
+  EQUAL_PRINCIPAL: '等额本金',
+}
+
+function formatMoney(amount: number): string {
+  return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(amount)
+}
+
+export function RecurringTransactionsPage() {
+  const { currentBookId } = useBookStore()
+  const [list, setList] = useState<RecurringTransaction[]>([])
+  const [accounts, setAccounts] = useState<AccountItem[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  // 弹窗
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<RecurringTransaction | null>(null)
+
+  // 还款计划查看
+  const [planTarget, setPlanTarget] = useState<RecurringTransaction | null>(null)
+
+  // 贷款预览
+  const [loanPreview, setLoanPreview] = useState<LoanPreview | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+
+  // 表单
+  const [formName, setFormName] = useState('')
+  const [formType, setFormType] = useState<'INCOME' | 'EXPENSE'>('EXPENSE')
+  const [formAmount, setFormAmount] = useState('')
+  const [formAccountId, setFormAccountId] = useState('')
+  const [formCategoryCode, setFormCategoryCode] = useState('')
+  const [formPayer, setFormPayer] = useState('')
+  const [formRemark, setFormRemark] = useState('')
+  const [formCron, setFormCron] = useState('0 0 * * *')
+  const [formRecurringType, setFormRecurringType] = useState<'PERIODIC' | 'LOAN'>('PERIODIC')
+  // 贷款字段
+  const [formLoanTotal, setFormLoanTotal] = useState('')
+  const [formLoanRate, setFormLoanRate] = useState('')
+  const [formLoanMethod, setFormLoanMethod] = useState<'EQUAL_INSTALLMENT' | 'EQUAL_PRINCIPAL'>('EQUAL_INSTALLMENT')
+  const [formLoanStartDate, setFormLoanStartDate] = useState('')
+  const [formLoanTermMonths, setFormLoanTermMonths] = useState('')
+  const [formError, setFormError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  const loadData = async () => {
+    if (!currentBookId) return
+    setLoading(true)
+    try {
+      const [listData, accData] = await Promise.all([
+        recurringApi.list(currentBookId),
+        accountApi.list(currentBookId),
+      ])
+      setList(listData)
+      setAccounts(accData)
+    } catch (e: any) { setError(e.message) }
+    finally { setLoading(false) }
+  }
+
+  useEffect(() => { loadData() }, [currentBookId])
+
+  const resetForm = () => {
+    setFormName('')
+    setFormType('EXPENSE')
+    setFormAmount('')
+    setFormAccountId('')
+    setFormCategoryCode('')
+    setFormPayer('')
+    setFormRemark('')
+    setFormCron('0 0 * * *')
+    setFormRecurringType('PERIODIC')
+    setFormLoanTotal('')
+    setFormLoanRate('')
+    setFormLoanMethod('EQUAL_INSTALLMENT')
+    setFormLoanStartDate('')
+    setFormLoanTermMonths('')
+    setFormError('')
+    setLoanPreview(null)
+  }
+
+  const openCreate = () => {
+    setEditingId(null)
+    resetForm()
+    setDialogOpen(true)
+  }
+
+  const openEdit = (rt: RecurringTransaction) => {
+    setEditingId(rt.id)
+    setFormName(rt.name || '')
+    setFormType(rt.type as 'INCOME' | 'EXPENSE')
+    setFormAmount(String(rt.amount))
+    setFormAccountId(rt.accountId)
+    setFormCategoryCode(rt.categoryCode || '')
+    setFormPayer(rt.payer || '')
+    setFormRemark(rt.remark || '')
+    setFormCron(rt.cron)
+    setFormRecurringType(rt.recurringType)
+    if (rt.recurringType === 'LOAN') {
+      setFormLoanTotal(rt.loanTotalAmount ? String(rt.loanTotalAmount) : '')
+      setFormLoanRate(rt.loanInterestRate ? String(rt.loanInterestRate) : '')
+      setFormLoanMethod(rt.loanInterestMethod as 'EQUAL_INSTALLMENT' | 'EQUAL_PRINCIPAL' || 'EQUAL_INSTALLMENT')
+      setFormLoanStartDate(rt.loanStartDate ? rt.loanStartDate.slice(0, 10) : '')
+      setFormLoanTermMonths(rt.loanTermMonths ? String(rt.loanTermMonths) : '')
+    }
+    setFormError('')
+    setLoanPreview(null)
+    setDialogOpen(true)
+  }
+
+  // 贷款预览
+  const handleLoanPreview = async () => {
+    const total = parseFloat(formLoanTotal)
+    const rate = parseFloat(formLoanRate)
+    const months = parseInt(formLoanTermMonths)
+    if (!total || !months || !formLoanStartDate) return
+
+    setPreviewLoading(true)
+    try {
+      const preview = await recurringApi.loanPreview({
+        total,
+        annualRate: rate || 0,
+        months,
+        startDate: new Date(formLoanStartDate).toISOString(),
+        method: formLoanMethod,
+      })
+      setLoanPreview(preview)
+    } catch (e: any) { setFormError(e.message) }
+    finally { setPreviewLoading(false) }
+  }
+
+  const handleSubmit = async () => {
+    if (!currentBookId) return
+    setFormError('')
+
+    if (!formName.trim()) { setFormError('请输入名称'); return }
+    if (!formAccountId) { setFormError('请选择账户'); return }
+    if (!formCron) { setFormError('请设置触发时间'); return }
+
+    const isLoan = formRecurringType === 'LOAN'
+    const amount = parseFloat(formAmount)
+    if (!isLoan && (!amount || amount <= 0)) { setFormError('请输入有效金额'); return }
+
+    setSubmitting(true)
+    try {
+      const baseData = {
+        accountBookId: currentBookId,
+        name: formName.trim(),
+        type: formType,
+        amount: isLoan ? 0 : amount,
+        remark: formRemark || undefined,
+        accountId: formAccountId,
+        categoryCode: formCategoryCode || undefined,
+        payer: formPayer || undefined,
+        cron: formCron,
+        recurringType: formRecurringType,
+      }
+
+      if (formRecurringType === 'LOAN') {
+        const loanTotal = parseFloat(formLoanTotal)
+        const loanRate = parseFloat(formLoanRate)
+        const loanTerm = parseInt(formLoanTermMonths)
+        if (!loanTotal || !loanTerm || !formLoanStartDate) {
+          setFormError('请填写完整的贷款信息'); setSubmitting(false); return
+        }
+
+        if (editingId) {
+          await recurringApi.update(editingId, baseData)
+        } else {
+          await recurringApi.create({
+            ...baseData,
+            loanTotalAmount: loanTotal,
+            loanInterestRate: loanRate || 0,
+            loanInterestMethod: formLoanMethod,
+            loanStartDate: new Date(formLoanStartDate).toISOString(),
+            loanTermMonths: loanTerm,
+          })
+        }
+      } else {
+        if (editingId) {
+          await recurringApi.update(editingId, baseData)
+        } else {
+          await recurringApi.create(baseData)
+        }
+      }
+
+      setDialogOpen(false)
+      resetForm()
+      loadData()
+    } catch (e: any) { setFormError(e.message) }
+    finally { setSubmitting(false) }
+  }
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return
+    try {
+      await recurringApi.delete(deleteTarget.id)
+      setDeleteTarget(null)
+      loadData()
+    } catch (e: any) { setError(e.message) }
+  }
+
+  const handleToggle = async (rt: RecurringTransaction) => {
+    try {
+      await recurringApi.toggle(rt.id)
+      loadData()
+    } catch (e: any) { setError(e.message) }
+  }
+
+  const getCategoryGroup = (type: string) => {
+    if (type === 'INCOME') return 'transaction_category_income'
+    return 'transaction_category_expense'
+  }
+
+  return (
+    <div className="space-y-4">
+      {error && (
+        <CardContent className="p-0"><div className="text-sm text-[#ef4444] bg-[#ef4444]/10 p-3 rounded-lg">{error}</div></CardContent>
+      )}
+
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold">固定收支</h2>
+        <Button onClick={openCreate} className="bg-[#f97316] hover:bg-[#ea580c] text-white rounded-lg h-8 text-xs">
+          <Plus size={14} /> 新增固定收支
+        </Button>
+      </div>
+
+      {loading && list.length === 0 ? (
+        <div className="py-12"><Spinner className="mx-auto" /></div>
+      ) : list.length === 0 ? (
+        <CardContent className="flex flex-col items-center justify-center py-12 text-center gap-2">
+          <FileText size={40} className="opacity-30" />
+          <p className="text-sm text-muted-foreground">暂无固定收支</p>
+          <Button onClick={openCreate} variant="outline" className="text-xs h-8"><Plus size={14} /> 新增</Button>
+        </CardContent>
+      ) : (
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-xs">状态</TableHead>
+                <TableHead className="text-xs">名称</TableHead>
+                <TableHead className="text-xs">类型</TableHead>
+                <TableHead className="text-xs text-right">金额</TableHead>
+                <TableHead className="text-xs">账户</TableHead>
+                <TableHead className="text-xs">触发规则</TableHead>
+                <TableHead className="text-xs">下次触发</TableHead>
+                <TableHead className="text-xs">贷款详情</TableHead>
+                <TableHead className="text-xs w-28 text-right">操作</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {list.map((rt) => (
+                <TableRow key={rt.id}>
+                  <TableCell>
+                    <button onClick={() => handleToggle(rt)} title={rt.active ? '停用' : '启用'}>
+                      {rt.active
+                        ? <Power size={14} className="text-[#22c55e]" />
+                        : <PowerOff size={14} className="text-muted-foreground" />
+                      }
+                    </button>
+                  </TableCell>
+                  <TableCell className="text-xs font-medium">{rt.name || '-'}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1.5">
+                      <Badge className={`text-[10px] ${TYPE_COLORS[rt.type]}`}>{TYPE_LABELS[rt.type]}</Badge>
+                      <span className="text-[10px] text-muted-foreground">{RECURRING_TYPE_LABELS[rt.recurringType]}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-xs">{rt.categoryCode || '-'}</TableCell>
+                  <TableCell className="text-xs text-right font-mono">
+                    {rt.active ? <span className={rt.type === 'INCOME' ? 'text-[#22c55e]' : 'text-[#ef4444]'}>{formatMoney(rt.amount)}</span> : <span className="text-muted-foreground">{formatMoney(rt.amount)}</span>}
+                  </TableCell>
+                  <TableCell className="text-xs">{rt.account?.name || '-'}</TableCell>
+                  <TableCell className="text-xs font-mono">{rt.cron}</TableCell>
+                  <TableCell className="text-xs">
+                    {rt.nextGenerateAt ? new Date(rt.nextGenerateAt).toLocaleString('zh-CN') : '-'}
+                  </TableCell>
+                  <TableCell className="text-xs">
+                    {rt.recurringType === 'LOAN' && rt.loanTotalAmount ? (
+                      <div className="space-y-0.5">
+                        <div>总额: {formatMoney(rt.loanTotalAmount)}</div>
+                        <div>剩余: {formatMoney(rt.loanRemainingAmount || 0)}</div>
+                        <div>期数: {rt.loanTermMonths}期</div>
+                      </div>
+                    ) : '-'}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-0.5 justify-end">
+                      {rt.recurringType === 'LOAN' && (
+                        <Button variant="ghost" size="icon" className="h-7 w-7" title="还款计划" onClick={() => setPlanTarget(rt)}>
+                          <FileText size={13} />
+                        </Button>
+                      )}
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(rt)}>
+                        <Pencil size={13} />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setDeleteTarget(rt)}>
+                        <Trash2 size={13} />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      )}
+
+      {/* 创建/编辑弹窗 */}
+      <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) setDialogOpen(false) }}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editingId ? '编辑' : '新增'}固定收支</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-3">
+            {/* 固定收支类型 */}
+            {!editingId && (
+              <div>
+                <Label className="text-xs text-muted-foreground mb-1 block">固定收支类型</Label>
+                <div className="flex gap-2">
+                  {(['PERIODIC', 'LOAN'] as const).map((t) => (
+                    <button
+                      key={t} type="button"
+                      className={`px-3 py-1 text-xs rounded-md border ${
+                        formRecurringType === t ? 'bg-[#f97316] text-white border-[#f97316]' : 'bg-background border-border'
+                      }`}
+                      onClick={() => {
+                        setFormRecurringType(t)
+                        setLoanPreview(null)
+                        if (t === 'PERIODIC') {
+                          setFormLoanTotal(''); setFormLoanRate(''); setFormLoanStartDate(''); setFormLoanTermMonths('')
+                          setFormCron('0 0 * * *')
+                        } else if (t === 'LOAN') {
+                          setFormCron('0 0 1 * *')
+                        }
+                      }}
+                    >
+                      {RECURRING_TYPE_LABELS[t]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 名称 */}
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">名称</Label>
+              <Input
+                placeholder="固定收支名称"
+                value={formName}
+                onChange={(e) => { setFormName(e.target.value); setFormError('') }}
+                className="bg-background border-border h-9"
+              />
+            </div>
+
+            {/* 类型 + 金额（贷款类型隐藏） */}
+            {formRecurringType !== 'LOAN' && (
+              <div className="flex gap-3">
+                <div className="w-24">
+                  <Label className="text-xs text-muted-foreground mb-1 block">类型</Label>
+                  <Select value={formType} onValueChange={(v) => { setFormType(v as 'INCOME' | 'EXPENSE'); setFormCategoryCode('') }}>
+                    <SelectTrigger className="bg-background border-border h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="INCOME">收入</SelectItem>
+                      <SelectItem value="EXPENSE">支出</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex-1">
+                  <Label className="text-xs text-muted-foreground mb-1 block">金额</Label>
+                  <Input
+                    type="number" min="0" step="0.01"
+                    placeholder="0.00"
+                    value={formAmount}
+                    onChange={(e) => { setFormAmount(e.target.value); setFormError('') }}
+                    className="bg-background border-border h-9"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* 账户 */}
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">账户</Label>
+              <Select value={formAccountId} onValueChange={setFormAccountId}>
+                <SelectTrigger className="bg-background border-border h-9"><SelectValue placeholder="选择账户" /></SelectTrigger>
+                <SelectContent>
+                  {accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* 分类 */}
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">分类</Label>
+              <DictCombobox
+                group={getCategoryGroup(formType)}
+                value={formCategoryCode}
+                onChange={setFormCategoryCode}
+                placeholder="选择分类"
+              />
+            </div>
+
+            {/* 交易方 */}
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">交易方</Label>
+              <Input
+                placeholder="交易方"
+                value={formPayer}
+                onChange={(e) => setFormPayer(e.target.value)}
+                className="bg-background border-border h-9"
+              />
+            </div>
+
+            {/* 备注 */}
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">备注</Label>
+              <Textarea
+                placeholder="备注"
+                value={formRemark}
+                onChange={(e) => setFormRemark(e.target.value)}
+                className="bg-background border-border min-h-[60px]" rows={2}
+              />
+            </div>
+
+            {/* 贷款字段 */}
+            {formRecurringType === 'LOAN' && !editingId && (
+              <>
+                <div className="flex gap-3">
+                  <div className="flex-1">
+                    <Label className="text-xs text-muted-foreground mb-1 block">贷款总额</Label>
+                    <Input type="number" min="0" step="0.01" value={formLoanTotal} onChange={(e) => { setFormLoanTotal(e.target.value); setLoanPreview(null) }} className="bg-background border-border h-9" />
+                  </div>
+                  <div className="flex-1">
+                    <Label className="text-xs text-muted-foreground mb-1 block">年利率(%)</Label>
+                    <Input type="number" min="0" step="0.01" value={formLoanRate} onChange={(e) => { setFormLoanRate(e.target.value); setLoanPreview(null) }} className="bg-background border-border h-9" />
+                  </div>
+                </div>
+                <div className="flex gap-3">
+                  <div className="flex-1">
+                    <Label className="text-xs text-muted-foreground mb-1 block">计息方式</Label>
+                    <Select value={formLoanMethod} onValueChange={(v) => { setFormLoanMethod(v as 'EQUAL_INSTALLMENT' | 'EQUAL_PRINCIPAL'); setLoanPreview(null) }}>
+                      <SelectTrigger className="bg-background border-border h-9"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="EQUAL_INSTALLMENT">等额本息</SelectItem>
+                        <SelectItem value="EQUAL_PRINCIPAL">等额本金</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex-1">
+                    <Label className="text-xs text-muted-foreground mb-1 block">还款期数(月)</Label>
+                    <Input type="number" min="1" max="360" value={formLoanTermMonths} onChange={(e) => { setFormLoanTermMonths(e.target.value); setLoanPreview(null) }} className="bg-background border-border h-9" />
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground mb-1 block">开始日期</Label>
+                  <DatePicker value={formLoanStartDate} onChange={(v) => { setFormLoanStartDate(v); setLoanPreview(null) }} />
+                </div>
+                <Button variant="outline" size="sm" className="text-xs" onClick={handleLoanPreview} disabled={previewLoading || !formLoanTotal || !formLoanTermMonths || !formLoanStartDate}>
+                  {previewLoading ? <Spinner /> : '计算还款计划预览'}
+                </Button>
+
+                {/* 贷款预览结果 */}
+                {loanPreview && (
+                  <div className="border border-border rounded-lg p-3 space-y-2">
+                    <div className="flex gap-4 text-xs">
+                      <span>月还款额: <strong className="text-[#f97316]">{formatMoney(loanPreview.monthlyPayment)}</strong></span>
+                      <span>总还款: {formatMoney(loanPreview.totalPayment)}</span>
+                      <span>总利息: {formatMoney(loanPreview.totalInterest)}</span>
+                    </div>
+                    <RepaymentPlanTable plans={loanPreview.plan.map((p) => ({
+                      id: String(p.period),
+                      recurringTransactionId: '',
+                      period: p.period,
+                      dueDate: p.dueDate,
+                      totalPayment: p.totalPayment,
+                      principal: p.principal,
+                      interest: p.interest,
+                      remainingPrincipal: p.remainingPrincipal,
+                      status: 'PENDING',
+                      generatedRecordId: null,
+                    }))} />
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* 触发时间 */}
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">触发时间</Label>
+              <CronBuilder
+                value={formCron}
+                onChange={setFormCron}
+              />
+            </div>
+
+            {formError && <p className="text-sm text-[#ef4444]">{formError}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>取消</Button>
+            <Button className="bg-[#f97316] hover:bg-[#ea580c] text-white" onClick={handleSubmit} disabled={submitting}>
+              {submitting ? '保存中...' : (editingId ? '保存' : '创建')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 删除确认 */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要删除这条固定收支吗？已生成的流水不会被删除，还款计划将被清除。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-[#ef4444] hover:bg-[#dc2626]">删除</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* 还款计划查看 */}
+      <Dialog open={!!planTarget} onOpenChange={() => setPlanTarget(null)}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>还款计划</DialogTitle>
+          </DialogHeader>
+          {planTarget && (
+            <div className="space-y-2">
+              <div className="flex gap-4 text-xs text-muted-foreground">
+                <span>总额: {formatMoney(planTarget.loanTotalAmount || 0)}</span>
+                <span>剩余: {formatMoney(planTarget.loanRemainingAmount || 0)}</span>
+                <span>方式: {METHOD_LABELS[planTarget.loanInterestMethod || ''] || '-'}</span>
+                <span>利率: {planTarget.loanInterestRate}%</span>
+              </div>
+              <RepaymentPlanTable plans={planTarget.repaymentPlans || []} />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}

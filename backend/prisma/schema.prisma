@@ -18,10 +18,11 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  ownedBooks   AccountBook[] @relation("BookOwner")
-  memberships  AccountBookMember[]
-  accounts     Account[]
-  records      Record[]
+  ownedBooks           AccountBook[] @relation("BookOwner")
+  memberships          AccountBookMember[]
+  accounts             Account[]
+  records              Record[]
+  recurringTransactions RecurringTransaction[]
 }
 
 // 账本
@@ -39,6 +40,7 @@ model AccountBook {
   categories  CategoryMapping[]
   shareCodes  ShareCode[]
   budgets     Budget[]
+  recurringTransactions RecurringTransaction[]
 }
 
 // 账本成员
@@ -74,10 +76,11 @@ model Account {
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
-  records         Record[]
-  recordsFrom     Record[]    @relation("FromAccount")
-  recordsTo       Record[]    @relation("ToAccount")
-  adjustments     BalanceAdjustment[]
+  records              Record[]
+  recordsFrom          Record[]    @relation("FromAccount")
+  recordsTo            Record[]    @relation("ToAccount")
+  adjustments          BalanceAdjustment[]
+  recurringTransactions RecurringTransaction[]
 }
 
 // 余额调整记录
@@ -218,4 +221,64 @@ model Budget {
 
   @@unique([accountBookId, type, year, month, name])
   @@index([accountBookId, year, month])
+}
+
+// 固定收支
+model RecurringTransaction {
+  id            String   @id @default(uuid())
+  accountBookId String
+  accountBook   AccountBook @relation(fields: [accountBookId], references: [id], onDelete: Cascade)
+  name          String   @default("") // 名称
+  type          String   // INCOME | EXPENSE
+  amount        Float    // 单期金额（贷款类型为月还款额）
+  remark        String?
+  tags          String   @default("[\"固定收支\"]")
+  accountId     String
+  account       Account  @relation(fields: [accountId], references: [id])
+  categoryCode  String?
+  payer         String?
+  ownerId       String
+  owner         User     @relation(fields: [ownerId], references: [id])
+
+  // 调度
+  cron          String   // cron 表达式
+  active        Boolean  @default(true)
+
+  // 类型
+  recurringType String   // PERIODIC | LOAN
+
+  // 贷款专属
+  loanTotalAmount     Float?    // 贷款总额
+  loanRemainingAmount Float?    // 剩余本金
+  loanInterestRate    Float?    // 年利率(%)
+  loanInterestMethod  String?   // EQUAL_INSTALLMENT | EQUAL_PRINCIPAL
+  loanStartDate       DateTime? // 贷款开始日期
+  loanTermMonths      Int?      // 总期数
+  loanMonthlyPayment  Float?    // 月还款额（等额本息自动计算）
+
+  // 生成追踪
+  lastGeneratedAt DateTime?
+  nextGenerateAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  repaymentPlans RepaymentPlan[]
+}
+
+// 还款计划
+model RepaymentPlan {
+  id                       String   @id @default(uuid())
+  recurringTransactionId   String
+  recurringTransaction     RecurringTransaction @relation(fields: [recurringTransactionId], references: [id], onDelete: Cascade)
+  period                   Int      // 第几期
+  dueDate                  DateTime // 应还日期
+  totalPayment             Float    // 月还款额
+  principal                Float    // 当月本金
+  interest                 Float    // 当月利息
+  remainingPrincipal       Float    // 剩余本金
+  status                   String   @default("PENDING") // PENDING | GENERATED
+  generatedRecordId        String?  // 关联的流水记录 ID
+
+  @@index([recurringTransactionId])
 }
