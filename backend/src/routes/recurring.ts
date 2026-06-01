@@ -187,8 +187,15 @@ export async function recurringRoutes(app: FastifyInstance) {
         ? generateEqualPrincipalPlan(data.loanTotalAmount!, data.loanInterestRate!, data.loanTermMonths!, startDate)
         : generateEqualInstallmentPlan(data.loanTotalAmount!, data.loanInterestRate!, data.loanTermMonths!, startDate)
 
-      await prisma.repaymentPlan.createMany({
-        data: plan.map((p) => ({
+      const now = new Date()
+
+      const planData = plan.map((p) => {
+        const isPastDue = p.dueDate <= now
+        let status: string = 'PENDING'
+        if (isPastDue && data.generateAll !== false) {
+          status = 'PENDING' // will be generated below
+        }
+        return {
           recurringTransactionId: rt.id,
           period: p.period,
           dueDate: p.dueDate,
@@ -196,8 +203,56 @@ export async function recurringRoutes(app: FastifyInstance) {
           principal: p.principal,
           interest: p.interest,
           remainingPrincipal: p.remainingPrincipal,
-        })),
+          status,
+        }
       })
+
+      await prisma.repaymentPlan.createMany({ data: planData })
+
+      // 全部生成：立即为已到期的计划创建流水记录
+      if (data.generateAll !== false) {
+        const pastDuePlans = planData.filter((p) => p.dueDate <= now)
+        if (pastDuePlans.length > 0) {
+          const createdPlans = await prisma.repaymentPlan.findMany({
+            where: { recurringTransactionId: rt.id, period: { in: pastDuePlans.map(p => p.period) } },
+            orderBy: { period: 'asc' },
+          })
+
+          for (const pp of createdPlans) {
+            const tags = ensureFixedTag(JSON.parse(rt.tags))
+            const record = await prisma.record.create({
+              data: {
+                accountBookId: rt.accountBookId,
+                type: rt.type,
+                amount: pp.totalPayment,
+                date: pp.dueDate,
+                remark: `${rt.remark || '还款'}\n本金: ${pp.principal.toFixed(2)} | 利息: ${pp.interest.toFixed(2)}`.trim(),
+                tags: JSON.stringify(tags),
+                accountId: rt.accountId,
+                categoryCode: rt.categoryCode,
+                payer: rt.payer,
+                ownerId: rt.ownerId,
+              },
+            })
+
+            await prisma.repaymentPlan.update({
+              where: { id: pp.id },
+              data: { status: 'GENERATED', generatedRecordId: record.id },
+            })
+          }
+
+          // 更新剩余本金为最后已生成期的剩余本金
+          const lastCreated = createdPlans[createdPlans.length - 1]
+          await prisma.recurringTransaction.update({
+            where: { id: rt.id },
+            data: {
+              loanRemainingAmount: lastCreated.remainingPrincipal,
+              lastGeneratedAt: now,
+              nextGenerateAt: getNextTriggerTime(data.cron, now),
+            },
+          })
+        }
+      }
     }
 
     return { ...rt, tags }

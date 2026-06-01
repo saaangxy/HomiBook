@@ -83,6 +83,7 @@ export const recurringApi = {
     loanInterestMethod?: 'EQUAL_INSTALLMENT' | 'EQUAL_PRINCIPAL'
     loanStartDate?: string
     loanTermMonths?: number
+    generateAll?: boolean
   }) => api.post<RecurringTransaction>('/api/recurring', data),
 
   update: (id: string, data: {

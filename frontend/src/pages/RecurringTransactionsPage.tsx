@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { Card, CardContent } from '@/components/ui/card'
+import { useState, useEffect, useRef } from 'react'
+import { CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -24,6 +24,7 @@ import { CronBuilder } from '@/components/CronBuilder'
 import { DatePicker } from '@/components/ui/date-picker'
 import { RepaymentPlanTable } from '@/components/RepaymentPlanTable'
 import { DictCombobox } from '@/components/DictCombobox'
+import { TagCombobox } from '@/components/TagCombobox'
 import { recurringApi, type RecurringTransaction, type LoanPreview } from '@/api/recurring'
 import { accountApi, type AccountItem } from '@/api/account'
 import { useBookStore } from '@/stores/book'
@@ -79,6 +80,10 @@ export function RecurringTransactionsPage() {
   const [formLoanMethod, setFormLoanMethod] = useState<'EQUAL_INSTALLMENT' | 'EQUAL_PRINCIPAL'>('EQUAL_INSTALLMENT')
   const [formLoanStartDate, setFormLoanStartDate] = useState('')
   const [formLoanTermMonths, setFormLoanTermMonths] = useState('')
+  const [formLoanDay, setFormLoanDay] = useState(1) // 每月还款日
+  const [formLoanGenerateAll, setFormLoanGenerateAll] = useState(true) // 全部生成|只生成未还款
+  const [formTags, setFormTags] = useState<string[]>(['固定收支'])
+  const [formActive, setFormActive] = useState(true)
   const [formError, setFormError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
@@ -113,6 +118,10 @@ export function RecurringTransactionsPage() {
     setFormLoanMethod('EQUAL_INSTALLMENT')
     setFormLoanStartDate('')
     setFormLoanTermMonths('')
+    setFormLoanDay(1)
+    setFormLoanGenerateAll(true)
+    setFormTags(['固定收支'])
+    setFormActive(true)
     setFormError('')
     setLoanPreview(null)
   }
@@ -134,12 +143,17 @@ export function RecurringTransactionsPage() {
     setFormRemark(rt.remark || '')
     setFormCron(rt.cron)
     setFormRecurringType(rt.recurringType)
+    setFormTags(rt.tags?.length ? rt.tags : ['固定收支'])
+    setFormActive(rt.active)
     if (rt.recurringType === 'LOAN') {
       setFormLoanTotal(rt.loanTotalAmount ? String(rt.loanTotalAmount) : '')
       setFormLoanRate(rt.loanInterestRate ? String(rt.loanInterestRate) : '')
       setFormLoanMethod(rt.loanInterestMethod as 'EQUAL_INSTALLMENT' | 'EQUAL_PRINCIPAL' || 'EQUAL_INSTALLMENT')
       setFormLoanStartDate(rt.loanStartDate ? rt.loanStartDate.slice(0, 10) : '')
       setFormLoanTermMonths(rt.loanTermMonths ? String(rt.loanTermMonths) : '')
+      // 从 cron 解析还款日: 0 0 <day> * *
+      const parts = rt.cron.split(' ')
+      setFormLoanDay(parseInt(parts[2]) || 1)
     }
     setFormError('')
     setLoanPreview(null)
@@ -167,6 +181,28 @@ export function RecurringTransactionsPage() {
     finally { setPreviewLoading(false) }
   }
 
+  // 贷款预览自动触发（debounce 500ms）
+  const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (formRecurringType !== 'LOAN' || editingId) return
+
+    const total = parseFloat(formLoanTotal)
+    const months = parseInt(formLoanTermMonths)
+    if (!total || !months || !formLoanStartDate || total <= 0 || months <= 0) {
+      setLoanPreview(null)
+      return
+    }
+
+    if (previewTimerRef.current) clearTimeout(previewTimerRef.current)
+    previewTimerRef.current = setTimeout(() => {
+      handleLoanPreview()
+    }, 500)
+
+    return () => {
+      if (previewTimerRef.current) clearTimeout(previewTimerRef.current)
+    }
+  }, [formLoanTotal, formLoanRate, formLoanTermMonths, formLoanStartDate, formLoanMethod, formRecurringType, editingId])
+
   const handleSubmit = async () => {
     if (!currentBookId) return
     setFormError('')
@@ -187,6 +223,7 @@ export function RecurringTransactionsPage() {
         type: formType,
         amount: isLoan ? 0 : amount,
         remark: formRemark || undefined,
+        tags: formTags,
         accountId: formAccountId,
         categoryCode: formCategoryCode || undefined,
         payer: formPayer || undefined,
@@ -203,7 +240,9 @@ export function RecurringTransactionsPage() {
         }
 
         if (editingId) {
-          await recurringApi.update(editingId, baseData)
+          // 编辑模式：不更新 amount（贷款金额由系统计算）
+          const { amount: _a, ...updateData } = baseData
+          await recurringApi.update(editingId, { ...updateData, active: formActive })
         } else {
           await recurringApi.create({
             ...baseData,
@@ -212,11 +251,12 @@ export function RecurringTransactionsPage() {
             loanInterestMethod: formLoanMethod,
             loanStartDate: new Date(formLoanStartDate).toISOString(),
             loanTermMonths: loanTerm,
+            generateAll: formLoanGenerateAll,
           })
         }
       } else {
         if (editingId) {
-          await recurringApi.update(editingId, baseData)
+          await recurringApi.update(editingId, { ...baseData, active: formActive })
         } else {
           await recurringApi.create(baseData)
         }
@@ -276,28 +316,20 @@ export function RecurringTransactionsPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="text-xs">状态</TableHead>
                 <TableHead className="text-xs">名称</TableHead>
                 <TableHead className="text-xs">类型</TableHead>
+                <TableHead className="text-xs">分类</TableHead>
                 <TableHead className="text-xs text-right">金额</TableHead>
                 <TableHead className="text-xs">账户</TableHead>
                 <TableHead className="text-xs">触发规则</TableHead>
                 <TableHead className="text-xs">下次触发</TableHead>
                 <TableHead className="text-xs">贷款详情</TableHead>
-                <TableHead className="text-xs w-28 text-right">操作</TableHead>
+                <TableHead className="text-xs w-36 text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {list.map((rt) => (
-                <TableRow key={rt.id}>
-                  <TableCell>
-                    <button onClick={() => handleToggle(rt)} title={rt.active ? '停用' : '启用'}>
-                      {rt.active
-                        ? <Power size={14} className="text-[#22c55e]" />
-                        : <PowerOff size={14} className="text-muted-foreground" />
-                      }
-                    </button>
-                  </TableCell>
+                <TableRow key={rt.id} className={rt.active ? 'shadow-[inset_3px_0_0_#22c55e]' : 'shadow-[inset_3px_0_0_#6b7280]'}>
                   <TableCell className="text-xs font-medium">{rt.name || '-'}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1.5">
@@ -325,6 +357,12 @@ export function RecurringTransactionsPage() {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-0.5 justify-end">
+                      <button onClick={() => handleToggle(rt)} title={rt.active ? '停用' : '启用'} className="p-0.5 rounded hover:bg-accent">
+                        {rt.active
+                          ? <Power size={14} className="text-[#22c55e]" />
+                          : <PowerOff size={14} className="text-muted-foreground" />
+                        }
+                      </button>
                       {rt.recurringType === 'LOAN' && (
                         <Button variant="ghost" size="icon" className="h-7 w-7" title="还款计划" onClick={() => setPlanTarget(rt)}>
                           <FileText size={13} />
@@ -347,21 +385,23 @@ export function RecurringTransactionsPage() {
 
       {/* 创建/编辑弹窗 */}
       <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) setDialogOpen(false) }}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto max-w-lg">
+        <DialogContent className="max-h-[85vh] overflow-y-auto max-w-xl">
           <DialogHeader>
             <DialogTitle>{editingId ? '编辑' : '新增'}固定收支</DialogTitle>
           </DialogHeader>
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-4">
             {/* 固定收支类型 */}
             {!editingId && (
               <div>
                 <Label className="text-xs text-muted-foreground mb-1 block">固定收支类型</Label>
-                <div className="flex gap-2">
-                  {(['PERIODIC', 'LOAN'] as const).map((t) => (
+                <div className="inline-flex rounded-md border border-border overflow-hidden h-9">
+                  {(['PERIODIC', 'LOAN'] as const).map((t, idx) => (
                     <button
                       key={t} type="button"
-                      className={`px-3 py-1 text-xs rounded-md border ${
-                        formRecurringType === t ? 'bg-[#f97316] text-white border-[#f97316]' : 'bg-background border-border'
+                      className={`px-4 text-xs font-medium transition-colors ${
+                        idx === 0 ? 'border-r border-border' : ''
+                      } ${
+                        formRecurringType === t ? 'bg-[#f97316] text-white' : 'bg-background text-foreground hover:bg-muted'
                       }`}
                       onClick={() => {
                         setFormRecurringType(t)
@@ -370,7 +410,9 @@ export function RecurringTransactionsPage() {
                           setFormLoanTotal(''); setFormLoanRate(''); setFormLoanStartDate(''); setFormLoanTermMonths('')
                           setFormCron('0 0 * * *')
                         } else if (t === 'LOAN') {
-                          setFormCron('0 0 1 * *')
+                          const day = formLoanStartDate ? new Date(formLoanStartDate).getDate() : 1
+                          setFormLoanDay(day)
+                          setFormCron(`0 0 ${day} * *`)
                         }
                       }}
                     >
@@ -391,6 +433,28 @@ export function RecurringTransactionsPage() {
                 className="bg-background border-border h-9"
               />
             </div>
+
+            {/* 启用开关（编辑模式） */}
+            {editingId && (
+                <div className="flex items-center gap-3">
+                  <Label className="text-xs text-muted-foreground">启用状态</Label>
+                  <div className="inline-flex rounded-md border border-border overflow-hidden h-9">
+                    {([true, false] as const).map((val, idx) => (
+                        <button
+                            key={String(val)} type="button"
+                            className={`px-4 text-xs font-medium transition-colors ${
+                                idx === 0 ? 'border-r border-border' : ''
+                            } ${
+                                formActive === val ? (val ? 'bg-[#22c55e] text-white' : 'bg-[#6b7280] text-white') : 'bg-background text-foreground hover:bg-muted'
+                            }`}
+                            onClick={() => setFormActive(val)}
+                        >
+                          {val ? '启用' : '停用'}
+                        </button>
+                    ))}
+                  </div>
+                </div>
+            )}
 
             {/* 类型 + 金额（贷款类型隐藏） */}
             {formRecurringType !== 'LOAN' && (
@@ -464,6 +528,22 @@ export function RecurringTransactionsPage() {
               />
             </div>
 
+            {/* 标签 */}
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">标签</Label>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                <Badge className="gap-1 pr-1 text-[10px] bg-[#22c55e]/10 text-[#22c55e]">
+                  固定收支
+                </Badge>
+              </div>
+              <TagCombobox
+                value={formTags.filter(t => t !== '固定收支')}
+                onChange={(tags) => setFormTags(['固定收支', ...tags])}
+                bookId={currentBookId || ''}
+                placeholder="添加标签..."
+              />
+            </div>
+
             {/* 贷款字段 */}
             {formRecurringType === 'LOAN' && !editingId && (
               <>
@@ -495,19 +575,52 @@ export function RecurringTransactionsPage() {
                 </div>
                 <div>
                   <Label className="text-xs text-muted-foreground mb-1 block">开始日期</Label>
-                  <DatePicker value={formLoanStartDate} onChange={(v) => { setFormLoanStartDate(v); setLoanPreview(null) }} />
+                  <DatePicker value={formLoanStartDate} onChange={(v) => { setFormLoanStartDate(v); setLoanPreview(null); const d = v ? new Date(v).getDate() : 1; setFormLoanDay(d); setFormCron(`0 0 ${d} * *`) }} />
                 </div>
-                <Button variant="outline" size="sm" className="text-xs" onClick={handleLoanPreview} disabled={previewLoading || !formLoanTotal || !formLoanTermMonths || !formLoanStartDate}>
-                  {previewLoading ? <Spinner /> : '计算还款计划预览'}
-                </Button>
+
+                {/* 全部生成开关 */}
+                <div>
+                  <Label className="text-xs text-muted-foreground mb-1 block">生成方式</Label>
+                  <div className="inline-flex rounded-md border border-border overflow-hidden h-9">
+                    {([true, false] as const).map((val, idx) => (
+                      <button
+                        key={String(val)} type="button"
+                        className={`px-4 text-xs font-medium transition-colors ${
+                          idx === 0 ? 'border-r border-border' : ''
+                        } ${
+                          formLoanGenerateAll === val ? 'bg-[#f97316] text-white' : 'bg-background text-foreground hover:bg-muted'
+                        }`}
+                        onClick={() => { setFormLoanGenerateAll(val); setLoanPreview(null) }}
+                      >
+                        {val ? '全部生成' : '只生成未还款'}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    {formLoanGenerateAll ? '将立即为已到期月份创建流水记录' : '仅从下次还款日开始生成流水'}
+                  </p>
+                </div>
 
                 {/* 贷款预览结果 */}
+                <div>
+                  {!loanPreview && (
+                    <Button variant="outline" size="sm" className="text-xs" onClick={handleLoanPreview} disabled={previewLoading || !formLoanTotal || !formLoanTermMonths || !formLoanStartDate}>
+                      {previewLoading ? <Spinner /> : '计算还款计划预览'}
+                    </Button>
+                  )}
+                  {previewLoading && <Spinner className="mt-2" />}
+                </div>
                 {loanPreview && (
-                  <div className="border border-border rounded-lg p-3 space-y-2">
+                  <>
                     <div className="flex gap-4 text-xs">
                       <span>月还款额: <strong className="text-[#f97316]">{formatMoney(loanPreview.monthlyPayment)}</strong></span>
                       <span>总还款: {formatMoney(loanPreview.totalPayment)}</span>
                       <span>总利息: {formatMoney(loanPreview.totalInterest)}</span>
+                      {formLoanGenerateAll && (
+                        <span className="text-[#f97316]">
+                          将立即生成 {loanPreview.plan.filter(p => new Date(p.dueDate) <= new Date()).length} 期历史流水
+                        </span>
+                      )}
                     </div>
                     <RepaymentPlanTable plans={loanPreview.plan.map((p) => ({
                       id: String(p.period),
@@ -518,10 +631,10 @@ export function RecurringTransactionsPage() {
                       principal: p.principal,
                       interest: p.interest,
                       remainingPrincipal: p.remainingPrincipal,
-                      status: 'PENDING',
+                      status: 'PENDING' as const,
                       generatedRecordId: null,
                     }))} />
-                  </div>
+                  </>
                 )}
               </>
             )}
@@ -529,10 +642,27 @@ export function RecurringTransactionsPage() {
             {/* 触发时间 */}
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">触发时间</Label>
-              <CronBuilder
-                value={formCron}
-                onChange={setFormCron}
-              />
+              {formRecurringType === 'LOAN' ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">每月</span>
+                  <Input
+                    type="number" min={1} max={28}
+                    value={formLoanDay}
+                    onChange={(e) => {
+                      const d = Math.min(28, Math.max(1, parseInt(e.target.value) || 1))
+                      setFormLoanDay(d)
+                      setFormCron(`0 0 ${d} * *`)
+                    }}
+                    className="w-20 h-9"
+                  />
+                  <span className="text-xs text-muted-foreground">号</span>
+                </div>
+              ) : (
+                <CronBuilder
+                  value={formCron}
+                  onChange={setFormCron}
+                />
+              )}
             </div>
 
             {formError && <p className="text-sm text-[#ef4444]">{formError}</p>}

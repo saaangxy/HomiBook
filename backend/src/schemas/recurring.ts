@@ -7,7 +7,7 @@ export const createRecurringSchema = z.object({
   accountBookId: z.string().min(1),
   name: z.string().min(1, '请输入名称'),
   type: z.enum(['INCOME', 'EXPENSE']),
-  amount: z.number().positive('金额必须大于0'),
+  amount: z.number().min(0),
   remark: z.string().optional(),
   tags: z.array(z.string()).optional(),
   accountId: z.string().min(1),
@@ -25,18 +25,26 @@ export const createRecurringSchema = z.object({
   loanInterestMethod: z.enum(INTEREST_METHODS).optional(),
   loanStartDate: z.string().optional(),
   loanTermMonths: z.number().int().min(1).max(360).optional(),
-}).refine((data) => {
+
+  // 全部生成（贷款类型专用）
+  generateAll: z.boolean().optional().default(true),
+}).superRefine((data, ctx) => {
   if (data.recurringType === 'LOAN') {
-    return !!data.loanTotalAmount && !!data.loanInterestMethod &&
-      !!data.loanStartDate && !!data.loanTermMonths && data.loanInterestRate !== undefined
+    if (!data.loanTotalAmount || !data.loanInterestMethod ||
+      !data.loanStartDate || !data.loanTermMonths || data.loanInterestRate === undefined) {
+      ctx.addIssue({ code: 'custom', message: '贷款类型需要填写贷款详情' })
+    }
+  } else {
+    if (data.amount <= 0) {
+      ctx.addIssue({ code: 'custom', message: '金额必须大于0', path: ['amount'] })
+    }
   }
-  return true
-}, { message: '贷款类型需要填写贷款详情' })
+})
 
 export const updateRecurringSchema = z.object({
   name: z.string().optional(),
   type: z.enum(['INCOME', 'EXPENSE']).optional(),
-  amount: z.number().positive().optional(),
+  amount: z.number().min(0).optional(),
   remark: z.string().nullable().optional(),
   tags: z.array(z.string()).optional(),
   accountId: z.string().optional(),

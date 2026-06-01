@@ -33,7 +33,7 @@ export function RepaymentPlanTable({ plans }: Props) {
             <TableHead className="text-xs text-right">本金</TableHead>
             <TableHead className="text-xs text-right">利息</TableHead>
             <TableHead className="text-xs text-right">剩余本金</TableHead>
-            <TableHead className="text-xs w-16">状态</TableHead>
+            <TableHead className="text-xs w-20">状态</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -47,10 +47,17 @@ export function RepaymentPlanTable({ plans }: Props) {
               <TableCell className="text-xs py-1.5 text-right">{formatMoney(p.principal)}</TableCell>
               <TableCell className="text-xs py-1.5 text-right">{formatMoney(p.interest)}</TableCell>
               <TableCell className="text-xs py-1.5 text-right">{formatMoney(p.remainingPrincipal)}</TableCell>
-              <TableCell className="py-1.5">
-                <Badge variant={p.status === 'GENERATED' ? 'default' : 'secondary'} className="text-[10px]">
-                  {p.status === 'GENERATED' ? '已生成' : '待生成'}
-                </Badge>
+              <TableCell className="py-1.5 whitespace-nowrap">
+                {(() => {
+                  const isPastDue = new Date(p.dueDate) <= new Date()
+                  if (p.status === 'GENERATED') {
+                    return <Badge className="text-[10px] bg-[#22c55e]/10 text-[#22c55e] whitespace-nowrap">已生成</Badge>
+                  }
+                  if (isPastDue) {
+                    return <Badge className="text-[10px] bg-[#f97316]/10 text-[#f97316] whitespace-nowrap">已到期</Badge>
+                  }
+                  return <Badge variant="secondary" className="text-[10px] whitespace-nowrap">待还款</Badge>
+                })()}
               </TableCell>
             </TableRow>
           ))}
