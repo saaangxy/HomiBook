@@ -46,9 +46,12 @@ const DEFAULT_DICTIONARIES: Array<{ group: string; code: string; label: string; 
   { group: 'transaction_category_expense', code: '水电', label: '水电', order: 8 },
   { group: 'transaction_category_expense', code: '服饰', label: '服饰', order: 9 },
   { group: 'transaction_category_expense', code: '日用品', label: '日用品', order: 10 },
-  { group: 'transaction_category_expense', code: '其他支出', label: '其他支出', order: 11 },
+  { group: 'transaction_category_expense', code: '人情往来', label: '人情往来', order: 11 },
+  { group: 'transaction_category_expense', code: '其他支出', label: '其他支出', order: 12 },
   // 交易分类 - 不计收支（转账）
   { group: 'transaction_category_transfer', code: '转账', label: '转账', order: 0 },
+  { group: 'transaction_category_transfer', code: '投资理财', label: '投资理财', order: 1 },
+  { group: 'transaction_category_transfer', code: '信用借还', label: '信用借还', order: 2 },
 ]
 
 export async function seedDefaults() {

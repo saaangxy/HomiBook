@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import {
   Dialog,
@@ -41,8 +41,9 @@ import {
 import { Spinner } from '@/components/ui/spinner'
 import { DictCombobox } from '@/components/DictCombobox'
 import { TagCombobox } from '@/components/TagCombobox'
+import { DatePicker } from '@/components/ui/date-picker'
 import { useBookStore } from '../stores/book'
-import { budgetApi, type BudgetItem, type BudgetType, type BudgetSummary } from '@/api/budget'
+import { budgetApi, type BudgetItem, type BudgetType } from '@/api/budget'
 import { Plus, Copy, Trash2, Pencil, Search, Check, Target, PiggyBank, TrendingUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -77,8 +78,8 @@ function UsageBar({ percent, remaining }: { percent: number; remaining: number }
 
 export function BudgetsPage() {
   const currentBookId = useBookStore((s) => s.currentBookId)
-  const [budgets, setBudgets] = useState<BudgetItem[]>([])
-  const [summary, setSummary] = useState<BudgetSummary | null>(null)
+  const [fixedBudgets, setFixedBudgets] = useState<BudgetItem[]>([])
+  const [freeBudgets, setFreeBudgets] = useState<BudgetItem[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -88,6 +89,8 @@ export function BudgetsPage() {
   const [month, setMonth] = useState<number | undefined>(now.getMonth() + 1)
   const [tabView, setTabView] = useState<'ALL' | 'FIXED' | 'FREE'>('ALL')
   const [searchName, setSearchName] = useState('')
+  const [freeStartDate, setFreeStartDate] = useState('')
+  const [freeEndDate, setFreeEndDate] = useState('')
 
   // 对话框状态
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -102,6 +105,8 @@ export function BudgetsPage() {
   const [batchEditAmount, setBatchEditAmount] = useState('')
   const [batchEditCategory, setBatchEditCategory] = useState('')
   const [batchEditTags, setBatchEditTags] = useState<string[]>([])
+  const [batchEditStartDate, setBatchEditStartDate] = useState('')
+  const [batchEditEndDate, setBatchEditEndDate] = useState('')
   const [batchEditRemark, setBatchEditRemark] = useState('')
   const [batchEditError, setBatchEditError] = useState('')
   const [batchEditSaving, setBatchEditSaving] = useState(false)
@@ -113,6 +118,8 @@ export function BudgetsPage() {
   const [formCategory, setFormCategory] = useState('')
   const [formMonth, setFormMonth] = useState(now.getMonth() + 1)
   const [formTags, setFormTags] = useState<string[]>([])
+  const [formStartDate, setFormStartDate] = useState('')
+  const [formEndDate, setFormEndDate] = useState('')
   const [formRemark, setFormRemark] = useState('')
   const [formSaving, setFormSaving] = useState(false)
   const [formError, setFormError] = useState('')
@@ -124,6 +131,8 @@ export function BudgetsPage() {
   const [batchCategory, setBatchCategory] = useState('')
   const [batchMonths, setBatchMonths] = useState<number[]>([])
   const [batchTags, setBatchTags] = useState<string[]>([])
+  const [batchStartDate, setBatchStartDate] = useState('')
+  const [batchEndDate, setBatchEndDate] = useState('')
   const [batchYear, setBatchYear] = useState(now.getFullYear())
   const [batchRemark, setBatchRemark] = useState('')
   const [batchSaving, setBatchSaving] = useState(false)
@@ -135,47 +144,47 @@ export function BudgetsPage() {
   const [copyTargetYear, setCopyTargetYear] = useState(now.getFullYear())
   const [copySaving, setCopySaving] = useState(false)
 
-  const loadData = useCallback(async () => {
+  const loadFixedBudgets = useCallback(async () => {
+    if (!currentBookId) return
+    try {
+      const data = await budgetApi.listFixed({ bookId: currentBookId, year, month })
+      setFixedBudgets(data)
+    } catch (e: any) {
+      setError(e.message || '加载固定预算失败')
+    }
+  }, [currentBookId, year, month])
+
+  const loadFreeBudgets = useCallback(async () => {
+    if (!currentBookId) return
+    try {
+      const data = await budgetApi.listFree({
+        bookId: currentBookId,
+        startDate: freeStartDate || undefined,
+        endDate: freeEndDate || undefined,
+      })
+      setFreeBudgets(data)
+    } catch (e: any) {
+      setError(e.message || '加载自由预算失败')
+    }
+  }, [currentBookId, freeStartDate, freeEndDate])
+
+  useEffect(() => {
     if (!currentBookId) return
     setLoading(true)
     setError('')
-    try {
-      const params: any = { bookId: currentBookId, year }
-      if (month !== undefined) params.month = month
-      const data = await budgetApi.list(params)
-      setBudgets(data)
-    } catch (e: any) {
-      setError(e.message || '加载失败')
-    } finally {
-      setLoading(false)
-    }
-  }, [currentBookId, year, month])
+    const promises: Promise<any>[] = []
+    if (tabView !== 'FREE') promises.push(loadFixedBudgets())
+    if (tabView !== 'FIXED') promises.push(loadFreeBudgets())
+    Promise.all(promises).finally(() => setLoading(false))
+  }, [currentBookId, tabView, loadFixedBudgets, loadFreeBudgets])
 
-  const loadSummary = useCallback(async () => {
-    if (!currentBookId) return
-    try {
-      const data = await budgetApi.summary({ bookId: currentBookId, year, month })
-      setSummary(data)
-    } catch {
-      // ignore
-    }
-  }, [currentBookId, year, month])
-
-  useEffect(() => {
-    loadData()
-    loadSummary()
-  }, [loadData, loadSummary])
-
-  const filteredBudgets = budgets.filter((b) => {
-    if (tabView === 'ALL') return true
-    return b.type === tabView
-  }).filter((b) => {
-    if (!searchName.trim()) return true
-    return b.name.toLowerCase().includes(searchName.trim().toLowerCase())
-  })
-
-  const fixedBudgets = filteredBudgets.filter((b) => b.type === 'FIXED')
-  const freeBudgets = filteredBudgets.filter((b) => b.type === 'FREE')
+  // 前端名称筛选
+  const filteredFixedBudgets = fixedBudgets.filter((b) =>
+    !searchName.trim() || b.name.toLowerCase().includes(searchName.trim().toLowerCase())
+  )
+  const filteredFreeBudgets = freeBudgets.filter((b) =>
+    !searchName.trim() || b.name.toLowerCase().includes(searchName.trim().toLowerCase())
+  )
 
   // 打开创建弹窗
   const openCreate = () => {
@@ -186,6 +195,8 @@ export function BudgetsPage() {
     setFormCategory('')
     setFormMonth(month ?? now.getMonth() + 1)
     setFormTags([])
+    setFormStartDate('')
+    setFormEndDate('')
     setFormRemark('')
     setFormError('')
     setDialogOpen(true)
@@ -200,6 +211,8 @@ export function BudgetsPage() {
     setFormCategory(b.categoryCode || '')
     setFormMonth(b.month)
     setFormTags(b.tags || [])
+    setFormStartDate(b.startDate ? b.startDate.slice(0, 10) : '')
+    setFormEndDate(b.endDate ? b.endDate.slice(0, 10) : '')
     setFormRemark(b.remark || '')
     setFormError('')
     setDialogOpen(true)
@@ -221,6 +234,8 @@ export function BudgetsPage() {
           amount: Number(formAmount),
           categoryCode: formType === 'FIXED' ? formCategory : null,
           tags: formTags,
+          startDate: formType === 'FREE' ? (formStartDate || null) : null,
+          endDate: formType === 'FREE' ? (formEndDate || null) : null,
           remark: formRemark || null,
         })
       } else {
@@ -233,13 +248,15 @@ export function BudgetsPage() {
           amount: Number(formAmount),
           categoryCode: formType === 'FIXED' ? formCategory : undefined,
           tags: formTags.length > 0 ? formTags : undefined,
+          startDate: formType === 'FREE' ? (formStartDate || undefined) : undefined,
+          endDate: formType === 'FREE' ? (formEndDate || undefined) : undefined,
           remark: formRemark || undefined,
         })
       }
       setDialogOpen(false)
-      loadData()
-      loadSummary()
-    } catch (e: any) {
+      loadFixedBudgets()
+      loadFreeBudgets()
+} catch (e: any) {
       setFormError(e.message || '保存失败')
     } finally {
       setFormSaving(false)
@@ -252,9 +269,9 @@ export function BudgetsPage() {
     try {
       await budgetApi.delete(deleteTarget.id)
       setDeleteTarget(null)
-      loadData()
-      loadSummary()
-    } catch { /* ignore */ }
+      loadFixedBudgets()
+      loadFreeBudgets()
+} catch { /* ignore */ }
   }
 
   // 批量生成
@@ -275,12 +292,14 @@ export function BudgetsPage() {
         tags: batchTags.length > 0 ? batchTags : undefined,
         months: batchType === 'FREE' ? [0] : batchMonths,
         year: batchType === 'FREE' ? now.getFullYear() : batchYear,
+        startDate: batchType === 'FREE' ? (batchStartDate || undefined) : undefined,
+        endDate: batchType === 'FREE' ? (batchEndDate || undefined) : undefined,
         remark: batchRemark || undefined,
       })
       setBatchOpen(false)
-      loadData()
-      loadSummary()
-    } catch { /* ignore */ } finally {
+      loadFixedBudgets()
+      loadFreeBudgets()
+} catch { /* ignore */ } finally {
       setBatchSaving(false)
     }
   }
@@ -299,9 +318,9 @@ export function BudgetsPage() {
         targetMonths: copyTargets,
       })
       setCopyOpen(false)
-      loadData()
-      loadSummary()
-    } catch { /* ignore */ } finally {
+      loadFixedBudgets()
+      loadFreeBudgets()
+} catch { /* ignore */ } finally {
       setCopySaving(false)
     }
   }
@@ -310,7 +329,7 @@ export function BudgetsPage() {
   const handleBatchEdit = async () => {
     if (selectedIds.size === 0) return
 
-    if (!batchEditAmount.trim() && !batchEditCategory && !batchEditRemark.trim() && batchEditTags.length === 0) {
+    if (!batchEditAmount.trim() && !batchEditCategory && !batchEditRemark.trim() && batchEditTags.length === 0 && !batchEditStartDate && !batchEditEndDate) {
       setBatchEditError('请至少填写一个要修改的字段')
       return
     }
@@ -326,14 +345,16 @@ export function BudgetsPage() {
       if (batchEditAmount.trim()) data.amount = Number(batchEditAmount)
       if (batchEditCategory) data.categoryCode = batchEditCategory
       if (batchEditTags.length > 0) data.tags = batchEditTags
+      if (batchEditStartDate) data.startDate = batchEditStartDate
+      if (batchEditEndDate) data.endDate = batchEditEndDate
       if (batchEditRemark.trim()) data.remark = batchEditRemark.trim()
 
       await budgetApi.batchUpdate({ ids: Array.from(selectedIds), data })
       setBatchEditOpen(false)
       setSelectedIds(new Set())
-      loadData()
-      loadSummary()
-    } catch (e: any) {
+      loadFixedBudgets()
+      loadFreeBudgets()
+} catch (e: any) {
       setBatchEditError(e.message || '批量更新失败')
     } finally {
       setBatchEditSaving(false)
@@ -352,18 +373,19 @@ export function BudgetsPage() {
     })
   }
 
-  const summaryData = summary
-    ? {
-        details: summary.details,
-        totalBudget: summary.totalBudget,
-        totalActual: summary.totalActual,
-        totalRemaining: summary.totalRemaining,
-        totalUsagePercent: summary.totalUsagePercent,
-      }
-    : { details: [], totalBudget: 0, totalActual: 0, totalRemaining: 0, totalUsagePercent: 0 }
-
-  // 将汇总详情与预算列表对齐（只显示选中tab的数据）
-  const summaryDetailMap = new Map(summaryData.details.map((d) => [d.id, d]))
+  const summaryData = useMemo(() => {
+    const budgets = tabView === 'FREE' ? filteredFreeBudgets
+      : tabView === 'FIXED' ? filteredFixedBudgets
+      : [...filteredFixedBudgets, ...filteredFreeBudgets]
+    const totalBudget = budgets.reduce((s, b) => s + b.amount, 0)
+    const totalActual = budgets.reduce((s, b) => s + (b.actualAmount ?? 0), 0)
+    return {
+      totalBudget,
+      totalActual,
+      totalRemaining: totalBudget - totalActual,
+      totalUsagePercent: totalBudget > 0 ? (totalActual / totalBudget) * 100 : 0,
+    }
+  }, [tabView, filteredFixedBudgets, filteredFreeBudgets])
 
   // 选择勾选
   const toggleSelect = (id: string) => {
@@ -409,10 +431,9 @@ export function BudgetsPage() {
       </TableHeader>
       <TableBody>
         {items.map((b) => {
-          const detail = summaryDetailMap.get(b.id)
-          const actual = detail?.actualAmount ?? 0
-          const percent = detail?.usagePercent ?? 0
-          const remaining = detail?.remaining ?? b.amount
+          const actual = b.actualAmount ?? 0
+          const percent = b.amount > 0 ? (actual / b.amount) * 100 : 0
+          const remaining = b.amount - actual
           return (
             <TableRow key={b.id}>
               <TableCell>
@@ -433,15 +454,23 @@ export function BudgetsPage() {
                 <TableCell className="text-muted-foreground text-xs">
                   {b.type === 'FIXED'
                     ? b.categoryCode
-                    : b.tags && b.tags.length > 0
-                      ? (
-                        <div className="flex flex-wrap gap-1">
-                          {b.tags.map((t, i) => (
-                            <Badge key={i} variant="secondary" className="text-[10px]">{t}</Badge>
-                          ))}
-                        </div>
-                      )
-                      : '-'}
+                    : (
+                      <div className="space-y-1">
+                        {b.tags && b.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {b.tags.map((t, i) => (
+                              <Badge key={i} variant="secondary" className="text-[10px]">{t}</Badge>
+                            ))}
+                          </div>
+                        )}
+                        {(b.startDate || b.endDate) && (
+                          <div className="text-[10px] text-muted-foreground">
+                            {b.startDate ? b.startDate.slice(0, 10) : '...'} ~ {b.endDate ? b.endDate.slice(0, 10) : '...'}
+                          </div>
+                        )}
+                        {(!b.tags || b.tags.length === 0) && !b.startDate && !b.endDate && '-'}
+                      </div>
+                    )}
                 </TableCell>
               )}
               <TableCell className="text-right tabular-nums">¥{b.amount.toFixed(2)}</TableCell>
@@ -510,7 +539,7 @@ export function BudgetsPage() {
         <Button variant="outline" size="sm" onClick={() => { setCopySourceYear(year); setCopySourceMonth(month ?? now.getMonth() + 1); setCopyTargets([]); setCopyOpen(true) }}>
           <Copy size={14} className="mr-1" />复制预算
         </Button>
-        <Button variant="outline" size="sm" onClick={() => { setBatchName(''); setBatchType('FIXED'); setBatchAmount(''); setBatchCategory(''); setBatchTags([]); setBatchMonths([]); setBatchYear(year); setBatchRemark(''); setBatchOpen(true) }}>
+        <Button variant="outline" size="sm" onClick={() => { setBatchName(''); setBatchType('FIXED'); setBatchAmount(''); setBatchCategory(''); setBatchTags([]); setBatchStartDate(''); setBatchEndDate(''); setBatchMonths([]); setBatchYear(year); setBatchRemark(''); setBatchOpen(true) }}>
           批量添加
         </Button>
         <Button size="sm" onClick={openCreate}>
@@ -526,6 +555,8 @@ export function BudgetsPage() {
             setBatchEditAmount('')
             setBatchEditCategory('')
             setBatchEditTags([])
+            setBatchEditStartDate('')
+            setBatchEditEndDate('')
             setBatchEditRemark('')
             setBatchEditError('')
             setBatchEditOpen(true)
@@ -617,7 +648,7 @@ export function BudgetsPage() {
                   </SelectContent>
                 </Select>
               </div>
-              {renderTable(fixedBudgets)}
+              {renderTable(filteredFixedBudgets)}
             </div>
           )}
           {tabView !== 'FIXED' && (
@@ -625,7 +656,21 @@ export function BudgetsPage() {
               <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
                 <TrendingUp size={18} />自由预算
               </h2>
-              {renderTable(freeBudgets, false)}
+              <div className="flex items-center gap-3 mb-3">
+                <DatePicker
+                  value={freeStartDate}
+                  onChange={setFreeStartDate}
+                  placeholder="起始日期（可选）"
+                  compact
+                />
+                <DatePicker
+                  value={freeEndDate}
+                  onChange={setFreeEndDate}
+                  placeholder="结束日期（可选）"
+                  compact
+                />
+              </div>
+              {renderTable(filteredFreeBudgets, false)}
             </div>
           )}
         </div>
@@ -669,15 +714,27 @@ export function BudgetsPage() {
                 />
               </div>
             ) : (
-              <div>
-                <Label>关联标签（多标签为或关系）</Label>
-                <TagCombobox
-                  value={formTags}
-                  onChange={setFormTags}
-                  bookId={currentBookId || ''}
-                  placeholder="选择或输入标签..."
-                />
-              </div>
+              <>
+                <div>
+                  <Label>关联标签（多标签为或关系）</Label>
+                  <TagCombobox
+                    value={formTags}
+                    onChange={setFormTags}
+                    bookId={currentBookId || ''}
+                    placeholder="选择或输入标签..."
+                  />
+                </div>
+                <div className="flex gap-3">
+                  <div className="flex-1">
+                    <Label>统计起始日期（可选）</Label>
+                    <DatePicker value={formStartDate} onChange={setFormStartDate} placeholder="选择起始日期" />
+                  </div>
+                  <div className="flex-1">
+                    <Label>统计结束日期（可选）</Label>
+                    <DatePicker value={formEndDate} onChange={setFormEndDate} placeholder="选择结束日期" />
+                  </div>
+                </div>
+              </>
             )}
             {formType === 'FIXED' && (
               <div>
@@ -747,15 +804,27 @@ export function BudgetsPage() {
                 />
               </div>
             ) : (
-              <div>
-                <Label>关联标签（多标签为或关系）</Label>
-                <TagCombobox
-                  value={batchTags}
-                  onChange={setBatchTags}
-                  bookId={currentBookId || ''}
-                  placeholder="选择或输入标签..."
-                />
-              </div>
+              <>
+                <div>
+                  <Label>关联标签（多标签为或关系）</Label>
+                  <TagCombobox
+                    value={batchTags}
+                    onChange={setBatchTags}
+                    bookId={currentBookId || ''}
+                    placeholder="选择或输入标签..."
+                  />
+                </div>
+                <div className="flex gap-3">
+                  <div className="flex-1">
+                    <Label>统计起始日期（可选）</Label>
+                    <DatePicker value={batchStartDate} onChange={setBatchStartDate} placeholder="选择起始日期" />
+                  </div>
+                  <div className="flex-1">
+                    <Label>统计结束日期（可选）</Label>
+                    <DatePicker value={batchEndDate} onChange={setBatchEndDate} placeholder="选择结束日期" />
+                  </div>
+                </div>
+              </>
             )}
             {batchType === 'FIXED' && (
               <>
@@ -927,6 +996,16 @@ export function BudgetsPage() {
                 bookId={currentBookId || ''}
                 placeholder="不修改"
               />
+            </div>
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <Label>统计起始日期（留空不修改）</Label>
+                <DatePicker value={batchEditStartDate} onChange={setBatchEditStartDate} placeholder="不修改" />
+              </div>
+              <div className="flex-1">
+                <Label>统计结束日期（留空不修改）</Label>
+                <DatePicker value={batchEditEndDate} onChange={setBatchEditEndDate} placeholder="不修改" />
+              </div>
             </div>
             <div>
               <Label>备注（留空则不修改）</Label>

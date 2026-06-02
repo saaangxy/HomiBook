@@ -42,7 +42,7 @@ export function DatePicker({ value, onChange, placeholder = "选择日期", clas
         >
           {!compact && <CalendarIcon className="mr-2 h-4 w-4 text-[#f97316]" />}
           {value ? <span className={compact ? 'truncate' : ''}>{displayValue}</span> : <span>{placeholder}</span>}
-          {value && !compact && (
+          {value && (
             <span
               className="ml-auto h-4 w-4 shrink-0 rounded-full opacity-50 hover:opacity-100 flex items-center justify-center"
               onClick={(e) => { e.stopPropagation(); onChange('') }}

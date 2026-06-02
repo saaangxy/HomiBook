@@ -51,7 +51,7 @@ export async function recurringRoutes(app: FastifyInstance) {
       },
     })
 
-    return list.map((r) => ({
+    return list.map((r: { tags: string; nextGenerateAt: any; active: any; cron: string }) => ({
       ...r,
       tags: JSON.parse(r.tags),
       nextGenerateAt: r.nextGenerateAt || (r.active ? getNextTriggerTime(r.cron) : null),

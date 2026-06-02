@@ -12,6 +12,8 @@ export const createBudgetSchema = z.object({
   amount: z.number().positive('金额必须大于0'),
   categoryCode: z.string().optional(),
   tags: z.array(z.string()).optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
   remark: z.string().optional(),
 })
 
@@ -20,6 +22,8 @@ export const updateBudgetSchema = z.object({
   amount: z.number().positive('金额必须大于0').optional(),
   categoryCode: z.string().nullable().optional(),
   tags: z.array(z.string()).optional(),
+  startDate: z.string().nullable().optional(),
+  endDate: z.string().nullable().optional(),
   remark: z.string().nullable().optional(),
 })
 
@@ -32,6 +36,8 @@ export const batchCreateSchema = z.object({
   tags: z.array(z.string()).optional(),
   months: z.array(z.number().int().min(0).max(12)).min(1),
   year: z.number().int().min(2000).max(2100),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
   remark: z.string().optional(),
 })
 
@@ -51,6 +57,8 @@ export const batchUpdateBudgetSchema = z.object({
     amount: z.number().positive('金额必须大于0').optional(),
     categoryCode: z.string().nullable().optional(),
     tags: z.array(z.string()).optional(),
+    startDate: z.string().nullable().optional(),
+    endDate: z.string().nullable().optional(),
     remark: z.string().nullable().optional(),
   }),
 })
@@ -62,8 +70,19 @@ export const listBudgetsQuerySchema = z.object({
   type: z.enum(BUDGET_TYPES).optional(),
 })
 
-export const summaryQuerySchema = z.object({
+// 固定预算列表查询
+export const fixedBudgetsQuerySchema = z.object({
   bookId: z.string().min(1),
-  year: z.coerce.number().int(),
+  year: z.coerce.number().int().optional(),
   month: z.coerce.number().int().min(1).max(12).optional(),
+  name: z.string().optional(),
 })
+
+// 自由预算列表查询
+export const freeBudgetsQuerySchema = z.object({
+  bookId: z.string().min(1),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  name: z.string().optional(),
+})
+

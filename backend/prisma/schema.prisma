@@ -212,10 +212,12 @@ model Budget {
   name          String
   type          String      // FIXED | FREE
   year          Int
-  month         Int         // 1-12
+  month         Int         // 1-12, FREE=0
   amount        Float
   categoryCode  String?     // 固定预算关联字典分类code
   tags          String      @default("[]") // 关联标签 JSON 数组，多标签为或关系
+  startDate     DateTime?   // 自由预算统计起始日期（含），为空不限制
+  endDate       DateTime?   // 自由预算统计结束日期（含），为空不限制
   remark        String?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt

@@ -12,32 +12,12 @@ export interface BudgetItem {
   amount: number
   categoryCode: string | null
   tags: string[]
-  remark: string | null
-  createdAt: string
-  updatedAt: string
-}
-
-export interface BudgetDetail {
-  id: string
-  name: string
-  type: BudgetType
-  year: number
-  month: number
-  amount: number
-  categoryCode: string | null
-  tags: string[]
+  startDate: string | null
+  endDate: string | null
   remark: string | null
   actualAmount: number
-  usagePercent: number
-  remaining: number
-}
-
-export interface BudgetSummary {
-  totalBudget: number
-  totalActual: number
-  totalRemaining: number
-  totalUsagePercent: number
-  details: BudgetDetail[]
+  createdAt: string
+  updatedAt: string
 }
 
 export const budgetApi = {
@@ -50,6 +30,22 @@ export const budgetApi = {
     return api.get<BudgetItem[]>(`/api/budgets?${search.toString()}`)
   },
 
+  listFixed: (params: { bookId: string; year?: number; month?: number }) => {
+    const search = new URLSearchParams()
+    search.set('bookId', params.bookId)
+    if (params.year !== undefined) search.set('year', String(params.year))
+    if (params.month !== undefined) search.set('month', String(params.month))
+    return api.get<BudgetItem[]>(`/api/budgets/fixed?${search.toString()}`)
+  },
+
+  listFree: (params: { bookId: string; startDate?: string; endDate?: string }) => {
+    const search = new URLSearchParams()
+    search.set('bookId', params.bookId)
+    if (params.startDate) search.set('startDate', params.startDate)
+    if (params.endDate) search.set('endDate', params.endDate)
+    return api.get<BudgetItem[]>(`/api/budgets/free?${search.toString()}`)
+  },
+
   create: (data: {
     accountBookId: string
     name: string
@@ -59,6 +55,8 @@ export const budgetApi = {
     amount: number
     categoryCode?: string
     tags?: string[]
+    startDate?: string
+    endDate?: string
     remark?: string
   }) => api.post<BudgetItem>('/api/budgets', data),
 
@@ -67,6 +65,8 @@ export const budgetApi = {
     amount?: number
     categoryCode?: string | null
     tags?: string[]
+    startDate?: string | null
+    endDate?: string | null
     remark?: string | null
   }) => api.patch<BudgetItem>(`/api/budgets/${id}`, data),
 
@@ -82,6 +82,8 @@ export const budgetApi = {
     tags?: string[]
     months: number[]
     year: number
+    startDate?: string
+    endDate?: string
     remark?: string
   }) => api.post<BudgetItem[]>('/api/budgets/batch', data),
 
@@ -92,14 +94,6 @@ export const budgetApi = {
     targetMonths: Array<{ year: number; month: number }>
   }) => api.post<{ count: number }>('/api/budgets/copy', data),
 
-  summary: (params: { bookId: string; year: number; month?: number }) => {
-    const search = new URLSearchParams()
-    search.set('bookId', params.bookId)
-    search.set('year', String(params.year))
-    if (params.month !== undefined) search.set('month', String(params.month))
-    return api.get<BudgetSummary>(`/api/budgets/summary?${search.toString()}`)
-  },
-
   getTags: (bookId: string) =>
     api.get<string[]>(`/api/budgets/tags?bookId=${bookId}`),
 
@@ -109,6 +103,8 @@ export const budgetApi = {
       amount?: number
       categoryCode?: string | null
       tags?: string[]
+      startDate?: string | null
+      endDate?: string | null
       remark?: string | null
     }
   }) => api.patch<{ updated: number }>('/api/budgets/batch', data),

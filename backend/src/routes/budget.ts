@@ -8,9 +8,9 @@ import {
   batchUpdateBudgetSchema,
   copyBudgetsSchema,
   listBudgetsQuerySchema,
-  summaryQuerySchema,
+  fixedBudgetsQuerySchema,
+  freeBudgetsQuerySchema,
 } from '../schemas/budget.js'
-import { computeBudgetSummary } from '../services/budget.js'
 
 function parseTags(tags: string): string[] {
   try {
@@ -22,7 +22,12 @@ function parseTags(tags: string): string[] {
 }
 
 function mapBudget(b: any) {
-  return { ...b, tags: parseTags(b.tags) }
+  return {
+    ...b,
+    tags: parseTags(b.tags),
+    startDate: b.startDate ? (b.startDate instanceof Date ? b.startDate.toISOString() : b.startDate) : null,
+    endDate: b.endDate ? (b.endDate instanceof Date ? b.endDate.toISOString() : b.endDate) : null,
+  }
 }
 
 async function assertIsMember(bookId: string, userId: string) {
@@ -68,18 +73,153 @@ export async function budgetRoutes(app: FastifyInstance) {
     return budgets.map(mapBudget)
   })
 
-  // 获取汇总
-  app.get('/summary', async (req, reply) => {
-    const query = summaryQuerySchema.safeParse(req.query)
+  // 固定预算列表（含 actualAmount）
+  app.get('/fixed', async (req, reply) => {
+    const query = fixedBudgetsQuerySchema.safeParse(req.query)
     if (!query.success) {
       return reply.status(400).send({ message: query.error.issues[0].message })
     }
+    const { bookId, year, month, name } = query.data
+    const userId = (req as any).user.id as string
+    await assertIsMember(bookId, userId)
 
-    const { bookId, year, month } = query.data
-    await assertIsMember(bookId, (req.user as { id: string }).id)
+    const where: any = { accountBookId: bookId, type: 'FIXED' }
+    if (year !== undefined) where.year = year
+    if (month !== undefined) where.month = month
+    if (name?.trim()) where.name = { contains: name.trim() }
 
-    const summary = await computeBudgetSummary(bookId, year, month)
-    return summary
+    const budgets = await prisma.budget.findMany({
+      where,
+      orderBy: [{ month: 'asc' }, { name: 'asc' }],
+    })
+
+    // 查询收支分类字典
+    const expenseDicts = await prisma.dictionary.findMany({
+      where: { group: 'transaction_category_expense' },
+      select: { code: true },
+    })
+    const expenseCodes = new Set(expenseDicts.map(d => d.code))
+    const incomeDicts = await prisma.dictionary.findMany({
+      where: { group: 'transaction_category_income' },
+      select: { code: true },
+    })
+    const incomeCodes = new Set(incomeDicts.map(d => d.code))
+
+    // 计算每个预算的实际金额
+    const result = await Promise.all(budgets.map(async (budget) => {
+      let actualAmount = 0
+      if (budget.categoryCode) {
+        const budgetStartDate = new Date(Date.UTC(budget.year, budget.month - 1, 1))
+        const budgetEndDate = new Date(Date.UTC(budget.year, budget.month, 0, 23, 59, 59, 999))
+
+        let recordType: string | undefined
+        if (expenseCodes.has(budget.categoryCode)) recordType = 'EXPENSE'
+        else if (incomeCodes.has(budget.categoryCode)) recordType = 'INCOME'
+
+        const where: any = {
+          accountBookId: bookId,
+          date: { gte: budgetStartDate, lte: budgetEndDate },
+          categoryCode: budget.categoryCode,
+        }
+        if (recordType) where.type = recordType
+
+        const agg = await prisma.record.aggregate({
+          where,
+          _sum: { amount: true },
+        })
+        actualAmount = agg._sum.amount ?? 0
+      }
+      return { ...mapBudget(budget), actualAmount }
+    }))
+    return result
+  })
+
+  // 自由预算列表
+  app.get('/free', async (req, reply) => {
+    const query = freeBudgetsQuerySchema.safeParse(req.query)
+    if (!query.success) {
+      return reply.status(400).send({ message: query.error.issues[0].message })
+    }
+    const { bookId, startDate, endDate, name } = query.data
+    const userId = (req as any).user.id as string
+    await assertIsMember(bookId, userId)
+
+    const where: any = { accountBookId: bookId, type: 'FREE' }
+    if (name?.trim()) where.name = { contains: name.trim() }
+
+    // 按查询参数过滤自由预算的日期范围
+    if (startDate || endDate) {
+      const sd = startDate ? new Date(startDate) : null
+      const ed = endDate ? new Date(endDate) : null
+      const overlapConditions: any[] = [
+        { startDate: null, endDate: null },
+      ]
+
+      if (sd && ed) {
+        overlapConditions.push(
+          { startDate: { lte: ed }, endDate: { gte: sd } },
+          { startDate: { lte: ed }, endDate: null },
+          { startDate: null, endDate: { gte: sd } },
+        )
+      } else if (sd) {
+        overlapConditions.push(
+          { endDate: { gte: sd } },
+          { endDate: null },
+        )
+      } else if (ed) {
+        overlapConditions.push(
+          { startDate: { lte: ed } },
+          { startDate: null },
+        )
+      }
+
+      where.OR = overlapConditions
+    }
+
+    const budgets = await prisma.budget.findMany({
+      where,
+      orderBy: { name: 'asc' },
+    })
+
+    // 计算每个预算的实际金额（按标签 + 预算自身日期范围）
+    const result = await Promise.all(budgets.map(async (budget) => {
+      let actualAmount = 0
+      let budgetTags: string[] = []
+      try {
+        const parsed = JSON.parse(budget.tags)
+        if (Array.isArray(parsed)) budgetTags = parsed.filter((t: any) => typeof t === 'string' && t.trim())
+      } catch { /* ignore */ }
+
+      if (budgetTags.length > 0) {
+        const tagConditions = budgetTags.map((tag) => ({
+          tags: { contains: tag },
+        }))
+
+        const recordWhere: any = {
+          accountBookId: bookId,
+          type: 'EXPENSE',
+          OR: tagConditions,
+        }
+
+        if (budget.startDate || budget.endDate) {
+          recordWhere.date = {}
+          if (budget.startDate) recordWhere.date.gte = new Date(budget.startDate)
+          if (budget.endDate) {
+            const e = new Date(budget.endDate)
+            e.setHours(23, 59, 59, 999)
+            recordWhere.date.lte = e
+          }
+        }
+
+        const agg = await prisma.record.aggregate({
+          where: recordWhere,
+          _sum: { amount: true },
+        })
+        actualAmount = agg._sum.amount ?? 0
+      }
+      return { ...mapBudget(budget), actualAmount }
+    }))
+    return result
   })
 
   // 获取可用标签列表
@@ -114,7 +254,7 @@ export async function budgetRoutes(app: FastifyInstance) {
       return reply.status(400).send({ message: parsed.error.issues[0].message })
     }
 
-    const { accountBookId, name, type, year, month, amount, categoryCode, tags, remark } = parsed.data
+    const { accountBookId, name, type, year, month, amount, categoryCode, tags, startDate, endDate, remark } = parsed.data
     await assertIsMember(accountBookId, (req.user as { id: string }).id)
 
     // 检查重复
@@ -134,6 +274,8 @@ export async function budgetRoutes(app: FastifyInstance) {
         accountBookId, name, type, year, month, amount,
         categoryCode,
         tags: JSON.stringify(tags || []),
+        startDate: startDate ? new Date(startDate) : undefined,
+        endDate: endDate ? new Date(endDate) : undefined,
         remark,
       },
     })
@@ -155,6 +297,12 @@ export async function budgetRoutes(app: FastifyInstance) {
     const data: any = { ...parsed.data }
     if (data.tags !== undefined) {
       data.tags = JSON.stringify(data.tags)
+    }
+    if (data.startDate !== undefined) {
+      data.startDate = data.startDate ? new Date(data.startDate) : null
+    }
+    if (data.endDate !== undefined) {
+      data.endDate = data.endDate ? new Date(data.endDate) : null
     }
 
     const budget = await prisma.budget.update({ where: { id }, data })
@@ -187,6 +335,12 @@ export async function budgetRoutes(app: FastifyInstance) {
     if (updateData.tags !== undefined) {
       updateData.tags = JSON.stringify(updateData.tags)
     }
+    if (updateData.startDate !== undefined) {
+      updateData.startDate = updateData.startDate ? new Date(updateData.startDate) : null
+    }
+    if (updateData.endDate !== undefined) {
+      updateData.endDate = updateData.endDate ? new Date(updateData.endDate) : null
+    }
 
     await prisma.budget.updateMany({
       where: { id: { in: ids } },
@@ -214,7 +368,7 @@ export async function budgetRoutes(app: FastifyInstance) {
       return reply.status(400).send({ message: parsed.error.issues[0].message })
     }
 
-    const { accountBookId, name, type, amount, categoryCode, months, year, tags, remark } = parsed.data
+    const { accountBookId, name, type, amount, categoryCode, months, year, tags, startDate, endDate, remark } = parsed.data
     await assertIsMember(accountBookId, (req.user as { id: string }).id)
 
     const tagsJson = JSON.stringify(tags || [])
@@ -233,7 +387,12 @@ export async function budgetRoutes(app: FastifyInstance) {
         if (existing) continue // 已存在则跳过
 
         const budget = await tx.budget.create({
-          data: { accountBookId, name, type, year, month, amount, categoryCode, tags: tagsJson, remark },
+          data: {
+            accountBookId, name, type, year, month, amount, categoryCode, tags: tagsJson,
+            startDate: startDate ? new Date(startDate) : undefined,
+            endDate: endDate ? new Date(endDate) : undefined,
+            remark,
+          },
         })
         created.push(budget)
       }
@@ -286,6 +445,8 @@ export async function budgetRoutes(app: FastifyInstance) {
               amount: budget.amount,
               categoryCode: budget.categoryCode,
               tags: budget.tags,
+              startDate: budget.startDate,
+              endDate: budget.endDate,
               remark: budget.remark,
             },
           })
