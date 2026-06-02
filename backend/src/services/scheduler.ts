@@ -128,8 +128,8 @@ async function generateRecord(rt: {
       accountId: rt.accountId,
       fromAccountId: isTransfer ? rt.accountId : undefined,
       toAccountId: isTransfer ? rt.toAccountId : undefined,
-      categoryCode: isTransfer ? null : rt.categoryCode,
-      payer: isTransfer ? null : rt.payer,
+      categoryCode: rt.categoryCode,
+      payer: rt.payer,
       ownerId: rt.ownerId,
     },
   })

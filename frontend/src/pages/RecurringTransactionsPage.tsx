@@ -231,8 +231,8 @@ export function RecurringTransactionsPage() {
         tags: formTags,
         accountId: formAccountId,
         toAccountId: formType === 'TRANSFER' ? formToAccountId : undefined,
-        categoryCode: formType === 'TRANSFER' ? undefined : (formCategoryCode || undefined),
-        payer: formType === 'TRANSFER' ? undefined : (formPayer || undefined),
+        categoryCode: formCategoryCode || undefined,
+        payer: formPayer || undefined,
         cron: formCron,
         recurringType: formRecurringType,
       }
@@ -293,6 +293,7 @@ export function RecurringTransactionsPage() {
 
   const getCategoryGroup = (type: string) => {
     if (type === 'INCOME') return 'transaction_category_income'
+    if (type === 'TRANSFER') return 'transaction_category_transfer'
     return 'transaction_category_expense'
   }
 
@@ -343,7 +344,7 @@ export function RecurringTransactionsPage() {
                       <span className="text-[10px] text-muted-foreground">{RECURRING_TYPE_LABELS[rt.recurringType]}</span>
                     </div>
                   </TableCell>
-                  <TableCell className="text-xs">{rt.type === 'TRANSFER' ? '-' : (rt.categoryCode || '-')}</TableCell>
+                  <TableCell className="text-xs">{rt.categoryCode || '-'}</TableCell>
                   <TableCell className="text-xs text-right font-mono">
                     {rt.active ? <span className={rt.type === 'INCOME' ? 'text-[#22c55e]' : rt.type === 'TRANSFER' ? 'text-[#3b82f6]' : 'text-[#ef4444]'}>{formatMoney(rt.amount)}</span> : <span className="text-muted-foreground">{formatMoney(rt.amount)}</span>}
                   </TableCell>
@@ -519,31 +520,27 @@ export function RecurringTransactionsPage() {
               </div>
             )}
 
-            {/* 分类（转账类型隐藏） */}
-            {formType !== 'TRANSFER' && (
-              <div>
-                <Label className="text-xs text-muted-foreground mb-1 block">分类</Label>
-                <DictCombobox
-                  group={getCategoryGroup(formType)}
-                  value={formCategoryCode}
-                  onChange={setFormCategoryCode}
-                  placeholder="选择分类"
-                />
-              </div>
-            )}
+            {/* 分类 */}
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">分类</Label>
+              <DictCombobox
+                group={getCategoryGroup(formType)}
+                value={formCategoryCode}
+                onChange={setFormCategoryCode}
+                placeholder="选择分类"
+              />
+            </div>
 
-            {/* 交易方（转账类型隐藏） */}
-            {formType !== 'TRANSFER' && (
-              <div>
-                <Label className="text-xs text-muted-foreground mb-1 block">交易方</Label>
-                <Input
-                  placeholder="交易方"
-                  value={formPayer}
-                  onChange={(e) => setFormPayer(e.target.value)}
-                  className="bg-background border-border h-9"
-                />
-              </div>
-            )}
+            {/* 交易方 */}
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">交易方</Label>
+              <Input
+                placeholder="交易方"
+                value={formPayer}
+                onChange={(e) => setFormPayer(e.target.value)}
+                className="bg-background border-border h-9"
+              />
+            </div>
 
             {/* 备注 */}
             <div>
@@ -559,16 +556,12 @@ export function RecurringTransactionsPage() {
             {/* 标签 */}
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">标签</Label>
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                <Badge className="gap-1 pr-1 text-[10px] bg-[#22c55e]/10 text-[#22c55e]">
-                  固定收支
-                </Badge>
-              </div>
               <TagCombobox
-                value={formTags.filter(t => t !== '固定收支')}
-                onChange={(tags) => setFormTags(['固定收支', ...tags])}
+                value={formTags}
+                onChange={(tags) => setFormTags(tags.includes('固定收支') ? tags : ['固定收支', ...tags])}
                 bookId={currentBookId || ''}
                 placeholder="添加标签..."
+                protectedTags={['固定收支']}
               />
             </div>
 

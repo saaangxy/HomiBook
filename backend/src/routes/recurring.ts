@@ -54,6 +54,7 @@ export async function recurringRoutes(app: FastifyInstance) {
     return list.map((r) => ({
       ...r,
       tags: JSON.parse(r.tags),
+      nextGenerateAt: r.nextGenerateAt || (r.active ? getNextTriggerTime(r.cron) : null),
     }))
   })
 
@@ -162,8 +163,8 @@ export async function recurringRoutes(app: FastifyInstance) {
         tags: JSON.stringify(tags),
         accountId: data.accountId,
         toAccountId: data.toAccountId,
-        categoryCode: data.type === 'TRANSFER' ? null : data.categoryCode,
-        payer: data.type === 'TRANSFER' ? null : data.payer,
+        categoryCode: data.categoryCode,
+        payer: data.payer,
         ownerId: data.ownerId || userId,
         cron: data.cron,
         active: data.active,

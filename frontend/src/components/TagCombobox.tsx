@@ -26,9 +26,10 @@ interface Props {
   bookId: string
   placeholder?: string
   disabled?: boolean
+  protectedTags?: string[]
 }
 
-export function TagCombobox({ value, onChange, bookId, placeholder = '选择或输入标签...', disabled }: Props) {
+export function TagCombobox({ value, onChange, bookId, placeholder = '选择或输入标签...', disabled, protectedTags = [] }: Props) {
   const [open, setOpen] = useState(false)
   const [budgetTags, setBudgetTags] = useState<string[]>([])
   const [recordTags, setRecordTags] = useState<string[]>([])
@@ -81,18 +82,27 @@ export function TagCombobox({ value, onChange, bookId, placeholder = '选择或�
       {/* 已选标签 */}
       {value.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {value.map((tag) => (
-            <Badge key={tag} variant="secondary" className="gap-1 pr-1">
-              {tag}
-              <button
-                className="ml-0.5 rounded-full hover:bg-muted-foreground/20 p-0.5"
-                onClick={() => removeTag(tag)}
-                disabled={disabled}
+          {value.map((tag) => {
+            const isProtected = protectedTags.includes(tag)
+            return (
+              <Badge
+                key={tag}
+                variant="secondary"
+                className={cn('gap-1 pr-1', isProtected && 'bg-[#22c55e]/10 text-[#22c55e] hover:bg-[#22c55e]/20')}
               >
-                <X size={10} />
-              </button>
-            </Badge>
-          ))}
+                {tag}
+                {!isProtected && (
+                  <button
+                    className="ml-0.5 rounded-full hover:bg-muted-foreground/20 p-0.5"
+                    onClick={() => removeTag(tag)}
+                    disabled={disabled}
+                  >
+                    <X size={10} />
+                  </button>
+                )}
+              </Badge>
+            )
+          })}
         </div>
       )}
 
