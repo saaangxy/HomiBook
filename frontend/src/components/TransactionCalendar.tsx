@@ -151,7 +151,7 @@ export function TransactionCalendar({
       <div className="flex-1 min-h-0 flex flex-col rounded-xl border border-border bg-card overflow-hidden shadow-sm">
         {/* 表头 */}
         <div className="grid grid-cols-7 bg-muted/30 shrink-0">
-          {WEEKDAY_LABELS.map((label, i) => (
+          {WEEKDAY_LABELS.map((label) => (
             <div
               key={label}
               className="py-3 text-center text-sm font-medium text-muted-foreground"

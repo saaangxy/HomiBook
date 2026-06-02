@@ -30,10 +30,11 @@ import { accountApi, type AccountItem } from '@/api/account'
 import { useBookStore } from '@/stores/book'
 import { Plus, Pencil, Trash2, Power, PowerOff, FileText } from 'lucide-react'
 
-const TYPE_LABELS: Record<string, string> = { INCOME: '收入', EXPENSE: '支出' }
+const TYPE_LABELS: Record<string, string> = { INCOME: '收入', EXPENSE: '支出', TRANSFER: '转账' }
 const TYPE_COLORS: Record<string, string> = {
   INCOME: 'text-[#22c55e] bg-[#22c55e]/10',
   EXPENSE: 'text-[#ef4444] bg-[#ef4444]/10',
+  TRANSFER: 'text-[#3b82f6] bg-[#3b82f6]/10',
 }
 const RECURRING_TYPE_LABELS: Record<string, string> = { PERIODIC: '周期', LOAN: '贷款' }
 const METHOD_LABELS: Record<string, string> = {
@@ -66,9 +67,10 @@ export function RecurringTransactionsPage() {
 
   // 表单
   const [formName, setFormName] = useState('')
-  const [formType, setFormType] = useState<'INCOME' | 'EXPENSE'>('EXPENSE')
+  const [formType, setFormType] = useState<'INCOME' | 'EXPENSE' | 'TRANSFER'>('EXPENSE')
   const [formAmount, setFormAmount] = useState('')
   const [formAccountId, setFormAccountId] = useState('')
+  const [formToAccountId, setFormToAccountId] = useState('')
   const [formCategoryCode, setFormCategoryCode] = useState('')
   const [formPayer, setFormPayer] = useState('')
   const [formRemark, setFormRemark] = useState('')
@@ -108,6 +110,7 @@ export function RecurringTransactionsPage() {
     setFormType('EXPENSE')
     setFormAmount('')
     setFormAccountId('')
+    setFormToAccountId('')
     setFormCategoryCode('')
     setFormPayer('')
     setFormRemark('')
@@ -135,9 +138,10 @@ export function RecurringTransactionsPage() {
   const openEdit = (rt: RecurringTransaction) => {
     setEditingId(rt.id)
     setFormName(rt.name || '')
-    setFormType(rt.type as 'INCOME' | 'EXPENSE')
+    setFormType(rt.type as 'INCOME' | 'EXPENSE' | 'TRANSFER')
     setFormAmount(String(rt.amount))
     setFormAccountId(rt.accountId)
+    setFormToAccountId(rt.toAccountId || '')
     setFormCategoryCode(rt.categoryCode || '')
     setFormPayer(rt.payer || '')
     setFormRemark(rt.remark || '')
@@ -209,6 +213,7 @@ export function RecurringTransactionsPage() {
 
     if (!formName.trim()) { setFormError('请输入名称'); return }
     if (!formAccountId) { setFormError('请选择账户'); return }
+    if (formType === 'TRANSFER' && !formToAccountId) { setFormError('请选择目标账户'); return }
     if (!formCron) { setFormError('请设置触发时间'); return }
 
     const isLoan = formRecurringType === 'LOAN'
@@ -225,8 +230,9 @@ export function RecurringTransactionsPage() {
         remark: formRemark || undefined,
         tags: formTags,
         accountId: formAccountId,
-        categoryCode: formCategoryCode || undefined,
-        payer: formPayer || undefined,
+        toAccountId: formType === 'TRANSFER' ? formToAccountId : undefined,
+        categoryCode: formType === 'TRANSFER' ? undefined : (formCategoryCode || undefined),
+        payer: formType === 'TRANSFER' ? undefined : (formPayer || undefined),
         cron: formCron,
         recurringType: formRecurringType,
       }
@@ -337,11 +343,13 @@ export function RecurringTransactionsPage() {
                       <span className="text-[10px] text-muted-foreground">{RECURRING_TYPE_LABELS[rt.recurringType]}</span>
                     </div>
                   </TableCell>
-                  <TableCell className="text-xs">{rt.categoryCode || '-'}</TableCell>
+                  <TableCell className="text-xs">{rt.type === 'TRANSFER' ? '-' : (rt.categoryCode || '-')}</TableCell>
                   <TableCell className="text-xs text-right font-mono">
-                    {rt.active ? <span className={rt.type === 'INCOME' ? 'text-[#22c55e]' : 'text-[#ef4444]'}>{formatMoney(rt.amount)}</span> : <span className="text-muted-foreground">{formatMoney(rt.amount)}</span>}
+                    {rt.active ? <span className={rt.type === 'INCOME' ? 'text-[#22c55e]' : rt.type === 'TRANSFER' ? 'text-[#3b82f6]' : 'text-[#ef4444]'}>{formatMoney(rt.amount)}</span> : <span className="text-muted-foreground">{formatMoney(rt.amount)}</span>}
                   </TableCell>
-                  <TableCell className="text-xs">{rt.account?.name || '-'}</TableCell>
+                  <TableCell className="text-xs">
+                    {rt.type === 'TRANSFER' ? `${rt.account?.name || '-'} → ${rt.toAccount?.name || '-'}` : (rt.account?.name || '-')}
+                  </TableCell>
                   <TableCell className="text-xs font-mono">{rt.cron}</TableCell>
                   <TableCell className="text-xs">
                     {rt.nextGenerateAt ? new Date(rt.nextGenerateAt).toLocaleString('zh-CN') : '-'}
@@ -461,13 +469,14 @@ export function RecurringTransactionsPage() {
               <div className="flex gap-3">
                 <div className="w-24">
                   <Label className="text-xs text-muted-foreground mb-1 block">类型</Label>
-                  <Select value={formType} onValueChange={(v) => { setFormType(v as 'INCOME' | 'EXPENSE'); setFormCategoryCode('') }}>
+                  <Select value={formType} onValueChange={(v) => { setFormType(v as 'INCOME' | 'EXPENSE' | 'TRANSFER'); setFormCategoryCode('') }}>
                     <SelectTrigger className="bg-background border-border h-9">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="INCOME">收入</SelectItem>
                       <SelectItem value="EXPENSE">支出</SelectItem>
+                      <SelectItem value="TRANSFER">转账</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -486,7 +495,9 @@ export function RecurringTransactionsPage() {
 
             {/* 账户 */}
             <div>
-              <Label className="text-xs text-muted-foreground mb-1 block">账户</Label>
+              <Label className="text-xs text-muted-foreground mb-1 block">
+                {formType === 'TRANSFER' ? '源账户' : '账户'}
+              </Label>
               <Select value={formAccountId} onValueChange={setFormAccountId}>
                 <SelectTrigger className="bg-background border-border h-9"><SelectValue placeholder="选择账户" /></SelectTrigger>
                 <SelectContent>
@@ -495,27 +506,44 @@ export function RecurringTransactionsPage() {
               </Select>
             </div>
 
-            {/* 分类 */}
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1 block">分类</Label>
-              <DictCombobox
-                group={getCategoryGroup(formType)}
-                value={formCategoryCode}
-                onChange={setFormCategoryCode}
-                placeholder="选择分类"
-              />
-            </div>
+            {/* 目标账户（转账类型专用） */}
+            {formType === 'TRANSFER' && (
+              <div>
+                <Label className="text-xs text-muted-foreground mb-1 block">目标账户</Label>
+                <Select value={formToAccountId} onValueChange={setFormToAccountId}>
+                  <SelectTrigger className="bg-background border-border h-9"><SelectValue placeholder="选择目标账户" /></SelectTrigger>
+                  <SelectContent>
+                    {accounts.filter((a) => a.id !== formAccountId).map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
-            {/* 交易方 */}
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1 block">交易方</Label>
-              <Input
-                placeholder="交易方"
-                value={formPayer}
-                onChange={(e) => setFormPayer(e.target.value)}
-                className="bg-background border-border h-9"
-              />
-            </div>
+            {/* 分类（转账类型隐藏） */}
+            {formType !== 'TRANSFER' && (
+              <div>
+                <Label className="text-xs text-muted-foreground mb-1 block">分类</Label>
+                <DictCombobox
+                  group={getCategoryGroup(formType)}
+                  value={formCategoryCode}
+                  onChange={setFormCategoryCode}
+                  placeholder="选择分类"
+                />
+              </div>
+            )}
+
+            {/* 交易方（转账类型隐藏） */}
+            {formType !== 'TRANSFER' && (
+              <div>
+                <Label className="text-xs text-muted-foreground mb-1 block">交易方</Label>
+                <Input
+                  placeholder="交易方"
+                  value={formPayer}
+                  onChange={(e) => setFormPayer(e.target.value)}
+                  className="bg-background border-border h-9"
+                />
+              </div>
+            )}
 
             {/* 备注 */}
             <div>

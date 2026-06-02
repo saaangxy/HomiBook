@@ -10,7 +10,20 @@ import {
   listBudgetsQuerySchema,
   summaryQuerySchema,
 } from '../schemas/budget.js'
-import { generateUniqueTag, computeBudgetSummary } from '../services/budget.js'
+import { computeBudgetSummary } from '../services/budget.js'
+
+function parseTags(tags: string): string[] {
+  try {
+    const parsed = JSON.parse(tags)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function mapBudget(b: any) {
+  return { ...b, tags: parseTags(b.tags) }
+}
 
 async function assertIsMember(bookId: string, userId: string) {
   const book = await prisma.accountBook.findUnique({ where: { id: bookId } })
@@ -29,30 +42,37 @@ export async function budgetRoutes(app: FastifyInstance) {
   app.get('/', async (req, reply) => {
     const query = listBudgetsQuerySchema.safeParse(req.query)
     if (!query.success) {
-      return reply.status(400).send({ message: query.error.errors[0].message })
+      return reply.status(400).send({ message: query.error.issues[0].message })
     }
 
     const { bookId, year, month, type } = query.data
     await assertIsMember(bookId, (req.user as { id: string }).id)
 
-    const where: any = { accountBookId: bookId }
-    if (year !== undefined) where.year = year
-    if (month !== undefined) where.month = month
-    if (type) where.type = type
+    // FIXED 预算按年月筛选，FREE 预算始终全部返回
+    const orConditions: any[] = []
+    if (!type || type === 'FIXED') {
+      const fixedWhere: any = { accountBookId: bookId, type: 'FIXED' }
+      if (year !== undefined) fixedWhere.year = year
+      if (month !== undefined) fixedWhere.month = month
+      orConditions.push(fixedWhere)
+    }
+    if (!type || type === 'FREE') {
+      orConditions.push({ accountBookId: bookId, type: 'FREE' })
+    }
 
     const budgets = await prisma.budget.findMany({
-      where,
+      where: { OR: orConditions },
       orderBy: [{ type: 'asc' }, { month: 'asc' }, { name: 'asc' }],
     })
 
-    return budgets
+    return budgets.map(mapBudget)
   })
 
   // 获取汇总
   app.get('/summary', async (req, reply) => {
     const query = summaryQuerySchema.safeParse(req.query)
     if (!query.success) {
-      return reply.status(400).send({ message: query.error.errors[0].message })
+      return reply.status(400).send({ message: query.error.issues[0].message })
     }
 
     const { bookId, year, month } = query.data
@@ -69,22 +89,32 @@ export async function budgetRoutes(app: FastifyInstance) {
     await assertIsMember(bookId, (req.user as { id: string }).id)
 
     const budgets = await prisma.budget.findMany({
-      where: { accountBookId: bookId, type: 'FREE', tag: { not: null } },
-      select: { tag: true },
-      distinct: ['tag'],
+      where: { accountBookId: bookId, tags: { not: '[]' } },
+      select: { tags: true },
     })
 
-    return budgets.map(b => b.tag!)
+    const tagSet = new Set<string>()
+    for (const b of budgets) {
+      try {
+        const parsed = JSON.parse(b.tags)
+        if (Array.isArray(parsed)) {
+          for (const t of parsed) {
+            if (typeof t === 'string' && t.trim()) tagSet.add(t.trim())
+          }
+        }
+      } catch { /* skip invalid JSON */ }
+    }
+    return Array.from(tagSet).sort()
   })
 
   // 创建单条预算
   app.post('/', async (req, reply) => {
     const parsed = createBudgetSchema.safeParse(req.body)
     if (!parsed.success) {
-      return reply.status(400).send({ message: parsed.error.errors[0].message })
+      return reply.status(400).send({ message: parsed.error.issues[0].message })
     }
 
-    const { accountBookId, name, type, year, month, amount, categoryCode, remark } = parsed.data
+    const { accountBookId, name, type, year, month, amount, categoryCode, tags, remark } = parsed.data
     await assertIsMember(accountBookId, (req.user as { id: string }).id)
 
     // 检查重复
@@ -99,16 +129,15 @@ export async function budgetRoutes(app: FastifyInstance) {
       return reply.status(409).send({ message: '该月份已存在同名预算' })
     }
 
-    // FREE 类型自动生成标签
-    let tag: string | undefined
-    if (type === 'FREE') {
-      tag = await generateUniqueTag(name, accountBookId, year, month)
-    }
-
     const budget = await prisma.budget.create({
-      data: { accountBookId, name, type, year, month, amount, categoryCode, tag, remark },
+      data: {
+        accountBookId, name, type, year, month, amount,
+        categoryCode,
+        tags: JSON.stringify(tags || []),
+        remark,
+      },
     })
-    return budget
+    return mapBudget(budget)
   })
 
   // 更新预算
@@ -116,7 +145,7 @@ export async function budgetRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string }
     const parsed = updateBudgetSchema.safeParse(req.body)
     if (!parsed.success) {
-      return reply.status(400).send({ message: parsed.error.errors[0].message })
+      return reply.status(400).send({ message: parsed.error.issues[0].message })
     }
 
     const existing = await prisma.budget.findUnique({ where: { id } })
@@ -124,21 +153,19 @@ export async function budgetRoutes(app: FastifyInstance) {
     await assertIsMember(existing.accountBookId, (req.user as { id: string }).id)
 
     const data: any = { ...parsed.data }
-
-    // 如果 FREE 预算改名称，重新生成标签
-    if (existing.type === 'FREE' && data.name && data.name !== existing.name) {
-      data.tag = await generateUniqueTag(data.name, existing.accountBookId, existing.year, existing.month, id)
+    if (data.tags !== undefined) {
+      data.tags = JSON.stringify(data.tags)
     }
 
     const budget = await prisma.budget.update({ where: { id }, data })
-    return budget
+    return mapBudget(budget)
   })
 
   // 批量更新预算
   app.patch('/batch', async (req, reply) => {
     const parsed = batchUpdateBudgetSchema.safeParse(req.body)
     if (!parsed.success) {
-      return reply.status(400).send({ message: parsed.error.errors[0].message })
+      return reply.status(400).send({ message: parsed.error.issues[0].message })
     }
 
     const { ids, data } = parsed.data
@@ -156,9 +183,14 @@ export async function budgetRoutes(app: FastifyInstance) {
 
     await assertIsMember(accountBookId, (req.user as { id: string }).id)
 
+    const updateData: any = { ...data }
+    if (updateData.tags !== undefined) {
+      updateData.tags = JSON.stringify(updateData.tags)
+    }
+
     await prisma.budget.updateMany({
       where: { id: { in: ids } },
-      data,
+      data: updateData,
     })
 
     return { updated: ids.length }
@@ -179,11 +211,13 @@ export async function budgetRoutes(app: FastifyInstance) {
   app.post('/batch', async (req, reply) => {
     const parsed = batchCreateSchema.safeParse(req.body)
     if (!parsed.success) {
-      return reply.status(400).send({ message: parsed.error.errors[0].message })
+      return reply.status(400).send({ message: parsed.error.issues[0].message })
     }
 
-    const { accountBookId, name, type, amount, categoryCode, months, year, remark } = parsed.data
+    const { accountBookId, name, type, amount, categoryCode, months, year, tags, remark } = parsed.data
     await assertIsMember(accountBookId, (req.user as { id: string }).id)
+
+    const tagsJson = JSON.stringify(tags || [])
 
     const results = await prisma.$transaction(async (tx) => {
       const created: any[] = []
@@ -198,45 +232,22 @@ export async function budgetRoutes(app: FastifyInstance) {
         })
         if (existing) continue // 已存在则跳过
 
-        let tag: string | undefined
-        if (type === 'FREE') {
-          // 在事务中检查标签唯一性
-          const baseTag = name
-          let candidate = baseTag
-          let seq = 0
-          while (true) {
-            const conflict = await tx.budget.findFirst({
-              where: { accountBookId, type: 'FREE', tag: candidate, id: undefined as any },
-            })
-            if (!conflict) break
-            seq++
-            if (seq === 1) {
-              const ym = `${String(year).slice(2)}${String(month).padStart(2, '0')}`
-              candidate = `${baseTag}${ym}`
-            } else {
-              const ym = `${String(year).slice(2)}${String(month).padStart(2, '0')}`
-              candidate = `${baseTag}${ym}-${seq}`
-            }
-          }
-          tag = candidate
-        }
-
         const budget = await tx.budget.create({
-          data: { accountBookId, name, type, year, month, amount, categoryCode, tag, remark },
+          data: { accountBookId, name, type, year, month, amount, categoryCode, tags: tagsJson, remark },
         })
         created.push(budget)
       }
       return created
     })
 
-    return results
+    return results.map(mapBudget)
   })
 
   // 复制预算
   app.post('/copy', async (req, reply) => {
     const parsed = copyBudgetsSchema.safeParse(req.body)
     if (!parsed.success) {
-      return reply.status(400).send({ message: parsed.error.errors[0].message })
+      return reply.status(400).send({ message: parsed.error.issues[0].message })
     }
 
     const { accountBookId, sourceYear, sourceMonth, targetMonths } = parsed.data
@@ -265,11 +276,6 @@ export async function budgetRoutes(app: FastifyInstance) {
           })
           if (existing) continue
 
-          let tag: string | undefined
-          if (budget.type === 'FREE') {
-            tag = await generateUniqueTag(budget.name, accountBookId, target.year, target.month)
-          }
-
           await tx.budget.create({
             data: {
               accountBookId,
@@ -279,7 +285,7 @@ export async function budgetRoutes(app: FastifyInstance) {
               month: target.month,
               amount: budget.amount,
               categoryCode: budget.categoryCode,
-              tag,
+              tags: budget.tags,
               remark: budget.remark,
             },
           })

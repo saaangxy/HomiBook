@@ -81,6 +81,7 @@ model Account {
   recordsTo            Record[]    @relation("ToAccount")
   adjustments          BalanceAdjustment[]
   recurringTransactions RecurringTransaction[]
+  recurringToTransactions RecurringTransaction[] @relation("RecurringToAccount")
 }
 
 // 余额调整记录
@@ -214,7 +215,7 @@ model Budget {
   month         Int         // 1-12
   amount        Float
   categoryCode  String?     // 固定预算关联字典分类code
-  tag           String?     // 自由预算关联标签
+  tags          String      @default("[]") // 关联标签 JSON 数组，多标签为或关系
   remark        String?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -229,12 +230,14 @@ model RecurringTransaction {
   accountBookId String
   accountBook   AccountBook @relation(fields: [accountBookId], references: [id], onDelete: Cascade)
   name          String   @default("") // 名称
-  type          String   // INCOME | EXPENSE
+  type          String   // INCOME | EXPENSE | TRANSFER
   amount        Float    // 单期金额（贷款类型为月还款额）
   remark        String?
   tags          String   @default("[\"固定收支\"]")
   accountId     String
   account       Account  @relation(fields: [accountId], references: [id])
+  toAccountId   String?  // 转账目标账户（TRANSFER 类型专用）
+  toAccount     Account? @relation("RecurringToAccount", fields: [toAccountId], references: [id])
   categoryCode  String?
   payer         String?
   ownerId       String

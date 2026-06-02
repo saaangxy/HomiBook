@@ -4,12 +4,14 @@ export interface RecurringTransaction {
   id: string
   accountBookId: string
   name: string
-  type: 'INCOME' | 'EXPENSE'
+  type: 'INCOME' | 'EXPENSE' | 'TRANSFER'
   amount: number
   remark: string | null
   tags: string[]
   accountId: string
   account: { id: string; name: string; type: string }
+  toAccountId: string | null
+  toAccount: { id: string; name: string; type: string } | null
   categoryCode: string | null
   payer: string | null
   ownerId: string
@@ -68,11 +70,12 @@ export const recurringApi = {
   create: (data: {
     accountBookId: string
     name: string
-    type: 'INCOME' | 'EXPENSE'
+    type: 'INCOME' | 'EXPENSE' | 'TRANSFER'
     amount: number
     remark?: string
     tags?: string[]
     accountId: string
+    toAccountId?: string
     categoryCode?: string
     payer?: string
     ownerId?: string
@@ -88,11 +91,12 @@ export const recurringApi = {
 
   update: (id: string, data: {
     name?: string
-    type?: 'INCOME' | 'EXPENSE'
+    type?: 'INCOME' | 'EXPENSE' | 'TRANSFER'
     amount?: number
     remark?: string | null
     tags?: string[]
     accountId?: string
+    toAccountId?: string | null
     categoryCode?: string | null
     payer?: string | null
     cron?: string

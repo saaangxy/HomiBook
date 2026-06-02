@@ -6,11 +6,12 @@ const INTEREST_METHODS = ['EQUAL_INSTALLMENT', 'EQUAL_PRINCIPAL'] as const
 export const createRecurringSchema = z.object({
   accountBookId: z.string().min(1),
   name: z.string().min(1, '请输入名称'),
-  type: z.enum(['INCOME', 'EXPENSE']),
+  type: z.enum(['INCOME', 'EXPENSE', 'TRANSFER']),
   amount: z.number().min(0),
   remark: z.string().optional(),
   tags: z.array(z.string()).optional(),
   accountId: z.string().min(1),
+  toAccountId: z.string().optional(),
   categoryCode: z.string().optional(),
   payer: z.string().optional(),
   ownerId: z.string().optional(),
@@ -29,6 +30,9 @@ export const createRecurringSchema = z.object({
   // 全部生成（贷款类型专用）
   generateAll: z.boolean().optional().default(true),
 }).superRefine((data, ctx) => {
+  if (data.type === 'TRANSFER' && !data.toAccountId) {
+    ctx.addIssue({ code: 'custom', message: '转账类型需要选择目标账户', path: ['toAccountId'] })
+  }
   if (data.recurringType === 'LOAN') {
     if (!data.loanTotalAmount || !data.loanInterestMethod ||
       !data.loanStartDate || !data.loanTermMonths || data.loanInterestRate === undefined) {
@@ -43,11 +47,12 @@ export const createRecurringSchema = z.object({
 
 export const updateRecurringSchema = z.object({
   name: z.string().optional(),
-  type: z.enum(['INCOME', 'EXPENSE']).optional(),
+  type: z.enum(['INCOME', 'EXPENSE', 'TRANSFER']).optional(),
   amount: z.number().min(0).optional(),
   remark: z.string().nullable().optional(),
   tags: z.array(z.string()).optional(),
   accountId: z.string().optional(),
+  toAccountId: z.string().nullable().optional(),
   categoryCode: z.string().nullable().optional(),
   payer: z.string().nullable().optional(),
   ownerId: z.string().optional(),

@@ -8,9 +8,10 @@ export const createBudgetSchema = z.object({
   name: z.string().min(1, '预算名称不能为空').max(30),
   type: z.enum(BUDGET_TYPES),
   year: z.number().int().min(2000).max(2100),
-  month: z.number().int().min(1).max(12),
+  month: z.number().int().min(0).max(12),
   amount: z.number().positive('金额必须大于0'),
   categoryCode: z.string().optional(),
+  tags: z.array(z.string()).optional(),
   remark: z.string().optional(),
 })
 
@@ -18,6 +19,7 @@ export const updateBudgetSchema = z.object({
   name: z.string().min(1).max(30).optional(),
   amount: z.number().positive('金额必须大于0').optional(),
   categoryCode: z.string().nullable().optional(),
+  tags: z.array(z.string()).optional(),
   remark: z.string().nullable().optional(),
 })
 
@@ -27,7 +29,8 @@ export const batchCreateSchema = z.object({
   type: z.enum(BUDGET_TYPES),
   amount: z.number().positive('金额必须大于0'),
   categoryCode: z.string().optional(),
-  months: z.array(z.number().int().min(1).max(12)).min(1),
+  tags: z.array(z.string()).optional(),
+  months: z.array(z.number().int().min(0).max(12)).min(1),
   year: z.number().int().min(2000).max(2100),
   remark: z.string().optional(),
 })
@@ -38,7 +41,7 @@ export const copyBudgetsSchema = z.object({
   sourceMonth: z.number().int().min(1).max(12),
   targetMonths: z.array(z.object({
     year: z.number().int(),
-    month: z.number().int().min(1).max(12),
+    month: z.number().int().min(0).max(12),
   })).min(1),
 })
 
@@ -47,6 +50,7 @@ export const batchUpdateBudgetSchema = z.object({
   data: z.object({
     amount: z.number().positive('金额必须大于0').optional(),
     categoryCode: z.string().nullable().optional(),
+    tags: z.array(z.string()).optional(),
     remark: z.string().nullable().optional(),
   }),
 })

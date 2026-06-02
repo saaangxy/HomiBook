@@ -1,40 +1,5 @@
 import { prisma } from '../app.js'
 
-// 标签去重：检查账本内是否已有同名标签（来自其他自由预算）
-async function tagExists(tag: string, accountBookId: string, excludeId?: string): Promise<boolean> {
-  const where: any = { accountBookId, type: 'FREE', tag }
-  if (excludeId) where.id = { not: excludeId }
-  const existing = await prisma.budget.findFirst({ where })
-  return !!existing
-}
-
-// 为自由预算自动生成唯一标签名
-export async function generateUniqueTag(
-  baseName: string,
-  accountBookId: string,
-  year: number,
-  month: number,
-  excludeId?: string,
-): Promise<string> {
-  // 第一步：尝试原名
-  let candidate = baseName
-  if (!(await tagExists(candidate, accountBookId, excludeId))) return candidate
-
-  // 第二步：追加年月后缀 YYMM
-  const ym = `${String(year).slice(2)}${String(month).padStart(2, '0')}`
-  candidate = `${baseName}${ym}`
-  if (!(await tagExists(candidate, accountBookId, excludeId))) return candidate
-
-  // 第三步：追加数字序号
-  let seq = 2
-  while (seq <= 100) {
-    candidate = `${baseName}${ym}-${seq}`
-    if (!(await tagExists(candidate, accountBookId, excludeId))) return candidate
-    seq++
-  }
-  throw new Error('无法生成唯一标签名称')
-}
-
 // 预算汇总计算
 export async function computeBudgetSummary(
   accountBookId: string,
@@ -64,11 +29,11 @@ export async function computeBudgetSummary(
   const details = await Promise.all(budgets.map(async (budget) => {
     let actualAmount = 0
 
-    // 每条预算使用自己的年月计算日期范围
-    const budgetStartDate = new Date(Date.UTC(budget.year, budget.month - 1, 1))
-    const budgetEndDate = new Date(Date.UTC(budget.year, budget.month, 0, 23, 59, 59, 999))
-
     if (budget.type === 'FIXED' && budget.categoryCode) {
+      // 固定预算使用自己的年月计算日期范围
+      const budgetStartDate = new Date(Date.UTC(budget.year, budget.month - 1, 1))
+      const budgetEndDate = new Date(Date.UTC(budget.year, budget.month, 0, 23, 59, 59, 999))
+
       let recordType: string | undefined
       if (expenseCodes.has(budget.categoryCode)) recordType = 'EXPENSE'
       else if (incomeCodes.has(budget.categoryCode)) recordType = 'INCOME'
@@ -85,17 +50,30 @@ export async function computeBudgetSummary(
         _sum: { amount: true },
       })
       actualAmount = agg._sum.amount ?? 0
-    } else if (budget.type === 'FREE' && budget.tag) {
-      const agg = await prisma.record.aggregate({
-        where: {
-          accountBookId,
-          date: { gte: budgetStartDate, lte: budgetEndDate },
-          type: 'EXPENSE',
-          tags: { contains: budget.tag },
-        },
-        _sum: { amount: true },
-      })
-      actualAmount = agg._sum.amount ?? 0
+    } else if (budget.type === 'FREE') {
+      // 自由预算不限日期，只按标签匹配
+      let budgetTags: string[] = []
+      try {
+        const parsed = JSON.parse(budget.tags)
+        if (Array.isArray(parsed)) budgetTags = parsed.filter((t: any) => typeof t === 'string' && t.trim())
+      } catch { /* ignore */ }
+
+      if (budgetTags.length > 0) {
+        // 多标签 OR 关系：记录 tags 字段包含任一 budget 标签即匹配
+        const tagConditions = budgetTags.map((tag) => ({
+          tags: { contains: tag },
+        }))
+
+        const agg = await prisma.record.aggregate({
+          where: {
+            accountBookId,
+            type: 'EXPENSE',
+            OR: tagConditions,
+          },
+          _sum: { amount: true },
+        })
+        actualAmount = agg._sum.amount ?? 0
+      }
     }
 
     const roundedAmount = Math.round(budget.amount * 100) / 100
@@ -107,7 +85,9 @@ export async function computeBudgetSummary(
       month: budget.month,
       amount: roundedAmount,
       categoryCode: budget.categoryCode,
-      tag: budget.tag,
+      tags: (() => {
+        try { const p = JSON.parse(budget.tags); return Array.isArray(p) ? p : []; } catch { return []; }
+      })(),
       remark: budget.remark,
       actualAmount: Math.round(actualAmount * 100) / 100,
       usagePercent: roundedAmount > 0 ? Math.round((actualAmount / roundedAmount) * 10000) / 100 : 0,

@@ -12,5 +12,5 @@ export const holidayApi = {
     api.get<HolidayItem[]>('/api/holidays?' + new URLSearchParams({ year: String(year) }).toString()),
 
   sync: () =>
-    api.post<{ imported: number }>('/api/holidays/sync'),
+    api.post<{ imported: number }>('/api/holidays/sync', {}),
 }

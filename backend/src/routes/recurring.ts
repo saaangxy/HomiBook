@@ -42,6 +42,7 @@ export async function recurringRoutes(app: FastifyInstance) {
       orderBy: [{ active: 'desc' }, { createdAt: 'desc' }],
       include: {
         account: { select: { id: true, name: true, type: true } },
+        toAccount: { select: { id: true, name: true, type: true } },
         owner: { select: { id: true, name: true, email: true } },
         repaymentPlans: {
           orderBy: { period: 'asc' },
@@ -110,6 +111,7 @@ export async function recurringRoutes(app: FastifyInstance) {
       where: { id },
       include: {
         account: { select: { id: true, name: true, type: true } },
+        toAccount: { select: { id: true, name: true, type: true } },
         owner: { select: { id: true, name: true, email: true } },
         repaymentPlans: { orderBy: { period: 'asc' } },
       },
@@ -159,8 +161,9 @@ export async function recurringRoutes(app: FastifyInstance) {
         remark: data.remark,
         tags: JSON.stringify(tags),
         accountId: data.accountId,
-        categoryCode: data.categoryCode,
-        payer: data.payer,
+        toAccountId: data.toAccountId,
+        categoryCode: data.type === 'TRANSFER' ? null : data.categoryCode,
+        payer: data.type === 'TRANSFER' ? null : data.payer,
         ownerId: data.ownerId || userId,
         cron: data.cron,
         active: data.active,
@@ -176,6 +179,7 @@ export async function recurringRoutes(app: FastifyInstance) {
       },
       include: {
         account: { select: { id: true, name: true, type: true } },
+        toAccount: { select: { id: true, name: true, type: true } },
         owner: { select: { id: true, name: true, email: true } },
       },
     })
@@ -283,6 +287,7 @@ export async function recurringRoutes(app: FastifyInstance) {
       data,
       include: {
         account: { select: { id: true, name: true, type: true } },
+        toAccount: { select: { id: true, name: true, type: true } },
         owner: { select: { id: true, name: true, email: true } },
         repaymentPlans: { orderBy: { period: 'asc' } },
       },

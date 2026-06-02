@@ -42,6 +42,7 @@ async function generateRecord(rt: {
   remark: string | null
   tags: string
   accountId: string
+  toAccountId: string | null
   categoryCode: string | null
   payer: string | null
   ownerId: string
@@ -114,6 +115,7 @@ async function generateRecord(rt: {
   }
 
   // 周期类型：直接生成流水
+  const isTransfer = rt.type === 'TRANSFER'
   const tags = ensureFixedTag(JSON.parse(rt.tags))
   await prisma.record.create({
     data: {
@@ -124,8 +126,10 @@ async function generateRecord(rt: {
       remark: remark || undefined,
       tags: JSON.stringify(tags),
       accountId: rt.accountId,
-      categoryCode: rt.categoryCode,
-      payer: rt.payer,
+      fromAccountId: isTransfer ? rt.accountId : undefined,
+      toAccountId: isTransfer ? rt.toAccountId : undefined,
+      categoryCode: isTransfer ? null : rt.categoryCode,
+      payer: isTransfer ? null : rt.payer,
       ownerId: rt.ownerId,
     },
   })

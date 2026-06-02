@@ -1,5 +1,5 @@
 import { prisma } from '../app.js'
-import cronParser from 'cron-parser'
+import { CronExpressionParser } from 'cron-parser'
 
 // 等额本息：计算月还款额
 export function calcEqualInstallment(
@@ -97,7 +97,7 @@ export function generateEqualPrincipalPlan(
 // 根据 cron 表达式计算下一次触发时间
 export function getNextTriggerTime(cron: string, fromDate?: Date): Date | null {
   try {
-    const interval = cronParser.parseExpression(cron, {
+    const interval = CronExpressionParser.parse(cron, {
       currentDate: fromDate || new Date(),
     })
     return interval.next().toDate()

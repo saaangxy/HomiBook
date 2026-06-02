@@ -11,7 +11,7 @@ export interface BudgetItem {
   month: number
   amount: number
   categoryCode: string | null
-  tag: string | null
+  tags: string[]
   remark: string | null
   createdAt: string
   updatedAt: string
@@ -25,7 +25,7 @@ export interface BudgetDetail {
   month: number
   amount: number
   categoryCode: string | null
-  tag: string | null
+  tags: string[]
   remark: string | null
   actualAmount: number
   usagePercent: number
@@ -58,6 +58,7 @@ export const budgetApi = {
     month: number
     amount: number
     categoryCode?: string
+    tags?: string[]
     remark?: string
   }) => api.post<BudgetItem>('/api/budgets', data),
 
@@ -65,6 +66,7 @@ export const budgetApi = {
     name?: string
     amount?: number
     categoryCode?: string | null
+    tags?: string[]
     remark?: string | null
   }) => api.patch<BudgetItem>(`/api/budgets/${id}`, data),
 
@@ -77,6 +79,7 @@ export const budgetApi = {
     type: BudgetType
     amount: number
     categoryCode?: string
+    tags?: string[]
     months: number[]
     year: number
     remark?: string
@@ -105,6 +108,7 @@ export const budgetApi = {
     data: {
       amount?: number
       categoryCode?: string | null
+      tags?: string[]
       remark?: string | null
     }
   }) => api.patch<{ updated: number }>('/api/budgets/batch', data),

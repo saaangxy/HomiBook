@@ -40,13 +40,13 @@ import {
 } from '@/components/ui/table'
 import { Spinner } from '@/components/ui/spinner'
 import { DictCombobox } from '@/components/DictCombobox'
+import { TagCombobox } from '@/components/TagCombobox'
 import { useBookStore } from '../stores/book'
 import { budgetApi, type BudgetItem, type BudgetType, type BudgetSummary } from '@/api/budget'
 import { Plus, Copy, Trash2, Pencil, Search, Check, Target, PiggyBank, TrendingUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1)
-const MONTH_LABELS = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月']
 
 function BudgetTypeBadge({ type }: { type: BudgetType }) {
   return type === 'FIXED'
@@ -81,13 +81,11 @@ export function BudgetsPage() {
   const [summary, setSummary] = useState<BudgetSummary | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [summaryLoading, setSummaryLoading] = useState(false)
 
   // 筛选
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState<number | undefined>(now.getMonth() + 1)
-  const [typeFilter, setTypeFilter] = useState<BudgetType | 'ALL'>('ALL')
   const [tabView, setTabView] = useState<'ALL' | 'FIXED' | 'FREE'>('ALL')
   const [searchName, setSearchName] = useState('')
 
@@ -103,6 +101,7 @@ export function BudgetsPage() {
   const [batchEditOpen, setBatchEditOpen] = useState(false)
   const [batchEditAmount, setBatchEditAmount] = useState('')
   const [batchEditCategory, setBatchEditCategory] = useState('')
+  const [batchEditTags, setBatchEditTags] = useState<string[]>([])
   const [batchEditRemark, setBatchEditRemark] = useState('')
   const [batchEditError, setBatchEditError] = useState('')
   const [batchEditSaving, setBatchEditSaving] = useState(false)
@@ -113,6 +112,7 @@ export function BudgetsPage() {
   const [formAmount, setFormAmount] = useState('')
   const [formCategory, setFormCategory] = useState('')
   const [formMonth, setFormMonth] = useState(now.getMonth() + 1)
+  const [formTags, setFormTags] = useState<string[]>([])
   const [formRemark, setFormRemark] = useState('')
   const [formSaving, setFormSaving] = useState(false)
   const [formError, setFormError] = useState('')
@@ -123,6 +123,7 @@ export function BudgetsPage() {
   const [batchAmount, setBatchAmount] = useState('')
   const [batchCategory, setBatchCategory] = useState('')
   const [batchMonths, setBatchMonths] = useState<number[]>([])
+  const [batchTags, setBatchTags] = useState<string[]>([])
   const [batchYear, setBatchYear] = useState(now.getFullYear())
   const [batchRemark, setBatchRemark] = useState('')
   const [batchSaving, setBatchSaving] = useState(false)
@@ -141,7 +142,6 @@ export function BudgetsPage() {
     try {
       const params: any = { bookId: currentBookId, year }
       if (month !== undefined) params.month = month
-      if (typeFilter !== 'ALL') params.type = typeFilter
       const data = await budgetApi.list(params)
       setBudgets(data)
     } catch (e: any) {
@@ -149,18 +149,15 @@ export function BudgetsPage() {
     } finally {
       setLoading(false)
     }
-  }, [currentBookId, year, month, typeFilter])
+  }, [currentBookId, year, month])
 
   const loadSummary = useCallback(async () => {
     if (!currentBookId) return
-    setSummaryLoading(true)
     try {
       const data = await budgetApi.summary({ bookId: currentBookId, year, month })
       setSummary(data)
     } catch {
       // ignore
-    } finally {
-      setSummaryLoading(false)
     }
   }, [currentBookId, year, month])
 
@@ -188,6 +185,7 @@ export function BudgetsPage() {
     setFormAmount('')
     setFormCategory('')
     setFormMonth(month ?? now.getMonth() + 1)
+    setFormTags([])
     setFormRemark('')
     setFormError('')
     setDialogOpen(true)
@@ -201,6 +199,7 @@ export function BudgetsPage() {
     setFormAmount(String(b.amount))
     setFormCategory(b.categoryCode || '')
     setFormMonth(b.month)
+    setFormTags(b.tags || [])
     setFormRemark(b.remark || '')
     setFormError('')
     setDialogOpen(true)
@@ -221,6 +220,7 @@ export function BudgetsPage() {
           name: formName.trim(),
           amount: Number(formAmount),
           categoryCode: formType === 'FIXED' ? formCategory : null,
+          tags: formTags,
           remark: formRemark || null,
         })
       } else {
@@ -229,9 +229,10 @@ export function BudgetsPage() {
           name: formName.trim(),
           type: formType,
           year,
-          month: formMonth,
+          month: formType === 'FREE' ? 0 : formMonth,
           amount: Number(formAmount),
           categoryCode: formType === 'FIXED' ? formCategory : undefined,
+          tags: formTags.length > 0 ? formTags : undefined,
           remark: formRemark || undefined,
         })
       }
@@ -261,7 +262,7 @@ export function BudgetsPage() {
     if (!currentBookId) return
     if (!batchName.trim()) return
     if (!batchAmount || Number(batchAmount) <= 0) return
-    if (batchMonths.length === 0) return
+    if (batchType === 'FIXED' && batchMonths.length === 0) return
 
     setBatchSaving(true)
     try {
@@ -271,8 +272,9 @@ export function BudgetsPage() {
         type: batchType,
         amount: Number(batchAmount),
         categoryCode: batchType === 'FIXED' ? batchCategory : undefined,
-        months: batchMonths,
-        year: batchYear,
+        tags: batchTags.length > 0 ? batchTags : undefined,
+        months: batchType === 'FREE' ? [0] : batchMonths,
+        year: batchType === 'FREE' ? now.getFullYear() : batchYear,
         remark: batchRemark || undefined,
       })
       setBatchOpen(false)
@@ -308,7 +310,7 @@ export function BudgetsPage() {
   const handleBatchEdit = async () => {
     if (selectedIds.size === 0) return
 
-    if (!batchEditAmount.trim() && !batchEditCategory && !batchEditRemark.trim()) {
+    if (!batchEditAmount.trim() && !batchEditCategory && !batchEditRemark.trim() && batchEditTags.length === 0) {
       setBatchEditError('请至少填写一个要修改的字段')
       return
     }
@@ -323,6 +325,7 @@ export function BudgetsPage() {
       const data: any = {}
       if (batchEditAmount.trim()) data.amount = Number(batchEditAmount)
       if (batchEditCategory) data.categoryCode = batchEditCategory
+      if (batchEditTags.length > 0) data.tags = batchEditTags
       if (batchEditRemark.trim()) data.remark = batchEditRemark.trim()
 
       await budgetApi.batchUpdate({ ids: Array.from(selectedIds), data })
@@ -342,7 +345,6 @@ export function BudgetsPage() {
   }
 
   const toggleCopyTarget = (targetYear: number, targetMonth: number) => {
-    const key = `${targetYear}-${targetMonth}`
     setCopyTargets((prev) => {
       const exists = prev.some((t) => t.year === targetYear && t.month === targetMonth)
       if (exists) return prev.filter((t) => !(t.year === targetYear && t.month === targetMonth))
@@ -381,7 +383,7 @@ export function BudgetsPage() {
     }
   }
 
-  const renderTable = (items: BudgetItem[]) => (
+  const renderTable = (items: BudgetItem[], showMonth = true) => (
     <Table>
       <TableHeader>
         <TableRow>
@@ -396,7 +398,7 @@ export function BudgetsPage() {
             </button>
           </TableHead>
           <TableHead className="w-[140px]">名称</TableHead>
-          <TableHead className="w-[60px]">月份</TableHead>
+          {showMonth && <TableHead className="w-[60px]">月份</TableHead>}
           <TableHead className="w-[80px]">类型</TableHead>
           {tabView !== 'FIXED' && <TableHead className="w-[100px]">分类/标签</TableHead>}
           <TableHead className="text-right w-[100px]">预算额</TableHead>
@@ -425,11 +427,21 @@ export function BudgetsPage() {
                 </button>
               </TableCell>
               <TableCell className="font-medium">{b.name}</TableCell>
-              <TableCell className="text-muted-foreground">{b.month}月</TableCell>
+              {showMonth && <TableCell className="text-muted-foreground">{b.month}月</TableCell>}
               <TableCell><BudgetTypeBadge type={b.type as BudgetType} /></TableCell>
               {tabView !== 'FIXED' && (
                 <TableCell className="text-muted-foreground text-xs">
-                  {b.type === 'FIXED' ? b.categoryCode : b.tag}
+                  {b.type === 'FIXED'
+                    ? b.categoryCode
+                    : b.tags && b.tags.length > 0
+                      ? (
+                        <div className="flex flex-wrap gap-1">
+                          {b.tags.map((t, i) => (
+                            <Badge key={i} variant="secondary" className="text-[10px]">{t}</Badge>
+                          ))}
+                        </div>
+                      )
+                      : '-'}
                 </TableCell>
               )}
               <TableCell className="text-right tabular-nums">¥{b.amount.toFixed(2)}</TableCell>
@@ -452,7 +464,7 @@ export function BudgetsPage() {
         })}
         {items.length === 0 && (
           <TableRow>
-            <TableCell colSpan={tabView !== 'FIXED' ? 9 : 8} className="text-center text-muted-foreground py-8">
+            <TableCell colSpan={showMonth ? (tabView !== 'FIXED' ? 9 : 8) : 8} className="text-center text-muted-foreground py-8">
               暂无预算数据
             </TableCell>
           </TableRow>
@@ -475,29 +487,6 @@ export function BudgetsPage() {
 
       {/* 工具栏 */}
       <div className="flex flex-wrap items-center gap-3">
-        <Select value={String(year)} onValueChange={(v) => setYear(Number(v))}>
-          <SelectTrigger className="w-[100px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {Array.from({ length: 10 }, (_, i) => year - 5 + i).map((y) => (
-              <SelectItem key={y} value={String(y)}>{y}年</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Select value={month === undefined ? 'all' : String(month)} onValueChange={(v) => setMonth(v === 'all' ? undefined : Number(v))}>
-          <SelectTrigger className="w-[100px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">全年</SelectItem>
-            {MONTHS.map((m) => (
-              <SelectItem key={m} value={String(m)}>{m}月</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
         <Tabs value={tabView} onValueChange={(v) => setTabView(v as any)}>
           <TabsList>
             <TabsTrigger value="ALL">全部</TabsTrigger>
@@ -521,7 +510,7 @@ export function BudgetsPage() {
         <Button variant="outline" size="sm" onClick={() => { setCopySourceYear(year); setCopySourceMonth(month ?? now.getMonth() + 1); setCopyTargets([]); setCopyOpen(true) }}>
           <Copy size={14} className="mr-1" />复制预算
         </Button>
-        <Button variant="outline" size="sm" onClick={() => { setBatchName(''); setBatchType('FIXED'); setBatchAmount(''); setBatchCategory(''); setBatchMonths([]); setBatchYear(year); setBatchRemark(''); setBatchOpen(true) }}>
+        <Button variant="outline" size="sm" onClick={() => { setBatchName(''); setBatchType('FIXED'); setBatchAmount(''); setBatchCategory(''); setBatchTags([]); setBatchMonths([]); setBatchYear(year); setBatchRemark(''); setBatchOpen(true) }}>
           批量添加
         </Button>
         <Button size="sm" onClick={openCreate}>
@@ -536,6 +525,7 @@ export function BudgetsPage() {
           <Button size="sm" variant="outline" onClick={() => {
             setBatchEditAmount('')
             setBatchEditCategory('')
+            setBatchEditTags([])
             setBatchEditRemark('')
             setBatchEditError('')
             setBatchEditOpen(true)
@@ -604,6 +594,29 @@ export function BudgetsPage() {
               <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
                 <PiggyBank size={18} />固定预算
               </h2>
+              <div className="flex items-center gap-3 mb-3">
+                <Select value={String(year)} onValueChange={(v) => setYear(Number(v))}>
+                  <SelectTrigger className="w-[100px] h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 10 }, (_, i) => year - 5 + i).map((y) => (
+                      <SelectItem key={y} value={String(y)}>{y}年</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={month === undefined ? 'all' : String(month)} onValueChange={(v) => setMonth(v === 'all' ? undefined : Number(v))}>
+                  <SelectTrigger className="w-[100px] h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全年</SelectItem>
+                    {MONTHS.map((m) => (
+                      <SelectItem key={m} value={String(m)}>{m}月</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               {renderTable(fixedBudgets)}
             </div>
           )}
@@ -612,7 +625,7 @@ export function BudgetsPage() {
               <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
                 <TrendingUp size={18} />自由预算
               </h2>
-              {renderTable(freeBudgets)}
+              {renderTable(freeBudgets, false)}
             </div>
           )}
         </div>
@@ -657,27 +670,30 @@ export function BudgetsPage() {
               </div>
             ) : (
               <div>
-                <Label>标签（自动生成）</Label>
-                <Input
-                  value={formName.trim() ? `${formName.trim()}${!editingBudget ? '（将作为标签自动生成）' : ''}` : '（输入名称后自动生成）'}
-                  disabled
-                  className="text-muted-foreground"
+                <Label>关联标签（多标签为或关系）</Label>
+                <TagCombobox
+                  value={formTags}
+                  onChange={setFormTags}
+                  bookId={currentBookId || ''}
+                  placeholder="选择或输入标签..."
                 />
               </div>
             )}
-            <div>
-              <Label>月份</Label>
-              <Select value={String(formMonth)} onValueChange={(v) => setFormMonth(Number(v))} disabled={!!editingBudget}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {MONTHS.map((m) => (
-                    <SelectItem key={m} value={String(m)}>{m}月</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {formType === 'FIXED' && (
+              <div>
+                <Label>月份</Label>
+                <Select value={String(formMonth)} onValueChange={(v) => setFormMonth(Number(v))} disabled={!!editingBudget}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MONTHS.map((m) => (
+                      <SelectItem key={m} value={String(m)}>{m}月</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div>
               <Label>备注（可选）</Label>
               <Input value={formRemark} onChange={(e) => setFormRemark(e.target.value)} placeholder="备注" />
@@ -720,7 +736,7 @@ export function BudgetsPage() {
               <Label>金额</Label>
               <Input type="number" value={batchAmount} onChange={(e) => setBatchAmount(e.target.value)} />
             </div>
-            {batchType === 'FIXED' && (
+            {batchType === 'FIXED' ? (
               <div>
                 <Label>关联分类</Label>
                 <DictCombobox
@@ -730,38 +746,52 @@ export function BudgetsPage() {
                   placeholder="选择分类..."
                 />
               </div>
-            )}
-            <div>
-              <Label>年份</Label>
-              <Select value={String(batchYear)} onValueChange={(v) => setBatchYear(Number(v))}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Array.from({ length: 5 }, (_, i) => now.getFullYear() - 2 + i).map((y) => (
-                    <SelectItem key={y} value={String(y)}>{y}年</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>选择月份（可多选）</Label>
-              <div className="grid grid-cols-4 gap-2 mt-2">
-                {MONTHS.map((m) => (
-                  <button
-                    key={m}
-                    className={`py-2 px-3 rounded-lg border text-sm transition-colors ${
-                      batchMonths.includes(m)
-                        ? 'bg-[#3b82f6] text-white border-[#3b82f6]'
-                        : 'border-border hover:bg-muted'
-                    }`}
-                    onClick={() => toggleBatchMonth(m)}
-                  >
-                    {m}月
-                  </button>
-                ))}
+            ) : (
+              <div>
+                <Label>关联标签（多标签为或关系）</Label>
+                <TagCombobox
+                  value={batchTags}
+                  onChange={setBatchTags}
+                  bookId={currentBookId || ''}
+                  placeholder="选择或输入标签..."
+                />
               </div>
-            </div>
+            )}
+            {batchType === 'FIXED' && (
+              <>
+                <div>
+                  <Label>年份</Label>
+                  <Select value={String(batchYear)} onValueChange={(v) => setBatchYear(Number(v))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Array.from({ length: 5 }, (_, i) => now.getFullYear() - 2 + i).map((y) => (
+                        <SelectItem key={y} value={String(y)}>{y}年</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>选择月份（可多选）</Label>
+                  <div className="grid grid-cols-4 gap-2 mt-2">
+                    {MONTHS.map((m) => (
+                      <button
+                        key={m}
+                        className={`py-2 px-3 rounded-lg border text-sm transition-colors ${
+                          batchMonths.includes(m)
+                            ? 'bg-[#3b82f6] text-white border-[#3b82f6]'
+                            : 'border-border hover:bg-muted'
+                        }`}
+                        onClick={() => toggleBatchMonth(m)}
+                      >
+                        {m}月
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
             <div>
               <Label>备注（可选）</Label>
               <Input value={batchRemark} onChange={(e) => setBatchRemark(e.target.value)} />
@@ -769,8 +799,8 @@ export function BudgetsPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setBatchOpen(false)}>取消</Button>
-            <Button onClick={handleBatchCreate} disabled={batchSaving || batchMonths.length === 0}>
-              {batchSaving ? <Spinner /> : `生成（${batchMonths.length}个月）`}
+            <Button onClick={handleBatchCreate} disabled={batchSaving || (batchType === 'FIXED' && batchMonths.length === 0)}>
+              {batchSaving ? <Spinner /> : batchType === 'FREE' ? '创建' : `生成（${batchMonths.length}个月）`}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -890,6 +920,15 @@ export function BudgetsPage() {
               />
             </div>
             <div>
+              <Label>关联标签（留空则不修改，仅对自由预算生效）</Label>
+              <TagCombobox
+                value={batchEditTags}
+                onChange={setBatchEditTags}
+                bookId={currentBookId || ''}
+                placeholder="不修改"
+              />
+            </div>
+            <div>
               <Label>备注（留空则不修改）</Label>
               <Input
                 value={batchEditRemark}
@@ -914,7 +953,7 @@ export function BudgetsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>删除预算</AlertDialogTitle>
             <AlertDialogDescription>
-              确定要删除预算 &ldquo;{deleteTarget?.name}&rdquo;（{deleteTarget?.year}年{deleteTarget?.month}月）吗？此操作不可撤销。
+              确定要删除预算 &ldquo;{deleteTarget?.name}&rdquo;{deleteTarget?.type === 'FIXED' ? `（${deleteTarget?.year}年${deleteTarget?.month}月）` : ''}吗？此操作不可撤销。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

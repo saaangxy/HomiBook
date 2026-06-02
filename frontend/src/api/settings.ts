@@ -40,5 +40,5 @@ export const settingsApi = {
     api.get<Array<{ id: string; path: string; originalFilename: string; createdAt: string; fileExists: boolean }>>('/api/settings/attachments/orphans'),
 
   cleanOrphanAttachments: () =>
-    api.post<{ deletedFiles: number; deletedRecords: number }>('/api/settings/attachments/clean-orphans'),
+    api.post<{ deletedFiles: number; deletedRecords: number }>('/api/settings/attachments/clean-orphans', {}),
 }
