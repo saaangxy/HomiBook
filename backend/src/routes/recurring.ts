@@ -44,10 +44,7 @@ export async function recurringRoutes(app: FastifyInstance) {
         account: { select: { id: true, name: true, type: true } },
         toAccount: { select: { id: true, name: true, type: true } },
         owner: { select: { id: true, name: true, email: true } },
-        repaymentPlans: {
-          orderBy: { period: 'asc' },
-          take: 6,
-        },
+        repaymentPlans: { orderBy: { period: 'asc' } },
       },
     })
 
