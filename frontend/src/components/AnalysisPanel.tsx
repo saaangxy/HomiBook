@@ -3,6 +3,7 @@ import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
@@ -12,7 +13,7 @@ import {
 } from '@/components/ui/table'
 import { Spinner } from '@/components/ui/spinner'
 import { recordApi, type RecordItem } from '@/api/record'
-import { PieChart, Users, Wallet, X, List } from 'lucide-react'
+import { PieChart, Users, Wallet, X, List, ChevronLeft, ChevronRight } from 'lucide-react'
 
 function formatMoney(amount: number): string {
   return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(amount)
@@ -92,6 +93,11 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
   const [detailOpen, setDetailOpen] = useState(false)
   const [detailRecords, setDetailRecords] = useState<RecordItem[]>([])
   const [detailLoading, setDetailLoading] = useState(false)
+  const [detailPage, setDetailPage] = useState(1)
+  const [detailTotal, setDetailTotal] = useState(0)
+  const [detailTotalPages, setDetailTotalPages] = useState(0)
+  const [detailDateFrom, setDetailDateFrom] = useState('')
+  const [detailDateTo, setDetailDateTo] = useState('')
 
   const loadAnalysis = useCallback(async () => {
     if (!bookId) return
@@ -119,7 +125,7 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
     }
   }
 
-  const handleViewDetail = async () => {
+  const loadDetailRecords = async (page: number, df: string, dt: string) => {
     if (!selected || !bookId) return
     setDetailLoading(true)
     try {
@@ -130,19 +136,38 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
 
       const res = await recordApi.list({
         bookId,
-        page: 1,
-        pageSize: 100,
+        page,
+        pageSize: 20,
         type: activeType,
-        dateFrom,
-        dateTo,
+        dateFrom: df || dateFrom,
+        dateTo: dt || dateTo,
         accountId,
         ownerId,
         ...filter,
       })
       setDetailRecords(res.records)
-      setDetailOpen(true)
+      setDetailPage(res.page)
+      setDetailTotal(res.total)
+      setDetailTotalPages(res.totalPages)
     } catch { /* ignore */ }
     finally { setDetailLoading(false) }
+  }
+
+  const handleViewDetail = () => {
+    setDetailDateFrom('')
+    setDetailDateTo('')
+    setDetailPage(1)
+    setDetailOpen(true)
+    loadDetailRecords(1, '', '')
+  }
+
+  const handleDetailPageChange = (page: number) => {
+    loadDetailRecords(page, detailDateFrom, detailDateTo)
+  }
+
+  const handleDetailFilter = () => {
+    setDetailPage(1)
+    loadDetailRecords(1, detailDateFrom, detailDateTo)
   }
 
   return (
@@ -223,14 +248,41 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
 
       {/* 流水明细弹窗 */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="max-w-3xl max-h-[80vh]">
+        <DialogContent className="max-w-3xl max-h-[85vh]">
           <DialogHeader>
             <DialogTitle className="text-sm">
               {selected?.label} — {formatMoney(selected?.amount ?? 0)}
             </DialogTitle>
           </DialogHeader>
-          <div className="overflow-auto max-h-[60vh]">
-            {detailRecords.length === 0 ? (
+
+          {/* 筛选条件 */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground whitespace-nowrap">日期</span>
+              <Input
+                type="date"
+                value={detailDateFrom}
+                onChange={(e) => setDetailDateFrom(e.target.value)}
+                className="h-8 w-36 text-xs"
+              />
+              <span className="text-xs text-muted-foreground">—</span>
+              <Input
+                type="date"
+                value={detailDateTo}
+                onChange={(e) => setDetailDateTo(e.target.value)}
+                className="h-8 w-36 text-xs"
+              />
+            </div>
+            <Button size="sm" variant="outline" className="h-8 text-xs" onClick={handleDetailFilter}>
+              筛选
+            </Button>
+            <span className="text-xs text-muted-foreground">共 {detailTotal} 条</span>
+          </div>
+
+          <div className="overflow-auto max-h-[50vh]">
+            {detailLoading ? (
+              <div className="flex items-center justify-center py-8"><Spinner /></div>
+            ) : detailRecords.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">暂无数据</p>
             ) : (
               <Table>
@@ -263,6 +315,29 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
               </Table>
             )}
           </div>
+
+          {/* 分页 */}
+          {detailTotalPages > 1 && (
+            <div className="flex items-center justify-center gap-2 pt-2">
+              <Button
+                size="sm" variant="outline" className="h-7 text-xs"
+                disabled={detailPage <= 1}
+                onClick={() => handleDetailPageChange(detailPage - 1)}
+              >
+                <ChevronLeft size={14} /> 上一页
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                {detailPage} / {detailTotalPages}
+              </span>
+              <Button
+                size="sm" variant="outline" className="h-7 text-xs"
+                disabled={detailPage >= detailTotalPages}
+                onClick={() => handleDetailPageChange(detailPage + 1)}
+              >
+                下一页 <ChevronRight size={14} />
+              </Button>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </Card>

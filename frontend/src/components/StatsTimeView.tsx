@@ -3,6 +3,7 @@ import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -18,7 +19,7 @@ import { recordApi, type RecordSummary, type RecordItem } from '@/api/record'
 import { accountApi, type AccountItem } from '@/api/account'
 import { adminApi, type AdminUser } from '@/api/admin'
 import { AnalysisPanel } from './AnalysisPanel'
-import { BarChart3, Search, X, List } from 'lucide-react'
+import { BarChart3, Search, X, List, ChevronLeft, ChevronRight } from 'lucide-react'
 import dayjs from 'dayjs'
 
 function formatMoney(amount: number): string {
@@ -127,6 +128,11 @@ export function StatsTimeView({ bookId, mode }: Props) {
   const [barDetailOpen, setBarDetailOpen] = useState(false)
   const [barDetailRecords, setBarDetailRecords] = useState<RecordItem[]>([])
   const [barDetailLoading, setBarDetailLoading] = useState(false)
+  const [barDetailPage, setBarDetailPage] = useState(1)
+  const [barDetailTotal, setBarDetailTotal] = useState(0)
+  const [barDetailTotalPages, setBarDetailTotalPages] = useState(0)
+  const [barDetailDateFrom, setBarDetailDateFrom] = useState('')
+  const [barDetailDateTo, setBarDetailDateTo] = useState('')
 
   // 基础数据
   const [accounts, setAccounts] = useState<AccountItem[]>([])
@@ -203,15 +209,13 @@ export function StatsTimeView({ bookId, mode }: Props) {
     setBarSelected({ code: cat?.code ?? null, name: params.seriesName, period: params.name })
   }
 
-  const handleBarViewDetail = async () => {
+  const loadBarDetail = async (page: number, df: string, dt: string) => {
     if (!barSelected || !bookId) return
     setBarDetailLoading(true)
     try {
       let dateFrom: string
       let dateTo: string
-      // barSelected.period: yearly mode → "2024-01", monthly/free mode → "2024-01-05"
       if (barSelected.period.length === 7) {
-        // 月度粒度: "2024-01"
         const [y, m] = barSelected.period.split('-').map(Number)
         dateFrom = `${y}-${String(m).padStart(2, '0')}-01`
         const daysInMonth = new Date(y, m, 0).getDate()
@@ -222,17 +226,36 @@ export function StatsTimeView({ bookId, mode }: Props) {
       }
       const res = await recordApi.list({
         bookId,
-        page: 1,
-        pageSize: 100,
+        page,
+        pageSize: 20,
         type: 'EXPENSE',
-        dateFrom,
-        dateTo,
+        dateFrom: df || dateFrom,
+        dateTo: dt || dateTo,
         categoryCode: barSelected.code ?? undefined,
       })
       setBarDetailRecords(res.records)
-      setBarDetailOpen(true)
+      setBarDetailPage(res.page)
+      setBarDetailTotal(res.total)
+      setBarDetailTotalPages(res.totalPages)
     } catch { /* ignore */ }
     finally { setBarDetailLoading(false) }
+  }
+
+  const handleBarViewDetail = () => {
+    setBarDetailDateFrom('')
+    setBarDetailDateTo('')
+    setBarDetailPage(1)
+    setBarDetailOpen(true)
+    loadBarDetail(1, '', '')
+  }
+
+  const handleBarDetailPageChange = (page: number) => {
+    loadBarDetail(page, barDetailDateFrom, barDetailDateTo)
+  }
+
+  const handleBarDetailFilter = () => {
+    setBarDetailPage(1)
+    loadBarDetail(1, barDetailDateFrom, barDetailDateTo)
   }
 
   return (
@@ -432,14 +455,41 @@ export function StatsTimeView({ bookId, mode }: Props) {
 
       {/* 堆叠柱状图详情弹窗 */}
       <Dialog open={barDetailOpen} onOpenChange={setBarDetailOpen}>
-        <DialogContent className="max-w-3xl max-h-[80vh]">
+        <DialogContent className="max-w-3xl max-h-[85vh]">
           <DialogHeader>
             <DialogTitle className="text-sm">
               {barSelected?.period} · {barSelected?.name}
             </DialogTitle>
           </DialogHeader>
-          <div className="overflow-auto max-h-[60vh]">
-            {barDetailRecords.length === 0 ? (
+
+          {/* 筛选条件 */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground whitespace-nowrap">日期</span>
+              <Input
+                type="date"
+                value={barDetailDateFrom}
+                onChange={(e) => setBarDetailDateFrom(e.target.value)}
+                className="h-8 w-36 text-xs"
+              />
+              <span className="text-xs text-muted-foreground">—</span>
+              <Input
+                type="date"
+                value={barDetailDateTo}
+                onChange={(e) => setBarDetailDateTo(e.target.value)}
+                className="h-8 w-36 text-xs"
+              />
+            </div>
+            <Button size="sm" variant="outline" className="h-8 text-xs" onClick={handleBarDetailFilter}>
+              筛选
+            </Button>
+            <span className="text-xs text-muted-foreground">共 {barDetailTotal} 条</span>
+          </div>
+
+          <div className="overflow-auto max-h-[50vh]">
+            {barDetailLoading ? (
+              <div className="flex items-center justify-center py-8"><Spinner /></div>
+            ) : barDetailRecords.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">暂无数据</p>
             ) : (
               <Table>
@@ -472,6 +522,29 @@ export function StatsTimeView({ bookId, mode }: Props) {
               </Table>
             )}
           </div>
+
+          {/* 分页 */}
+          {barDetailTotalPages > 1 && (
+            <div className="flex items-center justify-center gap-2 pt-2">
+              <Button
+                size="sm" variant="outline" className="h-7 text-xs"
+                disabled={barDetailPage <= 1}
+                onClick={() => handleBarDetailPageChange(barDetailPage - 1)}
+              >
+                <ChevronLeft size={14} /> 上一页
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                {barDetailPage} / {barDetailTotalPages}
+              </span>
+              <Button
+                size="sm" variant="outline" className="h-7 text-xs"
+                disabled={barDetailPage >= barDetailTotalPages}
+                onClick={() => handleBarDetailPageChange(barDetailPage + 1)}
+              >
+                下一页 <ChevronRight size={14} />
+              </Button>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
