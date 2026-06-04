@@ -50,11 +50,8 @@ function buildPie(data: { name: string; value: number }[]): EChartsOption {
     legend: {
       orient: 'horizontal' as const,
       bottom: 0,
-      type: 'scroll' as const,
+      type: 'plain' as const,
       textStyle: { color: '#cbd5e1', fontSize: 12 },
-      pageIconColor: '#94a3b8',
-      pageIconInactiveColor: '#475569',
-      pageTextStyle: { color: '#94a3b8' },
     },
     color: COLORS,
     series: [{
@@ -172,7 +169,7 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {(['category', 'ownerId', 'accountId'] as const).map((groupBy) => {
               const rawData = groupData[groupBy] || []
-              const data = rawData.map((d) => ({ name: d.label, value: d.amount }))
+              const data = rawData.map((d) => ({ name: d.label, value: d.amount })).sort((a, b) => b.value - a.value)
               const isSelected = selected?.groupBy === groupBy
               return (
                 <div key={groupBy} className="flex flex-col">

@@ -49,8 +49,8 @@ function buildStackedBar(periods: string[], categories: { name: string; data: nu
         return html
       },
     },
-    legend: { type: 'scroll' as const, top: 0, ...chartTextStyle.legend, formatter: (n: string) => n.length > 5 ? n.slice(0, 5) + '…' : n },
-    grid: { top: 50, right: 20, bottom: 40, left: 60 },
+    legend: { type: 'plain' as const, top: 0, ...chartTextStyle.legend },
+    grid: { top: 60, right: 20, bottom: 40, left: 60 },
     xAxis: { type: 'category' as const, data: periods, axisLabel: { ...chartTextStyle.xAxis.axisLabel, rotate: 45, fontSize: 11, formatter: (v: string) => v.length > 7 ? v.slice(5) : v } },
     yAxis: { type: 'value' as const, ...chartTextStyle.yAxis, axisLabel: { ...chartTextStyle.yAxis.axisLabel, formatter: (v: number) => v >= 10000 ? `${(v / 10000).toFixed(1)}万` : String(v) } },
     color: COLORS,
