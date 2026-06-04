@@ -90,4 +90,18 @@ export const accountApi = {
     balanceAfter: number
     remark?: string
   }) => api.post<BalanceAdjustment>(`/api/accounts/${accountId}/adjustments`, data),
+
+  balanceHistory: (params: {
+    bookId: string
+    accountIds?: string
+    granularity?: 'daily' | 'monthly'
+    dateFrom: string
+    dateTo: string
+  }) => api.get<Array<{
+    accountId: string
+    accountName: string
+    balances: Array<{ date: string; balance: number }>
+  }>>('/api/accounts/balance-history?' + new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))
+  ).toString()),
 }

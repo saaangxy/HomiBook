@@ -4,7 +4,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { MainLayout } from './layouts/MainLayout'
 import { LoginPage } from './pages/LoginPage'
 import { HomePage } from './pages/HomePage'
-import { PlaceholderPage } from './pages/PlaceholderPage'
+import { StatsPage } from './pages/StatsPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { UsersPage } from './pages/UsersPage.tsx'
 import { BooksPage } from './pages/BooksPage'
@@ -41,7 +41,7 @@ function App() {
               }
             >
               <Route index element={<HomePage />} />
-              <Route path="stats" element={<PlaceholderPage title="统计分析" />} />
+              <Route path="stats" element={<StatsPage />} />
               <Route path="records/calendar" element={<CalendarPage />} />
               <Route path="records" element={<RecordsPage />} />
               <Route path="books" element={<BooksPage />} />

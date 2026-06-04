@@ -49,3 +49,11 @@ export const createAdjustmentSchema = z.object({
   balanceAfter: z.number(),
   remark: z.string().optional(),
 })
+
+export const balanceHistorySchema = z.object({
+  bookId: z.string().min(1),
+  accountIds: z.string().optional(),
+  granularity: z.enum(['daily', 'monthly']).default('daily'),
+  dateFrom: z.string(),
+  dateTo: z.string(),
+})

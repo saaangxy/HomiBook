@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { prisma } from '../app.js'
 import { authenticate } from '../middleware/auth.js'
-import { createRecordSchema, updateRecordSchema, listRecordsSchema, calendarQuerySchema } from '../schemas/record.js'
+import { createRecordSchema, updateRecordSchema, listRecordsSchema, calendarQuerySchema, categorySummarySchema, monthlyTrendSchema } from '../schemas/record.js'
 import path from 'path'
 import fs from 'fs'
 import { randomUUID } from 'crypto'
@@ -306,6 +306,173 @@ export async function recordRoutes(app: FastifyInstance) {
     }
 
     return result
+  })
+
+  // 分类汇总：按分类统计金额，用于饼图
+  app.get('/category-summary', async (req, reply) => {
+    const parsed = categorySummarySchema.safeParse(req.query)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: parsed.error.issues[0].message })
+    }
+    const { bookId, type, accountId, categoryCode, dateFrom, dateTo, ownerId, payer, amountFrom, amountTo, remark, tags } = parsed.data
+    const userId = (req as any).user.id as string
+
+    try {
+      await assertIsMember(bookId, userId)
+    } catch (e: any) {
+      return reply.status(e.statusCode || 403).send({ message: e.message })
+    }
+
+    const typeFilter: string[] | null = type
+      ? type.split(',').map((s: string) => s.trim()).filter(Boolean)
+      : null
+
+    const where: any = { accountBookId: bookId }
+    if (accountId) {
+      const ids = accountId.split(',').map((s: string) => s.trim()).filter(Boolean)
+      if (ids.length === 1) where.accountId = ids[0]
+      else if (ids.length > 1) where.accountId = { in: ids }
+    }
+    if (categoryCode) {
+      const ids = categoryCode.split(',').map((s: string) => s.trim()).filter(Boolean)
+      if (ids.length === 1) where.categoryCode = ids[0]
+      else if (ids.length > 1) where.categoryCode = { in: ids }
+    }
+    if (ownerId) {
+      const ids = ownerId.split(',').map((s: string) => s.trim()).filter(Boolean)
+      if (ids.length === 1) where.ownerId = ids[0]
+      else if (ids.length > 1) where.ownerId = { in: ids }
+    }
+    if (dateFrom || dateTo) where.date = {}
+    if (dateFrom) where.date.gte = new Date(dateFrom)
+    if (dateTo) where.date.lte = new Date(dateTo + 'T23:59:59.999Z')
+    if (payer) where.payer = { contains: payer }
+    if (amountFrom !== undefined || amountTo !== undefined) where.amount = {}
+    if (amountFrom !== undefined) where.amount.gte = amountFrom
+    if (amountTo !== undefined) where.amount.lte = amountTo
+    if (remark) where.remark = { contains: remark }
+    if (tags) {
+      const tagList = tags.split(',').map((s: string) => s.trim()).filter(Boolean)
+      if (tagList.length > 0) {
+        where.AND = tagList.map((tag) => ({
+          tags: { contains: tag.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_') },
+        }))
+      }
+    }
+    if (typeFilter) {
+      if (typeFilter.length === 1) where.type = typeFilter[0]
+      else where.type = { in: typeFilter }
+    }
+
+    const records = await prisma.record.findMany({
+      where,
+      select: { amount: true, categoryCode: true, type: true },
+    })
+
+    // 按分类分组
+    const categoryMap: Record<string, { amount: number; type: string }> = {}
+    for (const r of records) {
+      const key = r.categoryCode || '__uncategorized__'
+      if (!categoryMap[key]) categoryMap[key] = { amount: 0, type: r.type }
+      categoryMap[key].amount += r.amount
+    }
+
+    // 关联分类名称（从 Dictionary 表查找）
+    const allCodes = Object.keys(categoryMap).filter((k) => k !== '__uncategorized__')
+    const dictionaries = allCodes.length > 0
+      ? await prisma.dictionary.findMany({
+          where: { code: { in: allCodes } },
+          select: { code: true, label: true },
+        })
+      : []
+
+    const codeLabelMap: Record<string, string> = {}
+    for (const d of dictionaries) {
+      if (!codeLabelMap[d.code]) codeLabelMap[d.code] = d.label
+    }
+
+    return Object.entries(categoryMap).map(([code, data]) => ({
+      categoryCode: code === '__uncategorized__' ? null : code,
+      categoryName: code === '__uncategorized__' ? '未分类' : (codeLabelMap[code] || code),
+      amount: data.amount,
+      type: data.type,
+    }))
+  })
+
+  // 月度趋势：按月份汇总收支
+  app.get('/monthly-trend', async (req, reply) => {
+    const parsed = monthlyTrendSchema.safeParse(req.query)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: parsed.error.issues[0].message })
+    }
+    const { bookId, dateFrom, dateTo, accountId, categoryCode, ownerId, tags } = parsed.data
+    const userId = (req as any).user.id as string
+
+    try {
+      await assertIsMember(bookId, userId)
+    } catch (e: any) {
+      return reply.status(e.statusCode || 403).send({ message: e.message })
+    }
+
+    const where: any = { accountBookId: bookId }
+    if (accountId) {
+      const ids = accountId.split(',').map((s: string) => s.trim()).filter(Boolean)
+      if (ids.length === 1) where.accountId = ids[0]
+      else if (ids.length > 1) where.accountId = { in: ids }
+    }
+    if (categoryCode) {
+      const ids = categoryCode.split(',').map((s: string) => s.trim()).filter(Boolean)
+      if (ids.length === 1) where.categoryCode = ids[0]
+      else if (ids.length > 1) where.categoryCode = { in: ids }
+    }
+    if (ownerId) {
+      const ids = ownerId.split(',').map((s: string) => s.trim()).filter(Boolean)
+      if (ids.length === 1) where.ownerId = ids[0]
+      else if (ids.length > 1) where.ownerId = { in: ids }
+    }
+    if (dateFrom || dateTo) where.date = {}
+    if (dateFrom) where.date.gte = new Date(dateFrom)
+    if (dateTo) where.date.lte = new Date(dateTo + 'T23:59:59.999Z')
+    if (tags) {
+      const tagList = tags.split(',').map((s: string) => s.trim()).filter(Boolean)
+      if (tagList.length > 0) {
+        where.AND = tagList.map((tag) => ({
+          tags: { contains: tag.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_') },
+        }))
+      }
+    }
+    where.type = { in: ['INCOME', 'EXPENSE'] }
+
+    const records = await prisma.record.findMany({
+      where,
+      select: { amount: true, type: true, date: true },
+      orderBy: { date: 'asc' },
+    })
+
+    // 按月份分组
+    const monthMap: Record<string, { income: number; expense: number }> = {}
+    for (const r of records) {
+      const month = r.date.toISOString().slice(0, 7) // "2024-01"
+      if (!monthMap[month]) monthMap[month] = { income: 0, expense: 0 }
+      if (r.type === 'INCOME') monthMap[month].income += r.amount
+      else if (r.type === 'EXPENSE') monthMap[month].expense += r.amount
+    }
+
+    // 补全月份范围
+    if (dateFrom && dateTo) {
+      const start = new Date(dateFrom)
+      const end = new Date(dateTo)
+      const cursor = new Date(start.getFullYear(), start.getMonth(), 1)
+      while (cursor <= end) {
+        const month = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`
+        if (!monthMap[month]) monthMap[month] = { income: 0, expense: 0 }
+        cursor.setMonth(cursor.getMonth() + 1)
+      }
+    }
+
+    return Object.entries(monthMap)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([month, data]) => ({ month, ...data }))
   })
 
   // 创建流水

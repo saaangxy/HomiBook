@@ -147,4 +147,35 @@ export const recordApi = {
 
   getTags: (bookId: string) =>
     api.get<string[]>('/api/records/tags?' + new URLSearchParams({ bookId }).toString()),
+
+  categorySummary: (params: {
+    bookId: string
+    type?: string
+    accountId?: string
+    categoryCode?: string
+    dateFrom?: string
+    dateTo?: string
+    ownerId?: string
+    payer?: string
+    amountFrom?: number
+    amountTo?: number
+    remark?: string
+    tags?: string
+  }) => api.get<Array<{ categoryCode: string | null; categoryName: string; amount: number; type: string }>>(
+    '/api/records/category-summary?' + new URLSearchParams(
+      Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))
+    ).toString()),
+
+  monthlyTrend: (params: {
+    bookId: string
+    dateFrom?: string
+    dateTo?: string
+    accountId?: string
+    categoryCode?: string
+    ownerId?: string
+    tags?: string
+  }) => api.get<Array<{ month: string; income: number; expense: number }>>(
+    '/api/records/monthly-trend?' + new URLSearchParams(
+      Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))
+    ).toString()),
 }

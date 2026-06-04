@@ -56,3 +56,28 @@ export const calendarQuerySchema = z.object({
   year: z.coerce.number().int(),
   month: z.coerce.number().int().min(1).max(12),
 })
+
+export const categorySummarySchema = z.object({
+  bookId: z.string().min(1),
+  type: z.string().optional(),
+  accountId: z.string().optional(),
+  categoryCode: z.string().optional(),
+  dateFrom: z.string().optional(),
+  dateTo: z.string().optional(),
+  ownerId: z.string().optional(),
+  payer: z.string().optional(),
+  amountFrom: z.coerce.number().optional(),
+  amountTo: z.coerce.number().optional(),
+  remark: z.string().optional(),
+  tags: z.string().optional(),
+})
+
+export const monthlyTrendSchema = z.object({
+  bookId: z.string().min(1),
+  dateFrom: z.string().optional(),
+  dateTo: z.string().optional(),
+  accountId: z.string().optional(),
+  categoryCode: z.string().optional(),
+  ownerId: z.string().optional(),
+  tags: z.string().optional(),
+})

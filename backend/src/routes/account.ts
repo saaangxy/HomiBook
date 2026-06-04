@@ -5,6 +5,7 @@ import {
   createAccountSchema,
   updateAccountSchema,
   createAdjustmentSchema,
+  balanceHistorySchema,
 } from '../schemas/account.js'
 
 async function assertIsMember(bookId: string, userId: string) {
@@ -180,6 +181,132 @@ export async function accountRoutes(app: FastifyInstance) {
     }
     delete (result as any).owner
     return sanitizeAccount(result, userId)
+  })
+
+  // 账户余额历史：按日或按月返回余额变化
+  app.get('/balance-history', async (req, reply) => {
+    const parsed = balanceHistorySchema.safeParse(req.query)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: parsed.error.issues[0].message })
+    }
+    const { bookId, accountIds, granularity, dateFrom, dateTo } = parsed.data
+    const userId = (req as any).user.id as string
+
+    try {
+      await assertIsMember(bookId, userId)
+    } catch (e: any) {
+      return reply.status(e.statusCode || 403).send({ message: e.message })
+    }
+
+    // 查询账户
+    const accountFilter = accountIds
+      ? accountIds.split(',').map((s: string) => s.trim()).filter(Boolean)
+      : null
+
+    const accounts = await prisma.account.findMany({
+      where: {
+        accountBookId: bookId,
+        ...(accountFilter ? { id: { in: accountFilter } } : {}),
+      },
+      orderBy: { createdAt: 'asc' },
+    })
+
+    const startDate = new Date(dateFrom)
+    startDate.setUTCHours(0, 0, 0, 0)
+    const endDate = new Date(dateTo)
+    endDate.setUTCHours(23, 59, 59, 999)
+
+    const result = []
+
+    for (const account of accounts) {
+      // 找到 dateFrom 之前最近的余额调整
+      const latestAdjustment = await prisma.balanceAdjustment.findFirst({
+        where: { accountId: account.id, date: { lt: startDate } },
+        orderBy: { date: 'desc' },
+      })
+
+      const baseBalance = latestAdjustment?.balanceAfter ?? account.initialBalance ?? 0
+      const baseDate = latestAdjustment?.date ?? null
+
+      // 查询 baseDate 之后、startDate 之前的记录
+      const preRecords = await prisma.record.findMany({
+        where: {
+          OR: [
+            { accountId: account.id },
+            { fromAccountId: account.id },
+            { toAccountId: account.id },
+          ],
+          date: {
+            ...(baseDate ? { gt: baseDate } : {}),
+            lt: startDate,
+          },
+        },
+        select: { type: true, amount: true, accountId: true, fromAccountId: true, toAccountId: true },
+      })
+
+      let runningBalance = baseBalance
+      for (const r of preRecords) {
+        if (r.accountId === account.id && r.type === 'INCOME') runningBalance += r.amount
+        else if (r.accountId === account.id && r.type === 'EXPENSE') runningBalance -= r.amount
+        else if (r.fromAccountId === account.id && r.type === 'TRANSFER') runningBalance -= r.amount
+        else if (r.toAccountId === account.id && r.type === 'TRANSFER') runningBalance += r.amount
+      }
+
+      // 查询范围内的记录
+      const rangeRecords = await prisma.record.findMany({
+        where: {
+          OR: [
+            { accountId: account.id },
+            { fromAccountId: account.id },
+            { toAccountId: account.id },
+          ],
+          date: { gte: startDate, lte: endDate },
+        },
+        select: { type: true, amount: true, date: true, accountId: true, fromAccountId: true, toAccountId: true },
+        orderBy: { date: 'asc' },
+      })
+
+      // 按粒度分组
+      const periodMap: Record<string, number> = {}
+      for (const r of rangeRecords) {
+        const key = granularity === 'monthly'
+          ? r.date.toISOString().slice(0, 7)
+          : r.date.toISOString().slice(0, 10)
+        if (!periodMap[key]) periodMap[key] = 0
+        if (r.accountId === account.id && r.type === 'INCOME') periodMap[key] += r.amount
+        else if (r.accountId === account.id && r.type === 'EXPENSE') periodMap[key] -= r.amount
+        else if (r.fromAccountId === account.id && r.type === 'TRANSFER') periodMap[key] -= r.amount
+        else if (r.toAccountId === account.id && r.type === 'TRANSFER') periodMap[key] += r.amount
+      }
+
+      // 生成日期序列
+      const balances: { date: string; balance: number }[] = []
+      const cursor = new Date(startDate)
+      while (cursor <= endDate) {
+        const key = granularity === 'monthly'
+          ? `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`
+          : cursor.toISOString().slice(0, 10)
+
+        if (periodMap[key] !== undefined) {
+          runningBalance += periodMap[key]
+        }
+        balances.push({ date: key, balance: Math.round(runningBalance * 100) / 100 })
+
+        if (granularity === 'monthly') {
+          cursor.setMonth(cursor.getMonth() + 1)
+        } else {
+          cursor.setDate(cursor.getDate() + 1)
+        }
+      }
+
+      result.push({
+        accountId: account.id,
+        accountName: account.name,
+        balances,
+      })
+    }
+
+    return result
   })
 
   // 获取单个账户详情
