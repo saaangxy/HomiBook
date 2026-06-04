@@ -178,4 +178,35 @@ export const recordApi = {
     '/api/records/monthly-trend?' + new URLSearchParams(
       Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))
     ).toString()),
+
+  categoryTrend: (params: {
+    bookId: string
+    type?: string
+    granularity: 'monthly' | 'daily'
+    year: number
+    month?: number
+    accountId?: string
+    ownerId?: string
+    tags?: string
+  }) => api.get<{
+    periods: string[]
+    categories: Array<{ code: string | null; name: string; data: number[] }>
+  }>('/api/records/category-trend?' + new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))
+  ).toString()),
+
+  groupSummary: (params: {
+    bookId: string
+    type: string
+    groupBy: 'category' | 'ownerId' | 'accountId'
+    dateFrom?: string
+    dateTo?: string
+    accountId?: string
+    ownerId?: string
+    categoryCode?: string
+    tags?: string
+  }) => api.get<Array<{ key: string; label: string; amount: number }>>(
+    '/api/records/group-summary?' + new URLSearchParams(
+      Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))
+    ).toString()),
 }

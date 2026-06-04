@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { prisma } from '../app.js'
 import { authenticate } from '../middleware/auth.js'
-import { createRecordSchema, updateRecordSchema, listRecordsSchema, calendarQuerySchema, categorySummarySchema, monthlyTrendSchema } from '../schemas/record.js'
+import { createRecordSchema, updateRecordSchema, listRecordsSchema, calendarQuerySchema, categorySummarySchema, monthlyTrendSchema, categoryTrendSchema, groupSummarySchema } from '../schemas/record.js'
 import path from 'path'
 import fs from 'fs'
 import { randomUUID } from 'crypto'
@@ -473,6 +473,204 @@ export async function recordRoutes(app: FastifyInstance) {
     return Object.entries(monthMap)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([month, data]) => ({ month, ...data }))
+  })
+
+  // 分类趋势：按时间周期 + 分类维度聚合，用于堆叠柱状图
+  app.get('/category-trend', async (req, reply) => {
+    const parsed = categoryTrendSchema.safeParse(req.query)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: parsed.error.issues[0].message })
+    }
+    const { bookId, type, granularity, year, month, accountId, ownerId, tags } = parsed.data
+    const userId = (req as any).user.id as string
+
+    try {
+      await assertIsMember(bookId, userId)
+    } catch (e: any) {
+      return reply.status(e.statusCode || 403).send({ message: e.message })
+    }
+
+    const typeFilter = type.split(',').map((s: string) => s.trim()).filter(Boolean)
+    const where: any = { accountBookId: bookId, type: typeFilter.length === 1 ? typeFilter[0] : { in: typeFilter } }
+    if (accountId) {
+      const ids = accountId.split(',').map((s: string) => s.trim()).filter(Boolean)
+      if (ids.length > 0) where.accountId = ids.length === 1 ? ids[0] : { in: ids }
+    }
+    if (ownerId) {
+      const ids = ownerId.split(',').map((s: string) => s.trim()).filter(Boolean)
+      if (ids.length > 0) where.ownerId = ids.length === 1 ? ids[0] : { in: ids }
+    }
+    if (tags) {
+      const tagList = tags.split(',').map((s: string) => s.trim()).filter(Boolean)
+      if (tagList.length > 0) {
+        where.AND = tagList.map((tag) => ({
+          tags: { contains: tag.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_') },
+        }))
+      }
+    }
+
+    // 时间范围
+    if (granularity === 'monthly') {
+      where.date = {
+        gte: new Date(Date.UTC(year, 0, 1)),
+        lte: new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999)),
+      }
+    } else if (month) {
+      where.date = {
+        gte: new Date(Date.UTC(year, month - 1, 1)),
+        lte: new Date(Date.UTC(year, month, 0, 23, 59, 59, 999)),
+      }
+    }
+
+    const records = await prisma.record.findMany({
+      where,
+      select: { amount: true, categoryCode: true, date: true },
+      orderBy: { date: 'asc' },
+    })
+
+    // 按周期+分类分组
+    const periodKey = granularity === 'monthly'
+      ? (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      : (d: Date) => d.toISOString().slice(0, 10)
+
+    const periodMap: Record<string, Record<string, number>> = {}
+    const allCategories = new Set<string>()
+
+    for (const r of records) {
+      const period = periodKey(new Date(r.date))
+      const cat = r.categoryCode || '__uncategorized__'
+      allCategories.add(cat)
+      if (!periodMap[period]) periodMap[period] = {}
+      periodMap[period][cat] = (periodMap[period][cat] || 0) + r.amount
+    }
+
+    // 查询分类名称
+    const catCodes = Array.from(allCategories).filter((c) => c !== '__uncategorized__')
+    const dictionaries = catCodes.length > 0
+      ? await prisma.dictionary.findMany({ where: { code: { in: catCodes } }, select: { code: true, label: true } })
+      : []
+    const labelMap: Record<string, string> = {}
+    for (const d of dictionaries) labelMap[d.code] = d.label
+
+    // 生成所有周期（补全）
+    const periods: string[] = []
+    if (granularity === 'monthly') {
+      for (let m = 0; m < 12; m++) {
+        periods.push(`${year}-${String(m + 1).padStart(2, '0')}`)
+      }
+    } else if (month) {
+      const daysInMonth = new Date(year, month, 0).getDate()
+      for (let d = 1; d <= daysInMonth; d++) {
+        periods.push(`${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`)
+      }
+    } else {
+      periods.push(...Object.keys(periodMap).sort())
+    }
+
+    const catList = Array.from(allCategories).sort()
+
+    return {
+      periods,
+      categories: catList.map((code) => ({
+        code: code === '__uncategorized__' ? null : code,
+        name: code === '__uncategorized__' ? '未分类' : (labelMap[code] || code),
+        data: periods.map((p) => periodMap[p]?.[code] || 0),
+      })),
+    }
+  })
+
+  // 分组汇总：按指定维度聚合
+  app.get('/group-summary', async (req, reply) => {
+    const parsed = groupSummarySchema.safeParse(req.query)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: parsed.error.issues[0].message })
+    }
+    const { bookId, type, groupBy, dateFrom, dateTo, accountId, ownerId, categoryCode, tags } = parsed.data
+    const userId = (req as any).user.id as string
+
+    try {
+      await assertIsMember(bookId, userId)
+    } catch (e: any) {
+      return reply.status(e.statusCode || 403).send({ message: e.message })
+    }
+
+    const where: any = { accountBookId: bookId, type }
+    if (accountId) {
+      const ids = accountId.split(',').map((s: string) => s.trim()).filter(Boolean)
+      if (ids.length > 0) where.accountId = ids.length === 1 ? ids[0] : { in: ids }
+    }
+    if (ownerId) {
+      const ids = ownerId.split(',').map((s: string) => s.trim()).filter(Boolean)
+      if (ids.length > 0) where.ownerId = ids.length === 1 ? ids[0] : { in: ids }
+    }
+    if (categoryCode) {
+      const ids = categoryCode.split(',').map((s: string) => s.trim()).filter(Boolean)
+      if (ids.length > 0) where.categoryCode = ids.length === 1 ? ids[0] : { in: ids }
+    }
+    if (dateFrom || dateTo) where.date = {}
+    if (dateFrom) where.date.gte = new Date(dateFrom)
+    if (dateTo) where.date.lte = new Date(dateTo + 'T23:59:59.999Z')
+    if (tags) {
+      const tagList = tags.split(',').map((s: string) => s.trim()).filter(Boolean)
+      if (tagList.length > 0) {
+        where.AND = tagList.map((tag) => ({
+          tags: { contains: tag.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_') },
+        }))
+      }
+    }
+
+    const records = await prisma.record.findMany({
+      where,
+      select: { amount: true, categoryCode: true, ownerId: true, accountId: true },
+    })
+
+    // 按 groupBy 聚合
+    const groupMap: Record<string, number> = {}
+    for (const r of records) {
+      let key: string
+      if (groupBy === 'category') {
+        key = r.categoryCode || '__uncategorized__'
+      } else if (groupBy === 'ownerId') {
+        key = r.ownerId
+      } else {
+        key = r.accountId
+      }
+      groupMap[key] = (groupMap[key] || 0) + r.amount
+    }
+
+    // 补充标签信息
+    const keys = Object.keys(groupMap)
+    let labelMap: Record<string, string> = {}
+
+    if (groupBy === 'category') {
+      const catCodes = keys.filter((k) => k !== '__uncategorized__')
+      if (catCodes.length > 0) {
+        const dicts = await prisma.dictionary.findMany({
+          where: { code: { in: catCodes } },
+          select: { code: true, label: true },
+        })
+        for (const d of dicts) labelMap[d.code] = d.label
+      }
+      labelMap['__uncategorized__'] = '未分类'
+    } else if (groupBy === 'ownerId') {
+      const users = await prisma.user.findMany({
+        where: { id: { in: keys } },
+        select: { id: true, name: true, email: true },
+      })
+      for (const u of users) labelMap[u.id] = u.name || u.email || u.id
+    } else {
+      const accts = await prisma.account.findMany({
+        where: { id: { in: keys } },
+        select: { id: true, name: true },
+      })
+      for (const a of accts) labelMap[a.id] = a.name
+    }
+
+    return Object.entries(groupMap).map(([key, amount]) => ({
+      key,
+      label: labelMap[key] || key,
+      amount,
+    }))
   })
 
   // 创建流水

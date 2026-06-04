@@ -81,3 +81,26 @@ export const monthlyTrendSchema = z.object({
   ownerId: z.string().optional(),
   tags: z.string().optional(),
 })
+
+export const categoryTrendSchema = z.object({
+  bookId: z.string().min(1),
+  type: z.string().default('EXPENSE'),
+  granularity: z.enum(['monthly', 'daily']),
+  year: z.coerce.number().int(),
+  month: z.coerce.number().int().min(1).max(12).optional(),
+  accountId: z.string().optional(),
+  ownerId: z.string().optional(),
+  tags: z.string().optional(),
+})
+
+export const groupSummarySchema = z.object({
+  bookId: z.string().min(1),
+  type: z.string().min(1),
+  groupBy: z.enum(['category', 'ownerId', 'accountId']),
+  dateFrom: z.string().optional(),
+  dateTo: z.string().optional(),
+  accountId: z.string().optional(),
+  ownerId: z.string().optional(),
+  categoryCode: z.string().optional(),
+  tags: z.string().optional(),
+})
