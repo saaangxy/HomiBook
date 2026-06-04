@@ -481,7 +481,7 @@ export async function recordRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.status(400).send({ message: parsed.error.issues[0].message })
     }
-    const { bookId, type, granularity, year, month, accountId, ownerId, tags } = parsed.data
+    const { bookId, type, granularity, year, month, dateFrom, dateTo, accountId, ownerId, tags } = parsed.data
     const userId = (req as any).user.id as string
 
     try {
@@ -509,13 +509,17 @@ export async function recordRoutes(app: FastifyInstance) {
       }
     }
 
-    // 时间范围
-    if (granularity === 'monthly') {
+    // 时间范围：dateFrom/dateTo 优先
+    if (dateFrom || dateTo) {
+      where.date = {}
+      if (dateFrom) where.date.gte = new Date(dateFrom)
+      if (dateTo) where.date.lte = new Date(dateTo + 'T23:59:59.999Z')
+    } else if (granularity === 'monthly' && year) {
       where.date = {
         gte: new Date(Date.UTC(year, 0, 1)),
         lte: new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999)),
       }
-    } else if (month) {
+    } else if (month && year) {
       where.date = {
         gte: new Date(Date.UTC(year, month - 1, 1)),
         lte: new Date(Date.UTC(year, month, 0, 23, 59, 59, 999)),
@@ -554,11 +558,15 @@ export async function recordRoutes(app: FastifyInstance) {
 
     // 生成所有周期（补全）
     const periods: string[] = []
-    if (granularity === 'monthly') {
+    if (dateFrom || dateTo) {
+      // 自由日期范围：根据实际数据生成周期
+      const keys = Object.keys(periodMap).sort()
+      periods.push(...keys)
+    } else if (granularity === 'monthly' && year) {
       for (let m = 0; m < 12; m++) {
         periods.push(`${year}-${String(m + 1).padStart(2, '0')}`)
       }
-    } else if (month) {
+    } else if (month && year) {
       const daysInMonth = new Date(year, month, 0).getDate()
       for (let d = 1; d <= daysInMonth; d++) {
         periods.push(`${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`)

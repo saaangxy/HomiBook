@@ -183,8 +183,10 @@ export const recordApi = {
     bookId: string
     type?: string
     granularity: 'monthly' | 'daily'
-    year: number
+    year?: number
     month?: number
+    dateFrom?: string
+    dateTo?: string
     accountId?: string
     ownerId?: string
     tags?: string

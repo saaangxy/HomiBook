@@ -164,8 +164,10 @@ export function StatsTimeView({ bookId, mode }: Props) {
           bookId,
           type: 'EXPENSE',
           granularity: mode === 'yearly' ? 'monthly' : 'daily',
-          year: mode === 'free' ? now.year() : year,
-          month: mode === 'monthly' || mode === 'free' ? (mode === 'free' ? now.month() + 1 : month) : undefined,
+          year: mode === 'free' ? undefined : year,
+          month: mode === 'monthly' ? month : undefined,
+          dateFrom: mode === 'free' ? params.dateFrom : undefined,
+          dateTo: mode === 'free' ? params.dateTo : undefined,
           accountId: params.accountId,
           ownerId: params.ownerId,
         }),
@@ -181,7 +183,7 @@ export function StatsTimeView({ bookId, mode }: Props) {
   }, [bookId, mode, year, month, searchParams, searched])
 
   useEffect(() => {
-    if (mode === 'free') return
+    if (mode === 'free' && !searched) return
     loadData()
   }, [loadData])
 
@@ -282,7 +284,7 @@ export function StatsTimeView({ bookId, mode }: Props) {
               <Label className="text-xs text-muted-foreground mb-1 block">结束日期</Label>
               <DatePicker value={freeDateTo} onChange={setFreeDateTo} />
             </div>
-            <div>
+            <div className="min-w-36">
               <Label className="text-xs text-muted-foreground mb-1 block">账户</Label>
               <MultiSelect
                 items={accounts.filter((a) => a.status === 'ACTIVE').map((a) => ({ value: a.id, label: a.name }))}
@@ -291,7 +293,7 @@ export function StatsTimeView({ bookId, mode }: Props) {
                 placeholder="全部"
               />
             </div>
-            <div>
+            <div className="min-w-36">
               <Label className="text-xs text-muted-foreground mb-1 block">成员</Label>
               <MultiSelect
                 items={users.map((u) => ({ value: u.id, label: u.name || u.email || u.id }))}
