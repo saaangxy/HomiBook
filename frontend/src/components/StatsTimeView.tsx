@@ -3,17 +3,22 @@ import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { MultiSelect } from '@/components/ui/multi-select'
 import { DatePicker } from '@/components/ui/date-picker'
-import { recordApi, type RecordSummary } from '@/api/record'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
+} from '@/components/ui/table'
+import { recordApi, type RecordSummary, type RecordItem } from '@/api/record'
 import { accountApi, type AccountItem } from '@/api/account'
 import { adminApi, type AdminUser } from '@/api/admin'
 import { AnalysisPanel } from './AnalysisPanel'
-import { BarChart3, Search } from 'lucide-react'
+import { BarChart3, Search, X, List } from 'lucide-react'
 import dayjs from 'dayjs'
 
 function formatMoney(amount: number): string {
@@ -65,8 +70,8 @@ function buildRadarOption(metrics: { name: string; value: number }[]): EChartsOp
     tooltip: { trigger: 'item' as const },
     legend: { show: false },
     radar: {
-      center: ['50%', '55%'],
-      radius: '70%',
+      center: ['50%', '50%'],
+      radius: '55%',
       indicator: metrics.map((m) => ({ name: m.name, max: 100 })),
       axisName: { color: '#cbd5e1', fontSize: 11 },
       splitArea: { areaStyle: { color: ['transparent'] } },
@@ -114,8 +119,14 @@ export function StatsTimeView({ bookId, mode }: Props) {
   const [summary, setSummary] = useState<RecordSummary>({ income: 0, expense: 0, transfer: 0, netIncome: 0 })
   const [loading, setLoading] = useState(false)
   const [periods, setPeriods] = useState<string[]>([])
-  const [categories, setCategories] = useState<{ name: string; data: number[] }[]>([])
+  const [categories, setCategories] = useState<{ code: string | null; name: string; data: number[] }[]>([])
   const [radarMetrics, setRadarMetrics] = useState<{ name: string; value: number }[]>([])
+
+  // 堆叠柱状图选中
+  const [barSelected, setBarSelected] = useState<{ code: string | null; name: string; period: string } | null>(null)
+  const [barDetailOpen, setBarDetailOpen] = useState(false)
+  const [barDetailRecords, setBarDetailRecords] = useState<RecordItem[]>([])
+  const [barDetailLoading, setBarDetailLoading] = useState(false)
 
   // 基础数据
   const [accounts, setAccounts] = useState<AccountItem[]>([])
@@ -129,6 +140,7 @@ export function StatsTimeView({ bookId, mode }: Props) {
   const loadData = useCallback(async () => {
     if (!bookId) return
     setLoading(true)
+    setBarSelected(null)
     try {
       let params: { dateFrom?: string; dateTo?: string; accountId?: string; ownerId?: string }
 
@@ -183,9 +195,43 @@ export function StatsTimeView({ bookId, mode }: Props) {
     setSearched(true)
   }
 
-  const filterStr = mode === 'free'
-    ? (searchParams.dateFrom ? `dateFrom=${searchParams.dateFrom}` : '') + (searchParams.dateTo ? `&dateTo=${searchParams.dateTo}` : '')
-    : ''
+  const handleBarClick = (params: any) => {
+    if (!params || !params.seriesName || !params.name) return
+    const cat = categories.find((c) => c.name === params.seriesName)
+    setBarSelected({ code: cat?.code ?? null, name: params.seriesName, period: params.name })
+  }
+
+  const handleBarViewDetail = async () => {
+    if (!barSelected || !bookId) return
+    setBarDetailLoading(true)
+    try {
+      let dateFrom: string
+      let dateTo: string
+      // barSelected.period: yearly mode → "2024-01", monthly/free mode → "2024-01-05"
+      if (barSelected.period.length === 7) {
+        // 月度粒度: "2024-01"
+        const [y, m] = barSelected.period.split('-').map(Number)
+        dateFrom = `${y}-${String(m).padStart(2, '0')}-01`
+        const daysInMonth = new Date(y, m, 0).getDate()
+        dateTo = `${y}-${String(m).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`
+      } else {
+        dateFrom = barSelected.period
+        dateTo = barSelected.period
+      }
+      const res = await recordApi.list({
+        bookId,
+        page: 1,
+        pageSize: 100,
+        type: 'EXPENSE',
+        dateFrom,
+        dateTo,
+        categoryCode: barSelected.code ?? undefined,
+      })
+      setBarDetailRecords(res.records)
+      setBarDetailOpen(true)
+    } catch { /* ignore */ }
+    finally { setBarDetailLoading(false) }
+  }
 
   return (
     <div>
@@ -261,25 +307,6 @@ export function StatsTimeView({ bookId, mode }: Props) {
         )}
       </div>
 
-      {/* 汇总卡片 */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        {([
-          { label: '总收入', value: summary.income, color: 'text-[#22c55e]' },
-          { label: '总支出', value: summary.expense, color: 'text-[#ef4444]' },
-          { label: '净收入', value: summary.netIncome, color: summary.netIncome >= 0 ? 'text-[#22c55e]' : 'text-[#ef4444]' },
-          { label: '转账总额', value: summary.transfer, color: 'text-[#3b82f6]' },
-        ] as const).map(({ label, value, color }) => (
-          <Card key={label} className="rounded-xl">
-            <CardContent className="p-4 text-center">
-              <p className="text-xs text-muted-foreground mb-1">{label}</p>
-              <p className={`text-lg font-bold tabular-nums ${color}`}>
-                {loading ? '...' : formatMoney(value)}
-              </p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
       {/* 自由筛选未搜索提示 */}
       {mode === 'free' && !searched && (
         <Card className="rounded-xl mb-6">
@@ -296,6 +323,53 @@ export function StatsTimeView({ bookId, mode }: Props) {
           <div className="flex items-center justify-center py-20"><Spinner /></div>
         ) : (
           <>
+            {/* 汇总卡片 + 雷达图 左右布局 */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+              {/* 左侧：收支汇总 2x2 */}
+              <div className="lg:col-span-2">
+                <div className="grid grid-cols-2 gap-3 h-full">
+                  {([
+                    { label: '总收入', value: summary.income, color: 'text-[#22c55e]' },
+                    { label: '总支出', value: summary.expense, color: 'text-[#ef4444]' },
+                    { label: '净收入', value: summary.netIncome, color: summary.netIncome >= 0 ? 'text-[#22c55e]' : 'text-[#ef4444]' },
+                    { label: '转账总额', value: summary.transfer, color: 'text-[#3b82f6]' },
+                  ] as const).map(({ label, value, color }) => (
+                    <Card key={label} className="rounded-xl flex items-center justify-center">
+                      <CardContent className="p-3 text-center">
+                        <p className="text-sm text-muted-foreground">{label}</p>
+                        <p className={`text-lg font-bold tabular-nums mt-0.5 ${color}`}>
+                          {loading ? '...' : formatMoney(value)}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+              {/* 右侧：雷达图 */}
+              <Card className="rounded-xl overflow-hidden">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <BarChart3 size={18} className="text-[#f97316]" />
+                    <h3 className="text-sm font-semibold">财务健康评估</h3>
+                  </div>
+                  <div style={{ height: 240 }}>
+                    <ReactECharts option={buildRadarOption(radarMetrics)} style={{ width: '100%', height: '100%' }} />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* 分析面板 */}
+            <div className="mb-6">
+              <AnalysisPanel
+                bookId={bookId}
+                dateFrom={mode === 'free' ? searchParams.dateFrom : (mode === 'yearly' ? `${year}-01-01` : `${year}-${String(month).padStart(2, '0')}-01`)}
+                dateTo={mode === 'free' ? searchParams.dateTo : (mode === 'yearly' ? `${year}-12-31` : `${year}-${String(month).padStart(2, '0')}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`)}
+                accountId={mode === 'free' ? searchParams.accountId : undefined}
+                ownerId={mode === 'free' ? searchParams.ownerId : undefined}
+              />
+            </div>
+
             {/* 堆叠柱状图 */}
             <Card className="rounded-xl overflow-hidden mb-6">
               <CardContent className="p-4">
@@ -305,40 +379,99 @@ export function StatsTimeView({ bookId, mode }: Props) {
                     {mode === 'yearly' ? '各月分类支出构成' : '每日分类支出构成'}
                   </h3>
                 </div>
-                <div style={{ height: 400 }}>
+                <div style={{ height: 400, cursor: 'pointer' }}>
                   {periods.length === 0 ? (
                     <div className="flex items-center justify-center h-full text-xs text-muted-foreground">暂无数据</div>
                   ) : (
-                    <ReactECharts option={buildStackedBar(periods, categories)} style={{ width: '100%', height: '100%' }} />
+                    <ReactECharts
+                      option={buildStackedBar(periods, categories)}
+                      style={{ width: '100%', height: '100%' }}
+                      onEvents={{ click: handleBarClick }}
+                    />
                   )}
                 </div>
+
+                {/* 选中柱段信息 */}
+                {barSelected && (
+                  <div className="mt-3 p-3 rounded-lg bg-muted/50 border border-border">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs text-muted-foreground">
+                        {barSelected.period} · {barSelected.name}
+                      </span>
+                      <button onClick={() => setBarSelected(null)} className="hover:text-[#ef4444]">
+                        <X size={14} />
+                      </button>
+                    </div>
+                    <span className="text-sm font-bold text-[#f97316]">
+                      {formatMoney(
+                        categories
+                          .find((c) => c.name === barSelected.name)
+                          ?.data[periods.indexOf(barSelected.period)] ?? 0
+                      )}
+                    </span>
+                    <div className="mt-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs w-full"
+                        onClick={handleBarViewDetail}
+                        disabled={barDetailLoading}
+                      >
+                        <List size={12} /> {barDetailLoading ? '加载中...' : '查看详情'}
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
-
-            {/* 雷达图 */}
-            <Card className="rounded-xl overflow-hidden mb-6">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <BarChart3 size={18} className="text-[#f97316]" />
-                  <h3 className="text-sm font-semibold">财务健康评估</h3>
-                </div>
-                <div style={{ height: 350, maxWidth: 500, margin: '0 auto' }}>
-                  <ReactECharts option={buildRadarOption(radarMetrics)} style={{ width: '100%', height: '100%' }} />
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* 分析面板 */}
-            <AnalysisPanel
-              bookId={bookId}
-              dateFrom={mode === 'free' ? searchParams.dateFrom : (mode === 'yearly' ? `${year}-01-01` : `${year}-${String(month).padStart(2, '0')}-01`)}
-              dateTo={mode === 'free' ? searchParams.dateTo : (mode === 'yearly' ? `${year}-12-31` : `${year}-${String(month).padStart(2, '0')}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`)}
-              accountId={mode === 'free' ? searchParams.accountId : undefined}
-              ownerId={mode === 'free' ? searchParams.ownerId : undefined}
-            />
           </>
         )
       )}
+
+      {/* 堆叠柱状图详情弹窗 */}
+      <Dialog open={barDetailOpen} onOpenChange={setBarDetailOpen}>
+        <DialogContent className="max-w-3xl max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle className="text-sm">
+              {barSelected?.period} · {barSelected?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="overflow-auto max-h-[60vh]">
+            {barDetailRecords.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">暂无数据</p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-xs whitespace-nowrap">日期</TableHead>
+                    <TableHead className="text-xs whitespace-nowrap">账户</TableHead>
+                    <TableHead className="text-xs whitespace-nowrap">分类</TableHead>
+                    <TableHead className="text-xs whitespace-nowrap">归属人</TableHead>
+                    <TableHead className="text-xs whitespace-nowrap">交易方</TableHead>
+                    <TableHead className="text-xs whitespace-nowrap">备注</TableHead>
+                    <TableHead className="text-xs whitespace-nowrap text-right">金额</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {barDetailRecords.map((r) => (
+                    <TableRow key={r.id}>
+                      <TableCell className="text-xs whitespace-nowrap py-2">{r.date?.slice(0, 10)}</TableCell>
+                      <TableCell className="text-xs whitespace-nowrap py-2">{r.account?.name}</TableCell>
+                      <TableCell className="text-xs whitespace-nowrap py-2">{r.categoryCode || '-'}</TableCell>
+                      <TableCell className="text-xs whitespace-nowrap py-2">{r.ownerName}</TableCell>
+                      <TableCell className="text-xs whitespace-nowrap py-2">{r.payer || '-'}</TableCell>
+                      <TableCell className="text-xs py-2 max-w-[150px] truncate">{r.remark || '-'}</TableCell>
+                      <TableCell className="text-xs whitespace-nowrap py-2 text-right font-bold" style={{ color: r.type === 'INCOME' ? '#22c55e' : r.type === 'EXPENSE' ? '#ef4444' : '#3b82f6' }}>
+                        {formatMoney(r.amount)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
