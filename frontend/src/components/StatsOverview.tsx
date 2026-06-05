@@ -5,6 +5,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Spinner } from '@/components/ui/spinner'
 import { recordApi, type RecordSummary } from '@/api/record'
 import { accountApi } from '@/api/account'
+import { budgetApi } from '@/api/budget'
 import { useBookStore } from '@/stores/book'
 import { TrendingUp, BarChart3, Wallet, Target } from 'lucide-react'
 import dayjs from 'dayjs'
@@ -88,10 +89,31 @@ function buildBalanceOption(dates: string[], series: { name: string; data: numbe
   }
 }
 
+const RADAR_TIPS: Record<string, string> = {
+  '储蓄率': '（收入-支出）/ 收入，反映每月能存下多少钱',
+  '收支平衡': '收入是否大于等于支出，低于100表示入不敷出',
+  '记账覆盖度': '使用的支出分类数 / 10，反映记账的细致程度',
+  '预算执行': '实际支出与预算的符合度，超支越多分数越低',
+  '资金沉淀率': '1 - 转账/总流水，反映资金用于实际收支而非账户间划转的比例',
+}
+
 function buildRadarOption(metrics: { name: string; value: number }[]): EChartsOption {
   return {
     ...chartTextStyle,
-    tooltip: { trigger: 'item' as const },
+    tooltip: {
+      trigger: 'item' as const,
+      backgroundColor: '#1e293b',
+      borderColor: '#334155',
+      textStyle: { color: '#e2e8f0', fontSize: 12 },
+      formatter: (p: any) => {
+        const values: number[] = Array.isArray(p.value) ? p.value : [p.value]
+        let html = `<b>${p.seriesName || ''}</b><br/>`
+        metrics.forEach((m, i) => {
+          html += `${m.name}: ${values[i] ?? '-'} 分<br/>`
+        })
+        return html
+      },
+    },
     legend: { show: false },
     radar: {
       center: ['50%', '55%'],
@@ -108,23 +130,23 @@ function buildRadarOption(metrics: { name: string; value: number }[]): EChartsOp
   }
 }
 
-function computeRadarMetrics(summary: RecordSummary, categoryCount: number, recordCount: number, totalAssets: number): { name: string; value: number }[] {
+function computeRadarMetrics(summary: RecordSummary, categoryCount: number, budgetHealth: number): { name: string; value: number }[] {
   const income = summary.income || 1
   const expense = summary.expense || 0
-  const savingsRate = Math.min(100, Math.max(0, Math.round((income - expense) / income * 100)))
-  const expenseRatio = Math.min(100, Math.max(0, Math.round((1 - expense / (income + expense)) * 100)))
-  const assetAdequacy = Math.min(100, Math.round(totalAssets / Math.max(expense || 1, 1) * 100))
-  const activity = Math.min(100, Math.round(recordCount / 30 * 100))
-  const diversity = Math.min(100, Math.round(categoryCount / 10 * 100))
-  const balance = income > expense ? 100 : Math.min(100, Math.max(0, Math.round(income / Math.max(expense, 1) * 100)))
+  const transfer = summary.transfer || 0
+
+  const savingsRate = Math.min(100, Math.max(0, Math.round(((income - expense) / Math.max(income, 1)) * 100)))
+  const balance = income >= expense ? 100 : Math.min(100, Math.max(0, Math.round((income / Math.max(expense, 1)) * 100)))
+  const coverage = Math.min(100, Math.round((categoryCount / 10) * 100))
+  const totalFlow = income + expense + transfer
+  const retention = totalFlow > 0 ? Math.min(100, Math.max(0, Math.round((1 - transfer / totalFlow) * 100))) : 100
 
   return [
     { name: '储蓄率', value: savingsRate },
-    { name: '收支比', value: expenseRatio },
-    { name: '资产充足度', value: assetAdequacy },
-    { name: '活跃度', value: activity },
-    { name: '分类分散度', value: diversity },
     { name: '收支平衡', value: balance },
+    { name: '记账覆盖度', value: coverage },
+    { name: '预算执行', value: budgetHealth },
+    { name: '资金沉淀率', value: retention },
   ]
 }
 
@@ -159,15 +181,12 @@ export function StatsOverview() {
       const dateTo = now.format('YYYY-MM-DD')
 
       // 并行加载
-      const [summaryData, trendData, accounts, catSummary, recordCount] = await Promise.all([
+      const [summaryData, trendData, accounts, catSummary, budgets] = await Promise.all([
         recordApi.summary({ bookId: currentBookId }),
         recordApi.monthlyTrend({ bookId: currentBookId, dateFrom, dateTo }),
         accountApi.list(currentBookId),
         recordApi.categorySummary({ bookId: currentBookId }),
-        (async () => {
-          const res = await recordApi.list({ bookId: currentBookId, pageSize: 1 })
-          return res.total
-        })(),
+        budgetApi.listFixed({ bookId: currentBookId, year: now.year() }),
       ])
 
       setSummary(summaryData)
@@ -177,7 +196,6 @@ export function StatsOverview() {
 
       // 资产净值趋势：汇总所有账户余额
       const activeAccts = accounts.filter((a) => a.status === 'ACTIVE')
-      const totalAssets = activeAccts.reduce((sum, a) => sum + (a.computedBalance ?? 0), 0)
       const acctIds = activeAccts.map((a) => a.id)
       if (acctIds.length > 0) {
         const hist = await accountApi.balanceHistory({
@@ -214,8 +232,10 @@ export function StatsOverview() {
       }
 
       // 雷达图
-      const catCount = catSummary.length
-      setRadarMetrics(computeRadarMetrics(summaryData, catCount, recordCount, totalAssets))
+      const totalBudgeted = budgets.reduce((s, b) => s + b.amount, 0)
+      const totalActual = budgets.reduce((s, b) => s + b.actualAmount, 0)
+      const budgetHealth = totalBudgeted === 0 ? 100 : Math.max(0, Math.round((1 - Math.max(0, totalActual - totalBudgeted) / totalBudgeted) * 100))
+      setRadarMetrics(computeRadarMetrics(summaryData, catSummary.length, budgetHealth))
     } catch { /* ignore */ }
     finally { setLoading(false) }
   }, [currentBookId])
@@ -315,6 +335,14 @@ export function StatsOverview() {
                 </div>
                 <div style={{ height: 320 }}>
                   <ReactECharts option={buildRadarOption(radarMetrics)} style={{ width: '100%', height: '100%' }} />
+                </div>
+                <div className="mt-3 space-y-1">
+                  {radarMetrics.map((m) => (
+                    <div key={m.name} className="flex items-start gap-1 text-[11px] text-muted-foreground leading-tight">
+                      <span className="font-medium text-foreground whitespace-nowrap">{m.name}:</span>
+                      <span>{RADAR_TIPS[m.name]}</span>
+                    </div>
+                  ))}
                 </div>
               </CardContent>
             </Card>

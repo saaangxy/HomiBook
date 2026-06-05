@@ -66,10 +66,31 @@ function buildStackedBar(periods: string[], categories: { name: string; data: nu
   }
 }
 
+const RADAR_TIPS: Record<string, string> = {
+  '储蓄率': '（收入-支出）/ 收入，反映每月能存下多少钱',
+  '收支平衡': '收入是否大于等于支出，低于100表示入不敷出',
+  '记账覆盖度': '使用的支出分类数 / 10，反映记账的细致程度',
+  '预算执行': '实际支出与预算的符合度，超支越多分数越低',
+  '资金沉淀率': '1 - 转账/总流水，反映资金用于实际收支而非账户间划转的比例',
+}
+
 function buildRadarOption(metrics: { name: string; value: number }[]): EChartsOption {
   return {
     ...chartTextStyle,
-    tooltip: { trigger: 'item' as const },
+    tooltip: {
+      trigger: 'item' as const,
+      backgroundColor: '#1e293b',
+      borderColor: '#334155',
+      textStyle: { color: '#e2e8f0', fontSize: 12 },
+      formatter: (p: any) => {
+        const values: number[] = Array.isArray(p.value) ? p.value : [p.value]
+        let html = `<b>${p.seriesName || ''}</b><br/>`
+        metrics.forEach((m, i) => {
+          html += `${m.name}: ${values[i] ?? '-'} 分<br/>`
+        })
+        return html
+      },
+    },
     legend: { show: false },
     radar: {
       center: ['50%', '50%'],
@@ -208,6 +229,7 @@ export function StatsTimeView({ bookId, mode }: Props) {
   const [barDetailFilterAccountId, setBarDetailFilterAccountId] = useState('')
   const [barDetailFilterOwnerId, setBarDetailFilterOwnerId] = useState('')
   const [barDetailJumpPage, setBarDetailJumpPage] = useState('')
+  const [barDetailTags, setBarDetailTags] = useState('')
 
   // 基础数据
   const [accounts, setAccounts] = useState<AccountItem[]>([])
@@ -315,6 +337,7 @@ export function StatsTimeView({ bookId, mode }: Props) {
         remark: barDetailRemark || undefined,
         amountFrom: barDetailAmountFrom ? Number(barDetailAmountFrom) : undefined,
         amountTo: barDetailAmountTo ? Number(barDetailAmountTo) : undefined,
+        tags: barDetailTags || undefined,
       })
       setBarDetailRecords(res.records)
       setBarDetailPage(res.page)
@@ -331,6 +354,7 @@ export function StatsTimeView({ bookId, mode }: Props) {
     setBarDetailAmountTo('')
     setBarDetailFilterAccountId('')
     setBarDetailFilterOwnerId('')
+    setBarDetailTags('')
     setBarDetailPage(1)
     setBarDetailOpen(true)
     loadBarDetail(1)
@@ -476,6 +500,14 @@ export function StatsTimeView({ bookId, mode }: Props) {
                   <div style={{ height: 240 }}>
                     <ReactECharts option={buildRadarOption(radarMetrics)} style={{ width: '100%', height: '100%' }} />
                   </div>
+                  <div className="mt-3 space-y-1">
+                    {radarMetrics.map((m) => (
+                      <div key={m.name} className="flex items-start gap-1 text-[11px] text-muted-foreground leading-tight">
+                        <span className="font-medium text-foreground whitespace-nowrap">{m.name}:</span>
+                        <span>{RADAR_TIPS[m.name]}</span>
+                      </div>
+                    ))}
+                  </div>
                 </CardContent>
               </Card>
             </div>
@@ -588,6 +620,7 @@ export function StatsTimeView({ bookId, mode }: Props) {
             <Input placeholder="备注" value={barDetailRemark} onChange={(e) => setBarDetailRemark(e.target.value)} className="h-8 w-28 text-xs" />
             <Input type="number" placeholder="金额≥" value={barDetailAmountFrom} onChange={(e) => setBarDetailAmountFrom(e.target.value)} className="h-8 w-20 text-xs" />
             <Input type="number" placeholder="金额≤" value={barDetailAmountTo} onChange={(e) => setBarDetailAmountTo(e.target.value)} className="h-8 w-20 text-xs" />
+            <Input placeholder="标签" value={barDetailTags} onChange={(e) => setBarDetailTags(e.target.value)} className="h-8 w-20 text-xs" />
             <Button size="sm" variant="outline" className="h-8 text-xs" onClick={handleBarDetailFilter}>
               筛选
             </Button>
