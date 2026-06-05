@@ -133,6 +133,11 @@ export function StatsTimeView({ bookId, mode }: Props) {
   const [barDetailTotalPages, setBarDetailTotalPages] = useState(0)
   const [barDetailPayer, setBarDetailPayer] = useState('')
   const [barDetailRemark, setBarDetailRemark] = useState('')
+  const [barDetailAmountFrom, setBarDetailAmountFrom] = useState('')
+  const [barDetailAmountTo, setBarDetailAmountTo] = useState('')
+  const [barDetailFilterAccountId, setBarDetailFilterAccountId] = useState('')
+  const [barDetailFilterOwnerId, setBarDetailFilterOwnerId] = useState('')
+  const [barDetailJumpPage, setBarDetailJumpPage] = useState('')
 
   // 基础数据
   const [accounts, setAccounts] = useState<AccountItem[]>([])
@@ -209,7 +214,7 @@ export function StatsTimeView({ bookId, mode }: Props) {
     setBarSelected({ code: cat?.code ?? null, name: params.seriesName, period: params.name })
   }
 
-  const loadBarDetail = async (page: number, payer: string, remark: string) => {
+  const loadBarDetail = async (page: number) => {
     if (!barSelected || !bookId) return
     setBarDetailLoading(true)
     try {
@@ -232,8 +237,12 @@ export function StatsTimeView({ bookId, mode }: Props) {
         dateFrom,
         dateTo,
         categoryCode: barSelected.code ?? undefined,
-        payer: payer || undefined,
-        remark: remark || undefined,
+        accountId: barDetailFilterAccountId || undefined,
+        ownerId: barDetailFilterOwnerId || undefined,
+        payer: barDetailPayer || undefined,
+        remark: barDetailRemark || undefined,
+        amountFrom: barDetailAmountFrom ? Number(barDetailAmountFrom) : undefined,
+        amountTo: barDetailAmountTo ? Number(barDetailAmountTo) : undefined,
       })
       setBarDetailRecords(res.records)
       setBarDetailPage(res.page)
@@ -246,18 +255,31 @@ export function StatsTimeView({ bookId, mode }: Props) {
   const handleBarViewDetail = () => {
     setBarDetailPayer('')
     setBarDetailRemark('')
+    setBarDetailAmountFrom('')
+    setBarDetailAmountTo('')
+    setBarDetailFilterAccountId('')
+    setBarDetailFilterOwnerId('')
     setBarDetailPage(1)
     setBarDetailOpen(true)
-    loadBarDetail(1, '', '')
-  }
-
-  const handleBarDetailPageChange = (page: number) => {
-    loadBarDetail(page, barDetailPayer, barDetailRemark)
+    loadBarDetail(1)
   }
 
   const handleBarDetailFilter = () => {
     setBarDetailPage(1)
-    loadBarDetail(1, barDetailPayer, barDetailRemark)
+    loadBarDetail(1)
+  }
+
+  const handleBarDetailPageChange = (page: number) => {
+    setBarDetailPage(page)
+    loadBarDetail(page)
+  }
+
+  const handleBarDetailJump = () => {
+    const p = parseInt(barDetailJumpPage, 10)
+    if (p >= 1 && p <= barDetailTotalPages) {
+      setBarDetailJumpPage('')
+      handleBarDetailPageChange(p)
+    }
   }
 
   return (
@@ -471,19 +493,29 @@ export function StatsTimeView({ bookId, mode }: Props) {
           </DialogHeader>
 
           {/* 附加筛选条件 */}
-          <div className="flex items-center gap-3 flex-wrap">
-            <Input
-              placeholder="交易方"
-              value={barDetailPayer}
-              onChange={(e) => setBarDetailPayer(e.target.value)}
-              className="h-8 w-28 text-xs"
-            />
-            <Input
-              placeholder="备注关键词"
-              value={barDetailRemark}
-              onChange={(e) => setBarDetailRemark(e.target.value)}
-              className="h-8 w-36 text-xs"
-            />
+          <div className="flex items-center gap-2 flex-wrap">
+            <Select value={barDetailFilterAccountId || 'all'} onValueChange={(v) => setBarDetailFilterAccountId(v === 'all' ? '' : v)}>
+              <SelectTrigger className="h-8 w-28 text-xs"><SelectValue placeholder="账户" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部账户</SelectItem>
+                {accounts.filter((a) => a.status === 'ACTIVE').map((a) => (
+                  <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={barDetailFilterOwnerId || 'all'} onValueChange={(v) => setBarDetailFilterOwnerId(v === 'all' ? '' : v)}>
+              <SelectTrigger className="h-8 w-24 text-xs"><SelectValue placeholder="成员" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部成员</SelectItem>
+                {users.map((u) => (
+                  <SelectItem key={u.id} value={u.id}>{u.name || u.email || u.id}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input placeholder="交易方" value={barDetailPayer} onChange={(e) => setBarDetailPayer(e.target.value)} className="h-8 w-24 text-xs" />
+            <Input placeholder="备注" value={barDetailRemark} onChange={(e) => setBarDetailRemark(e.target.value)} className="h-8 w-28 text-xs" />
+            <Input type="number" placeholder="金额≥" value={barDetailAmountFrom} onChange={(e) => setBarDetailAmountFrom(e.target.value)} className="h-8 w-20 text-xs" />
+            <Input type="number" placeholder="金额≤" value={barDetailAmountTo} onChange={(e) => setBarDetailAmountTo(e.target.value)} className="h-8 w-20 text-xs" />
             <Button size="sm" variant="outline" className="h-8 text-xs" onClick={handleBarDetailFilter}>
               筛选
             </Button>
@@ -546,6 +578,19 @@ export function StatsTimeView({ bookId, mode }: Props) {
                 onClick={() => handleBarDetailPageChange(barDetailPage + 1)}
               >
                 下一页 <ChevronRight size={14} />
+              </Button>
+              <Input
+                type="number"
+                min={1}
+                max={barDetailTotalPages}
+                value={barDetailJumpPage}
+                onChange={(e) => setBarDetailJumpPage(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleBarDetailJump()}
+                placeholder="页码"
+                className="h-7 w-16 text-xs text-center"
+              />
+              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={handleBarDetailJump}>
+                跳转
               </Button>
             </div>
           )}

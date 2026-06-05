@@ -5,6 +5,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
@@ -13,6 +14,8 @@ import {
 } from '@/components/ui/table'
 import { Spinner } from '@/components/ui/spinner'
 import { recordApi, type RecordItem } from '@/api/record'
+import { accountApi, type AccountItem } from '@/api/account'
+import { adminApi, type AdminUser } from '@/api/admin'
 import { PieChart, Users, Wallet, X, List, ChevronLeft, ChevronRight } from 'lucide-react'
 
 function formatMoney(amount: number): string {
@@ -96,8 +99,24 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
   const [detailPage, setDetailPage] = useState(1)
   const [detailTotal, setDetailTotal] = useState(0)
   const [detailTotalPages, setDetailTotalPages] = useState(0)
+  const [detailJumpPage, setDetailJumpPage] = useState('')
+  // 附加筛选
   const [detailPayer, setDetailPayer] = useState('')
   const [detailRemark, setDetailRemark] = useState('')
+  const [detailAmountFrom, setDetailAmountFrom] = useState('')
+  const [detailAmountTo, setDetailAmountTo] = useState('')
+  const [detailFilterAccountId, setDetailFilterAccountId] = useState('')
+  const [detailFilterOwnerId, setDetailFilterOwnerId] = useState('')
+  // 下拉数据
+  const [detailAccounts, setDetailAccounts] = useState<AccountItem[]>([])
+  const [detailUsers, setDetailUsers] = useState<AdminUser[]>([])
+
+  useEffect(() => {
+    if (bookId) {
+      accountApi.list(bookId).then(setDetailAccounts).catch(() => {})
+      adminApi.listUsers().then(setDetailUsers).catch(() => {})
+    }
+  }, [bookId])
 
   const loadAnalysis = useCallback(async () => {
     if (!bookId) return
@@ -125,15 +144,10 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
     }
   }
 
-  const loadDetailRecords = async (page: number, payer: string, remark: string) => {
+  const loadDetailRecords = async (page: number) => {
     if (!selected || !bookId) return
     setDetailLoading(true)
     try {
-      let filter: Record<string, string> = {}
-      if (selected.groupBy === 'category') filter.categoryCode = selected.key
-      else if (selected.groupBy === 'ownerId') filter.ownerId = selected.key
-      else filter.accountId = selected.key
-
       const res = await recordApi.list({
         bookId,
         page,
@@ -141,11 +155,13 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
         type: activeType,
         dateFrom,
         dateTo,
-        accountId,
-        ownerId,
-        payer: payer || undefined,
-        remark: remark || undefined,
-        ...filter,
+        accountId: selected.groupBy === 'accountId' ? selected.key : (detailFilterAccountId || accountId || undefined),
+        ownerId: selected.groupBy === 'ownerId' ? selected.key : (detailFilterOwnerId || ownerId || undefined),
+        categoryCode: selected.groupBy === 'category' ? selected.key : undefined,
+        payer: detailPayer || undefined,
+        remark: detailRemark || undefined,
+        amountFrom: detailAmountFrom ? Number(detailAmountFrom) : undefined,
+        amountTo: detailAmountTo ? Number(detailAmountTo) : undefined,
       })
       setDetailRecords(res.records)
       setDetailPage(res.page)
@@ -160,18 +176,31 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
   const handleViewDetail = () => {
     setDetailPayer('')
     setDetailRemark('')
+    setDetailAmountFrom('')
+    setDetailAmountTo('')
+    setDetailFilterAccountId('')
+    setDetailFilterOwnerId('')
     setDetailPage(1)
     setDetailOpen(true)
-    loadDetailRecords(1, '', '')
-  }
-
-  const handleDetailPageChange = (page: number) => {
-    loadDetailRecords(page, detailPayer, detailRemark)
+    loadDetailRecords(1)
   }
 
   const handleDetailFilter = () => {
     setDetailPage(1)
-    loadDetailRecords(1, detailPayer, detailRemark)
+    loadDetailRecords(1)
+  }
+
+  const handleDetailPageChange = (page: number) => {
+    setDetailPage(page)
+    loadDetailRecords(page)
+  }
+
+  const handleDetailJump = () => {
+    const p = parseInt(detailJumpPage, 10)
+    if (p >= 1 && p <= detailTotalPages) {
+      setDetailJumpPage('')
+      handleDetailPageChange(p)
+    }
   }
 
   return (
@@ -267,19 +296,33 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
           </DialogHeader>
 
           {/* 附加筛选条件 */}
-          <div className="flex items-center gap-3 flex-wrap">
-            <Input
-              placeholder="交易方"
-              value={detailPayer}
-              onChange={(e) => setDetailPayer(e.target.value)}
-              className="h-8 w-28 text-xs"
-            />
-            <Input
-              placeholder="备注关键词"
-              value={detailRemark}
-              onChange={(e) => setDetailRemark(e.target.value)}
-              className="h-8 w-36 text-xs"
-            />
+          <div className="flex items-center gap-2 flex-wrap">
+            {selected?.groupBy !== 'accountId' && (
+              <Select value={detailFilterAccountId || 'all'} onValueChange={(v) => setDetailFilterAccountId(v === 'all' ? '' : v)}>
+                <SelectTrigger className="h-8 w-28 text-xs"><SelectValue placeholder="账户" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部账户</SelectItem>
+                  {detailAccounts.filter((a) => a.status === 'ACTIVE').map((a) => (
+                    <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {selected?.groupBy !== 'ownerId' && (
+              <Select value={detailFilterOwnerId || 'all'} onValueChange={(v) => setDetailFilterOwnerId(v === 'all' ? '' : v)}>
+                <SelectTrigger className="h-8 w-24 text-xs"><SelectValue placeholder="成员" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部成员</SelectItem>
+                  {detailUsers.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>{u.name || u.email || u.id}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            <Input placeholder="交易方" value={detailPayer} onChange={(e) => setDetailPayer(e.target.value)} className="h-8 w-24 text-xs" />
+            <Input placeholder="备注" value={detailRemark} onChange={(e) => setDetailRemark(e.target.value)} className="h-8 w-28 text-xs" />
+            <Input type="number" placeholder="金额≥" value={detailAmountFrom} onChange={(e) => setDetailAmountFrom(e.target.value)} className="h-8 w-20 text-xs" />
+            <Input type="number" placeholder="金额≤" value={detailAmountTo} onChange={(e) => setDetailAmountTo(e.target.value)} className="h-8 w-20 text-xs" />
             <Button size="sm" variant="outline" className="h-8 text-xs" onClick={handleDetailFilter}>
               筛选
             </Button>
@@ -342,6 +385,19 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
                 onClick={() => handleDetailPageChange(detailPage + 1)}
               >
                 下一页 <ChevronRight size={14} />
+              </Button>
+              <Input
+                type="number"
+                min={1}
+                max={detailTotalPages}
+                value={detailJumpPage}
+                onChange={(e) => setDetailJumpPage(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleDetailJump()}
+                placeholder="页码"
+                className="h-7 w-16 text-xs text-center"
+              />
+              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={handleDetailJump}>
+                跳转
               </Button>
             </div>
           )}
