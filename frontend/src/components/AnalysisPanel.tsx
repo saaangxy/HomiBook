@@ -329,10 +329,13 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
             <span className="text-xs text-muted-foreground">共 {detailTotal} 条</span>
           </div>
 
-          <div className="overflow-auto max-h-[50vh]">
-            {detailLoading ? (
-              <div className="flex items-center justify-center py-8"><Spinner /></div>
-            ) : detailRecords.length === 0 ? (
+          <div className="overflow-auto max-h-[50vh] relative">
+            {detailLoading && (
+              <div className="absolute inset-0 bg-background/60 z-10 flex items-center justify-center">
+                <Spinner />
+              </div>
+            )}
+            {!detailLoading && detailRecords.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">暂无数据</p>
             ) : (
               <Table>
