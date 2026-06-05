@@ -131,8 +131,8 @@ export function StatsTimeView({ bookId, mode }: Props) {
   const [barDetailPage, setBarDetailPage] = useState(1)
   const [barDetailTotal, setBarDetailTotal] = useState(0)
   const [barDetailTotalPages, setBarDetailTotalPages] = useState(0)
-  const [barDetailDateFrom, setBarDetailDateFrom] = useState('')
-  const [barDetailDateTo, setBarDetailDateTo] = useState('')
+  const [barDetailPayer, setBarDetailPayer] = useState('')
+  const [barDetailRemark, setBarDetailRemark] = useState('')
 
   // 基础数据
   const [accounts, setAccounts] = useState<AccountItem[]>([])
@@ -209,7 +209,7 @@ export function StatsTimeView({ bookId, mode }: Props) {
     setBarSelected({ code: cat?.code ?? null, name: params.seriesName, period: params.name })
   }
 
-  const loadBarDetail = async (page: number, df: string, dt: string) => {
+  const loadBarDetail = async (page: number, payer: string, remark: string) => {
     if (!barSelected || !bookId) return
     setBarDetailLoading(true)
     try {
@@ -229,9 +229,11 @@ export function StatsTimeView({ bookId, mode }: Props) {
         page,
         pageSize: 20,
         type: 'EXPENSE',
-        dateFrom: df || dateFrom,
-        dateTo: dt || dateTo,
+        dateFrom,
+        dateTo,
         categoryCode: barSelected.code ?? undefined,
+        payer: payer || undefined,
+        remark: remark || undefined,
       })
       setBarDetailRecords(res.records)
       setBarDetailPage(res.page)
@@ -242,20 +244,20 @@ export function StatsTimeView({ bookId, mode }: Props) {
   }
 
   const handleBarViewDetail = () => {
-    setBarDetailDateFrom('')
-    setBarDetailDateTo('')
+    setBarDetailPayer('')
+    setBarDetailRemark('')
     setBarDetailPage(1)
     setBarDetailOpen(true)
     loadBarDetail(1, '', '')
   }
 
   const handleBarDetailPageChange = (page: number) => {
-    loadBarDetail(page, barDetailDateFrom, barDetailDateTo)
+    loadBarDetail(page, barDetailPayer, barDetailRemark)
   }
 
   const handleBarDetailFilter = () => {
     setBarDetailPage(1)
-    loadBarDetail(1, barDetailDateFrom, barDetailDateTo)
+    loadBarDetail(1, barDetailPayer, barDetailRemark)
   }
 
   return (
@@ -457,29 +459,31 @@ export function StatsTimeView({ bookId, mode }: Props) {
       <Dialog open={barDetailOpen} onOpenChange={setBarDetailOpen}>
         <DialogContent className="max-w-3xl max-h-[85vh]">
           <DialogHeader>
-            <DialogTitle className="text-sm">
-              {barSelected?.period} · {barSelected?.name}
+            <DialogTitle className="text-sm flex items-center gap-2 flex-wrap">
+              <span>{barSelected?.name}</span>
             </DialogTitle>
+            {/* 继承的查询参数 */}
+            <div className="flex items-center gap-1.5 flex-wrap mt-1">
+              <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">支出分析</span>
+              <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{barSelected?.name}</span>
+              <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{barSelected?.period}</span>
+            </div>
           </DialogHeader>
 
-          {/* 筛选条件 */}
+          {/* 附加筛选条件 */}
           <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs text-muted-foreground whitespace-nowrap">日期</span>
-              <Input
-                type="date"
-                value={barDetailDateFrom}
-                onChange={(e) => setBarDetailDateFrom(e.target.value)}
-                className="h-8 w-36 text-xs"
-              />
-              <span className="text-xs text-muted-foreground">—</span>
-              <Input
-                type="date"
-                value={barDetailDateTo}
-                onChange={(e) => setBarDetailDateTo(e.target.value)}
-                className="h-8 w-36 text-xs"
-              />
-            </div>
+            <Input
+              placeholder="交易方"
+              value={barDetailPayer}
+              onChange={(e) => setBarDetailPayer(e.target.value)}
+              className="h-8 w-28 text-xs"
+            />
+            <Input
+              placeholder="备注关键词"
+              value={barDetailRemark}
+              onChange={(e) => setBarDetailRemark(e.target.value)}
+              className="h-8 w-36 text-xs"
+            />
             <Button size="sm" variant="outline" className="h-8 text-xs" onClick={handleBarDetailFilter}>
               筛选
             </Button>

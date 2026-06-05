@@ -96,8 +96,8 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
   const [detailPage, setDetailPage] = useState(1)
   const [detailTotal, setDetailTotal] = useState(0)
   const [detailTotalPages, setDetailTotalPages] = useState(0)
-  const [detailDateFrom, setDetailDateFrom] = useState('')
-  const [detailDateTo, setDetailDateTo] = useState('')
+  const [detailPayer, setDetailPayer] = useState('')
+  const [detailRemark, setDetailRemark] = useState('')
 
   const loadAnalysis = useCallback(async () => {
     if (!bookId) return
@@ -125,7 +125,7 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
     }
   }
 
-  const loadDetailRecords = async (page: number, df: string, dt: string) => {
+  const loadDetailRecords = async (page: number, payer: string, remark: string) => {
     if (!selected || !bookId) return
     setDetailLoading(true)
     try {
@@ -139,10 +139,12 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
         page,
         pageSize: 20,
         type: activeType,
-        dateFrom: df || dateFrom,
-        dateTo: dt || dateTo,
+        dateFrom,
+        dateTo,
         accountId,
         ownerId,
+        payer: payer || undefined,
+        remark: remark || undefined,
         ...filter,
       })
       setDetailRecords(res.records)
@@ -153,21 +155,23 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
     finally { setDetailLoading(false) }
   }
 
+  const TYPE_LABEL: Record<string, string> = { EXPENSE: '支出分析', INCOME: '收入分析', TRANSFER: '转账分析' }
+
   const handleViewDetail = () => {
-    setDetailDateFrom('')
-    setDetailDateTo('')
+    setDetailPayer('')
+    setDetailRemark('')
     setDetailPage(1)
     setDetailOpen(true)
     loadDetailRecords(1, '', '')
   }
 
   const handleDetailPageChange = (page: number) => {
-    loadDetailRecords(page, detailDateFrom, detailDateTo)
+    loadDetailRecords(page, detailPayer, detailRemark)
   }
 
   const handleDetailFilter = () => {
     setDetailPage(1)
-    loadDetailRecords(1, detailDateFrom, detailDateTo)
+    loadDetailRecords(1, detailPayer, detailRemark)
   }
 
   return (
@@ -250,29 +254,32 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent className="max-w-3xl max-h-[85vh]">
           <DialogHeader>
-            <DialogTitle className="text-sm">
-              {selected?.label} — {formatMoney(selected?.amount ?? 0)}
+            <DialogTitle className="text-sm flex items-center gap-2 flex-wrap">
+              <span>{selected?.label}</span>
+              <span className="font-normal text-muted-foreground">{formatMoney(selected?.amount ?? 0)}</span>
             </DialogTitle>
+            {/* 继承的查询参数 */}
+            <div className="flex items-center gap-1.5 flex-wrap mt-1">
+              <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{TYPE_LABEL[activeType] || activeType}</span>
+              <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{selected?.label}</span>
+              {dateFrom && <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{dateFrom} ~ {dateTo || dateFrom}</span>}
+            </div>
           </DialogHeader>
 
-          {/* 筛选条件 */}
+          {/* 附加筛选条件 */}
           <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs text-muted-foreground whitespace-nowrap">日期</span>
-              <Input
-                type="date"
-                value={detailDateFrom}
-                onChange={(e) => setDetailDateFrom(e.target.value)}
-                className="h-8 w-36 text-xs"
-              />
-              <span className="text-xs text-muted-foreground">—</span>
-              <Input
-                type="date"
-                value={detailDateTo}
-                onChange={(e) => setDetailDateTo(e.target.value)}
-                className="h-8 w-36 text-xs"
-              />
-            </div>
+            <Input
+              placeholder="交易方"
+              value={detailPayer}
+              onChange={(e) => setDetailPayer(e.target.value)}
+              className="h-8 w-28 text-xs"
+            />
+            <Input
+              placeholder="备注关键词"
+              value={detailRemark}
+              onChange={(e) => setDetailRemark(e.target.value)}
+              className="h-8 w-36 text-xs"
+            />
             <Button size="sm" variant="outline" className="h-8 text-xs" onClick={handleDetailFilter}>
               筛选
             </Button>
