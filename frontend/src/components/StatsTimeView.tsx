@@ -18,6 +18,7 @@ import {
 import { recordApi, type RecordSummary, type RecordItem } from '@/api/record'
 import { accountApi, type AccountItem } from '@/api/account'
 import { adminApi, type AdminUser } from '@/api/admin'
+import { budgetApi } from '@/api/budget'
 import { AnalysisPanel } from './AnalysisPanel'
 import { BarChart3, Search, X, List, ChevronLeft, ChevronRight } from 'lucide-react'
 import dayjs from 'dayjs'
@@ -85,16 +86,85 @@ function buildRadarOption(metrics: { name: string; value: number }[]): EChartsOp
   }
 }
 
-function computeRadar(summary: RecordSummary, catCount: number): { name: string; value: number }[] {
+function computeRadar(
+  summary: RecordSummary,
+  categories: { code: string | null; name: string; data: number[] }[],
+  budgetHealth: number,
+): { name: string; value: number }[] {
   const income = summary.income || 1
   const expense = summary.expense || 0
+  const transfer = summary.transfer || 0
+
+  // 储蓄率：收入中储蓄的比例
+  const savingsRate = Math.min(100, Math.max(0, Math.round(((income - expense) / Math.max(income, 1)) * 100)))
+
+  // 收支平衡：是否量入为出
+  const balance = income >= expense
+    ? 100
+    : Math.min(100, Math.max(0, Math.round((income / Math.max(expense, 1)) * 100)))
+
+  // 记账覆盖度：使用分类数量反映记账习惯
+  const coverage = Math.min(100, Math.round((categories.length / 10) * 100))
+
+  // 资金沉淀率：资金用于实际收支（非转账）的比例
+  const totalFlow = income + expense + transfer
+  const retention = totalFlow > 0
+    ? Math.min(100, Math.max(0, Math.round((1 - transfer / totalFlow) * 100)))
+    : 100
+
   return [
-    { name: '储蓄率', value: Math.min(100, Math.max(0, Math.round((income - expense) / income * 100))) },
-    { name: '收支比', value: Math.min(100, Math.max(0, Math.round((1 - expense / (income + expense)) * 100))) },
-    { name: '活跃度', value: Math.min(100, Math.round(catCount / 10 * 100)) },
-    { name: '分类分散度', value: Math.min(100, Math.round(catCount / 10 * 100)) },
-    { name: '收支平衡', value: income > expense ? 100 : Math.min(100, Math.max(0, Math.round(income / Math.max(expense, 1) * 100))) },
+    { name: '储蓄率', value: savingsRate },
+    { name: '收支平衡', value: balance },
+    { name: '记账覆盖度', value: coverage },
+    { name: '预算执行', value: budgetHealth },
+    { name: '资金沉淀率', value: retention },
   ]
+}
+
+async function fetchBudgetHealth(
+  bookId: string,
+  mode: 'yearly' | 'monthly' | 'free',
+  year: number,
+  month: number,
+  dateFrom?: string,
+  dateTo?: string,
+): Promise<number> {
+  try {
+    let budgets: { amount: number; actualAmount: number }[] = []
+
+    if (mode === 'yearly') {
+      budgets = await budgetApi.listFixed({ bookId, year })
+    } else if (mode === 'monthly') {
+      budgets = await budgetApi.listFixed({ bookId, year, month })
+    } else if (mode === 'free' && dateFrom && dateTo) {
+      // 收集日期范围内的所有 (年, 月) 组合
+      const yearMonths = new Map<number, Set<number>>()
+      let cursor = dayjs(dateFrom).startOf('month')
+      const end = dayjs(dateTo)
+      while (cursor.isBefore(end) || cursor.isSame(end, 'month')) {
+        const y = cursor.year()
+        const m = cursor.month() + 1
+        if (!yearMonths.has(y)) yearMonths.set(y, new Set())
+        yearMonths.get(y)!.add(m)
+        cursor = cursor.add(1, 'month')
+      }
+      // 按年获取预算，再按月份过滤
+      const results = await Promise.all(
+        Array.from(yearMonths.keys()).map((y) => budgetApi.listFixed({ bookId, year: y })),
+      )
+      budgets = results.flat().filter((b) => yearMonths.get(b.year)?.has(b.month))
+    }
+
+    const totalBudgeted = budgets.reduce((s, b) => s + b.amount, 0)
+    const totalActual = budgets.reduce((s, b) => s + b.actualAmount, 0)
+
+    if (totalBudgeted === 0) return 100
+    // 超支比例越高分数越低
+    const overspendRatio = Math.max(0, totalActual - totalBudgeted) / totalBudgeted
+    return Math.max(0, Math.round((1 - overspendRatio) * 100))
+  } catch {
+    return 100 // 获取失败默认满分，不阻塞主流程
+  }
 }
 
 interface Props {
@@ -170,7 +240,7 @@ export function StatsTimeView({ bookId, mode }: Props) {
         }
       }
 
-      const [trendData, summaryData] = await Promise.all([
+      const [trendData, summaryData, budgetHealth] = await Promise.all([
         recordApi.categoryTrend({
           bookId,
           type: 'EXPENSE',
@@ -183,12 +253,14 @@ export function StatsTimeView({ bookId, mode }: Props) {
           ownerId: params.ownerId,
         }),
         recordApi.summary({ bookId, ...params }),
+        fetchBudgetHealth(bookId, mode, year, month, params.dateFrom, params.dateTo),
       ])
 
+      const filteredCategories = trendData.categories.filter((c) => c.data.some((v) => v > 0))
       setPeriods(trendData.periods)
-      setCategories(trendData.categories.filter((c) => c.data.some((v) => v > 0)))
+      setCategories(filteredCategories)
       setSummary(summaryData)
-      setRadarMetrics(computeRadar(summaryData, trendData.categories.length))
+      setRadarMetrics(computeRadar(summaryData, filteredCategories, budgetHealth))
     } catch { /* ignore */ }
     finally { setLoading(false) }
   }, [bookId, mode, year, month, searchParams, searched])
