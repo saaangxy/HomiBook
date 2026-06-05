@@ -7,7 +7,8 @@ import { recordApi, type RecordSummary } from '@/api/record'
 import { accountApi } from '@/api/account'
 import { budgetApi } from '@/api/budget'
 import { useBookStore } from '@/stores/book'
-import { TrendingUp, BarChart3, Wallet, Target } from 'lucide-react'
+import { TrendingUp, BarChart3, Wallet, Target, HelpCircle } from 'lucide-react'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import dayjs from 'dayjs'
 
 function formatMoney(amount: number): string {
@@ -332,17 +333,26 @@ export function StatsOverview() {
                 <div className="flex items-center gap-2 mb-3">
                   <Target size={18} className="text-[#f97316]" />
                   <h3 className="text-sm font-semibold">财务健康评估</h3>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button className="ml-auto text-muted-foreground hover:text-foreground transition-colors">
+                        <HelpCircle size={15} />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" align="end" className="max-w-[260px] p-3">
+                      <div className="space-y-2">
+                        {radarMetrics.map((m) => (
+                          <div key={m.name}>
+                            <span className="font-medium text-xs">{m.name}</span>
+                            <p className="text-xs text-muted-foreground leading-tight mt-0.5">{RADAR_TIPS[m.name]}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
                 </div>
                 <div style={{ height: 320 }}>
                   <ReactECharts option={buildRadarOption(radarMetrics)} style={{ width: '100%', height: '100%' }} />
-                </div>
-                <div className="mt-3 space-y-1">
-                  {radarMetrics.map((m) => (
-                    <div key={m.name} className="flex items-start gap-1 text-[11px] text-muted-foreground leading-tight">
-                      <span className="font-medium text-foreground whitespace-nowrap">{m.name}:</span>
-                      <span>{RADAR_TIPS[m.name]}</span>
-                    </div>
-                  ))}
                 </div>
               </CardContent>
             </Card>
