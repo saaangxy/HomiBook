@@ -4,6 +4,7 @@ import type { EChartsOption } from 'echarts'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { MultiSelect } from '@/components/ui/multi-select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
@@ -107,7 +108,8 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
   const [detailAmountTo, setDetailAmountTo] = useState('')
   const [detailFilterAccountId, setDetailFilterAccountId] = useState('')
   const [detailFilterOwnerId, setDetailFilterOwnerId] = useState('')
-  const [detailTags, setDetailTags] = useState('')
+  const [detailTags, setDetailTags] = useState<string[]>([])
+  const [availableTags, setAvailableTags] = useState<string[]>([])
   // 下拉数据
   const [detailAccounts, setDetailAccounts] = useState<AccountItem[]>([])
   const [detailUsers, setDetailUsers] = useState<AdminUser[]>([])
@@ -116,6 +118,7 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
     if (bookId) {
       accountApi.list(bookId).then(setDetailAccounts).catch(() => {})
       adminApi.listUsers().then(setDetailUsers).catch(() => {})
+      recordApi.getTags(bookId).then(setAvailableTags).catch(() => {})
     }
   }, [bookId])
 
@@ -163,7 +166,7 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
         remark: detailRemark || undefined,
         amountFrom: detailAmountFrom ? Number(detailAmountFrom) : undefined,
         amountTo: detailAmountTo ? Number(detailAmountTo) : undefined,
-        tags: detailTags || undefined,
+        tags: detailTags.length > 0 ? detailTags.join(',') : undefined,
       })
       setDetailRecords(res.records)
       setDetailPage(res.page)
@@ -182,7 +185,7 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
     setDetailAmountTo('')
     setDetailFilterAccountId('')
     setDetailFilterOwnerId('')
-    setDetailTags('')
+    setDetailTags([])
     setDetailPage(1)
     setDetailOpen(true)
     loadDetailRecords(1)
@@ -326,7 +329,14 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
             <Input placeholder="备注" value={detailRemark} onChange={(e) => setDetailRemark(e.target.value)} className="h-8 w-28 text-xs" />
             <Input type="number" placeholder="金额≥" value={detailAmountFrom} onChange={(e) => setDetailAmountFrom(e.target.value)} className="h-8 w-20 text-xs" />
             <Input type="number" placeholder="金额≤" value={detailAmountTo} onChange={(e) => setDetailAmountTo(e.target.value)} className="h-8 w-20 text-xs" />
-            <Input placeholder="标签" value={detailTags} onChange={(e) => setDetailTags(e.target.value)} className="h-8 w-20 text-xs" />
+            <div className="min-w-28">
+              <MultiSelect
+                items={availableTags.map((t) => ({ value: t, label: t }))}
+                selected={detailTags}
+                onChange={setDetailTags}
+                placeholder="标签"
+              />
+            </div>
             <Button size="sm" variant="outline" className="h-8 text-xs" onClick={handleDetailFilter}>
               筛选
             </Button>

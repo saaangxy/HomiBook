@@ -230,7 +230,8 @@ export function StatsTimeView({ bookId, mode }: Props) {
   const [barDetailFilterAccountId, setBarDetailFilterAccountId] = useState('')
   const [barDetailFilterOwnerId, setBarDetailFilterOwnerId] = useState('')
   const [barDetailJumpPage, setBarDetailJumpPage] = useState('')
-  const [barDetailTags, setBarDetailTags] = useState('')
+  const [barDetailTags, setBarDetailTags] = useState<string[]>([])
+  const [availableTags, setAvailableTags] = useState<string[]>([])
 
   // 基础数据
   const [accounts, setAccounts] = useState<AccountItem[]>([])
@@ -239,6 +240,7 @@ export function StatsTimeView({ bookId, mode }: Props) {
   useEffect(() => {
     accountApi.list(bookId).then(setAccounts).catch(() => {})
     adminApi.listUsers().then(setUsers).catch(() => {})
+    recordApi.getTags(bookId).then(setAvailableTags).catch(() => {})
   }, [bookId])
 
   const loadData = useCallback(async () => {
@@ -338,7 +340,7 @@ export function StatsTimeView({ bookId, mode }: Props) {
         remark: barDetailRemark || undefined,
         amountFrom: barDetailAmountFrom ? Number(barDetailAmountFrom) : undefined,
         amountTo: barDetailAmountTo ? Number(barDetailAmountTo) : undefined,
-        tags: barDetailTags || undefined,
+        tags: barDetailTags.length > 0 ? barDetailTags.join(',') : undefined,
       })
       setBarDetailRecords(res.records)
       setBarDetailPage(res.page)
@@ -355,7 +357,7 @@ export function StatsTimeView({ bookId, mode }: Props) {
     setBarDetailAmountTo('')
     setBarDetailFilterAccountId('')
     setBarDetailFilterOwnerId('')
-    setBarDetailTags('')
+    setBarDetailTags([])
     setBarDetailPage(1)
     setBarDetailOpen(true)
     loadBarDetail(1)
@@ -630,7 +632,14 @@ export function StatsTimeView({ bookId, mode }: Props) {
             <Input placeholder="备注" value={barDetailRemark} onChange={(e) => setBarDetailRemark(e.target.value)} className="h-8 w-28 text-xs" />
             <Input type="number" placeholder="金额≥" value={barDetailAmountFrom} onChange={(e) => setBarDetailAmountFrom(e.target.value)} className="h-8 w-20 text-xs" />
             <Input type="number" placeholder="金额≤" value={barDetailAmountTo} onChange={(e) => setBarDetailAmountTo(e.target.value)} className="h-8 w-20 text-xs" />
-            <Input placeholder="标签" value={barDetailTags} onChange={(e) => setBarDetailTags(e.target.value)} className="h-8 w-20 text-xs" />
+            <div className="min-w-28">
+              <MultiSelect
+                items={availableTags.map((t) => ({ value: t, label: t }))}
+                selected={barDetailTags}
+                onChange={setBarDetailTags}
+                placeholder="标签"
+              />
+            </div>
             <Button size="sm" variant="outline" className="h-8 text-xs" onClick={handleBarDetailFilter}>
               筛选
             </Button>
