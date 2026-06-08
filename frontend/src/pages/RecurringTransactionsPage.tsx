@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel,
@@ -373,14 +373,14 @@ export function RecurringTransactionsPage() {
                         }
                       </button>
                       {rt.recurringType === 'LOAN' && (
-                        <Button variant="ghost" size="icon" className="h-7 w-7" title="还款计划" onClick={() => setPlanTarget(rt)}>
+                        <Button aria-label="还款计划" variant="ghost" size="icon" className="h-7 w-7" title="还款计划" onClick={() => setPlanTarget(rt)}>
                           <FileText size={13} />
                         </Button>
                       )}
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(rt)}>
+                      <Button aria-label="编辑" variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(rt)}>
                         <Pencil size={13} />
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setDeleteTarget(rt)}>
+                      <Button aria-label="删除" variant="ghost" size="icon" className="h-7 w-7" onClick={() => setDeleteTarget(rt)}>
                         <Trash2 size={13} />
                       </Button>
                     </div>
@@ -394,6 +394,7 @@ export function RecurringTransactionsPage() {
 
       {/* 创建/编辑弹窗 */}
       <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) setDialogOpen(false) }}>
+        <DialogTrigger />
         <DialogContent className="max-h-[85vh] overflow-y-auto max-w-xl">
           <DialogHeader>
             <DialogTitle>{editingId ? '编辑' : '新增'}固定收支</DialogTitle>
@@ -436,6 +437,7 @@ export function RecurringTransactionsPage() {
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">名称</Label>
               <Input
+                aria-label="名称"
                 placeholder="固定收支名称"
                 value={formName}
                 onChange={(e) => { setFormName(e.target.value); setFormError('') }}
@@ -484,6 +486,7 @@ export function RecurringTransactionsPage() {
                 <div className="flex-1">
                   <Label className="text-xs text-muted-foreground mb-1 block">金额</Label>
                   <Input
+                    aria-label="金额"
                     type="number" min="0" step="0.01"
                     placeholder="0.00"
                     value={formAmount}
@@ -535,6 +538,7 @@ export function RecurringTransactionsPage() {
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">交易方</Label>
               <Input
+                aria-label="交易方"
                 placeholder="交易方"
                 value={formPayer}
                 onChange={(e) => setFormPayer(e.target.value)}
@@ -546,6 +550,7 @@ export function RecurringTransactionsPage() {
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">备注</Label>
               <Textarea
+                aria-label="备注"
                 placeholder="备注"
                 value={formRemark}
                 onChange={(e) => setFormRemark(e.target.value)}
@@ -571,11 +576,11 @@ export function RecurringTransactionsPage() {
                 <div className="flex gap-3">
                   <div className="flex-1">
                     <Label className="text-xs text-muted-foreground mb-1 block">贷款总额</Label>
-                    <Input type="number" min="0" step="0.01" value={formLoanTotal} onChange={(e) => { setFormLoanTotal(e.target.value); setLoanPreview(null) }} className="bg-background border-border h-9" />
+                    <Input aria-label="贷款总额" type="number" min="0" step="0.01" value={formLoanTotal} onChange={(e) => { setFormLoanTotal(e.target.value); setLoanPreview(null) }} className="bg-background border-border h-9" />
                   </div>
                   <div className="flex-1">
                     <Label className="text-xs text-muted-foreground mb-1 block">年利率(%)</Label>
-                    <Input type="number" min="0" step="0.01" value={formLoanRate} onChange={(e) => { setFormLoanRate(e.target.value); setLoanPreview(null) }} className="bg-background border-border h-9" />
+                    <Input aria-label="年利率" type="number" min="0" step="0.01" value={formLoanRate} onChange={(e) => { setFormLoanRate(e.target.value); setLoanPreview(null) }} className="bg-background border-border h-9" />
                   </div>
                 </div>
                 <div className="flex gap-3">
@@ -591,7 +596,7 @@ export function RecurringTransactionsPage() {
                   </div>
                   <div className="flex-1">
                     <Label className="text-xs text-muted-foreground mb-1 block">还款期数(月)</Label>
-                    <Input type="number" min="1" max="360" value={formLoanTermMonths} onChange={(e) => { setFormLoanTermMonths(e.target.value); setLoanPreview(null) }} className="bg-background border-border h-9" />
+                    <Input aria-label="还款期数" type="number" min="1" max="360" value={formLoanTermMonths} onChange={(e) => { setFormLoanTermMonths(e.target.value); setLoanPreview(null) }} className="bg-background border-border h-9" />
                   </div>
                 </div>
                 <div>
@@ -667,6 +672,7 @@ export function RecurringTransactionsPage() {
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-muted-foreground">每月</span>
                   <Input
+                    aria-label="每月还款日"
                     type="number" min={1} max={28}
                     value={formLoanDay}
                     onChange={(e) => {
@@ -715,6 +721,7 @@ export function RecurringTransactionsPage() {
 
       {/* 还款计划查看 */}
       <Dialog open={!!planTarget} onOpenChange={() => setPlanTarget(null)}>
+        <DialogTrigger />
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>还款计划</DialogTitle>

@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/table'
 import {
   Dialog,
+  DialogTrigger,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -259,15 +260,17 @@ export function UsersPage() {
 
       {/* 创建用户弹窗 */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogTrigger />
         <DialogContent>
           <DialogHeader>
             <DialogTitle>创建用户</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-3">
             {formError && <Alert variant="destructive"><AlertDescription>{formError}</AlertDescription></Alert>}
-            <Input type="email" placeholder="邮箱地址" value={formEmail} onChange={(e) => setFormEmail(e.target.value)} className="bg-background border-border h-11 rounded-[10px]" />
+            <Input aria-label="邮箱" type="email" placeholder="邮箱地址" value={formEmail} onChange={(e) => setFormEmail(e.target.value)} className="bg-background border-border h-11 rounded-[10px]" />
             <div className="relative">
               <Input
+                aria-label="密码"
                 type={showPassword ? 'text' : 'password'}
                 placeholder="密码（至少6位）"
                 value={formPassword}
@@ -282,7 +285,7 @@ export function UsersPage() {
                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
-            <Input placeholder="用户名（可选）" value={formName} onChange={(e) => setFormName(e.target.value)} className="bg-background border-border h-11 rounded-[10px]" />
+            <Input aria-label="用户名" placeholder="用户名（可选）" value={formName} onChange={(e) => setFormName(e.target.value)} className="bg-background border-border h-11 rounded-[10px]" />
             <Select value={formRole} onValueChange={setFormRole}>
               <SelectTrigger className="bg-background border-border h-11 rounded-[10px]">
                 <SelectValue />
@@ -304,6 +307,7 @@ export function UsersPage() {
 
       {/* 修改密码弹窗 */}
       <Dialog open={passwordOpen} onOpenChange={setPasswordOpen}>
+        <DialogTrigger />
         <DialogContent>
           <DialogHeader>
             <DialogTitle>修改密码</DialogTitle>
@@ -312,6 +316,7 @@ export function UsersPage() {
             {formError && <Alert variant="destructive"><AlertDescription>{formError}</AlertDescription></Alert>}
             <div className="relative">
               <Input
+                aria-label="新密码"
                 type={showPassword ? 'text' : 'password'}
                 placeholder="新密码（至少6位）"
                 value={formPassword}
@@ -338,6 +343,7 @@ export function UsersPage() {
 
       {/* 删除确认弹窗 */}
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogTrigger />
         <DialogContent>
           <DialogHeader>
             <DialogTitle>确认删除</DialogTitle>

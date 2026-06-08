@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import {
   Dialog,
+  DialogTrigger,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -435,6 +436,7 @@ export function AccountsPage() {
 
       {/* 创建账户弹窗 */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogTrigger />
         <DialogContent>
           <DialogHeader>
             <DialogTitle>添加账户</DialogTitle>
@@ -444,6 +446,7 @@ export function AccountsPage() {
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">账户名称</Label>
               <Input
+                aria-label="账户名称"
                 placeholder="账户名称"
                 value={formName}
                 onChange={(e) => { setFormName(e.target.value); setFormError('') }}
@@ -466,6 +469,7 @@ export function AccountsPage() {
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">初始余额</Label>
               <Input
+                aria-label="初始余额"
                 type="number"
                 placeholder="初始余额"
                 value={formInitialBalance}
@@ -476,6 +480,7 @@ export function AccountsPage() {
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">卡号/账号（可选）</Label>
               <Input
+                aria-label="卡号/账号"
                 placeholder="卡号/账号（可选）"
                 value={formAccountNo}
                 onChange={(e) => setFormAccountNo(e.target.value)}
@@ -518,6 +523,7 @@ export function AccountsPage() {
 
       {/* 编辑账户弹窗 */}
       <Dialog open={!!editAccount} onOpenChange={() => setEditAccount(null)}>
+        <DialogTrigger />
         <DialogContent>
           <DialogHeader>
             <DialogTitle>编辑账户</DialogTitle>
@@ -527,6 +533,7 @@ export function AccountsPage() {
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">账户名称</Label>
               <Input
+                aria-label="账户名称"
                 placeholder="账户名称"
                 value={formName}
                 onChange={(e) => { setFormName(e.target.value); setFormError('') }}
@@ -548,6 +555,7 @@ export function AccountsPage() {
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">卡号/账号（可选）</Label>
               <Input
+                aria-label="卡号/账号"
                 placeholder="卡号/账号（可选）"
                 value={formAccountNo}
                 onChange={(e) => setFormAccountNo(e.target.value)}
@@ -590,6 +598,7 @@ export function AccountsPage() {
 
       {/* 余额调整弹窗 */}
       <Dialog open={!!adjustAccount} onOpenChange={() => setAdjustAccount(null)}>
+        <DialogTrigger />
         <DialogContent>
           <DialogHeader>
             <DialogTitle>调整余额 — {adjustAccount?.name}</DialogTitle>
@@ -610,6 +619,7 @@ export function AccountsPage() {
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">调整后余额</Label>
               <Input
+                aria-label="调整后余额"
                 type="number"
                 placeholder="输入调整后的余额"
                 value={adjustBalanceAfter}
@@ -627,6 +637,7 @@ export function AccountsPage() {
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">备注（可选）</Label>
               <Input
+                aria-label="备注"
                 placeholder="备注（可选）"
                 value={adjustRemark}
                 onChange={(e) => setAdjustRemark(e.target.value)}
@@ -645,6 +656,7 @@ export function AccountsPage() {
 
       {/* 调整历史弹窗 */}
       <Dialog open={!!historyAccount} onOpenChange={() => setHistoryAccount(null)}>
+        <DialogTrigger />
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>调整记录 — {historyAccount?.name}</DialogTitle>

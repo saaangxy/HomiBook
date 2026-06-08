@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import {
   Dialog,
+  DialogTrigger,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -304,12 +305,14 @@ export function BooksPage() {
 
       {/* 创建账本弹窗 */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogTrigger />
         <DialogContent>
           <DialogHeader>
             <DialogTitle>创建账本</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-4">
             <Input
+              aria-label="账本名称"
               placeholder="输入账本名称"
               value={createName}
               onChange={(e) => { setCreateName(e.target.value); setCreateError('') }}
@@ -329,6 +332,7 @@ export function BooksPage() {
 
       {/* 加入账本弹窗 */}
       <Dialog open={joinOpen} onOpenChange={(open) => { setJoinOpen(open); if (!open) setJoinStep('input') }}>
+        <DialogTrigger />
         <DialogContent>
           <DialogHeader>
             <DialogTitle>加入账本</DialogTitle>
@@ -337,6 +341,7 @@ export function BooksPage() {
             <>
               <div className="flex flex-col gap-4">
                 <Input
+                  aria-label="分享码"
                   className="bg-background border-border text-center tracking-[4px]"
                   style={{ textTransform: 'uppercase' }}
                   placeholder="输入8位分享码"
@@ -379,6 +384,7 @@ export function BooksPage() {
 
       {/* 管理面板弹窗 */}
       <Dialog open={manageOpen} onOpenChange={setManageOpen}>
+        <DialogTrigger />
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>{manageBook?.name}</DialogTitle>
@@ -402,6 +408,7 @@ export function BooksPage() {
                     {(manageBook?.role === 'owner' || manageBook?.role === 'admin') && (
                       <div className="flex gap-2 mb-2">
                         <Input
+                          aria-label="用户邮箱"
                           className="flex-1 bg-background border-border"
                           placeholder="输入用户邮箱添加成员"
                           value={addEmail}
@@ -481,6 +488,7 @@ export function BooksPage() {
                       <div className="flex-1">
                         <Label className="block text-xs text-muted-foreground mb-1">有效期（小时，留空永久）</Label>
                         <Input
+                          aria-label="有效期小时"
                           type="number" min={1} max={720}
                           className="bg-background border-border"
                           placeholder="留空 = 永久有效"
@@ -539,6 +547,7 @@ export function BooksPage() {
 
       {/* 删除确认弹窗 */}
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogTrigger />
         <DialogContent>
           <DialogHeader>
             <DialogTitle>删除账本</DialogTitle>
@@ -551,6 +560,7 @@ export function BooksPage() {
               请输入账本名称 <strong>{deleteBook?.name}</strong> 确认删除
             </p>
             <Input
+              aria-label="确认删除账本名称"
               className="bg-background border-border"
               placeholder="输入账本名称确认"
               value={deleteInput}

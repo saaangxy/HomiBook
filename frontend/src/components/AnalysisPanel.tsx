@@ -8,7 +8,7 @@ import { MultiSelect } from '@/components/ui/multi-select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
+  Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
@@ -287,6 +287,7 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
 
       {/* 流水明细弹窗 */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+        <DialogTrigger />
         <DialogContent className="max-w-3xl max-h-[85vh]">
           <DialogHeader>
             <DialogTitle className="text-sm flex items-center gap-2 flex-wrap">
@@ -325,10 +326,10 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
                 </SelectContent>
               </Select>
             )}
-            <Input placeholder="交易方" value={detailPayer} onChange={(e) => setDetailPayer(e.target.value)} className="h-8 w-24 text-xs" />
-            <Input placeholder="备注" value={detailRemark} onChange={(e) => setDetailRemark(e.target.value)} className="h-8 w-28 text-xs" />
-            <Input type="number" placeholder="金额≥" value={detailAmountFrom} onChange={(e) => setDetailAmountFrom(e.target.value)} className="h-8 w-20 text-xs" />
-            <Input type="number" placeholder="金额≤" value={detailAmountTo} onChange={(e) => setDetailAmountTo(e.target.value)} className="h-8 w-20 text-xs" />
+            <Input aria-label="交易方" placeholder="交易方" value={detailPayer} onChange={(e) => setDetailPayer(e.target.value)} className="h-8 w-24 text-xs" />
+            <Input aria-label="备注" placeholder="备注" value={detailRemark} onChange={(e) => setDetailRemark(e.target.value)} className="h-8 w-28 text-xs" />
+            <Input aria-label="金额下限" type="number" placeholder="金额≥" value={detailAmountFrom} onChange={(e) => setDetailAmountFrom(e.target.value)} className="h-8 w-20 text-xs" />
+            <Input aria-label="金额上限" type="number" placeholder="金额≤" value={detailAmountTo} onChange={(e) => setDetailAmountTo(e.target.value)} className="h-8 w-20 text-xs" />
             <div className="min-w-28">
               <MultiSelect
                 items={availableTags.map((t) => ({ value: t, label: t }))}
@@ -404,6 +405,7 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
                 下一页 <ChevronRight size={14} />
               </Button>
               <Input
+                aria-label="跳转页码"
                 type="number"
                 min={1}
                 max={detailTotalPages}

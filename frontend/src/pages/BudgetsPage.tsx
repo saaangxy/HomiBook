@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import {
   Dialog,
+  DialogTrigger,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -529,6 +530,7 @@ export function BudgetsPage() {
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
+            aria-label="搜索预算名称"
             className="h-9 pl-8 w-[180px]"
             placeholder="搜索预算名称..."
             value={searchName}
@@ -678,6 +680,7 @@ export function BudgetsPage() {
 
       {/* 创建/编辑弹窗 */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogTrigger />
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{editingBudget ? '编辑预算' : '添加预算'}</DialogTitle>
@@ -697,11 +700,11 @@ export function BudgetsPage() {
             </div>
             <div>
               <Label>名称</Label>
-              <Input value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="如：房租、饮食、三亚旅游" />
+              <Input aria-label="名称" value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="如：房租、饮食、三亚旅游" />
             </div>
             <div>
               <Label>金额</Label>
-              <Input type="number" value={formAmount} onChange={(e) => setFormAmount(e.target.value)} placeholder="预算金额" />
+              <Input aria-label="金额" type="number" value={formAmount} onChange={(e) => setFormAmount(e.target.value)} placeholder="预算金额" />
             </div>
             {formType === 'FIXED' ? (
               <div>
@@ -753,7 +756,7 @@ export function BudgetsPage() {
             )}
             <div>
               <Label>备注（可选）</Label>
-              <Input value={formRemark} onChange={(e) => setFormRemark(e.target.value)} placeholder="备注" />
+              <Input aria-label="备注" value={formRemark} onChange={(e) => setFormRemark(e.target.value)} placeholder="备注" />
             </div>
             {formError && <p className="text-sm text-[#ef4444]">{formError}</p>}
           </div>
@@ -768,6 +771,7 @@ export function BudgetsPage() {
 
       {/* 批量添加弹窗 */}
       <Dialog open={batchOpen} onOpenChange={setBatchOpen}>
+        <DialogTrigger />
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>批量添加预算</DialogTitle>
@@ -787,11 +791,11 @@ export function BudgetsPage() {
             </div>
             <div>
               <Label>名称</Label>
-              <Input value={batchName} onChange={(e) => setBatchName(e.target.value)} placeholder="预算名称" />
+              <Input aria-label="名称" value={batchName} onChange={(e) => setBatchName(e.target.value)} placeholder="预算名称" />
             </div>
             <div>
               <Label>金额</Label>
-              <Input type="number" value={batchAmount} onChange={(e) => setBatchAmount(e.target.value)} />
+              <Input aria-label="金额" type="number" value={batchAmount} onChange={(e) => setBatchAmount(e.target.value)} />
             </div>
             {batchType === 'FIXED' ? (
               <div>
@@ -863,7 +867,7 @@ export function BudgetsPage() {
             )}
             <div>
               <Label>备注（可选）</Label>
-              <Input value={batchRemark} onChange={(e) => setBatchRemark(e.target.value)} />
+              <Input aria-label="备注" value={batchRemark} onChange={(e) => setBatchRemark(e.target.value)} />
             </div>
           </div>
           <DialogFooter>
@@ -877,6 +881,7 @@ export function BudgetsPage() {
 
       {/* 复制弹窗 */}
       <Dialog open={copyOpen} onOpenChange={setCopyOpen}>
+        <DialogTrigger />
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>复制预算</DialogTitle>
@@ -965,6 +970,7 @@ export function BudgetsPage() {
 
       {/* 批量编辑弹窗 */}
       <Dialog open={batchEditOpen} onOpenChange={setBatchEditOpen}>
+        <DialogTrigger />
         <DialogContent>
           <DialogHeader>
             <DialogTitle>批量编辑预算（{selectedIds.size} 条）</DialogTitle>
@@ -973,6 +979,7 @@ export function BudgetsPage() {
             <div>
               <Label>金额（留空则不修改）</Label>
               <Input
+                aria-label="金额"
                 type="number"
                 value={batchEditAmount}
                 onChange={(e) => setBatchEditAmount(e.target.value)}
@@ -1010,6 +1017,7 @@ export function BudgetsPage() {
             <div>
               <Label>备注（留空则不修改）</Label>
               <Input
+                aria-label="备注"
                 value={batchEditRemark}
                 onChange={(e) => setBatchEditRemark(e.target.value)}
                 placeholder="不修改"

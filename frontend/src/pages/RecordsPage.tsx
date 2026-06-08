@@ -8,6 +8,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
   Dialog,
+  DialogTrigger,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -38,7 +39,7 @@ import {
   TableHead,
   TableCell,
 } from '@/components/ui/table'
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import {Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger} from '@/components/ui/sheet'
 import { DatePicker } from '@/components/ui/date-picker'
 import { DateTimePicker } from '@/components/ui/datetime-picker'
 import { MultiSelect } from '@/components/ui/multi-select'
@@ -978,6 +979,7 @@ export function RecordsPage() {
                     <TableCell className="text-xs py-2.5">
                       {editMode ? (
                         <Input
+                          aria-label="交易方"
                           value={getEditValue(record, 'payer')}
                           onChange={(e) => handleEditChange(record.id, 'payer', e.target.value)}
                           className="h-7 text-xs w-full"
@@ -991,6 +993,7 @@ export function RecordsPage() {
                     <TableCell className="text-sm font-bold tabular-nums py-2.5 text-right">
                       {editMode ? (
                         <Input
+                          aria-label="金额"
                           type="number"
                           step="0.01"
                           value={getEditValue(record, 'amount')}
@@ -1013,6 +1016,7 @@ export function RecordsPage() {
                     <TableCell className="text-xs py-2.5">
                       {editMode ? (
                         <Input
+                          aria-label="备注"
                           value={getEditValue(record, 'remark')}
                           onChange={(e) => handleEditChange(record.id, 'remark', e.target.value)}
                           className="h-7 text-xs w-full"
@@ -1105,6 +1109,7 @@ export function RecordsPage() {
 
                 <span className="text-sm text-muted-foreground ml-2">跳至</span>
                 <Input
+                  aria-label="跳转页码"
                   className="h-8 w-14 text-sm text-center"
                   placeholder={String(page)}
                   value={jumpInput}
@@ -1125,6 +1130,7 @@ export function RecordsPage() {
 
       {/* 筛选抽屉 */}
       <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
+        <SheetTrigger/>
         <SheetContent side="right" className="w-80 flex flex-col">
           <SheetHeader>
             <SheetTitle>筛选条件</SheetTitle>
@@ -1212,6 +1218,7 @@ export function RecordsPage() {
               <Label className="text-xs text-muted-foreground mb-1.5 block">交易方</Label>
               <div className="relative">
                 <Input
+                  aria-label="交易方"
                   placeholder="模糊搜索交易方..."
                   value={draftFilters.payer}
                   onChange={(e) => setDraftFilters((p) => ({ ...p, payer: e.target.value }))}
@@ -1234,6 +1241,7 @@ export function RecordsPage() {
                 <Label className="text-xs text-muted-foreground mb-1.5 block">金额 ≥</Label>
                 <div className="relative">
                   <Input
+                    aria-label="金额下限"
                     type="number"
                     placeholder="最低金额"
                     value={draftFilters.amountFrom}
@@ -1254,6 +1262,7 @@ export function RecordsPage() {
                 <Label className="text-xs text-muted-foreground mb-1.5 block">金额 ≤</Label>
                 <div className="relative">
                   <Input
+                    aria-label="金额上限"
                     type="number"
                     placeholder="最高金额"
                     value={draftFilters.amountTo}
@@ -1277,6 +1286,7 @@ export function RecordsPage() {
               <Label className="text-xs text-muted-foreground mb-1.5 block">备注</Label>
               <div className="relative">
                 <Input
+                  aria-label="备注"
                   placeholder="模糊搜索备注..."
                   value={draftFilters.remark}
                   onChange={(e) => setDraftFilters((p) => ({ ...p, remark: e.target.value }))}
@@ -1304,6 +1314,7 @@ export function RecordsPage() {
 
       {/* 创建/编辑弹窗 */}
       <Dialog open={createOpen || !!editRecord} onOpenChange={() => { setCreateOpen(false); setEditRecord(null) }}>
+        <DialogTrigger />
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>{editRecord ? '编辑流水' : '记一笔'}</DialogTitle>
@@ -1333,6 +1344,7 @@ export function RecordsPage() {
               <div className="flex-1">
                 <Label className="text-xs text-muted-foreground mb-1 block">金额</Label>
                 <Input
+                  aria-label="金额"
                   type="number"
                   placeholder="0.00"
                   value={formAmount}
@@ -1410,6 +1422,7 @@ export function RecordsPage() {
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">交易方</Label>
               <Input
+                aria-label="交易方"
                 placeholder="商家、对方账户名等（可选）"
                 value={formPayer}
                 onChange={(e) => setFormPayer(e.target.value)}
@@ -1547,6 +1560,7 @@ export function RecordsPage() {
       {/* 图片预览弹窗 */}
       {previewImage && (
         <Dialog open={!!previewImage} onOpenChange={() => setPreviewImage(null)}>
+          <DialogTrigger />
           <DialogContent className="max-w-3xl p-0 bg-transparent border-0">
             <div className="relative">
               <img
@@ -1578,6 +1592,7 @@ export function RecordsPage() {
 
       {/* 批量更新弹窗 */}
       <Dialog open={batchOpen} onOpenChange={(open) => { if (!open) { setBatchOpen(false); resetBatchForm() } }}>
+        <DialogTrigger />
         <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>批量更新 {selectedIds.size} 条记录</DialogTitle>
@@ -1664,6 +1679,7 @@ export function RecordsPage() {
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">交易方</Label>
               <Input
+                aria-label="交易方"
                 placeholder="留空则不更新交易方"
                 value={batchPayer}
                 onChange={(e) => setBatchPayer(e.target.value)}
@@ -1675,6 +1691,7 @@ export function RecordsPage() {
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">金额</Label>
               <Input
+                aria-label="金额"
                 type="number"
                 placeholder="留空则不更新金额"
                 value={batchAmount}
@@ -1689,6 +1706,7 @@ export function RecordsPage() {
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">备注</Label>
               <Textarea
+                aria-label="备注"
                 placeholder="留空则不更新备注"
                 value={batchRemark}
                 onChange={(e) => setBatchRemark(e.target.value)}

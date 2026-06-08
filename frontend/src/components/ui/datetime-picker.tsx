@@ -198,6 +198,7 @@ export function DateTimePicker({ value, onChange, placeholder = "选择日期时
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Input
+          aria-label={placeholder || '日期时间'}
           type="text"
           value={inputValue}
           onChange={handleInputChange}

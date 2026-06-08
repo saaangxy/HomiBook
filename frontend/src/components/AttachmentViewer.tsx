@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import {
   Dialog,
+  DialogTrigger,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -112,6 +113,7 @@ export function AttachmentViewer({ open, onOpenChange, attachments }: Attachment
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogTrigger />
       <DialogContent
         className={isPreviewing ? '[&>button:last-child]:hidden' : 'max-w-lg'}
         style={isPreviewing ? {

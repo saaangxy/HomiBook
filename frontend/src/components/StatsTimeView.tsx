@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { MultiSelect } from '@/components/ui/multi-select'
 import { DatePicker } from '@/components/ui/date-picker'
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
+  Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
@@ -595,6 +595,7 @@ export function StatsTimeView({ bookId, mode }: Props) {
 
       {/* 堆叠柱状图详情弹窗 */}
       <Dialog open={barDetailOpen} onOpenChange={setBarDetailOpen}>
+        <DialogTrigger />
         <DialogContent className="max-w-3xl max-h-[85vh]">
           <DialogHeader>
             <DialogTitle className="text-sm flex items-center gap-2 flex-wrap">
@@ -628,10 +629,10 @@ export function StatsTimeView({ bookId, mode }: Props) {
                 ))}
               </SelectContent>
             </Select>
-            <Input placeholder="交易方" value={barDetailPayer} onChange={(e) => setBarDetailPayer(e.target.value)} className="h-8 w-24 text-xs" />
-            <Input placeholder="备注" value={barDetailRemark} onChange={(e) => setBarDetailRemark(e.target.value)} className="h-8 w-28 text-xs" />
-            <Input type="number" placeholder="金额≥" value={barDetailAmountFrom} onChange={(e) => setBarDetailAmountFrom(e.target.value)} className="h-8 w-20 text-xs" />
-            <Input type="number" placeholder="金额≤" value={barDetailAmountTo} onChange={(e) => setBarDetailAmountTo(e.target.value)} className="h-8 w-20 text-xs" />
+            <Input aria-label="交易方" placeholder="交易方" value={barDetailPayer} onChange={(e) => setBarDetailPayer(e.target.value)} className="h-8 w-24 text-xs" />
+            <Input aria-label="备注" placeholder="备注" value={barDetailRemark} onChange={(e) => setBarDetailRemark(e.target.value)} className="h-8 w-28 text-xs" />
+            <Input aria-label="金额下限" type="number" placeholder="金额≥" value={barDetailAmountFrom} onChange={(e) => setBarDetailAmountFrom(e.target.value)} className="h-8 w-20 text-xs" />
+            <Input aria-label="金额上限" type="number" placeholder="金额≤" value={barDetailAmountTo} onChange={(e) => setBarDetailAmountTo(e.target.value)} className="h-8 w-20 text-xs" />
             <div className="min-w-28">
               <MultiSelect
                 items={availableTags.map((t) => ({ value: t, label: t }))}
@@ -708,6 +709,7 @@ export function StatsTimeView({ bookId, mode }: Props) {
               </Button>
               <Input
                 type="number"
+                aria-label="跳转页码"
                 min={1}
                 max={barDetailTotalPages}
                 value={barDetailJumpPage}
@@ -716,7 +718,7 @@ export function StatsTimeView({ bookId, mode }: Props) {
                 placeholder="页码"
                 className="h-7 w-16 text-xs text-center"
               />
-              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={handleBarDetailJump}>
+              <Button aria-label="跳转" size="sm" variant="outline" className="h-7 text-xs" onClick={handleBarDetailJump}>
                 跳转
               </Button>
             </div>

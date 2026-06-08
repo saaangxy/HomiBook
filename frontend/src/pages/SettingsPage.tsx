@@ -12,6 +12,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
   Dialog,
+  DialogTrigger,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -357,6 +358,7 @@ export function SettingsPage() {
                   </p>
                 </div>
                 <Input
+                  aria-label="支出高亮阈值"
                   type="number"
                   min="0"
                   step="100"
@@ -393,6 +395,7 @@ export function SettingsPage() {
                   </Select>
                 </div>
                 <Input
+                  aria-label="节假日 API 地址"
                   placeholder="或输入自定义 API 地址，{year} 为年份占位符"
                   value={holidayApiUrl}
                   onChange={(e) => setHolidayApiUrl(e.target.value)}
@@ -611,6 +614,7 @@ export function SettingsPage() {
 
       {/* 添加字典弹窗 */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogTrigger />
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
@@ -626,6 +630,7 @@ export function SettingsPage() {
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">名称</Label>
               <Input
+                aria-label="名称"
                 placeholder="显示名称"
                 value={formLabel}
                 onChange={(e) => { setFormLabel(e.target.value); setFormError('') }}
@@ -636,6 +641,7 @@ export function SettingsPage() {
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">编码</Label>
               <Input
+                aria-label="编码"
                 placeholder="唯一编码，留空则与名称相同"
                 value={formCode}
                 onChange={(e) => setFormCode(e.target.value)}
@@ -645,6 +651,7 @@ export function SettingsPage() {
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">排序</Label>
               <Input
+                aria-label="排序"
                 type="number"
                 value={formOrder}
                 onChange={(e) => setFormOrder(e.target.value)}
@@ -667,6 +674,7 @@ export function SettingsPage() {
 
       {/* 编辑字典弹窗 */}
       <Dialog open={!!editTarget} onOpenChange={() => setEditTarget(null)}>
+        <DialogTrigger />
         <DialogContent>
           <DialogHeader>
             <DialogTitle>编辑字典项</DialogTitle>
@@ -680,6 +688,7 @@ export function SettingsPage() {
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">名称</Label>
               <Input
+                aria-label="名称"
                 value={formLabel}
                 onChange={(e) => { setFormLabel(e.target.value); setFormError('') }}
                 className="bg-background border-border"
@@ -688,6 +697,7 @@ export function SettingsPage() {
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">编码</Label>
               <Input
+                aria-label="编码"
                 value={formCode}
                 onChange={(e) => setFormCode(e.target.value)}
                 className="bg-background border-border"
@@ -696,6 +706,7 @@ export function SettingsPage() {
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">排序</Label>
               <Input
+                aria-label="排序"
                 type="number"
                 value={formOrder}
                 onChange={(e) => setFormOrder(e.target.value)}

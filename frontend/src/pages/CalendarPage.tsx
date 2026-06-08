@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Dialog,
+  DialogTrigger,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -385,6 +386,7 @@ export function CalendarPage() {
 
       {/* 日详情弹窗 */}
       <Dialog open={!!selectedDate} onOpenChange={() => setSelectedDate(null)}>
+        <DialogTrigger />
         <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col p-0 gap-0" aria-describedby={undefined}>
           {/* 头部 */}
           <div className="shrink-0 px-6 pt-6 pb-4 border-b border-border">
@@ -440,6 +442,7 @@ export function CalendarPage() {
                 </SelectContent>
               </Select>
               <Input
+                aria-label="最低金额"
                 type="number"
                 placeholder="最低金额"
                 value={dayAmountMin}
@@ -447,6 +450,7 @@ export function CalendarPage() {
                 className="w-24 h-8 text-xs bg-background border-border rounded-lg"
               />
               <Input
+                aria-label="最高金额"
                 type="number"
                 placeholder="最高金额"
                 value={dayAmountMax}
@@ -538,6 +542,7 @@ export function CalendarPage() {
 
       {/* 新增/编辑弹窗 */}
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
+        <DialogTrigger />
         <DialogContent className="max-w-md" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -586,6 +591,7 @@ export function CalendarPage() {
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground font-medium">¥</span>
                 <Input
+                  aria-label="金额"
                   type="number"
                   placeholder="0.00"
                   value={formAmount}
@@ -659,6 +665,7 @@ export function CalendarPage() {
             <div>
               <Label className="text-xs text-muted-foreground mb-1.5 block">交易方</Label>
               <Input
+                aria-label="交易方"
                 placeholder="商家/对方名称"
                 value={formPayer}
                 onChange={(e) => setFormPayer(e.target.value)}
