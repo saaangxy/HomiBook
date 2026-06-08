@@ -279,6 +279,19 @@ export async function accountRoutes(app: FastifyInstance) {
         else if (r.toAccountId === account.id && r.type === 'TRANSFER') periodMap[key] += r.amount
       }
 
+      // 查询范围内的余额调整，按粒度取最后一个
+      const rangeAdjustments = await prisma.balanceAdjustment.findMany({
+        where: { accountId: account.id, date: { gte: startDate, lte: endDate } },
+        orderBy: { date: 'asc' },
+      })
+      const adjustmentMap: Record<string, number> = {}
+      for (const adj of rangeAdjustments) {
+        const key = granularity === 'monthly'
+          ? adj.date.toISOString().slice(0, 7)
+          : adj.date.toISOString().slice(0, 10)
+        adjustmentMap[key] = adj.balanceAfter
+      }
+
       // 生成日期序列
       const balances: { date: string; balance: number }[] = []
       const cursor = new Date(startDate)
@@ -287,6 +300,10 @@ export async function accountRoutes(app: FastifyInstance) {
           ? `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`
           : cursor.toISOString().slice(0, 10)
 
+        // 先应用余额调整（如果有的话），再叠加期间交易变动
+        if (adjustmentMap[key] !== undefined) {
+          runningBalance = adjustmentMap[key]
+        }
         if (periodMap[key] !== undefined) {
           runningBalance += periodMap[key]
         }

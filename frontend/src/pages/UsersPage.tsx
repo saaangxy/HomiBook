@@ -199,6 +199,7 @@ export function UsersPage() {
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
+                              aria-label="权限管理"
                               variant="outline"
                               size="icon"
                               onClick={() => handleToggleRole(user)}
@@ -212,6 +213,7 @@ export function UsersPage() {
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
+                              aria-label="启用禁用"
                               variant="outline"
                               size="icon"
                               onClick={() => handleToggleStatus(user)}
@@ -225,6 +227,7 @@ export function UsersPage() {
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
+                              aria-label="修改密码"
                               variant="outline"
                               size="icon"
                               onClick={() => { setFormPassword(''); setFormError(''); setShowPassword(false); setTargetUserId(user.id); setPasswordOpen(true) }}
@@ -238,6 +241,7 @@ export function UsersPage() {
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
+                              aria-label="删除用户"
                               variant="outline"
                               size="icon"
                               onClick={() => { setFormError(''); setTargetUser(user); setDeleteOpen(true) }}
