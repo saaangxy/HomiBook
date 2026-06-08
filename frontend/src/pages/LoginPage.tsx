@@ -4,6 +4,7 @@ import { Book, Eye, EyeOff } from 'lucide-react'
 import { authApi } from '../api/auth'
 import { settingsApi } from '../api/settings'
 import { useAuthStore } from '../stores/auth'
+import { PasswordStrength } from '../components/PasswordStrength'
 
 const styles = {
   container: {
@@ -541,6 +542,9 @@ export function LoginPage() {
               >
                 {showRegPass ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
+            </div>
+            <div style={{ width: '100%' }}>
+              <PasswordStrength password={registerPassword} />
             </div>
             {error && <div style={styles.errorText}>{error}</div>}
             <div style={styles.buttonWrapper}>

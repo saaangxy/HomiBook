@@ -1,7 +1,24 @@
 import type { FastifyInstance } from 'fastify'
+import { z } from 'zod'
+import bcrypt from 'bcryptjs'
 import { authService } from '../services/auth.js'
 import { registerSchema, loginSchema } from '../schemas/auth.js'
 import { zSchema } from '../lib/schema-helpers.js'
+import { authenticate } from '../middleware/auth.js'
+
+const updateProfileSchema = z.object({
+  name: z.string().min(1).max(30),
+})
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z
+    .string()
+    .min(8, '密码至少8位')
+    .regex(/[a-z]/, '密码需包含小写字母')
+    .regex(/[A-Z]/, '密码需包含大写字母')
+    .regex(/[0-9]/, '密码需包含数字'),
+})
 
 export async function authRoutes(app: FastifyInstance) {
   // 用户注册
@@ -77,17 +94,74 @@ export async function authRoutes(app: FastifyInstance) {
       description: '获取当前登录用户的详细信息',
       tags: ['认证'],
     },
-  }, async (req, reply) => {
-    const user = (req as any).user
-    if (!user) {
-      return reply.status(401).send({ message: '未授权' })
-    }
-
-    const fullUser = await authService.getUserById(user.id)
+    onRequest: [authenticate],
+  }, async (req) => {
+    const payload = req.user as { id: string }
+    const fullUser = await authService.getUserById(payload.id)
     if (!fullUser) {
-      return reply.status(404).send({ message: '用户不存在' })
+      throw Object.assign(new Error('用户不存在'), { statusCode: 404 })
     }
     return fullUser
+  })
+
+  // 修改个人信息
+  app.patch('/me', {
+    schema: {
+      description: '修改当前用户个人信息（名称）',
+      tags: ['认证'],
+      body: zSchema(updateProfileSchema),
+    },
+    onRequest: [authenticate],
+  }, async (req) => {
+    const parsed = updateProfileSchema.safeParse(req.body)
+    if (!parsed.success) {
+      throw Object.assign(new Error(parsed.error.issues[0].message), { statusCode: 400 })
+    }
+
+    const payload = req.user as { id: string }
+    const user = await prisma.user.update({
+      where: { id: payload.id },
+      data: { name: parsed.data.name },
+      select: { id: true, email: true, name: true, role: true },
+    })
+
+    return user
+  })
+
+  // 修改密码
+  app.patch('/me/password', {
+    schema: {
+      description: '修改当前用户密码（需验证旧密码，新密码需包含大小写字母和数字）',
+      tags: ['认证'],
+      body: zSchema(changePasswordSchema),
+    },
+    onRequest: [authenticate],
+  }, async (req) => {
+    const parsed = changePasswordSchema.safeParse(req.body)
+    if (!parsed.success) {
+      throw Object.assign(new Error(parsed.error.issues[0].message), { statusCode: 400 })
+    }
+
+    const payload = req.user as { id: string }
+    const user = await prisma.user.findUnique({ where: { id: payload.id } })
+    if (!user) {
+      throw Object.assign(new Error('用户不存在'), { statusCode: 404 })
+    }
+
+    // 验证当前密码
+    const valid = await bcrypt.compare(parsed.data.currentPassword, user.password)
+    if (!valid) {
+      throw Object.assign(new Error('当前密码错误'), { statusCode: 400 })
+    }
+
+    // 更新密码
+    const hashedPassword = await bcrypt.hash(parsed.data.newPassword, 10)
+    await prisma.user.update({
+      where: { id: payload.id },
+      data: { password: hashedPassword },
+    })
+
+    return { success: true }
   })
 }
 

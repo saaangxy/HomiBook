@@ -18,6 +18,7 @@ import {
 import { useAuthStore } from '../stores/auth'
 import { useBookStore } from '../stores/book'
 import { BookSwitcher } from '../components/BookSwitcher'
+import { UserMenu } from '../components/UserMenuSheet'
 import {
   Book,
   LayoutDashboard,
@@ -85,23 +86,25 @@ function SidebarUserFooter() {
   const { state } = useSidebar()
 
   return (
-    <div className="flex items-center gap-3 p-3 group-data-[collapsible=icon]:p-1">
-      <Avatar className="w-9 h-9 group-data-[collapsible=icon]:w-7 group-data-[collapsible=icon]:h-7 rounded-[10px] bg-[#f97316] shrink-0">
-        <AvatarFallback className="text-white text-sm font-bold bg-[#f97316]">
-          {(user?.name?.[0] || user?.email?.[0] || 'U').toUpperCase()}
-        </AvatarFallback>
-      </Avatar>
-      {state === 'expanded' && (
-        <div className="overflow-hidden whitespace-nowrap">
-          <div className="text-sm font-semibold text-sidebar-foreground">
-            {user?.name || '用户'}
+    <UserMenu>
+      <div className="flex items-center gap-3 p-3 group-data-[collapsible=icon]:p-1 cursor-pointer hover:bg-accent rounded-[10px] transition-colors">
+        <Avatar className="w-9 h-9 group-data-[collapsible=icon]:w-7 group-data-[collapsible=icon]:h-7 rounded-[10px] bg-[#f97316] shrink-0">
+          <AvatarFallback className="text-white text-sm font-bold bg-[#f97316]">
+            {(user?.name?.[0] || user?.email?.[0] || 'U').toUpperCase()}
+          </AvatarFallback>
+        </Avatar>
+        {state === 'expanded' && (
+          <div className="overflow-hidden whitespace-nowrap">
+            <div className="text-sm font-semibold text-sidebar-foreground">
+              {user?.name || '用户'}
+            </div>
+            <div className="text-xs text-sidebar-foreground/50 mt-0.5 overflow-hidden text-ellipsis">
+              {user?.email || ''}
+            </div>
           </div>
-          <div className="text-xs text-sidebar-foreground/50 mt-0.5 overflow-hidden text-ellipsis">
-            {user?.email || ''}
-          </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </UserMenu>
   )
 }
 
