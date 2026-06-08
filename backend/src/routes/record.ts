@@ -2,6 +2,8 @@ import type { FastifyInstance } from 'fastify'
 import { prisma } from '../app.js'
 import { authenticate } from '../middleware/auth.js'
 import { createRecordSchema, updateRecordSchema, listRecordsSchema, calendarQuerySchema, categorySummarySchema, monthlyTrendSchema, categoryTrendSchema, groupSummarySchema } from '../schemas/record.js'
+import { z } from 'zod'
+import { zSchema } from '../lib/schema-helpers.js'
 import path from 'path'
 import fs from 'fs'
 import { randomUUID } from 'crypto'
@@ -65,7 +67,13 @@ export async function recordRoutes(app: FastifyInstance) {
   app.addHook('onRequest', authenticate)
 
   // 列表查询（分页 + 筛选）
-  app.get('/', async (req, reply) => {
+  app.get('/', {
+    schema: {
+      description: '分页查询记录列表，支持多条件筛选',
+      tags: ['记录'],
+      querystring: zSchema(listRecordsSchema),
+    },
+  }, async (req, reply) => {
     const parsed = listRecordsSchema.safeParse(req.query)
     if (!parsed.success) {
       return reply.status(400).send({ message: parsed.error.issues[0].message })
@@ -149,7 +157,13 @@ export async function recordRoutes(app: FastifyInstance) {
   })
 
   // 汇总统计（与列表查询共用相同的筛选条件）
-  app.get('/summary', async (req, reply) => {
+  app.get('/summary', {
+    schema: {
+      description: '记录汇总统计（收入/支出/转账/净收入）',
+      tags: ['记录'],
+      querystring: zSchema(listRecordsSchema),
+    },
+  }, async (req, reply) => {
     const parsed = listRecordsSchema.safeParse(req.query)
     if (!parsed.success) {
       return reply.status(400).send({ message: parsed.error.issues[0].message })
@@ -225,7 +239,13 @@ export async function recordRoutes(app: FastifyInstance) {
   })
 
   // 获取记录标签列表（用于筛选器下拉）
-  app.get('/tags', async (req, reply) => {
+  app.get('/tags', {
+    schema: {
+      description: '获取账本下所有记录的标签',
+      tags: ['记录'],
+      querystring: zSchema(z.object({ bookId: z.string() })),
+    },
+  }, async (req, reply) => {
     const { bookId } = req.query as { bookId?: string }
     if (!bookId) return reply.status(400).send({ message: '缺少 bookId 参数' })
 
@@ -257,7 +277,13 @@ export async function recordRoutes(app: FastifyInstance) {
   })
 
   // 日历聚合：按天汇总当月收支
-  app.get('/calendar', async (req, reply) => {
+  app.get('/calendar', {
+    schema: {
+      description: '获取月视图每日汇总',
+      tags: ['记录'],
+      querystring: zSchema(calendarQuerySchema),
+    },
+  }, async (req, reply) => {
     const parsed = calendarQuerySchema.safeParse(req.query)
     if (!parsed.success) {
       return reply.status(400).send({ message: parsed.error.issues[0].message })
@@ -309,7 +335,13 @@ export async function recordRoutes(app: FastifyInstance) {
   })
 
   // 分类汇总：按分类统计金额，用于饼图
-  app.get('/category-summary', async (req, reply) => {
+  app.get('/category-summary', {
+    schema: {
+      description: '分类汇总（饼图数据）',
+      tags: ['记录'],
+      querystring: zSchema(categorySummarySchema),
+    },
+  }, async (req, reply) => {
     const parsed = categorySummarySchema.safeParse(req.query)
     if (!parsed.success) {
       return reply.status(400).send({ message: parsed.error.issues[0].message })
@@ -400,7 +432,13 @@ export async function recordRoutes(app: FastifyInstance) {
   })
 
   // 月度趋势：按月份汇总收支
-  app.get('/monthly-trend', async (req, reply) => {
+  app.get('/monthly-trend', {
+    schema: {
+      description: '月度收支趋势',
+      tags: ['记录'],
+      querystring: zSchema(monthlyTrendSchema),
+    },
+  }, async (req, reply) => {
     const parsed = monthlyTrendSchema.safeParse(req.query)
     if (!parsed.success) {
       return reply.status(400).send({ message: parsed.error.issues[0].message })
@@ -476,7 +514,13 @@ export async function recordRoutes(app: FastifyInstance) {
   })
 
   // 分类趋势：按时间周期 + 分类维度聚合，用于堆叠柱状图
-  app.get('/category-trend', async (req, reply) => {
+  app.get('/category-trend', {
+    schema: {
+      description: '分类趋势（按时间维度）',
+      tags: ['记录'],
+      querystring: zSchema(categoryTrendSchema),
+    },
+  }, async (req, reply) => {
     const parsed = categoryTrendSchema.safeParse(req.query)
     if (!parsed.success) {
       return reply.status(400).send({ message: parsed.error.issues[0].message })
@@ -588,7 +632,13 @@ export async function recordRoutes(app: FastifyInstance) {
   })
 
   // 分组汇总：按指定维度聚合
-  app.get('/group-summary', async (req, reply) => {
+  app.get('/group-summary', {
+    schema: {
+      description: '按维度分组汇总',
+      tags: ['记录'],
+      querystring: zSchema(groupSummarySchema),
+    },
+  }, async (req, reply) => {
     const parsed = groupSummarySchema.safeParse(req.query)
     if (!parsed.success) {
       return reply.status(400).send({ message: parsed.error.issues[0].message })
@@ -682,7 +732,13 @@ export async function recordRoutes(app: FastifyInstance) {
   })
 
   // 创建流水
-  app.post('/', async (req, reply) => {
+  app.post('/', {
+    schema: {
+      description: '创建记录，自动刷新账户余额',
+      tags: ['记录'],
+      body: zSchema(createRecordSchema),
+    },
+  }, async (req, reply) => {
     const parsed = createRecordSchema.safeParse(req.body)
     if (!parsed.success) {
       return reply.status(400).send({ message: parsed.error.issues[0].message })
@@ -756,7 +812,13 @@ export async function recordRoutes(app: FastifyInstance) {
   })
 
   // 批量更新
-  app.patch('/batch', async (req, reply) => {
+  app.patch('/batch', {
+    schema: {
+      description: '批量更新记录',
+      tags: ['记录'],
+      body: zSchema(z.object({ ids: z.array(z.string()).min(1), data: z.object({}) })),
+    },
+  }, async (req, reply) => {
     const { ids, data } = req.body as {
       ids: string[]
       data: Record<string, any>
@@ -784,7 +846,14 @@ export async function recordRoutes(app: FastifyInstance) {
   })
 
   // 更新单条
-  app.patch('/:id', async (req, reply) => {
+  app.patch('/:id', {
+    schema: {
+      description: '更新单条记录',
+      tags: ['记录'],
+      body: zSchema(updateRecordSchema),
+      params: zSchema(z.object({ id: z.string() })),
+    },
+  }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const parsed = updateRecordSchema.safeParse(req.body)
     if (!parsed.success) {
@@ -863,7 +932,13 @@ export async function recordRoutes(app: FastifyInstance) {
   })
 
   // 删除
-  app.delete('/:id', async (req, reply) => {
+  app.delete('/:id', {
+    schema: {
+      description: '删除记录及附件',
+      tags: ['记录'],
+      params: zSchema(z.object({ id: z.string() })),
+    },
+  }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const userId = (req as any).user.id as string
 
@@ -897,7 +972,13 @@ export async function recordRoutes(app: FastifyInstance) {
   })
 
   // 复制记录
-  app.post('/:id/clone', async (req, reply) => {
+  app.post('/:id/clone', {
+    schema: {
+      description: '克隆记录',
+      tags: ['记录'],
+      params: zSchema(z.object({ id: z.string() })),
+    },
+  }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const userId = (req as any).user.id as string
 
@@ -948,7 +1029,12 @@ export async function recordRoutes(app: FastifyInstance) {
   })
 
   // 附件上传
-  app.post('/upload', async (req, reply) => {
+  app.post('/upload', {
+    schema: {
+      description: '上传附件',
+      tags: ['记录'],
+    },
+  }, async (req, reply) => {
     const data = await req.file()
     if (!data) return reply.status(400).send({ message: '未上传文件' })
 
@@ -973,7 +1059,13 @@ export async function recordRoutes(app: FastifyInstance) {
   })
 
   // 附件下载（支持还原原始文件名）
-  app.get('/download', async (req, reply) => {
+  app.get('/download', {
+    schema: {
+      description: '下载附件',
+      tags: ['记录'],
+      querystring: zSchema(z.object({ path: z.string(), name: z.string().optional() })),
+    },
+  }, async (req, reply) => {
     const { path: filePath, name } = req.query as { path: string; name?: string }
     if (!filePath) return reply.status(400).send({ message: '缺少 path 参数' })
 

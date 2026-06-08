@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify'
+import { z } from 'zod'
 import { prisma } from '../app.js'
 import { authenticate } from '../middleware/auth.js'
+import { zSchema } from '../lib/schema-helpers.js'
 import {
   createAccountSchema,
   updateAccountSchema,
@@ -102,7 +104,13 @@ export async function accountRoutes(app: FastifyInstance) {
   app.addHook('onRequest', authenticate)
 
   // 列出账本下所有账户
-  app.get('/', async (req, reply) => {
+  app.get('/', {
+    schema: {
+      description: '获取账本下所有账户，含实时计算余额',
+      tags: ['账户'],
+      querystring: zSchema(z.object({ bookId: z.string() })),
+    },
+  }, async (req, reply) => {
     const { bookId } = req.query as { bookId?: string }
     if (!bookId) {
       return reply.status(400).send({ message: '缺少 bookId 参数' })
@@ -139,7 +147,13 @@ export async function accountRoutes(app: FastifyInstance) {
   })
 
   // 创建账户
-  app.post('/', async (req, reply) => {
+  app.post('/', {
+    schema: {
+      description: '创建新账户',
+      tags: ['账户'],
+      body: zSchema(createAccountSchema),
+    },
+  }, async (req, reply) => {
     const userId = (req as any).user.id as string
     const parsed = createAccountSchema.safeParse(req.body)
     if (!parsed.success) {
@@ -184,7 +198,13 @@ export async function accountRoutes(app: FastifyInstance) {
   })
 
   // 账户余额历史：按日或按月返回余额变化
-  app.get('/balance-history', async (req, reply) => {
+  app.get('/balance-history', {
+    schema: {
+      description: '获取账户余额历史变化，按月或按日',
+      tags: ['账户'],
+      querystring: zSchema(balanceHistorySchema),
+    },
+  }, async (req, reply) => {
     const parsed = balanceHistorySchema.safeParse(req.query)
     if (!parsed.success) {
       return reply.status(400).send({ message: parsed.error.issues[0].message })
@@ -327,7 +347,13 @@ export async function accountRoutes(app: FastifyInstance) {
   })
 
   // 获取单个账户详情
-  app.get('/:id', async (req, reply) => {
+  app.get('/:id', {
+    schema: {
+      description: '获取单个账户详情及实时余额',
+      tags: ['账户'],
+      params: zSchema(z.object({ id: z.string() })),
+    },
+  }, async (req, reply) => {
     const userId = (req as any).user.id as string
     const { id } = req.params as { id: string }
 
@@ -357,7 +383,14 @@ export async function accountRoutes(app: FastifyInstance) {
   })
 
   // 更新账户元数据
-  app.patch('/:id', async (req, reply) => {
+  app.patch('/:id', {
+    schema: {
+      description: '更新账户元数据',
+      tags: ['账户'],
+      body: zSchema(updateAccountSchema),
+      params: zSchema(z.object({ id: z.string() })),
+    },
+  }, async (req, reply) => {
     const userId = (req as any).user.id as string
     const { id } = req.params as { id: string }
     const parsed = updateAccountSchema.safeParse(req.body)
@@ -396,7 +429,13 @@ export async function accountRoutes(app: FastifyInstance) {
   })
 
   // 删除账户
-  app.delete('/:id', async (req, reply) => {
+  app.delete('/:id', {
+    schema: {
+      description: '删除账户及其余额调整记录',
+      tags: ['账户'],
+      params: zSchema(z.object({ id: z.string() })),
+    },
+  }, async (req, reply) => {
     const userId = (req as any).user.id as string
     const { id } = req.params as { id: string }
 
@@ -413,7 +452,13 @@ export async function accountRoutes(app: FastifyInstance) {
   })
 
   // 获取余额调整历史
-  app.get('/:id/adjustments', async (req, reply) => {
+  app.get('/:id/adjustments', {
+    schema: {
+      description: '获取账户的余额调整历史',
+      tags: ['账户'],
+      params: zSchema(z.object({ id: z.string() })),
+    },
+  }, async (req, reply) => {
     const userId = (req as any).user.id as string
     const { id } = req.params as { id: string }
 
@@ -435,7 +480,14 @@ export async function accountRoutes(app: FastifyInstance) {
   })
 
   // 创建余额调整
-  app.post('/:id/adjustments', async (req, reply) => {
+  app.post('/:id/adjustments', {
+    schema: {
+      description: '创建余额调整记录，同步更新账户余额',
+      tags: ['账户'],
+      body: zSchema(createAdjustmentSchema),
+      params: zSchema(z.object({ id: z.string() })),
+    },
+  }, async (req, reply) => {
     const userId = (req as any).user.id as string
     const { id } = req.params as { id: string }
     const parsed = createAdjustmentSchema.safeParse(req.body)

@@ -1,6 +1,8 @@
 import type {FastifyInstance} from 'fastify'
 import {prisma} from '../app.js'
 import {authenticate} from '../middleware/auth.js'
+import {z} from 'zod'
+import {zSchema} from '../lib/schema-helpers.js'
 import {
   batchCreateSchema,
   batchUpdateBudgetSchema,
@@ -44,7 +46,13 @@ export async function budgetRoutes(app: FastifyInstance) {
   app.addHook('onRequest', authenticate)
 
   // 获取预算列表
-  app.get('/', async (req, reply) => {
+  app.get('/', {
+    schema: {
+      tags: ['预算'],
+      summary: '查询预算列表',
+      querystring: zSchema(listBudgetsQuerySchema),
+    },
+  }, async (req, reply) => {
     const query = listBudgetsQuerySchema.safeParse(req.query)
     if (!query.success) {
       return reply.status(400).send({ message: query.error.issues[0].message })
@@ -74,7 +82,13 @@ export async function budgetRoutes(app: FastifyInstance) {
   })
 
   // 固定预算列表（含 actualAmount）
-  app.get('/fixed', async (req, reply) => {
+  app.get('/fixed', {
+    schema: {
+      tags: ['预算'],
+      summary: '固定预算列表（含实际金额）',
+      querystring: zSchema(fixedBudgetsQuerySchema),
+    },
+  }, async (req, reply) => {
     const query = fixedBudgetsQuerySchema.safeParse(req.query)
     if (!query.success) {
       return reply.status(400).send({ message: query.error.issues[0].message })
@@ -134,7 +148,13 @@ export async function budgetRoutes(app: FastifyInstance) {
   })
 
   // 自由预算列表
-  app.get('/free', async (req, reply) => {
+  app.get('/free', {
+    schema: {
+      tags: ['预算'],
+      summary: '自由预算列表（含实际金额）',
+      querystring: zSchema(freeBudgetsQuerySchema),
+    },
+  }, async (req, reply) => {
     const query = freeBudgetsQuerySchema.safeParse(req.query)
     if (!query.success) {
       return reply.status(400).send({ message: query.error.issues[0].message })
@@ -222,7 +242,13 @@ export async function budgetRoutes(app: FastifyInstance) {
   })
 
   // 获取可用标签列表
-  app.get('/tags', async (req, reply) => {
+  app.get('/tags', {
+    schema: {
+      tags: ['预算'],
+      summary: '获取所有预算的标签',
+      querystring: zSchema(z.object({ bookId: z.string() })),
+    },
+  }, async (req, reply) => {
     const { bookId } = req.query as { bookId?: string }
     if (!bookId) return reply.status(400).send({ message: '缺少 bookId 参数' })
     await assertIsMember(bookId, (req.user as { id: string }).id)
@@ -247,7 +273,13 @@ export async function budgetRoutes(app: FastifyInstance) {
   })
 
   // 创建单条预算
-  app.post('/', async (req, reply) => {
+  app.post('/', {
+    schema: {
+      tags: ['预算'],
+      summary: '创建预算',
+      body: zSchema(createBudgetSchema),
+    },
+  }, async (req, reply) => {
     const parsed = createBudgetSchema.safeParse(req.body)
     if (!parsed.success) {
       return reply.status(400).send({ message: parsed.error.issues[0].message })
@@ -282,7 +314,14 @@ export async function budgetRoutes(app: FastifyInstance) {
   })
 
   // 更新预算
-  app.patch('/:id', async (req, reply) => {
+  app.patch('/:id', {
+    schema: {
+      tags: ['预算'],
+      summary: '更新预算',
+      body: zSchema(updateBudgetSchema),
+      params: zSchema(z.object({ id: z.string() })),
+    },
+  }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const parsed = updateBudgetSchema.safeParse(req.body)
     if (!parsed.success) {
@@ -309,7 +348,13 @@ export async function budgetRoutes(app: FastifyInstance) {
   })
 
   // 批量更新预算
-  app.patch('/batch', async (req, reply) => {
+  app.patch('/batch', {
+    schema: {
+      tags: ['预算'],
+      summary: '批量更新预算',
+      body: zSchema(batchUpdateBudgetSchema),
+    },
+  }, async (req, reply) => {
     const parsed = batchUpdateBudgetSchema.safeParse(req.body)
     if (!parsed.success) {
       return reply.status(400).send({ message: parsed.error.issues[0].message })
@@ -350,7 +395,13 @@ export async function budgetRoutes(app: FastifyInstance) {
   })
 
   // 删除预算
-  app.delete('/:id', async (req, reply) => {
+  app.delete('/:id', {
+    schema: {
+      tags: ['预算'],
+      summary: '删除预算',
+      params: zSchema(z.object({ id: z.string() })),
+    },
+  }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const existing = await prisma.budget.findUnique({ where: { id } })
     if (!existing) return reply.status(404).send({ message: '预算不存在' })
@@ -361,7 +412,13 @@ export async function budgetRoutes(app: FastifyInstance) {
   })
 
   // 批量生成预算
-  app.post('/batch', async (req, reply) => {
+  app.post('/batch', {
+    schema: {
+      tags: ['预算'],
+      summary: '批量创建多月预算',
+      body: zSchema(batchCreateSchema),
+    },
+  }, async (req, reply) => {
     const parsed = batchCreateSchema.safeParse(req.body)
     if (!parsed.success) {
       return reply.status(400).send({ message: parsed.error.issues[0].message })
@@ -402,7 +459,13 @@ export async function budgetRoutes(app: FastifyInstance) {
   })
 
   // 复制预算
-  app.post('/copy', async (req, reply) => {
+  app.post('/copy', {
+    schema: {
+      tags: ['预算'],
+      summary: '复制预算到目标月份',
+      body: zSchema(copyBudgetsSchema),
+    },
+  }, async (req, reply) => {
     const parsed = copyBudgetsSchema.safeParse(req.body)
     if (!parsed.success) {
       return reply.status(400).send({ message: parsed.error.issues[0].message })

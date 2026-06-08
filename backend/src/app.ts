@@ -2,6 +2,8 @@ import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import jwt from '@fastify/jwt'
 import multipart from '@fastify/multipart'
+import swagger from '@fastify/swagger'
+import scalar from '@scalar/fastify-api-reference'
 import { PrismaClient } from '@prisma/client'
 import path from 'path'
 import fs from 'fs'
@@ -28,6 +30,23 @@ export async function buildApp() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await app.register(multipart as any, {
     limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  })
+
+  // Swagger OpenAPI 文档（自动从路由 schema 生成规范）
+  await app.register(swagger, {
+    openapi: {
+      info: {
+        title: 'Homibook API',
+        description: '家庭记账本 API 文档',
+        version: '1.0.0',
+      },
+      servers: [{ url: 'http://localhost:3002' }],
+    },
+  })
+
+  // Scalar API 文档 UI — 自动检测 @fastify/swagger 生成的规范
+  await app.register(scalar, {
+    routePrefix: '/docs',
   })
 
   // Serve uploaded files statically

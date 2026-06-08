@@ -1,10 +1,17 @@
 import type { FastifyInstance } from 'fastify'
 import { authService } from '../services/auth.js'
 import { registerSchema, loginSchema } from '../schemas/auth.js'
+import { zSchema } from '../lib/schema-helpers.js'
 
 export async function authRoutes(app: FastifyInstance) {
-  // 注册
-  app.post('/register', async (req, reply) => {
+  // 用户注册
+  app.post('/register', {
+    schema: {
+      description: '注册新用户账号',
+      tags: ['认证'],
+      body: zSchema(registerSchema),
+    },
+  }, async (req, reply) => {
     const parsed = registerSchema.safeParse(req.body)
     if (!parsed.success) {
       return reply.status(400).send({ message: '请求参数无效' })
@@ -21,8 +28,14 @@ export async function authRoutes(app: FastifyInstance) {
     }
   })
 
-  // 登录
-  app.post('/login', async (req, reply) => {
+  // 用户登录
+  app.post('/login', {
+    schema: {
+      description: '用户登录，返回 JWT token',
+      tags: ['认证'],
+      body: zSchema(loginSchema),
+    },
+  }, async (req, reply) => {
     const parsed = loginSchema.safeParse(req.body)
     if (!parsed.success) {
       return reply.status(400).send({ message: '请求参数无效' })
@@ -58,8 +71,13 @@ export async function authRoutes(app: FastifyInstance) {
     }
   })
 
-  // 获取当前用户
-  app.get('/me', async (req, reply) => {
+  // 获取当前用户信息
+  app.get('/me', {
+    schema: {
+      description: '获取当前登录用户的详细信息',
+      tags: ['认证'],
+    },
+  }, async (req, reply) => {
     const user = (req as any).user
     if (!user) {
       return reply.status(401).send({ message: '未授权' })

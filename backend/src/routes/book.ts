@@ -9,6 +9,8 @@ import {
   addMemberSchema,
   updateMemberRoleSchema,
 } from '../schemas/book.js'
+import { z } from 'zod'
+import { zSchema } from '../lib/schema-helpers.js'
 
 function generateCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
@@ -65,7 +67,7 @@ export async function bookRoutes(app: FastifyInstance) {
 
   // ============= 查码（必须在 :id 路由之前注册，避免 share-codes 被当作 :id） =============
 
-  app.get('/share-codes/:code', async (req, reply) => {
+  app.get('/share-codes/:code', { schema: { description: '根据分享码查询账本信息', tags: ['账本'], params: zSchema(z.object({ code: z.string() })) } }, async (req, reply) => {
     const { code } = req.params as { code: string }
 
     const shareCode = await prisma.shareCode.findUnique({
@@ -91,7 +93,7 @@ export async function bookRoutes(app: FastifyInstance) {
 
   // ============= 加入账本 =============
 
-  app.post('/join', async (req, reply) => {
+  app.post('/join', { schema: { description: '通过分享码加入账本', tags: ['账本'], body: zSchema(joinByCodeSchema) } }, async (req, reply) => {
     const parsed = joinByCodeSchema.safeParse(req.body)
     if (!parsed.success) {
       return reply.status(400).send({ message: '请求参数无效' })
@@ -150,7 +152,7 @@ export async function bookRoutes(app: FastifyInstance) {
 
   // ============= 获取当前用户的账本列表 =============
 
-  app.get('/', async (req) => {
+  app.get('/', { schema: { description: '获取当前用户的所有账本', tags: ['账本'] } }, async (req) => {
     const payload = req.user as { id: string }
 
     const books = await prisma.accountBook.findMany({
@@ -182,7 +184,7 @@ export async function bookRoutes(app: FastifyInstance) {
 
   // ============= 创建账本 =============
 
-  app.post('/', async (req, reply) => {
+  app.post('/', { schema: { description: '创建新账本', tags: ['账本'], body: zSchema(createBookSchema) } }, async (req, reply) => {
     const parsed = createBookSchema.safeParse(req.body)
     if (!parsed.success) {
       return reply.status(400).send({ message: '请求参数无效' })
@@ -216,7 +218,7 @@ export async function bookRoutes(app: FastifyInstance) {
 
   // ============= 获取单个账本详情 =============
 
-  app.get('/:id', async (req, reply) => {
+  app.get('/:id', { schema: { description: '获取账本详情', tags: ['账本'], params: zSchema(z.object({ id: z.string() })) } }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const payload = req.user as { id: string }
 
@@ -254,7 +256,7 @@ export async function bookRoutes(app: FastifyInstance) {
 
   // ============= 更新账本 =============
 
-  app.patch('/:id', async (req, reply) => {
+  app.patch('/:id', { schema: { description: '更新账本名称', tags: ['账本'], body: zSchema(updateBookSchema), params: zSchema(z.object({ id: z.string() })) } }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const payload = req.user as { id: string }
     const parsed = updateBookSchema.safeParse(req.body)
@@ -280,7 +282,7 @@ export async function bookRoutes(app: FastifyInstance) {
 
   // ============= 删除账本 =============
 
-  app.delete('/:id', async (req, reply) => {
+  app.delete('/:id', { schema: { description: '删除账本及所有关联数据', tags: ['账本'], params: zSchema(z.object({ id: z.string() })) } }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const payload = req.user as { id: string }
 
@@ -305,7 +307,7 @@ export async function bookRoutes(app: FastifyInstance) {
   // ============= 成员管理 =============
 
   // 获取成员列表
-  app.get('/:id/members', async (req, reply) => {
+  app.get('/:id/members', { schema: { description: '获取账本成员列表', tags: ['账本'], params: zSchema(z.object({ id: z.string() })) } }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const payload = req.user as { id: string }
 
@@ -327,7 +329,7 @@ export async function bookRoutes(app: FastifyInstance) {
   })
 
   // 添加成员
-  app.post('/:id/members', async (req, reply) => {
+  app.post('/:id/members', { schema: { description: '添加账本成员', tags: ['账本'], body: zSchema(addMemberSchema), params: zSchema(z.object({ id: z.string() })) } }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const payload = req.user as { id: string }
     const parsed = addMemberSchema.safeParse(req.body)
@@ -368,7 +370,7 @@ export async function bookRoutes(app: FastifyInstance) {
   })
 
   // 移除成员
-  app.delete('/:id/members/:memberId', async (req, reply) => {
+  app.delete('/:id/members/:memberId', { schema: { description: '移除账本成员', tags: ['账本'], params: zSchema(z.object({ id: z.string(), memberId: z.string() })) } }, async (req, reply) => {
     const { id, memberId } = req.params as { id: string; memberId: string }
     const payload = req.user as { id: string }
 
@@ -402,7 +404,7 @@ export async function bookRoutes(app: FastifyInstance) {
   })
 
   // 修改成员角色
-  app.patch('/:id/members/:memberId/role', async (req, reply) => {
+  app.patch('/:id/members/:memberId/role', { schema: { description: '更新成员角色', tags: ['账本'], body: zSchema(updateMemberRoleSchema), params: zSchema(z.object({ id: z.string(), memberId: z.string() })) } }, async (req, reply) => {
     const { id, memberId } = req.params as { id: string; memberId: string }
     const payload = req.user as { id: string }
     const parsed = updateMemberRoleSchema.safeParse(req.body)
@@ -441,7 +443,7 @@ export async function bookRoutes(app: FastifyInstance) {
   // ============= 分享码管理 =============
 
   // 生成分享码
-  app.post('/:id/share-codes', async (req, reply) => {
+  app.post('/:id/share-codes', { schema: { description: '生成分享码', tags: ['账本'], body: zSchema(generateShareCodeSchema), params: zSchema(z.object({ id: z.string() })) } }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const payload = req.user as { id: string }
     const parsed = generateShareCodeSchema.safeParse(req.body)
@@ -475,7 +477,7 @@ export async function bookRoutes(app: FastifyInstance) {
   })
 
   // 获取分享码列表
-  app.get('/:id/share-codes', async (req) => {
+  app.get('/:id/share-codes', { schema: { description: '获取账本分享码列表', tags: ['账本'], params: zSchema(z.object({ id: z.string() })) } }, async (req) => {
     const { id } = req.params as { id: string }
     const payload = req.user as { id: string }
 
@@ -496,7 +498,7 @@ export async function bookRoutes(app: FastifyInstance) {
   })
 
   // 删除分享码
-  app.delete('/:id/share-codes/:codeId', async (req, reply) => {
+  app.delete('/:id/share-codes/:codeId', { schema: { description: '删除分享码', tags: ['账本'], params: zSchema(z.object({ id: z.string(), codeId: z.string() })) } }, async (req, reply) => {
     const { id, codeId } = req.params as { id: string; codeId: string }
     const payload = req.user as { id: string }
 

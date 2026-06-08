@@ -3,6 +3,7 @@ import { z } from 'zod'
 import bcrypt from 'bcryptjs'
 import { prisma } from '../app.js'
 import { authenticate, requireAdmin } from '../middleware/auth.js'
+import { zSchema } from '../lib/schema-helpers.js'
 
 const createUserSchema = z.object({
   email: z.string().email(),
@@ -27,7 +28,12 @@ export async function adminRoutes(app: FastifyInstance) {
   app.addHook('onRequest', requireAdmin)
 
   // 获取用户列表
-  app.get('/users', async (req, reply) => {
+  app.get('/users', {
+    schema: {
+      description: '获取所有用户列表',
+      tags: ['管理'],
+    },
+  }, async (req, reply) => {
     const users = await prisma.user.findMany({
       select: {
         id: true,
@@ -43,7 +49,13 @@ export async function adminRoutes(app: FastifyInstance) {
   })
 
   // 创建用户
-  app.post('/users', async (req, reply) => {
+  app.post('/users', {
+    schema: {
+      description: '管理员创建新用户',
+      tags: ['管理'],
+      body: zSchema(createUserSchema),
+    },
+  }, async (req, reply) => {
     const parsed = createUserSchema.safeParse(req.body)
     if (!parsed.success) {
       return reply.status(400).send({ message: '请求参数无效' })
@@ -80,7 +92,14 @@ export async function adminRoutes(app: FastifyInstance) {
   })
 
   // 更新用户信息（角色、状态、名称）
-  app.patch('/users/:id', async (req, reply) => {
+  app.patch('/users/:id', {
+    schema: {
+      description: '更新用户信息（名称、角色、状态）',
+      tags: ['管理'],
+      body: zSchema(updateUserSchema),
+      params: zSchema(z.object({ id: z.string() })),
+    },
+  }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const parsed = updateUserSchema.safeParse(req.body)
     if (!parsed.success) {
@@ -109,7 +128,14 @@ export async function adminRoutes(app: FastifyInstance) {
   })
 
   // 修改用户密码
-  app.patch('/users/:id/password', async (req, reply) => {
+  app.patch('/users/:id/password', {
+    schema: {
+      description: '修改指定用户的密码',
+      tags: ['管理'],
+      body: zSchema(changePasswordSchema),
+      params: zSchema(z.object({ id: z.string() })),
+    },
+  }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const parsed = changePasswordSchema.safeParse(req.body)
     if (!parsed.success) {
@@ -131,7 +157,13 @@ export async function adminRoutes(app: FastifyInstance) {
   })
 
   // 删除用户
-  app.delete('/users/:id', async (req, reply) => {
+  app.delete('/users/:id', {
+    schema: {
+      description: '删除用户（不能删除自己）',
+      tags: ['管理'],
+      params: zSchema(z.object({ id: z.string() })),
+    },
+  }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const payload = req.user as { id: string }
 

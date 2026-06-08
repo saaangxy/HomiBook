@@ -1,10 +1,18 @@
 import type { FastifyInstance } from 'fastify'
+import { z } from 'zod'
+import { zSchema } from '../lib/schema-helpers.js'
 import { prisma } from '../app.js'
 import { authenticate, requireAdmin } from '../middleware/auth.js'
 
 export async function holidayRoutes(app: FastifyInstance) {
   // 查询指定年份节假日
-  app.get('/', async (req) => {
+  app.get('/', {
+    schema: {
+      tags: ['节假日'],
+      summary: '查询节假日列表',
+      querystring: zSchema(z.object({ year: z.coerce.number().int().optional() })),
+    },
+  }, async (req) => {
     const { year } = req.query as { year?: string }
     const where: any = {}
     if (year) {
@@ -18,7 +26,13 @@ export async function holidayRoutes(app: FastifyInstance) {
   })
 
   // 管理员：从外部 API 同步节假日
-  app.post('/sync', { onRequest: [authenticate, requireAdmin] }, async (req, reply) => {
+  app.post('/sync', {
+    onRequest: [authenticate, requireAdmin],
+    schema: {
+      tags: ['节假日'],
+      summary: '同步外部节假日数据',
+    },
+  }, async (req, reply) => {
     // 从配置中获取 API 地址
     const config = await prisma.systemConfig.findUnique({ where: { key: 'holidayApiUrl' } })
     const apiUrl = config ? JSON.parse(config.value) : 'https://timor.tech/api/holiday/year'

@@ -1,6 +1,8 @@
 import type {FastifyInstance} from 'fastify'
 import {prisma} from '../app.js'
 import {authenticate} from '../middleware/auth.js'
+import {z} from 'zod'
+import {zSchema} from '../lib/schema-helpers.js'
 import {createRecurringSchema, listRecurringSchema, updateRecurringSchema,} from '../schemas/recurring.js'
 import {
   calcEqualInstallment,
@@ -24,7 +26,13 @@ export async function recurringRoutes(app: FastifyInstance) {
   app.addHook('onRequest', authenticate)
 
   // 列表
-  app.get('/', async (req) => {
+  app.get('/', {
+    schema: {
+      tags: ['固定收支'],
+      summary: '获取固定收支/贷款列表',
+      querystring: zSchema(listRecurringSchema),
+    },
+  }, async (req) => {
     const parsed = listRecurringSchema.safeParse(req.query)
     if (!parsed.success) throw Object.assign(new Error('参数错误'), { statusCode: 400 })
 
@@ -51,7 +59,19 @@ export async function recurringRoutes(app: FastifyInstance) {
   })
 
   // 计算贷款预览
-  app.post('/loan-preview', async (req) => {
+  app.post('/loan-preview', {
+    schema: {
+      tags: ['固定收支'],
+      summary: '贷款计算预览',
+      body: zSchema(z.object({
+        total: z.number().positive(),
+        annualRate: z.number().min(0),
+        months: z.number().int().min(1),
+        startDate: z.string(),
+        method: z.enum(['EQUAL_INSTALLMENT', 'EQUAL_PRINCIPAL']),
+      })),
+    },
+  }, async (req) => {
     const { total, annualRate, months, startDate, method } = req.body as {
       total: number
       annualRate: number
@@ -79,7 +99,13 @@ export async function recurringRoutes(app: FastifyInstance) {
   })
 
   // 获取还款计划
-  app.get('/:id/plan', async (req, reply) => {
+  app.get('/:id/plan', {
+    schema: {
+      tags: ['固定收支'],
+      summary: '获取还款计划',
+      params: zSchema(z.object({ id: z.string() })),
+    },
+  }, async (req, reply) => {
     const { id } = req.params as { id: string }
 
     const rt = await prisma.recurringTransaction.findUnique({ where: { id } })
@@ -95,7 +121,13 @@ export async function recurringRoutes(app: FastifyInstance) {
   })
 
   // 详情
-  app.get('/:id', async (req, reply) => {
+  app.get('/:id', {
+    schema: {
+      tags: ['固定收支'],
+      summary: '获取固定收支详情',
+      params: zSchema(z.object({ id: z.string() })),
+    },
+  }, async (req, reply) => {
     const { id } = req.params as { id: string }
 
     const rt = await prisma.recurringTransaction.findUnique({
@@ -116,7 +148,13 @@ export async function recurringRoutes(app: FastifyInstance) {
   })
 
   // 创建
-  app.post('/', async (req, reply) => {
+  app.post('/', {
+    schema: {
+      tags: ['固定收支'],
+      summary: '创建固定收支或贷款',
+      body: zSchema(createRecurringSchema),
+    },
+  }, async (req, reply) => {
     const parsed = createRecurringSchema.safeParse(req.body)
     if (!parsed.success) {
       return reply.status(400).send({ message: parsed.error.issues[0].message })
@@ -254,7 +292,14 @@ export async function recurringRoutes(app: FastifyInstance) {
   })
 
   // 更新
-  app.patch('/:id', async (req, reply) => {
+  app.patch('/:id', {
+    schema: {
+      tags: ['固定收支'],
+      summary: '更新固定收支',
+      body: zSchema(updateRecurringSchema),
+      params: zSchema(z.object({ id: z.string() })),
+    },
+  }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const parsed = updateRecurringSchema.safeParse(req.body)
     if (!parsed.success) {
@@ -288,7 +333,13 @@ export async function recurringRoutes(app: FastifyInstance) {
   })
 
   // 删除
-  app.delete('/:id', async (req, reply) => {
+  app.delete('/:id', {
+    schema: {
+      tags: ['固定收支'],
+      summary: '删除固定收支',
+      params: zSchema(z.object({ id: z.string() })),
+    },
+  }, async (req, reply) => {
     const { id } = req.params as { id: string }
 
     const existing = await prisma.recurringTransaction.findUnique({ where: { id } })
@@ -302,7 +353,13 @@ export async function recurringRoutes(app: FastifyInstance) {
   })
 
   // 切换启用/停用
-  app.patch('/:id/toggle', async (req, reply) => {
+  app.patch('/:id/toggle', {
+    schema: {
+      tags: ['固定收支'],
+      summary: '切换启用/停用状态',
+      params: zSchema(z.object({ id: z.string() })),
+    },
+  }, async (req, reply) => {
     const { id } = req.params as { id: string }
 
     const existing = await prisma.recurringTransaction.findUnique({ where: { id } })

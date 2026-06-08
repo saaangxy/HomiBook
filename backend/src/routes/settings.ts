@@ -4,10 +4,12 @@ import { authenticate, requireAdmin } from '../middleware/auth.js'
 import { updateConfigSchema, createDictionarySchema, updateDictionarySchema } from '../schemas/settings.js'
 import path from 'path'
 import fs from 'fs'
+import { z } from 'zod'
+import { zSchema } from '../lib/schema-helpers.js'
 
 export async function settingsRoutes(app: FastifyInstance) {
   // 公开端点 — 无需认证，独立作用域避免被下方 hook 影响
-  app.get('/public', async () => {
+  app.get('/public', { schema: { description: '获取公开配置（注册开关）', tags: ['设置'] } }, async () => {
     const config = await prisma.systemConfig.findUnique({ where: { key: 'registrationOpen' } })
     const registrationOpen = config ? JSON.parse(config.value) : true
     return { registrationOpen }
@@ -18,7 +20,7 @@ export async function settingsRoutes(app: FastifyInstance) {
     child.addHook('onRequest', authenticate)
 
     // 字典 — 只读（所有登录用户可读）
-    child.get('/dictionary/:group', async (req, reply) => {
+    child.get('/dictionary/:group', { schema: { description: '获取字典数据', tags: ['设置'], params: zSchema(z.object({ group: z.string() })) } }, async (req, reply) => {
       const { group } = req.params as { group: string }
       const items = await prisma.dictionary.findMany({
         where: { group },
@@ -32,7 +34,7 @@ export async function settingsRoutes(app: FastifyInstance) {
       adminChild.addHook('onRequest', requireAdmin)
 
       // 获取所有配置
-      adminChild.get('/config', async () => {
+      adminChild.get('/config', { schema: { description: '获取所有系统配置', tags: ['设置'] } }, async () => {
         const configs = await prisma.systemConfig.findMany()
         const result: Record<string, unknown> = {}
         for (const c of configs) {
@@ -43,7 +45,7 @@ export async function settingsRoutes(app: FastifyInstance) {
       })
 
       // 更新配置
-      adminChild.put('/config', async (req, reply) => {
+      adminChild.put('/config', { schema: { description: '更新系统配置', tags: ['设置'], body: zSchema(updateConfigSchema) } }, async (req, reply) => {
         const parsed = updateConfigSchema.safeParse(req.body)
         if (!parsed.success) {
           return reply.status(400).send({ message: parsed.error.issues[0].message })
@@ -62,7 +64,7 @@ export async function settingsRoutes(app: FastifyInstance) {
       })
 
       // 添加字典项
-      adminChild.post('/dictionary', async (req, reply) => {
+      adminChild.post('/dictionary', { schema: { description: '创建字典项', tags: ['设置'], body: zSchema(createDictionarySchema) } }, async (req, reply) => {
         const parsed = createDictionarySchema.safeParse(req.body)
         if (!parsed.success) {
           return reply.status(400).send({ message: parsed.error.issues[0].message })
@@ -83,7 +85,7 @@ export async function settingsRoutes(app: FastifyInstance) {
       })
 
       // 更新字典项
-      adminChild.patch('/dictionary/:id', async (req, reply) => {
+      adminChild.patch('/dictionary/:id', { schema: { description: '更新字典项', tags: ['设置'], body: zSchema(updateDictionarySchema), params: zSchema(z.object({ id: z.string() })) } }, async (req, reply) => {
         const { id } = req.params as { id: string }
         const parsed = updateDictionarySchema.safeParse(req.body)
         if (!parsed.success) {
@@ -99,7 +101,7 @@ export async function settingsRoutes(app: FastifyInstance) {
       })
 
       // 删除字典项
-      adminChild.delete('/dictionary/:id', async (req, reply) => {
+      adminChild.delete('/dictionary/:id', { schema: { description: '删除字典项', tags: ['设置'], params: zSchema(z.object({ id: z.string() })) } }, async (req, reply) => {
         const { id } = req.params as { id: string }
 
         const existing = await prisma.dictionary.findUnique({ where: { id } })
@@ -112,7 +114,7 @@ export async function settingsRoutes(app: FastifyInstance) {
       })
 
       // 查询孤儿附件（recordId 为 null）
-      adminChild.get('/attachments/orphans', async () => {
+      adminChild.get('/attachments/orphans', { schema: { description: '获取孤立附件列表', tags: ['设置'] } }, async () => {
         const orphans = await prisma.recordAttachment.findMany({
           where: { recordId: null },
           select: { id: true, path: true, originalFilename: true, createdAt: true },
@@ -127,7 +129,7 @@ export async function settingsRoutes(app: FastifyInstance) {
       })
 
       // 清理孤儿附件（删除文件 + DB 记录）
-      adminChild.post('/attachments/clean-orphans', async () => {
+      adminChild.post('/attachments/clean-orphans', { schema: { description: '清理孤立附件', tags: ['设置'] } }, async () => {
         const orphans = await prisma.recordAttachment.findMany({
           where: { recordId: null },
           select: { id: true, path: true },
