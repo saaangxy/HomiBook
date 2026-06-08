@@ -1,15 +1,15 @@
-import type { FastifyInstance } from 'fastify'
-import { prisma } from '../app.js'
-import { authenticate } from '../middleware/auth.js'
+import type {FastifyInstance} from 'fastify'
+import {prisma} from '../app.js'
+import {authenticate} from '../middleware/auth.js'
 import {
-  createBudgetSchema,
-  updateBudgetSchema,
   batchCreateSchema,
   batchUpdateBudgetSchema,
   copyBudgetsSchema,
-  listBudgetsQuerySchema,
+  createBudgetSchema,
   fixedBudgetsQuerySchema,
   freeBudgetsQuerySchema,
+  listBudgetsQuerySchema,
+  updateBudgetSchema,
 } from '../schemas/budget.js'
 
 function parseTags(tags: string): string[] {
@@ -106,7 +106,7 @@ export async function budgetRoutes(app: FastifyInstance) {
     const incomeCodes = new Set(incomeDicts.map(d => d.code))
 
     // 计算每个预算的实际金额
-    const result = await Promise.all(budgets.map(async (budget) => {
+    return await Promise.all(budgets.map(async (budget) => {
       let actualAmount = 0
       if (budget.categoryCode) {
         const budgetStartDate = new Date(Date.UTC(budget.year, budget.month - 1, 1))
@@ -118,20 +118,19 @@ export async function budgetRoutes(app: FastifyInstance) {
 
         const where: any = {
           accountBookId: bookId,
-          date: { gte: budgetStartDate, lte: budgetEndDate },
+          date: {gte: budgetStartDate, lte: budgetEndDate},
           categoryCode: budget.categoryCode,
         }
         if (recordType) where.type = recordType
 
         const agg = await prisma.record.aggregate({
           where,
-          _sum: { amount: true },
+          _sum: {amount: true},
         })
         actualAmount = agg._sum.amount ?? 0
       }
-      return { ...mapBudget(budget), actualAmount }
+      return {...mapBudget(budget), actualAmount}
     }))
-    return result
   })
 
   // 自由预算列表
@@ -182,17 +181,18 @@ export async function budgetRoutes(app: FastifyInstance) {
     })
 
     // 计算每个预算的实际金额（按标签 + 预算自身日期范围）
-    const result = await Promise.all(budgets.map(async (budget) => {
+    return await Promise.all(budgets.map(async (budget) => {
       let actualAmount = 0
       let budgetTags: string[] = []
       try {
         const parsed = JSON.parse(budget.tags)
         if (Array.isArray(parsed)) budgetTags = parsed.filter((t: any) => typeof t === 'string' && t.trim())
-      } catch { /* ignore */ }
+      } catch { /* ignore */
+      }
 
       if (budgetTags.length > 0) {
         const tagConditions = budgetTags.map((tag) => ({
-          tags: { contains: tag },
+          tags: {contains: tag},
         }))
 
         const recordWhere: any = {
@@ -213,13 +213,12 @@ export async function budgetRoutes(app: FastifyInstance) {
 
         const agg = await prisma.record.aggregate({
           where: recordWhere,
-          _sum: { amount: true },
+          _sum: {amount: true},
         })
         actualAmount = agg._sum.amount ?? 0
       }
-      return { ...mapBudget(budget), actualAmount }
+      return {...mapBudget(budget), actualAmount}
     }))
-    return result
   })
 
   // 获取可用标签列表

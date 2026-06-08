@@ -1039,28 +1039,28 @@ export function RecordsPage() {
                     <TableCell className="text-right py-2.5">
                       <div className="flex items-center justify-end gap-0.5">
                         {record.attachments?.length > 0 && (
-                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setViewingAttachments(record.attachments)}>
+                          <Button aria-label="设置附件查看器" variant="ghost" size="icon" className="h-7 w-7" onClick={() => setViewingAttachments(record.attachments)}>
                             <Paperclip size={13} />
                           </Button>
                         )}
                         {editMode ? (
                           <>
-                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleClone(record)}>
+                            <Button aria-label="关闭" variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleClone(record)}>
                               <Copy size={13} />
                             </Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-[#ef4444]" onClick={() => setDeleteTarget(record)}>
+                            <Button aria-label="删除" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-[#ef4444]" onClick={() => setDeleteTarget(record)}>
                               <Trash2 size={13} />
                             </Button>
                           </>
                         ) : (
                           <>
-                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(record)}>
+                            <Button aria-label="编辑" variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(record)}>
                               <Pencil size={13} />
                             </Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleClone(record)}>
+                            <Button aria-label="复制" variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleClone(record)}>
                               <Copy size={13} />
                             </Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-[#ef4444]" onClick={() => setDeleteTarget(record)}>
+                            <Button aria-label="删除" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-[#ef4444]" onClick={() => setDeleteTarget(record)}>
                               <Trash2 size={13} />
                             </Button>
                           </>

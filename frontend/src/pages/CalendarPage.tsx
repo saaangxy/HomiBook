@@ -45,11 +45,6 @@ import { useBookStore } from '../stores/book'
 import { useAuthStore } from '../stores/auth'
 import { Plus, ArrowUpRight, ArrowDownRight, ArrowLeftRight, Pencil, Trash2, TrendingUp, TrendingDown, ReceiptText, Paperclip } from 'lucide-react'
 
-const TYPE_COLORS: Record<RecordType, string> = {
-  INCOME: 'text-[#22c55e] bg-[#22c55e]/10',
-  EXPENSE: 'text-[#ef4444] bg-[#ef4444]/10',
-  TRANSFER: 'text-[#3b82f6] bg-[#3b82f6]/10',
-}
 const TYPE_LABELS: Record<RecordType, string> = {
   INCOME: '收入',
   EXPENSE: '支出',
@@ -436,7 +431,7 @@ export function CalendarPage() {
                 </SelectTrigger>
                 <SelectContent className="bg-card border-border">
                   <SelectItem value="ALL">全部分类</SelectItem>
-                  {dayCategories.map((c) => (
+                  {dayCategories.map((c: any) => (
                     <SelectItem key={c} value={c}>{c}</SelectItem>
                   ))}
                 </SelectContent>

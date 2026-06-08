@@ -1,18 +1,13 @@
-import type { FastifyInstance } from 'fastify'
-import { prisma } from '../app.js'
-import { authenticate } from '../middleware/auth.js'
-import {
-  createRecurringSchema,
-  updateRecurringSchema,
-  listRecurringSchema,
-} from '../schemas/recurring.js'
+import type {FastifyInstance} from 'fastify'
+import {prisma} from '../app.js'
+import {authenticate} from '../middleware/auth.js'
+import {createRecurringSchema, listRecurringSchema, updateRecurringSchema,} from '../schemas/recurring.js'
 import {
   calcEqualInstallment,
+  ensureFixedTag,
   generateEqualInstallmentPlan,
   generateEqualPrincipalPlan,
   getNextTriggerTime,
-  getCurrentPeriod,
-  ensureFixedTag,
 } from '../services/recurring.js'
 
 async function assertIsMember(bookId: string, userId: string) {
@@ -93,12 +88,10 @@ export async function recurringRoutes(app: FastifyInstance) {
     const userId = (req as any).user.id as string
     await assertIsMember(rt.accountBookId, userId)
 
-    const plans = await prisma.repaymentPlan.findMany({
-      where: { recurringTransactionId: id },
-      orderBy: { period: 'asc' },
-    })
-
-    return plans
+    return prisma.repaymentPlan.findMany({
+      where: {recurringTransactionId: id},
+      orderBy: {period: 'asc'},
+    });
   })
 
   // 详情
@@ -194,7 +187,7 @@ export async function recurringRoutes(app: FastifyInstance) {
       const planData = plan.map((p) => {
         const isPastDue = p.dueDate <= now
         let status: string = 'PENDING'
-        if (isPastDue && data.generateAll !== false) {
+        if (isPastDue && data.generateAll) {
           status = 'PENDING' // will be generated below
         }
         return {
@@ -212,7 +205,7 @@ export async function recurringRoutes(app: FastifyInstance) {
       await prisma.repaymentPlan.createMany({ data: planData })
 
       // 全部生成：立即为已到期的计划创建流水记录
-      if (data.generateAll !== false) {
+      if (data.generateAll) {
         const pastDuePlans = planData.filter((p) => p.dueDate <= now)
         if (pastDuePlans.length > 0) {
           const createdPlans = await prisma.repaymentPlan.findMany({
