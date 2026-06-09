@@ -7,6 +7,8 @@
 @import '@fontsource/playfair-display';
 @import '@fontsource/source-serif-4';
 @import '@fontsource/cormorant-garamond';
+@import '@fontsource/fredoka';
+@import '@fontsource/nunito';
 
 @tailwind base;
 @tailwind components;
@@ -1332,38 +1334,111 @@
   transform: translate(-1px, -1px);
 }
 
-/* ---- 糖果铺：玻璃罐透明质感 + 漩涡纹理 ---- */
+/* ---- 糖果铺·玻璃罐记账：薄荷绿玻璃 + 草莓硬糖粉 + 柠檬黄点缀 ---- */
 [data-theme="candy"] {
-  --theme-font: "ZCOOL KuaiLe", "圆体", "幼圆", YouYuan, sans-serif;
+  --theme-font: "Fredoka", "Nunito", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 
+/* ===== 标题：Fredoka 圆润可爱 ===== */
+[data-theme="candy"] h1,
+[data-theme="candy"] h2,
+[data-theme="candy"] h3,
+[data-theme="candy"] [data-sidebar="sidebar"] span[class*="font-extrabold"],
+[data-theme="candy"] header span[class*="font-semibold"] {
+  font-family: "Fredoka", "Nunito", "Noto Sans SC", "PingFang SC", sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+/* ===== 正文：Nunito 温暖圆体 ===== */
+[data-theme="candy"] body {
+  font-family: "Nunito", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+/* ===== 奶油色背景 + 糖果色柔光 + 糖霜颗粒 ===== */
 [data-theme="candy"] body {
   background-color: hsl(var(--background));
   background-image:
-    /* 玻璃高光 */
-    radial-gradient(ellipse at 30% 20%, hsl(340 60% 55% / 0.06) 0%, transparent 50%),
-    radial-gradient(ellipse at 70% 60%, hsl(160 45% 48% / 0.05) 0%, transparent 50%),
-    radial-gradient(ellipse at 50% 80%, hsl(45 80% 55% / 0.04) 0%, transparent 40%),
-    /* 糖果漩涡 */
-    url("data:image/svg+xml,%3Csvg width='100' height='100' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='50' cy='50' r='45' fill='none' stroke='%23e891a8' stroke-width='1' opacity='0.04'/%3E%3Ccircle cx='50' cy='50' r='30' fill='none' stroke='%23e891a8' stroke-width='0.8' opacity='0.04'/%3E%3Ccircle cx='50' cy='50' r='15' fill='none' stroke='%23e891a8' stroke-width='0.6' opacity='0.04'/%3E%3C/svg%3E");
+    /* 草莓硬糖粉柔光 */
+    radial-gradient(ellipse at 20% 25%, hsl(0 77% 74% / 0.07) 0%, transparent 45%),
+    /* 薄荷绿玻璃柔光 */
+    radial-gradient(ellipse at 72% 35%, hsl(160 38% 75% / 0.08) 0%, transparent 40%),
+    /* 柠檬黄柔光 */
+    radial-gradient(ellipse at 45% 72%, hsl(45 86% 72% / 0.06) 0%, transparent 45%),
+    /* 第二颗草莓柔光 */
+    radial-gradient(ellipse at 82% 78%, hsl(0 77% 74% / 0.05) 0%, transparent 35%),
+    /* 糖霜颗粒 */
+    radial-gradient(circle at 15% 35%, hsl(0 0% 100% / 0.5) 0.4px, transparent 0.4px),
+    radial-gradient(circle at 55% 18%, hsl(0 0% 100% / 0.4) 0.5px, transparent 0.5px),
+    radial-gradient(circle at 70% 55%, hsl(0 0% 100% / 0.45) 0.3px, transparent 0.3px),
+    radial-gradient(circle at 30% 68%, hsl(0 0% 100% / 0.4) 0.6px, transparent 0.6px),
+    radial-gradient(circle at 82% 42%, hsl(0 0% 100% / 0.45) 0.4px, transparent 0.4px);
+  background-size: 100% 100%, 100% 100%, 100% 100%, 100% 100%, 90px 90px, 100px 100px, 80px 80px, 110px 110px, 95px 95px;
+  background-position: 0 0, 0 0, 0 0, 0 0, 10px 8px, 30px 15px, 5px 20px, 18px 35px, 40px 5px;
   background-attachment: fixed;
 }
 
-[data-theme="candy"] .card,
-[data-theme="candy"] [class*="rounded"][class*="border"] {
-  border-width: 2px;
-  box-shadow:
-    0 2px 16px hsl(340 60% 55% / 0.08),
-    inset 0 1px 0 hsl(0 0% 100% / 0.6);
-  backdrop-filter: blur(2px);
+/* ===== 散落的糖果装饰 ===== */
+[data-theme="candy"] #root::before {
+  content: '●';
+  position: fixed;
+  top: 12%;
+  left: 7%;
+  font-size: 32px;
+  color: hsl(0 77% 74%);
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: 0;
+  text-shadow: 0 4px 16px hsl(0 77% 74% / 0.35);
+  animation: candy-float 6s ease-in-out infinite;
 }
 
-[data-theme="candy"] ::selection {
-  background: hsl(340 60% 55% / 0.25);
-  color: hsl(330 25% 22%);
+[data-theme="candy"] #root::after {
+  content: '●';
+  position: fixed;
+  top: 25%;
+  right: 10%;
+  font-size: 24px;
+  color: hsl(160 38% 75%);
+  opacity: 0.5;
+  pointer-events: none;
+  z-index: 0;
+  text-shadow: 0 3px 12px hsl(160 38% 75% / 0.4);
+  animation: candy-float 7s ease-in-out 1.5s infinite;
 }
 
-/* 玻璃罐高光条纹 */
+@keyframes candy-float {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(-16px) rotate(8deg); }
+  50% { transform: translateY(-6px) rotate(-5deg); }
+  75% { transform: translateY(-20px) rotate(12deg); }
+}
+
+/* ===== 主内容区：透明玻璃质感 ===== */
+[data-theme="candy"] main {
+  background-color: hsl(0 0% 100% / 0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border-left: 1.5px solid hsl(160 38% 75% / 0.25);
+  border-right: 1.5px solid hsl(160 38% 75% / 0.25);
+}
+
+/* ===== 侧边栏：磨砂玻璃罐 ===== */
+[data-theme="candy"] [data-sidebar="sidebar"] {
+  background: linear-gradient(
+    170deg,
+    hsl(0 0% 100% / 0.5) 0%,
+    hsl(160 38% 75% / 0.2) 40%,
+    hsl(160 38% 75% / 0.1) 70%,
+    hsl(0 77% 74% / 0.08) 100%
+  );
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-right: 2px solid hsl(0 0% 100% / 0.4);
+  box-shadow: 0 8px 32px hsl(289 14% 22% / 0.08);
+}
+
+/* 侧边栏玻璃高光条纹 */
 [data-theme="candy"] [data-sidebar="sidebar"]::after {
   content: '';
   position: absolute;
@@ -1373,20 +1448,217 @@
   height: 100%;
   background: linear-gradient(
     180deg,
-    hsl(0 0% 100% / 0.15) 0%,
-    hsl(0 0% 100% / 0.05) 40%,
+    hsl(0 0% 100% / 0.3) 0%,
+    hsl(0 0% 100% / 0.08) 40%,
     transparent 60%,
-    hsl(0 0% 100% / 0.1) 100%
+    hsl(0 0% 100% / 0.12) 100%
   );
   pointer-events: none;
   z-index: 10;
+  animation: candy-shine 5s ease-in-out infinite;
 }
 
-/* 按钮玻璃质感 */
-[data-theme="candy"] button[class*="primary"] {
+@keyframes candy-shine {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+/* 侧边栏活跃项：糖果色圆点 */
+[data-theme="candy"] [data-sidebar="sidebar"] a[data-active="true"]::after,
+[data-theme="candy"] [data-sidebar="sidebar"] a[aria-current="page"]::after {
+  content: '●';
+  font-size: 8px;
+  margin-left: auto;
+  color: hsl(0 77% 74%);
+  text-shadow: 0 0 8px hsl(0 77% 74% / 0.5);
+}
+
+/* ===== 卡片：糖纸卡片 ===== */
+[data-theme="candy"] .card:not([role="dialog"]),
+[data-theme="candy"] [class*="rounded-xl"][class*="border"]:not([role="dialog"]) {
+  border: 2px solid hsl(160 38% 75% / 0.25) !important;
+  border-radius: 20px !important;
+  background: hsl(0 0% 100% / 0.7) !important;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   box-shadow:
-    0 4px 14px hsl(340 60% 55% / 0.3),
-    inset 0 1px 0 hsl(0 0% 100% / 0.2);
+    0 4px 20px hsl(289 14% 22% / 0.06),
+    inset 0 1px 0 hsl(0 0% 100% / 0.8) !important;
+  transition: box-shadow 0.3s ease, transform 0.3s ease;
+}
+
+[data-theme="candy"] .card:not([role="dialog"]):hover {
+  box-shadow:
+    0 8px 32px hsl(289 14% 22% / 0.1),
+    inset 0 1px 0 hsl(0 0% 100% / 0.9) !important;
+  transform: translateY(-1px);
+}
+
+/* ===== 按钮：草莓糖按钮 ===== */
+[data-theme="candy"] button:not([role="menuitem"]):not([role="checkbox"]):not([role="radio"]):not([class*="ghost"]):not([class*="outline"]) {
+  border-radius: 50px !important;
+  font-family: "Fredoka", "Nunito", "Noto Sans SC", sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  transition: all 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+[data-theme="candy"] button.bg-primary,
+[data-theme="candy"] button[class*="bg-primary"],
+[data-theme="candy"] button[class*="primary"]:not([class*="outline"]):not([class*="ghost"]) {
+  background: linear-gradient(135deg, hsl(0 77% 74%) 0%, hsl(0 72% 70%) 100%) !important;
+  box-shadow:
+    0 6px 24px hsl(0 77% 74% / 0.3),
+    inset 0 1px 0 hsl(0 0% 100% / 0.25);
+}
+
+[data-theme="candy"] button.bg-primary:hover,
+[data-theme="candy"] button[class*="bg-primary"]:hover {
+  box-shadow:
+    0 10px 32px hsl(0 77% 74% / 0.4),
+    inset 0 1px 0 hsl(0 0% 100% / 0.3);
+  transform: translateY(-2px) scale(1.02);
+}
+
+[data-theme="candy"] button.bg-primary:active,
+[data-theme="candy"] button[class*="bg-primary"]:active {
+  transform: translateY(0) scale(0.97);
+  box-shadow: 0 3px 12px hsl(0 77% 74% / 0.25);
+}
+
+/* ghost 按钮 */
+[data-theme="candy"] button[class*="ghost"]:hover {
+  background: hsl(160 38% 75% / 0.2) !important;
+  color: hsl(289 14% 22%);
+}
+
+/* outline 按钮 */
+[data-theme="candy"] button[class*="outline"] {
+  border-radius: 50px !important;
+  border-color: hsl(160 38% 75% / 0.5) !important;
+}
+
+[data-theme="candy"] button[class*="outline"]:hover {
+  background: hsl(160 38% 75% / 0.15) !important;
+  border-color: hsl(160 38% 75%) !important;
+}
+
+/* ===== 输入框：奶油圆条 ===== */
+[data-theme="candy"] input:not([type="checkbox"]):not([type="radio"]):not([role="combobox"]) {
+  border-radius: 50px !important;
+  padding-left: 16px !important;
+  padding-right: 16px !important;
+  background: hsl(39 40% 94%) !important;
+  border: 2px solid hsl(160 38% 75% / 0.25) !important;
+  font-family: "Nunito", "Noto Sans SC", sans-serif;
+  font-weight: 600;
+  transition: all 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+[data-theme="candy"] input:not([type="checkbox"]):not([type="radio"]):focus {
+  border-color: hsl(160 38% 75%) !important;
+  background: hsl(0 0% 100%) !important;
+  box-shadow: 0 0 0 5px hsl(160 38% 75% / 0.2);
+}
+
+/* ===== 标签/徽章 ===== */
+[data-theme="candy"] [class*="badge"],
+[data-theme="candy"] span[class*="px-"][class*="py-"][class*="rounded"] {
+  border-radius: 50px !important;
+  font-family: "Fredoka", "Nunito", "Noto Sans SC", sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+/* ===== 选中文字 ===== */
+[data-theme="candy"] ::selection {
+  background: hsl(0 77% 74% / 0.25);
+  color: hsl(289 14% 22%);
+}
+
+/* ===== 分割线 ===== */
+[data-theme="candy"] hr {
+  border-color: hsl(160 38% 75% / 0.3);
+}
+
+/* ===== 滚动条 ===== */
+[data-theme="candy"] ::-webkit-scrollbar-track {
+  background: hsl(39 40% 94%);
+  border-radius: 50px;
+}
+
+[data-theme="candy"] ::-webkit-scrollbar-thumb {
+  background: hsl(160 38% 75% / 0.6);
+  border-radius: 50px;
+}
+
+[data-theme="candy"] ::-webkit-scrollbar-thumb:hover {
+  background: hsl(160 38% 75% / 0.85);
+}
+
+/* ===== 表格表头 ===== */
+[data-theme="candy"] th {
+  font-family: "Fredoka", "Nunito", "Noto Sans SC", sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+/* ===== Tabs ===== */
+[data-theme="candy"] [role="tablist"] {
+  border-radius: 50px !important;
+  background: hsl(160 38% 75% / 0.15) !important;
+  padding: 4px !important;
+}
+
+[data-theme="candy"] [role="tab"][data-state="active"] {
+  border-radius: 50px !important;
+  background: hsl(0 0% 100%) !important;
+  box-shadow: 0 2px 8px hsl(289 14% 22% / 0.08);
+}
+
+/* ===== 登录页：糖果罐风格 ===== */
+[data-theme="candy"] .login-bg-orb {
+  background-color: hsl(0 77% 74% / 0.06) !important;
+}
+
+[data-theme="candy"] .login-bg-accent {
+  background-color: hsl(160 38% 75% / 0.06) !important;
+}
+
+/* ===== 弹窗/对话框 ===== */
+[data-theme="candy"] [role="dialog"],
+[data-theme="candy"] [role="alertdialog"] {
+  border: 2px solid hsl(160 38% 75% / 0.25) !important;
+  border-radius: 24px !important;
+  box-shadow:
+    0 16px 48px hsl(289 14% 22% / 0.12),
+    inset 0 1px 0 hsl(0 0% 100% / 0.6) !important;
+  background: hsl(0 0% 100% / 0.85) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* ===== 下拉菜单 ===== */
+[data-theme="candy"] [role="menu"],
+[data-theme="candy"] [role="listbox"] {
+  border: 2px solid hsl(160 38% 75% / 0.25) !important;
+  border-radius: 16px !important;
+  background: hsl(0 0% 100% / 0.85) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  overflow: hidden;
+}
+
+[data-theme="candy"] [role="menuitem"]:hover,
+[data-theme="candy"] [role="option"]:hover {
+  background: hsl(160 38% 75% / 0.15) !important;
+  border-radius: 50px;
+}
+
+/* ===== Select 触发器 ===== */
+[data-theme="candy"] button[role="combobox"] {
+  border-radius: 50px !important;
+  border: 2px solid hsl(160 38% 75% / 0.25) !important;
 }
 
 /* ================================================================

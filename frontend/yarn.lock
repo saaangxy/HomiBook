@@ -241,6 +241,11 @@
   resolved "https://registry.npmmirror.com/@fontsource/crimson-text/-/crimson-text-5.2.7.tgz"
   integrity sha512-hlUb/1GdXB2xc0usGMPp6qEI7Z4kQU1FEOYvozsN+cUC/Nh4kvEVVc0kHpj8B5G0hjZzfP+UmrLYHOaNAfMK5w==
 
+"@fontsource/fredoka@^5.2.10":
+  version "5.2.10"
+  resolved "https://registry.npmmirror.com/@fontsource/fredoka/-/fredoka-5.2.10.tgz"
+  integrity sha512-DyzPCmTf0PkBbAu+gNvnPzfD/dYIXlyp+Zcb76jEQyt/vmRKGZgkH8FFF9W2sICDaA5p+GLk1XGFjWh5PPX+lg==
+
 "@fontsource/jetbrains-mono@^5.2.8":
   version "5.2.8"
   resolved "https://registry.npmmirror.com/@fontsource/jetbrains-mono/-/jetbrains-mono-5.2.8.tgz"
@@ -250,6 +255,11 @@
   version "5.2.8"
   resolved "https://registry.npmmirror.com/@fontsource/noto-serif-sc/-/noto-serif-sc-5.2.8.tgz"
   integrity sha512-C7fAr+d1GjOAw1qIbntsnqbA3l5dkdzcmNNgeCXLC8QZ7VNubL7MTrX8UcYKHceX4mI//z8gGtXbOeeQrB6P7g==
+
+"@fontsource/nunito@^5.2.7":
+  version "5.2.7"
+  resolved "https://registry.npmmirror.com/@fontsource/nunito/-/nunito-5.2.7.tgz"
+  integrity sha512-pmtBq0H9ex9nk+RtJYEJOD9pag393iHETnl/PVKleF4i06cd0ttngK5ZCTgYb5eOqR3Xdlrjtev8m7bmgYprew==
 
 "@fontsource/playfair-display@^5.2.8":
   version "5.2.8"
