@@ -195,6 +195,7 @@ export function TransactionCalendar({
                 <button
                   key={cell.dateStr}
                   type="button"
+                  data-calendar-cell=""
                   onClick={() => onDayClick(cell.dateStr)}
                   className={`h-full p-2 flex flex-col items-center rounded-xl
                     hover:bg-accent/50 transition-colors cursor-pointer relative

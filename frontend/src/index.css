@@ -1582,7 +1582,7 @@
 }
 
 /* ===== 按钮：黑底白字 + 偏移阴影 + hover 变红 ===== */
-[data-theme="mondrian"] button:not([role="menuitem"]):not([role="checkbox"]):not([role="radio"]):not([class*="ghost"]) {
+[data-theme="mondrian"] button:not([role="menuitem"]):not([role="checkbox"]):not([role="radio"]):not([class*="ghost"]):not([data-calendar-cell]) {
   border-radius: 0 !important;
   border: 2px solid hsl(0 0% 10%) !important;
   background: hsl(0 0% 10%) !important;
@@ -1595,14 +1595,14 @@
   transition: all 0.2s ease;
 }
 
-[data-theme="mondrian"] button:not([role="menuitem"]):not([role="checkbox"]):not([role="radio"]):not([class*="ghost"]):hover {
+[data-theme="mondrian"] button:not([role="menuitem"]):not([role="checkbox"]):not([role="radio"]):not([class*="ghost"]):not([data-calendar-cell]):hover {
   background: hsl(355 78% 56%) !important;
   border-color: hsl(355 78% 56%) !important;
   box-shadow: 6px 6px 0 hsla(355, 78%, 56%, 0.25) !important;
   transform: translate(-1px, -1px);
 }
 
-[data-theme="mondrian"] button:not([role="menuitem"]):not([role="checkbox"]):not([role="radio"]):not([class*="ghost"]):active {
+[data-theme="mondrian"] button:not([role="menuitem"]):not([role="checkbox"]):not([role="radio"]):not([class*="ghost"]):not([data-calendar-cell]):active {
   box-shadow: 2px 2px 0 hsla(0, 0%, 10%, 0.2) !important;
   transform: translate(2px, 2px);
   transition: all 0.05s ease;
