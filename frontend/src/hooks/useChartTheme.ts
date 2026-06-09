@@ -1,8 +1,5 @@
 import { useMemo } from 'react'
-
-function cssVar(name: string): string {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
-}
+import { useThemeContext } from '@/components/ThemeProvider'
 
 export interface ChartTheme {
   primary: string; foreground: string; mutedForeground: string; border: string
@@ -13,46 +10,72 @@ export interface ChartTheme {
   primaryRgba: (a: number) => string
 }
 
+const THEME_COLORS: Record<string, string[]> = {
+  craft: [
+    '#c67a4b', '#4a7c9a', '#d4a574', '#9a6b4e', '#c44e3a',
+    '#5c8a7a', '#e0b878', '#8b5e4b', '#4a7c8c', '#b84a3c',
+  ],
+  telegram: [
+    '#3a3a3a', '#c4a44a', '#6b6b6b', '#8b7355', '#d4b86a',
+    '#4a4a4a', '#a08050', '#5a5a5a', '#e0c878', '#2c2c2c',
+  ],
+  botanical: [
+    '#4a7c3f', '#8b9a6b', '#c47a8a', '#5c8a5c', '#9ab87a',
+    '#6b8b4a', '#a0c080', '#d4a0a8', '#3a6a3a', '#7a9a5a',
+  ],
+  candy: [
+    '#e891a8', '#5cc4a0', '#f0c040', '#a890d0', '#f08060',
+    '#60b8d0', '#e8a0c0', '#80d0b0', '#f0d060', '#c0a0e0',
+  ],
+  light: [
+    '#f97316', '#ef4444', '#3b82f6', '#22c55e', '#a855f7',
+    '#eab308', '#ec4899', '#14b8a6', '#8b5cf6', '#f43f5e',
+  ],
+  dark: [
+    '#fb923c', '#f87171', '#60a5fa', '#4ade80', '#c084fc',
+    '#facc15', '#f472b6', '#2dd4bf', '#a78bfa', '#fb7185',
+  ],
+}
+
+const DEFAULT_COLORS = [
+  '#f97316', '#ef4444', '#3b82f6', '#22c55e', '#a855f7',
+  '#eab308', '#ec4899', '#14b8a6', '#8b5cf6', '#f43f5e',
+]
+
 export function useChartTheme(): ChartTheme {
+  const { theme } = useThemeContext()
+
   return useMemo(() => {
-    const primary = cssVar('--primary')
-    const foreground = cssVar('--foreground')
-    const mutedForeground = cssVar('--muted-foreground')
-    const border = cssVar('--border')
-    const card = cssVar('--card')
-    const cardForeground = cssVar('--card-foreground')
-    const background = cssVar('--background')
+    const p = theme.vars['--primary']
+    const fg = theme.vars['--foreground']
+    const mf = theme.vars['--muted-foreground']
+    const b = theme.vars['--border']
+    const c = theme.vars['--card']
+    const cf = theme.vars['--card-foreground']
+    const bg = theme.vars['--background']
+    const colors = THEME_COLORS[theme.id] || DEFAULT_COLORS
 
     return {
-      primary: `hsl(${primary})`,
-      foreground: `hsl(${foreground})`,
-      mutedForeground: `hsl(${mutedForeground})`,
-      border: `hsl(${border})`,
-      cardBg: `hsl(${card})`,
-      cardFg: `hsl(${cardForeground})`,
-      bg: `hsl(${background})`,
+      primary: `hsl(${p})`,
+      foreground: `hsl(${fg})`,
+      mutedForeground: `hsl(${mf})`,
+      border: `hsl(${b})`,
+      cardBg: `hsl(${c})`,
+      cardFg: `hsl(${cf})`,
+      bg: `hsl(${bg})`,
 
-      // 固定调色板（不随主题变化，避免 ECharts 渲染问题）
-      COLORS: [
-        '#f97316', '#ef4444', '#3b82f6', '#22c55e', '#a855f7',
-        '#eab308', '#ec4899', '#14b8a6', '#8b5cf6', '#f43f5e',
-      ],
+      COLORS: colors,
+      COLORS_ALL: colors,
 
-      COLORS_ALL: [
-        '#f97316', '#ef4444', '#3b82f6', '#22c55e', '#a855f7',
-        '#eab308', '#ec4899', '#14b8a6', '#8b5cf6', '#f43f5e',
-      ],
+      legendTextStyle: { color: `hsl(${mf})` },
+      axisLabel: { color: `hsl(${mf})` },
+      axisLine: { lineStyle: { color: `hsl(${b})` } },
+      splitLine: { lineStyle: { color: `hsl(${b})` } },
+      tooltipBg: `hsl(${c})`,
+      tooltipBorder: `hsl(${b})`,
+      tooltipText: `hsl(${cf})`,
 
-      // 图表文本样式
-      legendTextStyle: { color: `hsl(${mutedForeground})` },
-      axisLabel: { color: `hsl(${mutedForeground})` },
-      axisLine: { lineStyle: { color: `hsl(${border})` } },
-      splitLine: { lineStyle: { color: `hsl(${border})` } },
-      tooltipBg: `hsl(${card})`,
-      tooltipBorder: `hsl(${border})`,
-      tooltipText: `hsl(${cardForeground})`,
-
-      primaryRgba: (alpha: number) => `hsla(${primary} / ${alpha})`,
+      primaryRgba: (alpha: number) => `hsla(${p} / ${alpha})`,
     }
-  }, [])
+  }, [theme])
 }
