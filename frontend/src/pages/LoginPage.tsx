@@ -326,9 +326,9 @@ export function LoginPage() {
   return (
     <div style={styles.container}>
       {/* 背景装饰 */}
-      <div style={styles.bgOrb1} />
-      <div style={styles.bgOrb2} />
-      <div style={styles.bgAccent} />
+      <div style={styles.bgOrb1} className="login-bg-orb" />
+      <div style={styles.bgOrb2} className="login-bg-orb" />
+      <div style={styles.bgAccent} className="login-bg-accent" />
 
       {/* 主题切换按钮 */}
       <div style={styles.themeBtn}>
@@ -363,6 +363,7 @@ export function LoginPage() {
       {/* 注册关闭时：仅显示居中登录表单 */}
       {!registrationOpen ? (
         <div
+          className="login-card"
           style={{
             position: 'relative' as const,
             width: '420px',
@@ -448,7 +449,7 @@ export function LoginPage() {
           </form>
         </div>
       ) : (
-      <div style={styles.card}>
+      <div style={styles.card} className="login-card">
         {/* 登录表单 */}
         <div
           style={{
@@ -615,18 +616,20 @@ export function LoginPage() {
 
         {/* Overlay 滑动面板 */}
         <div
+          className="login-overlay-container"
           style={{
             ...styles.overlayContainer,
             transform: isActive ? 'translateX(-100%)' : 'translateX(0)',
           }}
         >
           <div
+            className="login-overlay"
             style={{
               ...styles.overlay,
               transform: isActive ? 'translateX(50%)' : 'translateX(0)',
             }}
           >
-            <div style={{ ...styles.overlayPanel, ...styles.overlayLeft }}>
+            <div className="login-overlay-panel" style={{ ...styles.overlayPanel, ...styles.overlayLeft }}>
               <h2 style={styles.overlayTitle}>已有账户?</h2>
               <p style={styles.overlayText}>登录后继续管理你的家庭财务</p>
               <button
@@ -641,7 +644,7 @@ export function LoginPage() {
                 登录
               </button>
             </div>
-            <div style={{ ...styles.overlayPanel, ...styles.overlayRight }}>
+            <div className="login-overlay-panel" style={{ ...styles.overlayPanel, ...styles.overlayRight }}>
               <h2 style={styles.overlayTitle}>还没有账户?</h2>
               <p style={styles.overlayText}>立即注册,和家人一起管理财务</p>
               <button

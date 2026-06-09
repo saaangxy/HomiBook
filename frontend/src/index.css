@@ -273,6 +273,86 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* ---- 登录页：蓝墨水品牌面板 ---- */
+/* 背景装饰球改为蓝墨色调 */
+[data-theme="craft"] .login-bg-orb {
+  background-color: hsl(212 25% 35% / 0.08) !important;
+}
+
+[data-theme="craft"] .login-bg-accent {
+  background: radial-gradient(ellipse, hsl(212 25% 40% / 0.05) 0%, transparent 70%) !important;
+}
+
+/* 卡片：手工纸板裁切阴影 + 手绘边框 */
+[data-theme="craft"] .login-card {
+  box-shadow:
+    6px 6px 0px hsl(42 25% 22% / 0.05),
+    0 25px 50px -12px hsl(215 28% 15% / 0.12) !important;
+  border: 1.5px solid hsl(215 12% 68% / 0.5) !important;
+}
+
+/* 滑动覆盖层：蓝墨水布面 */
+[data-theme="craft"] .login-overlay {
+  background-color: hsl(212 25% 26%) !important;
+  background-image:
+    /* 顶部柔光 */
+    radial-gradient(ellipse at 30% 25%, hsl(212 28% 55% / 0.1) 0%, transparent 55%),
+    /* 底部阴影深度 */
+    radial-gradient(ellipse at 70% 85%, hsl(215 30% 8% / 0.3) 0%, transparent 50%),
+    /* 布纹 — 45度斜纹 */
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 3px,
+      hsl(212 25% 33% / 0.25) 3px,
+      hsl(212 25% 33% / 0.25) 6px
+    ),
+    /* 交叉布纹 */
+    repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 3px,
+      hsl(212 25% 33% / 0.12) 3px,
+      hsl(212 25% 33% / 0.12) 6px
+    ),
+    /* 细微噪点 */
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='nLogin'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23nLogin)' opacity='0.05'/%3E%3C/svg%3E") !important;
+}
+
+/* 覆盖层手绘装饰框 */
+[data-theme="craft"] .login-overlay-container::after {
+  content: '';
+  position: absolute;
+  inset: 12px;
+  border: 1.5px dashed hsl(212 20% 48% / 0.2);
+  border-radius: 20px;
+  pointer-events: none;
+  z-index: 101;
+}
+
+/* 覆盖层面板标题：Amatic SC */
+[data-theme="craft"] .login-overlay-panel h2 {
+  font-family: "Amatic SC", "ZCOOL XiaoWei", cursive !important;
+  font-weight: 700;
+  font-size: 32px;
+  letter-spacing: 0.03em;
+}
+
+/* 覆盖层按钮：手绘圆角 */
+[data-theme="craft"] .login-overlay-panel button {
+  font-family: "Amatic SC", "ZCOOL XiaoWei", cursive !important;
+  font-weight: 700;
+  font-size: 16px !important;
+  letter-spacing: 0.05em;
+  border-radius: 8px 24px 8px 24px !important;
+  border: 2px dashed hsl(42 28% 85% / 0.5) !important;
+}
+
+[data-theme="craft"] .login-overlay-panel button:hover {
+  background-color: hsl(212 25% 35% / 0.5) !important;
+  border-style: solid !important;
+}
+
 /* ---- 旧式电报机：泛黄纸张 + 点阵纹理 ---- */
 [data-theme="telegram"] {
   --theme-font: "JetBrains Mono", "Courier New", monospace;

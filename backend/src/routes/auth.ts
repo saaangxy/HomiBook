@@ -85,6 +85,7 @@ export async function authRoutes(app: FastifyInstance) {
         email: user.email,
         name: user.name,
         role: user.role,
+        theme: user.theme,
       },
     }
   })
