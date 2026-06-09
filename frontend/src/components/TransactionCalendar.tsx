@@ -201,11 +201,6 @@ export function TransactionCalendar({
                     ${bgClass}
                   `}
                 >
-                  {/* 今天顶部指示条 */}
-                  {isToday && (
-                    <div className="absolute top-0 left-2 right-2 h-0.5 rounded-full bg-amber-500" />
-                  )}
-
                   {/* 日期数字 - 顶部 */}
                   <span className={`text-lg font-bold leading-none mt-0.5 shrink-0 ${dateColor}`}>
                     {cell.day}
