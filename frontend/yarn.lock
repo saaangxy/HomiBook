@@ -226,6 +226,36 @@
   resolved "https://registry.npmmirror.com/@floating-ui/utils/-/utils-0.2.11.tgz"
   integrity sha512-RiB/yIh78pcIxl6lLMG0CgBXAZ2Y0eVHqMPYugu+9U0AeT6YBeiJpf7lbdJNIugFP5SIjwNRgo4DhR1Qxi26Gg==
 
+"@fontsource/amatic-sc@^5.2.7":
+  version "5.2.7"
+  resolved "https://registry.npmmirror.com/@fontsource/amatic-sc/-/amatic-sc-5.2.7.tgz"
+  integrity sha512-fZanMNAXHSguiPeZqEQ8gFMgK0mQKivdDEQx+Z/zL29fgI7I3ZDLjNd0j/+T0rq7Gq50QUCdOGdK+Ues7ukjDg==
+
+"@fontsource/crimson-text@^5.2.7":
+  version "5.2.7"
+  resolved "https://registry.npmmirror.com/@fontsource/crimson-text/-/crimson-text-5.2.7.tgz"
+  integrity sha512-hlUb/1GdXB2xc0usGMPp6qEI7Z4kQU1FEOYvozsN+cUC/Nh4kvEVVc0kHpj8B5G0hjZzfP+UmrLYHOaNAfMK5w==
+
+"@fontsource/jetbrains-mono@^5.2.8":
+  version "5.2.8"
+  resolved "https://registry.npmmirror.com/@fontsource/jetbrains-mono/-/jetbrains-mono-5.2.8.tgz"
+  integrity sha512-6w8/SG4kqvIMu7xd7wt6x3idn1Qux3p9N62s6G3rfldOUYHpWcc2FKrqf+Vo44jRvqWj2oAtTHrZXEP23oSKwQ==
+
+"@fontsource/noto-serif-sc@^5.2.8":
+  version "5.2.8"
+  resolved "https://registry.npmmirror.com/@fontsource/noto-serif-sc/-/noto-serif-sc-5.2.8.tgz"
+  integrity sha512-C7fAr+d1GjOAw1qIbntsnqbA3l5dkdzcmNNgeCXLC8QZ7VNubL7MTrX8UcYKHceX4mI//z8gGtXbOeeQrB6P7g==
+
+"@fontsource/zcool-kuaile@^5.2.8":
+  version "5.2.8"
+  resolved "https://registry.npmmirror.com/@fontsource/zcool-kuaile/-/zcool-kuaile-5.2.8.tgz"
+  integrity sha512-pIeFNRM0rwrJkO+TP7WG+KXvqy0YFRrPecNNzHTNOQLYhxrqN67/wzyx3fH+Ky63Y/Am5heB5XIzsEx/Io+P4w==
+
+"@fontsource/zcool-xiaowei@^5.2.8":
+  version "5.2.8"
+  resolved "https://registry.npmmirror.com/@fontsource/zcool-xiaowei/-/zcool-xiaowei-5.2.8.tgz"
+  integrity sha512-HppFdc8Y0djYbSpK6FbMFhEaZJwfGE5yIKLN3d5q5V239NQxm3sULJjfbMYyAMKswhG6hNTtXQkt8lOl4OmoLA==
+
 "@humanfs/core@^0.19.2":
   version "0.19.2"
   resolved "https://registry.npmmirror.com/@humanfs/core/-/core-0.19.2.tgz"

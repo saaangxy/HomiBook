@@ -5,6 +5,7 @@ export const updateConfigSchema = z.object({
   defaultCurrency: z.string().optional(),
   amountHighlightThreshold: z.number().optional(),
   holidayApiUrl: z.string().optional(),
+  defaultTheme: z.string().optional(),
 })
 
 export const createDictionarySchema = z.object({

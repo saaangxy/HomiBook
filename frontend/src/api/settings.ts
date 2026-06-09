@@ -12,6 +12,7 @@ export interface DictItem {
 
 export interface PublicConfig {
   registrationOpen: boolean
+  defaultTheme?: string
 }
 
 export const settingsApi = {
@@ -21,7 +22,7 @@ export const settingsApi = {
   getConfig: () =>
     api.get<Record<string, unknown>>('/api/settings/config'),
 
-  updateConfig: (data: { registrationOpen?: boolean; defaultCurrency?: string; amountHighlightThreshold?: number; holidayApiUrl?: string }) =>
+  updateConfig: (data: { registrationOpen?: boolean; defaultCurrency?: string; amountHighlightThreshold?: number; holidayApiUrl?: string; defaultTheme?: string }) =>
     api.put<{ success: boolean }>('/api/settings/config', data),
 
   getDictionary: (group: string) =>

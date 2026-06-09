@@ -9,10 +9,16 @@ import { zSchema } from '../lib/schema-helpers.js'
 
 export async function settingsRoutes(app: FastifyInstance) {
   // 公开端点 — 无需认证，独立作用域避免被下方 hook 影响
-  app.get('/public', { schema: { description: '获取公开配置（注册开关）', tags: ['设置'] } }, async () => {
-    const config = await prisma.systemConfig.findUnique({ where: { key: 'registrationOpen' } })
-    const registrationOpen = config ? JSON.parse(config.value) : true
-    return { registrationOpen }
+  app.get('/public', { schema: { description: '获取公开配置（注册开关、默认主题）', tags: ['设置'] } }, async () => {
+    const configs = await prisma.systemConfig.findMany({
+      where: { key: { in: ['registrationOpen', 'defaultTheme'] } },
+    })
+    const result: Record<string, unknown> = { registrationOpen: true }
+    for (const c of configs) {
+      try { result[c.key] = JSON.parse(c.value) }
+      catch { result[c.key] = c.value }
+    }
+    return result
   })
 
   // 登录用户可访问 — 独立子作用域

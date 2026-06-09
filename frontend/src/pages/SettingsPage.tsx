@@ -46,6 +46,7 @@ import {
 import { Spinner } from '@/components/ui/spinner'
 import { settingsApi, type DictItem } from '@/api/settings'
 import { holidayApi } from '@/api/holiday'
+import { ThemeSelector } from '@/components/ThemeSelector'
 import { Plus, Pencil, Trash2, Settings, BookOpen, Check, FolderOpen, FileSearch, RefreshCw } from 'lucide-react'
 
 const DICT_GROUPS: { key: string; label: string }[] = [
@@ -69,6 +70,7 @@ export function SettingsPage() {
   const [defaultCurrency, setDefaultCurrency] = useState('CNY')
   const [amountHighlightThreshold, setAmountHighlightThreshold] = useState(1000)
   const [holidayApiUrl, setHolidayApiUrl] = useState('https://timor.tech/api/holiday/year/{year}')
+  const [defaultTheme, setDefaultTheme] = useState('system')
   const [configLoading, setConfigLoading] = useState(true)
   const [configSaving, setConfigSaving] = useState(false)
   const [configError, setConfigError] = useState('')
@@ -108,6 +110,7 @@ export function SettingsPage() {
         if (typeof config.defaultCurrency === 'string') setDefaultCurrency(config.defaultCurrency)
         if (typeof config.amountHighlightThreshold === 'number') setAmountHighlightThreshold(config.amountHighlightThreshold)
         if (typeof config.holidayApiUrl === 'string') setHolidayApiUrl(config.holidayApiUrl)
+        if (typeof config.defaultTheme === 'string') setDefaultTheme(config.defaultTheme)
       })
       .catch(() => setConfigError('加载配置失败'))
       .finally(() => setConfigLoading(false))
@@ -147,7 +150,7 @@ export function SettingsPage() {
     setConfigSaving(true)
     setConfigError('')
     try {
-      await settingsApi.updateConfig({ registrationOpen, defaultCurrency, amountHighlightThreshold, holidayApiUrl })
+      await settingsApi.updateConfig({ registrationOpen, defaultCurrency, amountHighlightThreshold, holidayApiUrl, defaultTheme })
     } catch (e: any) {
       setConfigError(e.message)
     } finally {
@@ -418,6 +421,23 @@ export function SettingsPage() {
                   )}
                 </div>
               </div>
+
+              {/* 分隔 */}
+              <div className="border-t" />
+
+              {/* 默认主题 */}
+              <div className="flex items-start justify-between gap-8">
+                <div className="flex-1">
+                  <h4 className="text-sm font-medium">全局默认主题</h4>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    未设置个人主题的用户将使用此主题。选"跟随系统"时根据系统明暗自动切换
+                  </p>
+                </div>
+              </div>
+              <ThemeSelector showSystem value={defaultTheme} onChange={setDefaultTheme} />
+
+              {/* 分隔 */}
+              <div className="border-t" />
 
               {/* 保存按钮 */}
               <div className="flex justify-end pt-2">

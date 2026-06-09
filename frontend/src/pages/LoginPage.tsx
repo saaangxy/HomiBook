@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Book, Eye, EyeOff } from 'lucide-react'
+import { Book, Eye, EyeOff, Palette } from 'lucide-react'
 import { authApi } from '../api/auth'
 import { settingsApi } from '../api/settings'
 import { useAuthStore } from '../stores/auth'
 import { PasswordStrength } from '../components/PasswordStrength'
+import { ThemeSelector } from '../components/ThemeSelector'
 
 const styles = {
   container: {
@@ -12,8 +13,8 @@ const styles = {
     justifyContent: 'center',
     alignItems: 'center',
     minHeight: '100vh',
-    background: '#0f172a',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    background: 'hsl(var(--background))',
+    fontFamily: 'var(--theme-font)',
     position: 'relative' as const,
     overflow: 'hidden' as const,
   },
@@ -26,6 +27,7 @@ const styles = {
     backgroundColor: 'hsl(var(--primary) / 0.08)',
     borderRadius: '50%',
     filter: 'blur(60px)',
+    transition: 'background-color 0.5s ease',
   },
   bgOrb2: {
     position: 'absolute' as const,
@@ -36,6 +38,18 @@ const styles = {
     backgroundColor: 'hsl(var(--primary) / 0.06)',
     borderRadius: '50%',
     filter: 'blur(60px)',
+    transition: 'background-color 0.5s ease',
+  },
+  bgAccent: {
+    position: 'absolute' as const,
+    top: '50%',
+    left: '50%',
+    transform: 'translate(-50%, -50%)',
+    width: '800px',
+    height: '400px',
+    background: 'radial-gradient(ellipse, hsl(var(--accent) / 0.04) 0%, transparent 70%)',
+    pointerEvents: 'none' as const,
+    transition: 'background 0.5s ease',
   },
   header: {
     position: 'absolute' as const,
@@ -43,6 +57,7 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     gap: '14px',
+    zIndex: 10,
   },
   logoContainer: {
     width: '56px',
@@ -61,22 +76,29 @@ const styles = {
     margin: 0,
     letterSpacing: '-1px',
   },
+  themeBtn: {
+    position: 'absolute' as const,
+    top: '6%',
+    right: '6%',
+    zIndex: 10,
+  },
   card: {
     position: 'relative' as const,
     width: '900px',
     height: '560px',
     borderRadius: '28px',
     overflow: 'hidden',
-    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6)',
-    border: '1px solid hsl(var(--primary) / 0.1)',
-    backgroundColor: '#0f172a',
+    boxShadow: '0 25px 50px -12px hsl(var(--foreground) / 0.15)',
+    border: '1px solid hsl(var(--border))',
+    backgroundColor: 'hsl(var(--card))',
+    transition: 'background-color 0.4s ease, border-color 0.4s ease',
   },
   formContainer: {
     position: 'absolute' as const,
     top: 0,
     width: '50%',
     height: '100%',
-    background: '#0f172a',
+    background: 'hsl(var(--card))',
     transition: 'all 0.6s ease-in-out',
     display: 'flex',
     flexDirection: 'column' as const,
@@ -95,13 +117,13 @@ const styles = {
   formTitle: {
     fontSize: '28px',
     marginBottom: '28px',
-    color: '#e2e8f0',
+    color: 'hsl(var(--foreground))',
     fontWeight: 700,
     letterSpacing: '-0.5px',
   },
   formSubtitle: {
     fontSize: '14px',
-    color: '#94a3b8',
+    color: 'hsl(var(--muted-foreground))',
     marginBottom: '32px',
     marginTop: '-20px',
   },
@@ -109,23 +131,24 @@ const styles = {
     width: '100%',
     margin: '12px 0',
     padding: '16px 18px',
-    backgroundColor: '#1e293b',
-    border: '1px solid #334155',
+    backgroundColor: 'hsl(var(--muted))',
+    border: '1px solid hsl(var(--border))',
     borderRadius: '14px',
     fontSize: '15px',
-    color: '#e2e8f0',
+    color: 'hsl(var(--foreground))',
     outline: 'none',
     transition: 'all 0.3s ease',
+    fontFamily: 'var(--theme-font)',
   },
   inputFocus: {
     borderColor: 'hsl(var(--primary))',
-    backgroundColor: '#1e293b',
+    backgroundColor: 'hsl(var(--card))',
     boxShadow: '0 0 0 3px hsl(var(--primary) / 0.15)',
   },
   forgetPassword: {
     display: 'block',
     textDecoration: 'none',
-    color: '#64748b',
+    color: 'hsl(var(--muted-foreground))',
     fontSize: '13px',
     marginTop: '16px',
     marginBottom: '24px',
@@ -146,15 +169,16 @@ const styles = {
     padding: '14px 48px',
     border: 'none',
     borderRadius: '14px',
-    color: '#ffffff',
+    color: 'hsl(var(--primary-foreground))',
     fontSize: '14px',
     fontWeight: 700,
     cursor: 'pointer',
     transition: 'all 0.3s ease',
-    fontFamily: 'inherit',
+    fontFamily: 'var(--theme-font)',
   },
   buttonHover: {
     backgroundColor: 'hsl(var(--primary))',
+    filter: 'brightness(1.1)',
   },
   overlayContainer: {
     position: 'absolute' as const,
@@ -214,21 +238,21 @@ const styles = {
     fontWeight: 700,
     letterSpacing: '0.5px',
     transition: 'all 0.3s ease',
-    fontFamily: 'inherit',
+    fontFamily: 'var(--theme-font)',
   },
   overlayButtonHover: {
     backgroundColor: 'rgba(255, 255, 255, 0.15)',
     borderColor: 'rgba(255, 255, 255, 1)',
   },
   errorText: {
-    color: '#fca5a5',
+    color: 'hsl(var(--destructive))',
     fontSize: '13px',
     marginTop: '12px',
     textAlign: 'center' as const,
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    backgroundColor: 'hsl(var(--destructive) / 0.1)',
     padding: '12px 16px',
     borderRadius: '10px',
-    border: '1px solid rgba(239, 68, 68, 0.2)',
+    border: '1px solid hsl(var(--destructive) / 0.2)',
   },
 }
 
@@ -246,6 +270,7 @@ export function LoginPage() {
   const [hoverStates, setHoverStates] = useState<Record<string, boolean>>({})
   const [focusedInput, setFocusedInput] = useState<string | null>(null)
   const [registrationOpen, setRegistrationOpen] = useState(true)
+  const [themePopover, setThemePopover] = useState(false)
   const navigate = useNavigate()
   const { setAuth } = useAuthStore()
 
@@ -269,7 +294,7 @@ export function LoginPage() {
       setAuth(res.token, res.user)
       navigate('/')
     } catch (err: any) {
-      setError(err.message || 'Login failed')
+      setError(err.message || '登录失败')
     } finally {
       setIsLoading(false)
     }
@@ -285,7 +310,7 @@ export function LoginPage() {
       setIsActive(false)
       setError('')
     } catch (err: any) {
-      setError(err.message || 'Registration failed')
+      setError(err.message || '注册失败')
     } finally {
       setIsLoading(false)
     }
@@ -300,9 +325,32 @@ export function LoginPage() {
 
   return (
     <div style={styles.container}>
-      {/* Background orbs */}
+      {/* 背景装饰 */}
       <div style={styles.bgOrb1} />
       <div style={styles.bgOrb2} />
+      <div style={styles.bgAccent} />
+
+      {/* 主题切换按钮 */}
+      <div style={styles.themeBtn}>
+        <div className="relative">
+          <button
+            onClick={() => setThemePopover(!themePopover)}
+            className="w-10 h-10 flex items-center justify-center rounded-xl border border-border bg-card hover:bg-accent transition-colors"
+            title="切换主题"
+          >
+            <Palette size={18} className="text-muted-foreground" />
+          </button>
+          {themePopover && (
+            <>
+              <div className="fixed inset-0 z-20" onClick={() => setThemePopover(false)} />
+              <div className="absolute right-0 top-12 z-30 w-72 p-4 rounded-2xl border border-border bg-card shadow-2xl">
+                <h3 className="text-sm font-semibold text-foreground mb-3">选择主题</h3>
+                <ThemeSelector compact />
+              </div>
+            </>
+          )}
+        </div>
+      </div>
 
       {/* Header with logo */}
       <div style={styles.header}>
@@ -312,7 +360,7 @@ export function LoginPage() {
         <h2 style={styles.headerTitle}>Homibook</h2>
       </div>
 
-      {/* Card — 注册关闭时仅显示居中登录表单 */}
+      {/* 注册关闭时：仅显示居中登录表单 */}
       {!registrationOpen ? (
         <div
           style={{
@@ -320,9 +368,9 @@ export function LoginPage() {
             width: '420px',
             borderRadius: '28px',
             overflow: 'hidden',
-            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6)',
-            border: '1px solid hsl(var(--primary) / 0.1)',
-            backgroundColor: '#0f172a',
+            boxShadow: '0 25px 50px -12px hsl(var(--foreground) / 0.15)',
+            border: '1px solid hsl(var(--border))',
+            backgroundColor: 'hsl(var(--card))',
             padding: '48px 40px',
           }}
         >
@@ -361,7 +409,7 @@ export function LoginPage() {
                   background: 'none',
                   border: 'none',
                   cursor: 'pointer',
-                  color: '#64748b',
+                  color: 'hsl(var(--muted-foreground))',
                   padding: 0,
                   display: 'flex',
                   alignItems: 'center',
@@ -401,7 +449,7 @@ export function LoginPage() {
         </div>
       ) : (
       <div style={styles.card}>
-        {/* Sign In Form — 默认显示在左侧 */}
+        {/* 登录表单 */}
         <div
           style={{
             ...styles.formContainer,
@@ -444,7 +492,7 @@ export function LoginPage() {
                   background: 'none',
                   border: 'none',
                   cursor: 'pointer',
-                  color: '#64748b',
+                  color: 'hsl(var(--muted-foreground))',
                   padding: 0,
                   display: 'flex',
                   alignItems: 'center',
@@ -483,7 +531,7 @@ export function LoginPage() {
           </form>
         </div>
 
-        {/* Sign Up Form — 默认隐藏在右侧,切换后显示 */}
+        {/* 注册表单 */}
         <div
           style={{
             ...styles.formContainer,
@@ -534,7 +582,7 @@ export function LoginPage() {
                   background: 'none',
                   border: 'none',
                   cursor: 'pointer',
-                  color: '#64748b',
+                  color: 'hsl(var(--muted-foreground))',
                   padding: 0,
                   display: 'flex',
                   alignItems: 'center',
@@ -565,7 +613,7 @@ export function LoginPage() {
           </form>
         </div>
 
-        {/* Overlay */}
+        {/* Overlay 滑动面板 */}
         <div
           style={{
             ...styles.overlayContainer,
@@ -578,7 +626,6 @@ export function LoginPage() {
               transform: isActive ? 'translateX(50%)' : 'translateX(0)',
             }}
           >
-            {/* Left Overlay — 切换后显示,点击回到登录 */}
             <div style={{ ...styles.overlayPanel, ...styles.overlayLeft }}>
               <h2 style={styles.overlayTitle}>已有账户?</h2>
               <p style={styles.overlayText}>登录后继续管理你的家庭财务</p>
@@ -594,7 +641,6 @@ export function LoginPage() {
                 登录
               </button>
             </div>
-            {/* Right Overlay — 默认显示,点击切换到注册 */}
             <div style={{ ...styles.overlayPanel, ...styles.overlayRight }}>
               <h2 style={styles.overlayTitle}>还没有账户?</h2>
               <p style={styles.overlayText}>立即注册,和家人一起管理财务</p>

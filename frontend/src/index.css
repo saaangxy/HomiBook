@@ -1,3 +1,8 @@
+@import '@fontsource/zcool-xiaowei';
+@import '@fontsource/jetbrains-mono';
+@import '@fontsource/noto-serif-sc';
+@import '@fontsource/zcool-kuaile';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -32,6 +37,7 @@
     --sidebar-accent-foreground: 210 40% 98%;
     --sidebar-border: 217 19% 27%;
     --sidebar-ring: 24 95% 53%;
+    --theme-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
   }
 }
 
@@ -42,19 +48,18 @@
 
   body {
     margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-      'Helvetica Neue', Arial, sans-serif;
+    font-family: var(--theme-font);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     background: hsl(var(--background));
     color: hsl(var(--foreground));
+    transition: background-color 0.4s ease, color 0.4s ease;
   }
 
   #root {
     min-height: 100vh;
   }
 
-  /* 隐藏数字输入框的上下箭头 */
   input[type="number"]::-webkit-inner-spin-button,
   input[type="number"]::-webkit-outer-spin-button {
     -webkit-appearance: none;
@@ -64,7 +69,6 @@
     -moz-appearance: textfield;
   }
 
-  /* 隐藏滚动条保留滚动能力 */
   .no-scrollbar {
     scrollbar-width: none;
     -ms-overflow-style: none;
@@ -75,7 +79,6 @@
     height: 0 !important;
   }
 
-  /* 自定义滚动条样式 */
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -91,9 +94,234 @@
     background: hsl(var(--muted-foreground));
   }
 
-  /* Firefox */
   * {
     scrollbar-width: thin;
     scrollbar-color: hsl(var(--border)) transparent;
   }
+}
+
+/* ================================================================
+   主题纹理和装饰
+   ================================================================ */
+
+/* ---- 手工杂货铺：牛皮纸纹理 + 缝线装饰 ---- */
+[data-theme="craft"] {
+  --theme-font: "ZCOOL XiaoWei", "楷体", KaiTi, serif;
+}
+
+[data-theme="craft"] body {
+  background-color: hsl(var(--background));
+  background-image:
+    /* 牛皮纸纤维纹理 */
+    repeating-linear-gradient(
+      2deg,
+      transparent,
+      transparent 3px,
+      hsl(36 25% 88% / 0.3) 3px,
+      hsl(36 25% 88% / 0.3) 4px
+    ),
+    /* 细微噪点 */
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+  background-attachment: fixed;
+}
+
+[data-theme="craft"] .card,
+[data-theme="craft"] [class*="rounded"][class*="border"] {
+  border-style: dashed;
+  border-width: 2px;
+}
+
+[data-theme="craft"] ::selection {
+  background: hsl(22 65% 42% / 0.25);
+  color: hsl(24 25% 18%);
+}
+
+/* 缝线装饰 - 卡片左上角 */
+[data-theme="craft"] [data-slot="sidebar"]::before {
+  content: '';
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 24px;
+  height: 24px;
+  background: radial-gradient(circle, hsl(15 50% 48%) 20%, transparent 22%);
+  background-size: 6px 6px;
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* ---- 旧式电报机：泛黄纸张 + 点阵纹理 ---- */
+[data-theme="telegram"] {
+  --theme-font: "JetBrains Mono", "Courier New", monospace;
+}
+
+[data-theme="telegram"] body {
+  background-color: hsl(var(--background));
+  background-image:
+    /* 点阵打印纹理 */
+    radial-gradient(circle, hsl(225 35% 15% / 0.06) 1px, transparent 1px);
+  background-size: 8px 8px;
+  background-attachment: fixed;
+}
+
+[data-theme="telegram"] .card,
+[data-theme="telegram"] [class*="rounded"][class*="border"] {
+  border-style: solid;
+  border-width: 1.5px;
+  box-shadow: 2px 2px 0 hsl(225 35% 15% / 0.08);
+}
+
+[data-theme="telegram"] ::selection {
+  background: hsl(225 40% 25%);
+  color: hsl(40 30% 95%);
+}
+
+/* 电报机穿孔线 - 分割线样式 */
+[data-theme="telegram"] hr,
+[data-theme="telegram"] [class*="separator"] {
+  border: none;
+  border-top: 2px dashed hsl(225 15% 55% / 0.5);
+  position: relative;
+}
+
+[data-theme="telegram"] hr::before,
+[data-theme="telegram"] [class*="separator"]::before {
+  content: '• • • • • • • • • • • • • • •';
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 8px;
+  letter-spacing: 3px;
+  color: hsl(225 15% 55% / 0.4);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* ---- 植物记账簿：种子纸纹理 + 植物装饰 ---- */
+[data-theme="botanical"] {
+  --theme-font: "Noto Serif SC", "宋体", SimSun, serif;
+}
+
+[data-theme="botanical"] body {
+  background-color: hsl(var(--background));
+  background-image:
+    /* 种子斑点 */
+    radial-gradient(circle at 15% 25%, hsl(85 30% 25% / 0.03) 0.8px, transparent 0.8px),
+    radial-gradient(circle at 75% 60%, hsl(85 30% 25% / 0.03) 1px, transparent 1px),
+    radial-gradient(circle at 40% 80%, hsl(85 30% 25% / 0.04) 0.6px, transparent 0.6px),
+    radial-gradient(circle at 85% 15%, hsl(85 30% 25% / 0.03) 0.7px, transparent 0.7px),
+    /* 植物纤维纹理 */
+    repeating-linear-gradient(
+      175deg,
+      transparent,
+      transparent 5px,
+      hsl(85 18% 85% / 0.2) 5px,
+      hsl(85 18% 85% / 0.2) 6px
+    ),
+    /* 细微叶脉纹 */
+    url("data:image/svg+xml,%3Csvg width='60' height='60' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M30 5 Q35 30 30 55' stroke='%234a6b3a' stroke-width='0.3' fill='none' opacity='0.06'/%3E%3Cpath d='M30 15 Q40 25 50 22' stroke='%234a6b3a' stroke-width='0.2' fill='none' opacity='0.05'/%3E%3Cpath d='M30 25 Q20 35 10 32' stroke='%234a6b3a' stroke-width='0.2' fill='none' opacity='0.05'/%3E%3Cpath d='M30 35 Q42 45 52 40' stroke='%234a6b3a' stroke-width='0.2' fill='none' opacity='0.05'/%3E%3C/svg%3E");
+  background-attachment: fixed;
+}
+
+[data-theme="botanical"] ::selection {
+  background: hsl(140 35% 38% / 0.2);
+  color: hsl(85 25% 16%);
+}
+
+/* 植物装饰 - 页面角落藤蔓 */
+[data-theme="botanical"] #root::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 200px;
+  height: 200px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Cpath d='M200 0 Q160 30 170 70 Q180 110 140 130' stroke='%234a7c3f' stroke-width='1' fill='none' opacity='0.08'/%3E%3Ccircle cx='168' cy='65' r='4' fill='%234a7c3f' opacity='0.06'/%3E%3Ccircle cx='150' cy='105' r='3' fill='%234a7c3f' opacity='0.06'/%3E%3Ccircle cx='138' cy='128' r='5' fill='%23c47a8a' opacity='0.05'/%3E%3C/svg%3E") no-repeat;
+  pointer-events: none;
+  z-index: 0;
+}
+
+[data-theme="botanical"] #root::after {
+  content: '';
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 180px;
+  height: 180px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Cpath d='M0 200 Q40 170 30 130 Q20 90 60 70' stroke='%234a7c3f' stroke-width='1' fill='none' opacity='0.08'/%3E%3Ccircle cx='32' cy='135' r='4' fill='%23c47a8a' opacity='0.05'/%3E%3Ccircle cx='48' cy='92' r='3' fill='%234a7c3f' opacity='0.06'/%3E%3C/svg%3E") no-repeat;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ---- 糖果铺：玻璃罐透明质感 + 漩涡纹理 ---- */
+[data-theme="candy"] {
+  --theme-font: "ZCOOL KuaiLe", "圆体", "幼圆", YouYuan, sans-serif;
+}
+
+[data-theme="candy"] body {
+  background-color: hsl(var(--background));
+  background-image:
+    /* 玻璃高光 */
+    radial-gradient(ellipse at 30% 20%, hsl(340 60% 55% / 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 70% 60%, hsl(160 45% 48% / 0.05) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 80%, hsl(45 80% 55% / 0.04) 0%, transparent 40%),
+    /* 糖果漩涡 */
+    url("data:image/svg+xml,%3Csvg width='100' height='100' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='50' cy='50' r='45' fill='none' stroke='%23e891a8' stroke-width='1' opacity='0.04'/%3E%3Ccircle cx='50' cy='50' r='30' fill='none' stroke='%23e891a8' stroke-width='0.8' opacity='0.04'/%3E%3Ccircle cx='50' cy='50' r='15' fill='none' stroke='%23e891a8' stroke-width='0.6' opacity='0.04'/%3E%3C/svg%3E");
+  background-attachment: fixed;
+}
+
+[data-theme="candy"] .card,
+[data-theme="candy"] [class*="rounded"][class*="border"] {
+  border-width: 2px;
+  box-shadow:
+    0 2px 16px hsl(340 60% 55% / 0.08),
+    inset 0 1px 0 hsl(0 0% 100% / 0.6);
+  backdrop-filter: blur(2px);
+}
+
+[data-theme="candy"] ::selection {
+  background: hsl(340 60% 55% / 0.25);
+  color: hsl(330 25% 22%);
+}
+
+/* 玻璃罐高光条纹 */
+[data-theme="candy"] [data-slot="sidebar"]::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 6px;
+  width: 3px;
+  height: 100%;
+  background: linear-gradient(
+    180deg,
+    hsl(0 0% 100% / 0.15) 0%,
+    hsl(0 0% 100% / 0.05) 40%,
+    transparent 60%,
+    hsl(0 0% 100% / 0.1) 100%
+  );
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* 按钮玻璃质感 */
+[data-theme="candy"] button[class*="primary"] {
+  box-shadow:
+    0 4px 14px hsl(340 60% 55% / 0.3),
+    inset 0 1px 0 hsl(0 0% 100% / 0.2);
+}
+
+/* ================================================================
+   主题过渡动画
+   ================================================================ */
+body {
+  transition: background-color 0.5s ease, background-image 0.5s ease;
+}
+
+.card,
+[class*="rounded"][class*="border"],
+[data-slot="sidebar"],
+header,
+nav {
+  transition: background-color 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease;
 }

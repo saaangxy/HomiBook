@@ -1,7 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { useAuthStore } from '@/stores/auth'
 import { authApi } from '@/api/auth'
-import { useThemeContext } from './ThemeProvider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -18,9 +17,9 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog'
-import { User, Lock, FileText, Check } from 'lucide-react'
+import { User, Lock, FileText } from 'lucide-react'
 import { PasswordStrength } from './PasswordStrength'
-import { cn } from '@/lib/utils'
+import { ThemeSelector } from './ThemeSelector'
 
 interface Props {
   children: ReactNode
@@ -35,7 +34,6 @@ function ProfileDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const { user } = useAuthStore()
-  const { theme: currentTheme, setTheme, themeList } = useThemeContext()
   const [name, setName] = useState(user?.name || '')
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
@@ -76,7 +74,7 @@ function ProfileDialog({
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle>个人信息</DialogTitle>
-          <DialogDescription>修改您的名称和主题</DialogDescription>
+          <DialogDescription>修改您的名称和个人主题</DialogDescription>
         </DialogHeader>
         <div className="space-y-4 mt-2">
           <div>
@@ -104,39 +102,10 @@ function ProfileDialog({
             </div>
           </div>
 
-          {/* 主题选择 */}
+          {/* 个人主题选择 */}
           <div>
-            <Label className="text-xs text-muted-foreground mb-2 block">主题</Label>
-            <div className="grid grid-cols-2 gap-2">
-              {themeList.map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => setTheme(t.id)}
-                  className={cn(
-                    'flex items-center gap-2 p-2.5 rounded-[10px] border text-left transition-colors',
-                    currentTheme.id === t.id
-                      ? 'border-primary bg-primary/10'
-                      : 'border-border hover:bg-accent',
-                  )}
-                >
-                  {/* 颜色预览圆点 */}
-                  <div className="flex gap-0.5">
-                    <div
-                      className="w-3 h-3 rounded-full border border-white/20"
-                      style={{ backgroundColor: `hsl(${t.vars['--primary']})` }}
-                    />
-                    <div
-                      className="w-3 h-3 rounded-full border border-white/20"
-                      style={{ backgroundColor: `hsl(${t.vars['--background']})` }}
-                    />
-                  </div>
-                  <span className="text-sm flex-1">{t.name}</span>
-                  {currentTheme.id === t.id && (
-                    <Check size={14} className="text-primary shrink-0" />
-                  )}
-                </button>
-              ))}
-            </div>
+            <Label className="text-xs text-muted-foreground mb-2 block">个人主题</Label>
+            <ThemeSelector compact />
           </div>
 
           {msg && (

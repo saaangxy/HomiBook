@@ -1,16 +1,20 @@
-import { createContext, useContext, useEffect, useCallback, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useCallback, useState, type ReactNode } from 'react'
 import { useAuthStore } from '@/stores/auth'
 import { authApi } from '@/api/auth'
-import { themes, defaultTheme, getTheme, type Theme } from '@/themes'
+import { themes, defaultTheme, getTheme, getSystemThemeId, creativeThemeIds, type Theme } from '@/themes'
+
+const STORAGE_KEY = 'homibook-theme'
 
 interface ThemeContextValue {
   theme: Theme
+  themeId: string
   setTheme: (id: string) => void
   themeList: Theme[]
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
   theme: themes[defaultTheme],
+  themeId: defaultTheme,
   setTheme: () => {},
   themeList: Object.values(themes),
 })
@@ -26,32 +30,93 @@ function applyThemeVars(vars: Record<string, string>) {
   }
 }
 
+function getStoredPreference(): string | null {
+  try { return localStorage.getItem(STORAGE_KEY) } catch { return null }
+}
+
+function savePreference(id: string) {
+  try { localStorage.setItem(STORAGE_KEY, id) } catch { /* noop */ }
+}
+
+/** 解析偏好 ID → 实际主题 ID */
+function resolveActualId(prefId: string): string {
+  if (prefId === 'system') return getSystemThemeId()
+  if (themes[prefId]) return prefId
+  return defaultTheme
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const { user, updateUser } = useAuthStore()
 
-  const themeId = user?.theme || defaultTheme
-  const theme = getTheme(themeId)
+  // 初始化偏好 ID
+  const [prefId, setPrefId] = useState<string>(() => {
+    if (user?.theme) return user.theme
+    return getStoredPreference() || 'system'
+  })
 
-  const setTheme = useCallback(async (id: string) => {
-    if (!themes[id]) return
-    const t = themes[id]
+  const actualId = resolveActualId(prefId)
+  const theme = getTheme(actualId)
+
+  // 应用 CSS 变量 + data-theme 属性
+  const applyTheme = useCallback((actual: string, pref: string) => {
+    const t = themes[actual]
+    if (!t) return
     applyThemeVars(t.vars)
-    // 持久化到后端
-    try {
-      const updated = await authApi.updateProfile(undefined, id)
-      updateUser(updated)
-    } catch {
-      // 即使后端失败也保持前端主题
-    }
-  }, [updateUser])
+    document.documentElement.setAttribute('data-theme', actual)
+    savePreference(pref)
+  }, [])
 
-  // 初始化时应用主题（未登录也应用默认主题）
+  const setTheme = useCallback(async (newPrefId: string) => {
+    const newActual = resolveActualId(newPrefId)
+    if (!themes[newActual]) return
+
+    applyTheme(newActual, newPrefId)
+    setPrefId(newPrefId)
+
+    if (user) {
+      try {
+        const updated = await authApi.updateProfile(undefined, newPrefId)
+        updateUser(updated)
+      } catch { /* 后端失败不影响前端 */ }
+    }
+  }, [user, updateUser, applyTheme])
+
+  // 初始化时应用主题
   useEffect(() => {
-    applyThemeVars(theme.vars)
-  }, [user?.theme])
+    applyTheme(actualId, prefId)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 用户登录/切换时同步个人主题
+  useEffect(() => {
+    if (user?.theme && user.theme !== prefId) {
+      const newActual = resolveActualId(user.theme)
+      if (themes[newActual]) {
+        applyTheme(newActual, user.theme)
+        setPrefId(user.theme)
+      }
+    }
+  }, [user?.theme]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 监听系统主题变化（偏好为 "system" 时）
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const handler = () => {
+      setPrefId((current) => {
+        if (current === 'system') {
+          const newActual = getSystemThemeId()
+          applyTheme(newActual, 'system')
+        }
+        return current
+      })
+    }
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [applyTheme])
+
+  const themeList = creativeThemeIds.map(id => themes[id]).filter(Boolean)
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme, themeList: Object.values(themes) }}>
+    <ThemeContext.Provider value={{ theme, themeId: prefId, setTheme, themeList }}>
       {children}
     </ThemeContext.Provider>
   )
