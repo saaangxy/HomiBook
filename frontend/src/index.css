@@ -9,6 +9,8 @@
 @import '@fontsource/cormorant-garamond';
 @import '@fontsource/fredoka';
 @import '@fontsource/nunito';
+@import '@fontsource/bebas-neue';
+@import '@fontsource/dm-sans';
 
 @tailwind base;
 @tailwind components;
@@ -1331,6 +1333,504 @@
 [data-theme="botanical"] .login-overlay-panel button:hover {
   background: hsl(90 26% 18%) !important;
   box-shadow: 5px 5px 0 hsl(90 26% 14% / 0.4) !important;
+  transform: translate(-1px, -1px);
+}
+
+
+/* ===================================================================
+   抽象艺术构成 · 原色记账
+   风格：蒙德里安几何抽象 + 包豪斯网格 + 红黄蓝原色块 + 黑线分割
+   字体：Bebas Neue（标题）+ DM Sans（正文）
+   原则：零渐变、零圆角、纯色块、粗黑线
+   =================================================================== */
+
+[data-theme="mondrian"] {
+  --theme-font: "Bebas Neue", "DM Sans", "Noto Sans SC", "PingFang SC", sans-serif;
+}
+
+/* ===== 标题：Bebas Neue 窄长大写无衬线体 ===== */
+[data-theme="mondrian"] h1,
+[data-theme="mondrian"] h2,
+[data-theme="mondrian"] [data-sidebar="sidebar"] span[class*="font-extrabold"],
+[data-theme="mondrian"] header span[class*="font-semibold"] {
+  font-family: "Bebas Neue", "DM Sans", "Noto Sans SC", sans-serif;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+
+/* ===== 背景：浅灰基底 + 浮动三原色块 ===== */
+[data-theme="mondrian"] body {
+  background-color: hsl(var(--background));
+  background-image:
+    /* 细微网格纹理（毫米方格纸感） */
+    linear-gradient(0deg, hsl(0 0% 84% / 0.3) 0px, transparent 1px),
+    linear-gradient(90deg, hsl(0 0% 84% / 0.3) 0px, transparent 1px);
+  background-size: 24px 24px;
+  background-attachment: fixed;
+}
+
+/* 浮动原色块装饰 */
+[data-theme="mondrian"] #root::before {
+  content: '';
+  position: fixed;
+  top: 5%;
+  right: 6%;
+  width: 100px;
+  height: 70px;
+  background: hsl(48 100% 52%); /* 蒙德里安黄 */
+  border: 3px solid hsl(0 0% 10%);
+  opacity: 0.65;
+  pointer-events: none;
+  z-index: 0;
+  animation: mondrian-block-shift 10s ease-in-out infinite;
+}
+
+[data-theme="mondrian"] #root::after {
+  content: '';
+  position: fixed;
+  bottom: 8%;
+  left: 4%;
+  width: 70px;
+  height: 50px;
+  background: hsl(203 100% 36%); /* 蒙德里安蓝 */
+  border: 3px solid hsl(0 0% 10%);
+  opacity: 0.5;
+  pointer-events: none;
+  z-index: 0;
+  animation: mondrian-block-shift 10s ease-in-out 4s infinite;
+}
+
+@keyframes mondrian-block-shift {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(25px, -12px); }
+  50% { transform: translate(-8px, 15px); }
+  75% { transform: translate(18px, 8px); }
+}
+
+/* 第三色块：红色 — 用 main::before */
+[data-theme="mondrian"] main::before {
+  content: '';
+  position: fixed;
+  top: 45%;
+  right: 3%;
+  width: 55px;
+  height: 55px;
+  background: hsl(355 78% 56%); /* 蒙德里安红 */
+  border: 3px solid hsl(0 0% 10%);
+  opacity: 0.4;
+  pointer-events: none;
+  z-index: 0;
+  animation: mondrian-block-shift 10s ease-in-out 7s infinite;
+}
+
+/* ===== 主内容区：白底 + 黑边 ===== */
+[data-theme="mondrian"] main {
+  background-color: hsl(0 0% 100%);
+  color: hsl(0 0% 10%);
+  border-left: 3px solid hsl(0 0% 10%);
+  border-right: 3px solid hsl(0 0% 10%);
+}
+
+/* ===== Header：白底 + 粗黑底线 ===== */
+[data-theme="mondrian"] header {
+  background-color: hsl(0 0% 100%) !important;
+  border-bottom: 3px solid hsl(0 0% 10%) !important;
+  color: hsl(0 0% 10%) !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+}
+
+/* Header 底部黑线延展动画 */
+[data-theme="mondrian"] header::after {
+  content: '';
+  position: absolute;
+  bottom: -3px;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background: hsl(0 0% 10%);
+  transform: scaleX(0);
+  transform-origin: left;
+  animation: mondrian-line-extend 0.8s cubic-bezier(0.22, 0.61, 0.36, 1) 0.3s forwards;
+  pointer-events: none;
+}
+
+@keyframes mondrian-line-extend {
+  to { transform: scaleX(1); }
+}
+
+/* ===== 侧边栏：白底 + 粗黑线边框 ===== */
+[data-theme="mondrian"] [data-sidebar="sidebar"] {
+  background-color: hsl(0 0% 100%) !important;
+  background-image: none !important;
+  border-right: 3px solid hsl(0 0% 10%) !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  clip-path: none !important;
+}
+
+/* 菜单按钮：黑底白字，蒙德里安风格 */
+[data-theme="mondrian"] [data-sidebar="sidebar"] [data-sidebar="menu-button"] {
+  color: hsl(0 0% 100%) !important;
+  background: hsl(0 0% 10%) !important;
+  border-radius: 0 !important;
+}
+[data-theme="mondrian"] [data-sidebar="sidebar"] [data-sidebar="menu-button"][data-active="true"] {
+  background: hsl(355 78% 56%) !important;
+}
+[data-theme="mondrian"] [data-sidebar="sidebar"] [data-sidebar="menu-sub-button"] {
+  color: hsl(0 0% 100%) !important;
+}
+
+/* 用户卡片：保持黑字 */
+[data-theme="mondrian"] [data-sidebar="sidebar"] [data-sidebar="footer"] {
+  color: hsl(0 0% 10%) !important;
+}
+[data-theme="mondrian"] [data-sidebar="sidebar"] [data-sidebar="footer"] * {
+  color: hsl(0 0% 10%) !important;
+}
+
+/* 侧边栏外层容器：确保白底，防止深色穿透 */
+[data-theme="mondrian"] div:has(> [data-sidebar="sidebar"]) {
+  background-color: hsl(0 0% 100%) !important;
+}
+[data-theme="mondrian"] [data-variant="sidebar"][data-side] {
+  background-color: hsl(0 0% 100%) !important;
+}
+
+/* 侧边栏顶部：蓝色方块标记 */
+[data-theme="mondrian"] [data-sidebar="sidebar"]::before {
+  content: '';
+  position: absolute;
+  top: 58px;
+  right: 16px;
+  width: 20px;
+  height: 20px;
+  background: hsl(203 100% 36%);
+  border: 2px solid hsl(0 0% 10%);
+  pointer-events: none;
+  z-index: 2;
+  animation: mondrian-block-shift 10s ease-in-out 2s infinite;
+}
+
+/* 侧边栏底部：黄色方块 */
+[data-theme="mondrian"] [data-sidebar="sidebar"]::after {
+  content: '';
+  position: absolute;
+  bottom: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 18px;
+  height: 18px;
+  background: hsl(48 100% 52%);
+  border: 2px solid hsl(0 0% 10%);
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* 侧边栏导航活跃项：红色方块标记 */
+[data-theme="mondrian"] [data-sidebar="sidebar"] a[data-active="true"]::after,
+[data-theme="mondrian"] [data-sidebar="sidebar"] a[aria-current="page"]::after {
+  content: '';
+  width: 12px;
+  height: 12px;
+  background: hsl(355 78% 56%);
+  border: 2px solid hsl(0 0% 10%);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* ===== 卡片：白底 + 粗黑线边框（零圆角） ===== */
+[data-theme="mondrian"] .card:not([role="dialog"]),
+[data-theme="mondrian"] [class*="rounded-xl"][class*="border"]:not([role="dialog"]) {
+  border: 3px solid hsl(0 0% 10%) !important;
+  border-radius: 0 !important;
+  background-color: hsl(0 0% 100%) !important;
+  background-image: none !important;
+  box-shadow: 5px 5px 0 hsla(0, 0%, 10%, 0.1) !important;
+  color: hsl(0 0% 10%) !important;
+}
+
+/* 卡片顶部：黑线装订标记 */
+[data-theme="mondrian"] .card:not([role="dialog"])::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 16px;
+  right: 16px;
+  height: 3px;
+  background: hsl(0 0% 10%);
+  pointer-events: none;
+  z-index: 1;
+  transform: scaleX(0);
+  transform-origin: left;
+  animation: mondrian-line-extend 0.6s cubic-bezier(0.22, 0.61, 0.36, 1) 0.5s forwards;
+}
+
+/* ===== 弹窗/菜单：白底 + 粗黑边框 ===== */
+[data-theme="mondrian"] [role="dialog"],
+[data-theme="mondrian"] [role="alertdialog"],
+[data-theme="mondrian"] [role="menu"],
+[data-theme="mondrian"] [role="listbox"] {
+  border: 3px solid hsl(0 0% 10%) !important;
+  border-radius: 0 !important;
+  background-color: hsl(0 0% 100%) !important;
+  background-image: none !important;
+  box-shadow: 6px 6px 0 hsla(0, 0%, 10%, 0.12) !important;
+  color: hsl(0 0% 10%) !important;
+}
+
+/* ===== 按钮：黑底白字 + 偏移阴影 + hover 变红 ===== */
+[data-theme="mondrian"] button:not([role="menuitem"]):not([role="checkbox"]):not([role="radio"]):not([class*="ghost"]) {
+  border-radius: 0 !important;
+  border: 2px solid hsl(0 0% 10%) !important;
+  background: hsl(0 0% 10%) !important;
+  color: hsl(0 0% 100%) !important;
+  font-family: "Bebas Neue", "DM Sans", "Noto Sans SC", sans-serif !important;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  box-shadow: 4px 4px 0 hsla(0, 0%, 10%, 0.2) !important;
+  transition: all 0.2s ease;
+}
+
+[data-theme="mondrian"] button:not([role="menuitem"]):not([role="checkbox"]):not([role="radio"]):not([class*="ghost"]):hover {
+  background: hsl(355 78% 56%) !important;
+  border-color: hsl(355 78% 56%) !important;
+  box-shadow: 6px 6px 0 hsla(355, 78%, 56%, 0.25) !important;
+  transform: translate(-1px, -1px);
+}
+
+[data-theme="mondrian"] button:not([role="menuitem"]):not([role="checkbox"]):not([role="radio"]):not([class*="ghost"]):active {
+  box-shadow: 2px 2px 0 hsla(0, 0%, 10%, 0.2) !important;
+  transform: translate(2px, 2px);
+  transition: all 0.05s ease;
+}
+
+/* Primary 按钮：红色 */
+[data-theme="mondrian"] button[class*="primary"]:not([role="menuitem"]),
+[data-theme="mondrian"] [class*="bg-primary"] button {
+  background: hsl(355 78% 56%) !important;
+  border-color: hsl(355 78% 56%) !important;
+  box-shadow: 4px 4px 0 hsla(355, 78%, 40%, 0.3) !important;
+}
+
+/* Ghost 按钮 */
+[data-theme="mondrian"] button[class*="ghost"] {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: hsl(0 0% 10%) !important;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  border-bottom: 2px solid hsl(0 0% 10%) !important;
+}
+
+[data-theme="mondrian"] button[class*="ghost"]:hover {
+  background: transparent !important;
+  box-shadow: none !important;
+  border-bottom-color: hsl(355 78% 56%) !important;
+  color: hsl(355 78% 56%) !important;
+  transform: none !important;
+}
+
+/* Outline 按钮 */
+[data-theme="mondrian"] button[class*="outline"] {
+  background: hsl(0 0% 100%) !important;
+  border: 2px solid hsl(0 0% 10%) !important;
+  color: hsl(0 0% 10%) !important;
+  box-shadow: 3px 3px 0 hsla(0, 0%, 10%, 0.1) !important;
+}
+
+/* ===== 输入框：白底 + 黑边 + 聚焦蓝色 ===== */
+[data-theme="mondrian"] input:not([type="checkbox"]):not([type="radio"]),
+[data-theme="mondrian"] textarea,
+[data-theme="mondrian"] select {
+  border-radius: 0 !important;
+  border: 2px solid hsl(0 0% 10%) !important;
+  background: hsl(0 0% 100%) !important;
+  font-family: "DM Sans", "Noto Sans SC", sans-serif !important;
+  color: hsl(0 0% 10%) !important;
+  padding-left: 10px !important;
+  box-shadow: none !important;
+  transition: all 0.2s ease;
+}
+
+[data-theme="mondrian"] input:focus:not([type="checkbox"]):not([type="radio"]),
+[data-theme="mondrian"] textarea:focus,
+[data-theme="mondrian"] select:focus {
+  border-color: hsl(203 100% 36%) !important;
+  border-width: 3px !important;
+  outline: none !important;
+  padding: calc(var(--input-padding-y, 8px) - 1px) calc(var(--input-padding-x, 12px) - 1px);
+  padding-left: 9px !important;
+  box-shadow: 4px 4px 0 hsla(203, 100%, 36%, 0.2) !important;
+}
+
+/* 侧边栏中的输入 */
+[data-theme="mondrian"] [data-sidebar="sidebar"] input,
+[data-theme="mondrian"] [data-sidebar="sidebar"] textarea {
+  border-color: hsl(0 0% 10% / 0.4) !important;
+  background: hsl(0 0% 96%) !important;
+}
+
+/* ===== Badge：黑框标签 ===== */
+[data-theme="mondrian"] [class*="badge"] {
+  border-radius: 0 !important;
+  border: 2px solid hsl(0 0% 10%) !important;
+  background: hsl(0 0% 100%) !important;
+  color: hsl(0 0% 10%) !important;
+  font-family: "Bebas Neue", "DM Sans", sans-serif;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-size: 11px;
+  padding: 2px 10px !important;
+}
+
+/* ===== 分割线：黑色实线 ===== */
+[data-theme="mondrian"] hr {
+  border: none;
+  border-top: 3px solid hsl(0 0% 10%);
+}
+
+/* ===== 选中文字：黄色高亮 ===== */
+[data-theme="mondrian"] ::selection {
+  background: hsl(48 100% 52% / 0.3);
+  color: hsl(0 0% 10%);
+}
+
+/* ===== 滚动条：黑色 ===== */
+[data-theme="mondrian"] ::-webkit-scrollbar-thumb {
+  background: hsl(0 0% 10%);
+  border-radius: 0;
+}
+[data-theme="mondrian"] ::-webkit-scrollbar-thumb:hover {
+  background: hsl(355 78% 56%);
+}
+[data-theme="mondrian"] * {
+  scrollbar-color: hsl(0 0% 10%) transparent;
+}
+
+/* ===== 表格 ===== */
+[data-theme="mondrian"] th {
+  border-bottom: 3px solid hsl(0 0% 10%);
+  font-family: "Bebas Neue", "DM Sans", "Noto Sans SC", sans-serif;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: hsl(0 0% 10%);
+}
+
+[data-theme="mondrian"] td {
+  border-bottom: 2px solid hsl(0 0% 10% / 0.15);
+}
+
+/* ===== 标签页：黑色底部指示 ===== */
+[data-theme="mondrian"] [role="tab"][data-state="active"] {
+  border-bottom: 3px solid hsl(0 0% 10%) !important;
+  color: hsl(0 0% 10%);
+  font-family: "Bebas Neue", "DM Sans", "Noto Sans SC", sans-serif;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+/* ===== 色块滑入入场动画 ===== */
+@keyframes mondrian-slide-in {
+  0% {
+    opacity: 0;
+    clip-path: inset(0 100% 0 0);
+  }
+  100% {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+[data-theme="mondrian"] main > * {
+  animation: mondrian-slide-in 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+[data-theme="mondrian"] main > *:nth-child(1) { animation-delay: 0.08s; }
+[data-theme="mondrian"] main > *:nth-child(2) { animation-delay: 0.16s; }
+[data-theme="mondrian"] main > *:nth-child(3) { animation-delay: 0.24s; }
+[data-theme="mondrian"] main > *:nth-child(4) { animation-delay: 0.32s; }
+[data-theme="mondrian"] main > *:nth-child(5) { animation-delay: 0.40s; }
+[data-theme="mondrian"] main > *:nth-child(6) { animation-delay: 0.48s; }
+
+/* ===== 卡片悬停：阴影扩大 ===== */
+[data-theme="mondrian"] .card:not([role="dialog"]):hover {
+  box-shadow: 7px 7px 0 hsla(0, 0%, 10%, 0.14) !important;
+  transition: box-shadow 0.25s ease;
+}
+
+/* ===== 登录页：蒙德里安网格布局 ===== */
+[data-theme="mondrian"] .login-bg-orb {
+  background-color: hsl(48 100% 52% / 0.5) !important;
+  border: 3px solid hsl(0 0% 10%) !important;
+  border-radius: 0 !important;
+}
+
+[data-theme="mondrian"] .login-bg-accent {
+  background: none !important;
+  border: 3px solid hsl(0 0% 10%) !important;
+}
+
+[data-theme="mondrian"] .login-card {
+  border: 3px solid hsl(0 0% 10%) !important;
+  border-radius: 0 !important;
+  background-color: hsl(0 0% 100%) !important;
+  background-image: none !important;
+  box-shadow: 6px 6px 0 hsla(0, 0%, 10%, 0.12) !important;
+  color: hsl(0 0% 10%) !important;
+}
+
+[data-theme="mondrian"] .login-card h1,
+[data-theme="mondrian"] .login-card h2 {
+  font-family: "Bebas Neue", "DM Sans", "Noto Sans SC", sans-serif !important;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+[data-theme="mondrian"] .login-overlay {
+  background-color: hsl(0 0% 10%) !important;
+  background-image: none !important;
+  border: 3px solid hsl(0 0% 10%) !important;
+}
+
+[data-theme="mondrian"] .login-overlay-container::after {
+  content: '';
+  position: absolute;
+  inset: 12px;
+  border: 3px solid hsl(0 0% 10%);
+  pointer-events: none;
+  z-index: 101;
+}
+
+[data-theme="mondrian"] .login-overlay-panel h2 {
+  font-family: "Bebas Neue", "DM Sans", "Noto Sans SC", sans-serif !important;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+[data-theme="mondrian"] .login-overlay-panel button {
+  font-family: "Bebas Neue", "DM Sans", "Noto Sans SC", sans-serif !important;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  border-radius: 0 !important;
+  border: 2px solid hsl(0 0% 10%) !important;
+  background: hsl(0 0% 10%) !important;
+  color: hsl(0 0% 100%) !important;
+  box-shadow: 4px 4px 0 hsla(0, 0%, 10%, 0.2) !important;
+}
+
+[data-theme="mondrian"] .login-overlay-panel button:hover {
+  background: hsl(355 78% 56%) !important;
+  border-color: hsl(355 78% 56%) !important;
+  box-shadow: 6px 6px 0 hsla(355, 78%, 56%, 0.25) !important;
   transform: translate(-1px, -1px);
 }
 

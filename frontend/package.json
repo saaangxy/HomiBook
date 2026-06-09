@@ -11,8 +11,10 @@
   },
   "dependencies": {
     "@fontsource/amatic-sc": "^5.2.7",
+    "@fontsource/bebas-neue": "^5.2.7",
     "@fontsource/cormorant-garamond": "^5.2.11",
     "@fontsource/crimson-text": "^5.2.7",
+    "@fontsource/dm-sans": "^5.2.8",
     "@fontsource/fredoka": "^5.2.10",
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@fontsource/noto-serif-sc": "^5.2.8",

@@ -160,6 +160,44 @@ export const themes: Record<string, Theme> = {
     },
   },
 
+  // ==================== 抽象艺术构成 · 原色记账 ====================
+  mondrian: {
+    id: 'mondrian',
+    name: '原色构成',
+    description: '蒙德里安几何抽象、红黄蓝原色块、黑线分割、包豪斯网格',
+    mode: 'light',
+    fontFamily: '"Bebas Neue", "DM Sans", "Noto Sans SC", "PingFang SC", sans-serif',
+    vars: {
+      '--background': '0 0% 96%',
+      '--foreground': '0 0% 10%',
+      '--card': '0 0% 100%',
+      '--card-foreground': '0 0% 10%',
+      '--popover': '0 0% 100%',
+      '--popover-foreground': '0 0% 10%',
+      '--primary': '355 78% 56%',
+      '--primary-foreground': '0 0% 100%',
+      '--secondary': '0 0% 92%',
+      '--secondary-foreground': '0 0% 10%',
+      '--muted': '0 0% 88%',
+      '--muted-foreground': '0 0% 40%',
+      '--accent': '203 100% 36%',
+      '--accent-foreground': '0 0% 100%',
+      '--destructive': '355 78% 56%',
+      '--destructive-foreground': '0 0% 100%',
+      '--border': '0 0% 10%',
+      '--input': '0 0% 90%',
+      '--ring': '203 100% 36%',
+      '--sidebar-background': '0 0% 100%',
+      '--sidebar-foreground': '0 0% 10%',
+      '--sidebar-primary': '355 78% 56%',
+      '--sidebar-primary-foreground': '0 0% 100%',
+      '--sidebar-accent': '0 0% 92%',
+      '--sidebar-accent-foreground': '0 0% 10%',
+      '--sidebar-border': '0 0% 10%',
+      '--sidebar-ring': '203 100% 36%',
+    },
+  },
+
   // ==================== 基础浅色（系统默认浅色） ====================
   light: {
     id: 'light',
@@ -238,7 +276,7 @@ export const themes: Record<string, Theme> = {
 }
 
 /** 用户可选的创意主题 ID 列表（不含基础 light/dark） */
-export const creativeThemeIds = ['craft', 'telegram', 'botanical', 'candy']
+export const creativeThemeIds = ['craft', 'telegram', 'botanical', 'candy', 'mondrian']
 
 /** 所有可选主题 ID（含 system 选项） */
 export const selectableThemeIds = ['system', ...creativeThemeIds]

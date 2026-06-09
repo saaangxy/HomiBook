@@ -231,6 +231,11 @@
   resolved "https://registry.npmmirror.com/@fontsource/amatic-sc/-/amatic-sc-5.2.7.tgz"
   integrity sha512-fZanMNAXHSguiPeZqEQ8gFMgK0mQKivdDEQx+Z/zL29fgI7I3ZDLjNd0j/+T0rq7Gq50QUCdOGdK+Ues7ukjDg==
 
+"@fontsource/bebas-neue@^5.2.7":
+  version "5.2.7"
+  resolved "https://registry.npmmirror.com/@fontsource/bebas-neue/-/bebas-neue-5.2.7.tgz"
+  integrity sha512-DsmBrmq55d9BCU0mt4DT4RZDdH8vhWRKEUOfbuNB1EEjMuwbtFvM8N+3gIlkYSFbsb10P8Q19BV5OdpMu2h0fA==
+
 "@fontsource/cormorant-garamond@^5.2.11":
   version "5.2.11"
   resolved "https://registry.npmmirror.com/@fontsource/cormorant-garamond/-/cormorant-garamond-5.2.11.tgz"
@@ -240,6 +245,11 @@
   version "5.2.7"
   resolved "https://registry.npmmirror.com/@fontsource/crimson-text/-/crimson-text-5.2.7.tgz"
   integrity sha512-hlUb/1GdXB2xc0usGMPp6qEI7Z4kQU1FEOYvozsN+cUC/Nh4kvEVVc0kHpj8B5G0hjZzfP+UmrLYHOaNAfMK5w==
+
+"@fontsource/dm-sans@^5.2.8":
+  version "5.2.8"
+  resolved "https://registry.npmmirror.com/@fontsource/dm-sans/-/dm-sans-5.2.8.tgz"
+  integrity sha512-tlovG42m9ESG28WiHpLq3F5umAlm64rv0RkqTbYowRn70e9OlRr5a3yTJhrhrY+k5lftR/OFJjPzOLQzk8EfCA==
 
 "@fontsource/fredoka@^5.2.10":
   version "5.2.10"
