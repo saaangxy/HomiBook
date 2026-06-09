@@ -453,7 +453,7 @@ export function CalendarPage() {
                 className="w-24 h-8 text-xs bg-background border-border rounded-lg"
               />
               <div className="flex-1" />
-              <Button size="sm" className="bg-[#f97316] hover:bg-[#ea580c] text-white h-8 text-xs rounded-lg" onClick={openCreate}>
+              <Button size="sm" className="bg-primary hover:bg-primary/90 text-primary-foreground h-8 text-xs rounded-lg" onClick={openCreate}>
                 <Plus size={14} className="mr-1" />添加流水
               </Button>
             </div>
@@ -695,7 +695,7 @@ export function CalendarPage() {
           <DialogFooter className="mt-2">
             <Button variant="outline" className="rounded-xl" onClick={() => setFormOpen(false)}>取消</Button>
             <Button
-              className="bg-[#f97316] hover:bg-[#ea580c] text-white rounded-xl"
+              className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl"
               onClick={handleSubmit}
               disabled={submitting}
             >

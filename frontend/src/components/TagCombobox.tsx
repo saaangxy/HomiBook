@@ -140,7 +140,7 @@ export function TagCombobox({ value, onChange, bookId, placeholder = '选择或�
                   <CommandEmpty>
                     {isNewTag ? (
                       <button
-                        className="flex items-center gap-2 px-2 py-1.5 text-sm text-[#f97316] hover:bg-accent rounded-sm w-full cursor-pointer"
+                        className="flex items-center gap-2 px-2 py-1.5 text-sm text-primary hover:bg-accent rounded-sm w-full cursor-pointer"
                         onClick={() => addTag(search.trim())}
                       >
                         <Plus className="h-4 w-4" />

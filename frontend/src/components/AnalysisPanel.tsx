@@ -18,6 +18,7 @@ import { recordApi, type RecordItem } from '@/api/record'
 import { accountApi, type AccountItem } from '@/api/account'
 import { adminApi, type AdminUser } from '@/api/admin'
 import { PieChart, Users, Wallet, X, List, ChevronLeft, ChevronRight } from 'lucide-react'
+import { useChartTheme, type ChartTheme } from '@/hooks/useChartTheme'
 
 function formatMoney(amount: number): string {
   return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(amount)
@@ -41,31 +42,29 @@ const GROUP_ICONS: Record<string, React.ReactNode> = {
   accountId: <Wallet size={14} />,
 }
 
-const COLORS = ['#f97316', '#ef4444', '#3b82f6', '#22c55e', '#a855f7', '#eab308', '#ec4899', '#14b8a6', '#8b5cf6', '#f43f5e']
-
-function buildPie(data: { name: string; value: number }[]): EChartsOption {
+function buildPie(data: { name: string; value: number }[], t: ChartTheme): EChartsOption {
   return {
     tooltip: {
       trigger: 'item' as const,
-      backgroundColor: '#1e293b',
-      borderColor: '#334155',
-      textStyle: { color: '#e2e8f0', fontSize: 13 },
+      backgroundColor: t.cardBg,
+      borderColor: t.border,
+      textStyle: { color: t.cardFg, fontSize: 13 },
       formatter: (p: any) => `${p.name}: ${formatMoney(p.value)} (${p.percent}%)`,
     },
     legend: {
       orient: 'horizontal' as const,
       bottom: 0,
       type: 'plain' as const,
-      textStyle: { color: '#cbd5e1', fontSize: 12 },
+      textStyle: { color: t.mutedForeground, fontSize: 12 },
     },
-    color: COLORS,
+    color: t.COLORS,
     series: [{
       type: 'pie',
       radius: ['45%', '75%'],
       center: ['50%', '50%'],
       top: 0,
       bottom: 50,
-      itemStyle: { borderRadius: 3, borderColor: 'hsl(var(--background))', borderWidth: 2 },
+      itemStyle: { borderRadius: 3, borderColor: t.bg, borderWidth: 2 },
       label: { show: false },
       emphasis: { label: { show: true, fontSize: 14, fontWeight: 'bold' }, scaleSize: 8 },
       data,
@@ -92,6 +91,7 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
 
   // 选中项
   const [selected, setSelected] = useState<SelectedInfo>(null)
+  const t = useChartTheme()
 
   // 详情弹窗
   const [detailOpen, setDetailOpen] = useState(false)
@@ -246,7 +246,7 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
                       <div className="flex items-center justify-center h-full text-xs text-muted-foreground">暂无数据</div>
                     ) : (
                       <ReactECharts
-                        option={buildPie(data)}
+                        option={buildPie(data, t)}
                         style={{ width: '100%', height: '100%' }}
                         onEvents={{ click: handlePieClick(groupBy, rawData) }}
                       />
@@ -262,7 +262,7 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
                           <X size={14} />
                         </button>
                       </div>
-                      <span className="text-sm font-bold" style={{ color: COLORS[rawData.findIndex((d) => d.key === selected.key) % COLORS.length] || '#f97316' }}>
+                      <span className="text-sm font-bold" style={{ color: t.COLORS[rawData.findIndex((d) => d.key === selected.key) % t.COLORS.length] || 'hsl(var(--primary))' }}>
                         {formatMoney(selected.amount)}
                       </span>
                       <div className="mt-2">

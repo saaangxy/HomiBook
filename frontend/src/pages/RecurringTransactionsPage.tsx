@@ -305,7 +305,7 @@ export function RecurringTransactionsPage() {
 
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">固定收支</h2>
-        <Button onClick={openCreate} className="bg-[#f97316] hover:bg-[#ea580c] text-white rounded-lg h-8 text-xs">
+        <Button onClick={openCreate} className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg h-8 text-xs">
           <Plus size={14} /> 新增固定收支
         </Button>
       </div>
@@ -411,7 +411,7 @@ export function RecurringTransactionsPage() {
                       className={`px-4 text-xs font-medium transition-colors ${
                         idx === 0 ? 'border-r border-border' : ''
                       } ${
-                        formRecurringType === t ? 'bg-[#f97316] text-white' : 'bg-background text-foreground hover:bg-muted'
+                        formRecurringType === t ? 'bg-primary text-primary-foreground' : 'bg-background text-foreground hover:bg-muted'
                       }`}
                       onClick={() => {
                         setFormRecurringType(t)
@@ -614,7 +614,7 @@ export function RecurringTransactionsPage() {
                         className={`px-4 text-xs font-medium transition-colors ${
                           idx === 0 ? 'border-r border-border' : ''
                         } ${
-                          formLoanGenerateAll === val ? 'bg-[#f97316] text-white' : 'bg-background text-foreground hover:bg-muted'
+                          formLoanGenerateAll === val ? 'bg-primary text-primary-foreground' : 'bg-background text-foreground hover:bg-muted'
                         }`}
                         onClick={() => { setFormLoanGenerateAll(val); setLoanPreview(null) }}
                       >
@@ -639,11 +639,11 @@ export function RecurringTransactionsPage() {
                 {loanPreview && (
                   <>
                     <div className="flex gap-4 text-xs">
-                      <span>月还款额: <strong className="text-[#f97316]">{formatMoney(loanPreview.monthlyPayment)}</strong></span>
+                      <span>月还款额: <strong className="text-primary">{formatMoney(loanPreview.monthlyPayment)}</strong></span>
                       <span>总还款: {formatMoney(loanPreview.totalPayment)}</span>
                       <span>总利息: {formatMoney(loanPreview.totalInterest)}</span>
                       {formLoanGenerateAll && (
-                        <span className="text-[#f97316]">
+                        <span className="text-primary">
                           将立即生成 {loanPreview.plan.filter(p => new Date(p.dueDate) <= new Date()).length} 期历史流水
                         </span>
                       )}
@@ -696,7 +696,7 @@ export function RecurringTransactionsPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>取消</Button>
-            <Button className="bg-[#f97316] hover:bg-[#ea580c] text-white" onClick={handleSubmit} disabled={submitting}>
+            <Button className="bg-primary hover:bg-primary/90 text-primary-foreground" onClick={handleSubmit} disabled={submitting}>
               {submitting ? '保存中...' : (editingId ? '保存' : '创建')}
             </Button>
           </DialogFooter>

@@ -46,8 +46,8 @@
       'Helvetica Neue', Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    background: hsl(222.2 47% 11%);
-    color: hsl(210 40% 98%);
+    background: hsl(var(--background));
+    color: hsl(var(--foreground));
   }
 
   #root {
@@ -84,16 +84,16 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: hsl(217 19% 27%);
+    background: hsl(var(--border));
     border-radius: 3px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: hsl(217 19% 35%);
+    background: hsl(var(--muted-foreground));
   }
 
   /* Firefox */
   * {
     scrollbar-width: thin;
-    scrollbar-color: hsl(217 19% 27%) transparent;
+    scrollbar-color: hsl(var(--border)) transparent;
   }
 }

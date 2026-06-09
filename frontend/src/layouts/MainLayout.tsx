@@ -66,7 +66,7 @@ function NavItems() {
               size="lg"
               tooltip={item.label}
               className={cn(
-                active && 'text-[#f97316] hover:text-[#f97316]',
+                active && 'text-primary hover:text-primary',
                 '[&>svg]:size-5',
                 'group-data-[collapsible=icon]:justify-center',
               )}
@@ -88,8 +88,8 @@ function SidebarUserFooter() {
   return (
     <UserMenu>
       <div className="flex items-center gap-3 p-3 group-data-[collapsible=icon]:p-1 cursor-pointer hover:bg-accent rounded-[10px] transition-colors">
-        <Avatar className="w-9 h-9 group-data-[collapsible=icon]:w-7 group-data-[collapsible=icon]:h-7 rounded-[10px] bg-[#f97316] shrink-0">
-          <AvatarFallback className="text-white text-sm font-bold bg-[#f97316]">
+        <Avatar className="w-9 h-9 group-data-[collapsible=icon]:w-7 group-data-[collapsible=icon]:h-7 rounded-[10px] bg-primary shrink-0">
+          <AvatarFallback className="text-primary-foreground text-sm font-bold bg-primary">
             {(user?.name?.[0] || user?.email?.[0] || 'U').toUpperCase()}
           </AvatarFallback>
         </Avatar>
@@ -134,10 +134,10 @@ export function MainLayout() {
         {/* Logo */}
         <SidebarHeader className="px-5 pt-5 pb-7 group-data-[collapsible=icon]:px-2 group-data-[collapsible=icon]:pt-4 group-data-[collapsible=icon]:pb-4">
           <div className="flex items-center gap-3 group-data-[collapsible=icon]:justify-center">
-            <div className="w-10 h-10 min-w-10 group-data-[collapsible=icon]:w-7 group-data-[collapsible=icon]:h-7 group-data-[collapsible=icon]:min-w-7 rounded-xl bg-[#f97316] flex items-center justify-center">
+            <div className="w-10 h-10 min-w-10 group-data-[collapsible=icon]:w-7 group-data-[collapsible=icon]:h-7 group-data-[collapsible=icon]:min-w-7 rounded-xl bg-primary flex items-center justify-center">
               <Book size={22} color="#fff" />
             </div>
-            <span className="text-xl font-extrabold text-[#f97316] tracking-tight whitespace-nowrap group-data-[collapsible=icon]:hidden">
+            <span className="text-xl font-extrabold text-primary tracking-tight whitespace-nowrap group-data-[collapsible=icon]:hidden">
               Homibook
             </span>
           </div>
@@ -170,7 +170,7 @@ export function MainLayout() {
             <Button
               variant="outline"
               onClick={handleLogout}
-              className="rounded-[10px] border-border text-muted-foreground text-[13px] hover:text-[#f97316] hover:bg-accent"
+              className="rounded-[10px] border-border text-muted-foreground text-[13px] hover:text-primary hover:bg-accent"
             >
               <LogOut size={16} />
               退出登录

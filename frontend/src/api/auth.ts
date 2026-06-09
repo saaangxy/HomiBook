@@ -10,8 +10,8 @@ export const authApi = {
   me: () =>
     api.get<{ id: string; email: string; name: string | null; role: string }>('/api/auth/me'),
 
-  updateProfile: (name: string) =>
-    api.patch<{ id: string; email: string; name: string | null; role: string }>('/api/auth/me', { name }),
+  updateProfile: (name?: string, theme?: string) =>
+    api.patch<{ id: string; email: string; name: string | null; role: string; theme: string }>('/api/auth/me', { name, theme }),
 
   changePassword: (currentPassword: string, newPassword: string) =>
     api.patch<{ success: boolean }>('/api/auth/me/password', { currentPassword, newPassword }),

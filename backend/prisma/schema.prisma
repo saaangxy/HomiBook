@@ -15,6 +15,7 @@ model User {
   name      String?
   role      String   @default("USER")
   status    String   @default("ACTIVE")
+  theme     String   @default("dark")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

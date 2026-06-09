@@ -53,13 +53,13 @@ const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1)
 function BudgetTypeBadge({ type }: { type: BudgetType }) {
   return type === 'FIXED'
     ? <Badge variant="outline" className="text-xs border-[#3b82f6]/50 text-[#3b82f6]">固定</Badge>
-    : <Badge variant="outline" className="text-xs border-[#f97316]/50 text-[#f97316]">自由</Badge>
+    : <Badge variant="outline" className="text-xs border-primary/50 text-primary">自由</Badge>
 }
 
 function UsageBar({ percent, remaining }: { percent: number; remaining: number }) {
   let color = 'bg-[#22c55e]'
   if (percent > 100) color = 'bg-[#ef4444]'
-  else if (percent > 80) color = 'bg-[#f97316]'
+  else if (percent > 80) color = 'bg-primary'
   else if (percent > 60) color = 'bg-[#eab308]'
 
   return (
@@ -416,7 +416,7 @@ export function BudgetsPage() {
               onClick={() => toggleSelectAll(items)}
             >
               {items.length > 0 && items.every((b) => selectedIds.has(b.id)) && (
-                <Check className="h-3 w-3 text-[#f97316]" />
+                <Check className="h-3 w-3 text-primary" />
               )}
             </button>
           </TableHead>
@@ -441,7 +441,7 @@ export function BudgetsPage() {
                 <button
                   className={cn(
                     'flex h-4 w-4 items-center justify-center rounded border border-border hover:bg-muted',
-                    selectedIds.has(b.id) && 'bg-[#f97316] border-[#f97316]',
+                    selectedIds.has(b.id) && 'bg-primary border-primary',
                   )}
                   onClick={() => toggleSelect(b.id)}
                 >
@@ -597,7 +597,7 @@ export function BudgetsPage() {
           <Card>
             <CardContent className="pt-6">
               <div className="text-xs text-muted-foreground mb-1">使用率</div>
-              <div className={`text-2xl font-bold tabular-nums ${summaryData.totalUsagePercent > 100 ? 'text-[#ef4444]' : summaryData.totalUsagePercent > 80 ? 'text-[#f97316]' : 'text-[#22c55e]'}`}>
+              <div className={`text-2xl font-bold tabular-nums ${summaryData.totalUsagePercent > 100 ? 'text-[#ef4444]' : summaryData.totalUsagePercent > 80 ? 'text-primary' : 'text-[#22c55e]'}`}>
                 {summaryData.totalUsagePercent.toFixed(1)}%
               </div>
             </CardContent>

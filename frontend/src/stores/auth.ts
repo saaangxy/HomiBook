@@ -6,6 +6,7 @@ interface User {
   email: string
   name: string | null
   role: string
+  theme: string
 }
 
 interface AuthState {

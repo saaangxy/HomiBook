@@ -139,7 +139,7 @@ export function UsersPage() {
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-semibold">用户管理</h1>
         <Button
-          className="bg-[#f97316] hover:bg-[#ea580c] text-white rounded-[10px]"
+          className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-[10px]"
           onClick={() => { resetForm(); setCreateOpen(true) }}
         >
           + 创建用户
@@ -302,7 +302,7 @@ export function UsersPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>取消</Button>
-            <Button className="bg-[#f97316] hover:bg-[#ea580c] text-white" onClick={handleCreate} disabled={submitting}>
+            <Button className="bg-primary hover:bg-primary/90 text-primary-foreground" onClick={handleCreate} disabled={submitting}>
               {submitting ? '创建中...' : '创建'}
             </Button>
           </DialogFooter>
@@ -338,7 +338,7 @@ export function UsersPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPasswordOpen(false)}>取消</Button>
-            <Button className="bg-[#f97316] hover:bg-[#ea580c] text-white" onClick={handleChangePassword} disabled={submitting}>
+            <Button className="bg-primary hover:bg-primary/90 text-primary-foreground" onClick={handleChangePassword} disabled={submitting}>
               {submitting ? '修改中...' : '确认修改'}
             </Button>
           </DialogFooter>

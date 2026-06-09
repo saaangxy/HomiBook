@@ -212,7 +212,7 @@ export function AttachmentViewer({ open, onOpenChange, attachments }: Attachment
                     <div key={att.id} className="relative group">
                       {isImage ? (
                         <button
-                          className="w-20 h-20 rounded-lg border border-border overflow-hidden hover:ring-2 hover:ring-[#f97316]/50 transition-all"
+                          className="w-20 h-20 rounded-lg border border-border overflow-hidden hover:ring-2 hover:ring-primary/50 transition-all"
                           onClick={() => setPreviewImage(fullUrl)}
                         >
                           <img

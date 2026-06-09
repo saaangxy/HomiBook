@@ -23,7 +23,7 @@ const styles = {
     left: '-10%',
     width: '500px',
     height: '500px',
-    backgroundColor: 'rgba(249, 115, 22, 0.08)',
+    backgroundColor: 'hsl(var(--primary) / 0.08)',
     borderRadius: '50%',
     filter: 'blur(60px)',
   },
@@ -33,7 +33,7 @@ const styles = {
     right: '-10%',
     width: '600px',
     height: '600px',
-    backgroundColor: 'rgba(234, 88, 12, 0.06)',
+    backgroundColor: 'hsl(var(--primary) / 0.06)',
     borderRadius: '50%',
     filter: 'blur(60px)',
   },
@@ -47,17 +47,17 @@ const styles = {
   logoContainer: {
     width: '56px',
     height: '56px',
-    backgroundColor: '#f97316',
+    backgroundColor: 'hsl(var(--primary))',
     borderRadius: '16px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    boxShadow: '0 8px 32px rgba(249, 115, 22, 0.25)',
+    boxShadow: '0 8px 32px hsl(var(--primary) / 0.25)',
   },
   headerTitle: {
     fontSize: '38px',
     fontWeight: 800,
-    color: '#f97316',
+    color: 'hsl(var(--primary))',
     margin: 0,
     letterSpacing: '-1px',
   },
@@ -68,7 +68,7 @@ const styles = {
     borderRadius: '28px',
     overflow: 'hidden',
     boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6)',
-    border: '1px solid rgba(249, 115, 22, 0.1)',
+    border: '1px solid hsl(var(--primary) / 0.1)',
     backgroundColor: '#0f172a',
   },
   formContainer: {
@@ -118,9 +118,9 @@ const styles = {
     transition: 'all 0.3s ease',
   },
   inputFocus: {
-    borderColor: '#f97316',
+    borderColor: 'hsl(var(--primary))',
     backgroundColor: '#1e293b',
-    boxShadow: '0 0 0 3px rgba(249, 115, 22, 0.15)',
+    boxShadow: '0 0 0 3px hsl(var(--primary) / 0.15)',
   },
   forgetPassword: {
     display: 'block',
@@ -134,7 +134,7 @@ const styles = {
     textAlign: 'center' as const,
   },
   forgetPasswordHover: {
-    color: '#f97316',
+    color: 'hsl(var(--primary))',
   },
   buttonWrapper: {
     display: 'flex',
@@ -142,7 +142,7 @@ const styles = {
     width: '100%',
   },
   button: {
-    backgroundColor: '#f97316',
+    backgroundColor: 'hsl(var(--primary))',
     padding: '14px 48px',
     border: 'none',
     borderRadius: '14px',
@@ -154,7 +154,7 @@ const styles = {
     fontFamily: 'inherit',
   },
   buttonHover: {
-    backgroundColor: '#ea580c',
+    backgroundColor: 'hsl(var(--primary))',
   },
   overlayContainer: {
     position: 'absolute' as const,
@@ -171,7 +171,7 @@ const styles = {
     width: '200%',
     height: '100%',
     left: '-100%',
-    backgroundColor: '#f97316',
+    backgroundColor: 'hsl(var(--primary))',
     transition: 'all 0.6s ease-in-out',
   },
   overlayPanel: {
@@ -321,7 +321,7 @@ export function LoginPage() {
             borderRadius: '28px',
             overflow: 'hidden',
             boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6)',
-            border: '1px solid rgba(249, 115, 22, 0.1)',
+            border: '1px solid hsl(var(--primary) / 0.1)',
             backgroundColor: '#0f172a',
             padding: '48px 40px',
           }}

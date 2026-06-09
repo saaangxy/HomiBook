@@ -7,87 +7,13 @@ import { recordApi, type RecordSummary } from '@/api/record'
 import { accountApi } from '@/api/account'
 import { budgetApi } from '@/api/budget'
 import { useBookStore } from '@/stores/book'
+import { useChartTheme, type ChartTheme } from '@/hooks/useChartTheme'
 import { TrendingUp, BarChart3, Wallet, Target, HelpCircle } from 'lucide-react'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import dayjs from 'dayjs'
 
 function formatMoney(amount: number): string {
   return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(amount)
-}
-
-const COLORS = ['#f97316', '#3b82f6', '#22c55e', '#a855f7', '#eab308', '#ec4899', '#14b8a6', '#8b5cf6', '#f43f5e', '#06b6d4']
-
-const chartTextStyle = {
-  legend: { textStyle: { color: '#cbd5e1' } },
-  xAxis: { axisLabel: { color: '#94a3b8' }, axisLine: { lineStyle: { color: '#334155' } } },
-  yAxis: { axisLabel: { color: '#94a3b8' }, splitLine: { lineStyle: { color: '#1e293b' } } },
-  tooltip: { backgroundColor: '#1e293b', borderColor: '#334155', textStyle: { color: '#e2e8f0' } },
-}
-
-function buildTrendLineOption(months: string[], incomes: number[], expenses: number[]): EChartsOption {
-  return {
-    ...chartTextStyle,
-    tooltip: {
-      ...chartTextStyle.tooltip,
-      trigger: 'axis' as const,
-      formatter: (params: any) => {
-        let html = `<b>${params[0].axisValue}</b><br/>`
-        for (const p of params) html += `${p.marker} ${p.seriesName}: ${formatMoney(p.value)}<br/>`
-        return html
-      },
-    },
-    legend: { data: ['收入', '支出', '结余'], top: 0, ...chartTextStyle.legend },
-    grid: { top: 40, right: 20, bottom: 40, left: 60 },
-    xAxis: { type: 'category' as const, data: months, axisLabel: { ...chartTextStyle.xAxis.axisLabel, rotate: 45, fontSize: 11 }, axisLine: chartTextStyle.xAxis.axisLine },
-    yAxis: { type: 'value' as const, ...chartTextStyle.yAxis, axisLabel: { ...chartTextStyle.yAxis.axisLabel, formatter: (v: number) => v >= 10000 ? `${(v / 10000).toFixed(1)}万` : String(v) } },
-    color: ['#22c55e', '#ef4444', '#f97316'],
-    series: [
-      { name: '收入', type: 'line', data: incomes, smooth: true, symbol: 'none' as const },
-      { name: '支出', type: 'line', data: expenses, smooth: true, symbol: 'none' as const },
-      { name: '结余', type: 'line', data: incomes.map((v, i) => v - expenses[i]), smooth: true, symbol: 'none' as const, lineStyle: { type: 'dashed' as const } },
-    ],
-  }
-}
-
-function buildNetWorthOption(dates: string[], balances: number[]): EChartsOption {
-  return {
-    ...chartTextStyle,
-    tooltip: {
-      ...chartTextStyle.tooltip,
-      trigger: 'axis' as const,
-      formatter: (p: any) => `<b>${p[0].axisValue}</b><br/>${p[0].marker} 资产净值: ${formatMoney(p[0].value)}`,
-    },
-    legend: { data: ['资产净值'], top: 0, ...chartTextStyle.legend },
-    grid: { top: 40, right: 20, bottom: 40, left: 60 },
-    xAxis: { type: 'category' as const, data: dates, axisLabel: { ...chartTextStyle.xAxis.axisLabel, rotate: 45, fontSize: 11, formatter: (v: string) => v.length > 7 ? v.slice(5) : v } },
-    yAxis: { type: 'value' as const, ...chartTextStyle.yAxis, axisLabel: { ...chartTextStyle.yAxis.axisLabel, formatter: (v: number) => v >= 10000 ? `${(v / 10000).toFixed(1)}万` : String(v) } },
-    color: ['#f97316'],
-    series: [{
-      name: '资产净值', type: 'line', data: balances, smooth: true, symbol: 'none' as const,
-      areaStyle: { color: { type: 'linear' as const, x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(249,115,22,0.2)' }, { offset: 1, color: 'rgba(249,115,22,0)' }] } },
-    }],
-  }
-}
-
-function buildBalanceOption(dates: string[], series: { name: string; data: number[] }[]): EChartsOption {
-  return {
-    ...chartTextStyle,
-    tooltip: {
-      ...chartTextStyle.tooltip,
-      trigger: 'axis' as const,
-      formatter: (params: any) => {
-        let html = `<b>${params[0].axisValue}</b><br/>`
-        for (const p of params) html += `${p.marker} ${p.seriesName}: ${formatMoney(p.value)}<br/>`
-        return html
-      },
-    },
-    legend: { type: 'scroll' as const, top: 0, ...chartTextStyle.legend, formatter: (n: string) => n.length > 6 ? n.slice(0, 6) + '…' : n },
-    grid: { top: 40, right: 20, bottom: 40, left: 60 },
-    xAxis: { type: 'category' as const, data: dates, axisLabel: { ...chartTextStyle.xAxis.axisLabel, rotate: 45, fontSize: 11, formatter: (v: string) => v.length > 7 ? v.slice(5) : v } },
-    yAxis: { type: 'value' as const, ...chartTextStyle.yAxis, axisLabel: { ...chartTextStyle.yAxis.axisLabel, formatter: (v: number) => v >= 10000 ? `${(v / 10000).toFixed(1)}万` : String(v) } },
-    color: COLORS,
-    series: series.map((s) => ({ ...s, type: 'line' as const, smooth: true, symbol: 'none' as const })),
-  }
 }
 
 const RADAR_TIPS: Record<string, string> = {
@@ -98,20 +24,86 @@ const RADAR_TIPS: Record<string, string> = {
   '资金沉淀率': '1 - 转账/总流水，反映资金用于实际收支而非账户间划转的比例',
 }
 
-function buildRadarOption(metrics: { name: string; value: number }[]): EChartsOption {
+function buildTrendLineOption(months: string[], incomes: number[], expenses: number[], t: ChartTheme): EChartsOption {
   return {
-    ...chartTextStyle,
+    tooltip: {
+      trigger: 'axis' as const,
+      backgroundColor: t.cardBg,
+      borderColor: t.border,
+      textStyle: { color: t.cardFg },
+      formatter: (params: any) => {
+        let html = `<b>${params[0].axisValue}</b><br/>`
+        for (const p of params) html += `${p.marker} ${p.seriesName}: ${formatMoney(p.value)}<br/>`
+        return html
+      },
+    },
+    legend: { data: ['收入', '支出', '结余'], top: 0, textStyle: { color: t.mutedForeground } },
+    grid: { top: 40, right: 20, bottom: 40, left: 60 },
+    xAxis: { type: 'category' as const, data: months, axisLabel: { color: t.mutedForeground, rotate: 45, fontSize: 11 }, axisLine: { lineStyle: { color: t.border } } },
+    yAxis: { type: 'value' as const, axisLabel: { color: t.mutedForeground, formatter: (v: number) => v >= 10000 ? `${(v / 10000).toFixed(1)}万` : String(v) }, splitLine: { lineStyle: { color: t.border } } },
+    color: ['#22c55e', '#ef4444', t.primary],
+    series: [
+      { name: '收入', type: 'line', data: incomes, smooth: true, symbol: 'none' as const },
+      { name: '支出', type: 'line', data: expenses, smooth: true, symbol: 'none' as const },
+      { name: '结余', type: 'line', data: incomes.map((v, i) => v - expenses[i]), smooth: true, symbol: 'none' as const, lineStyle: { type: 'dashed' as const } },
+    ],
+  }
+}
+
+function buildNetWorthOption(dates: string[], balances: number[], t: ChartTheme): EChartsOption {
+  return {
+    tooltip: {
+      trigger: 'axis' as const,
+      backgroundColor: t.cardBg,
+      borderColor: t.border,
+      textStyle: { color: t.cardFg },
+      formatter: (p: any) => `<b>${p[0].axisValue}</b><br/>${p[0].marker} 资产净值: ${formatMoney(p[0].value)}`,
+    },
+    legend: { data: ['资产净值'], top: 0, textStyle: { color: t.mutedForeground } },
+    grid: { top: 40, right: 20, bottom: 40, left: 60 },
+    xAxis: { type: 'category' as const, data: dates, axisLabel: { color: t.mutedForeground, rotate: 45, fontSize: 11, formatter: (v: string) => v.length > 7 ? v.slice(5) : v } },
+    yAxis: { type: 'value' as const, axisLabel: { color: t.mutedForeground, formatter: (v: number) => v >= 10000 ? `${(v / 10000).toFixed(1)}万` : String(v) }, splitLine: { lineStyle: { color: t.border } } },
+    color: [t.primary],
+    series: [{
+      name: '资产净值', type: 'line', data: balances, smooth: true, symbol: 'none' as const,
+      areaStyle: { color: { type: 'linear' as const, x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: t.primaryRgba(0.2) }, { offset: 1, color: t.primaryRgba(0) }] } },
+    }],
+  }
+}
+
+function buildBalanceOption(dates: string[], series: { name: string; data: number[] }[], t: ChartTheme): EChartsOption {
+  return {
+    tooltip: {
+      trigger: 'axis' as const,
+      backgroundColor: t.cardBg,
+      borderColor: t.border,
+      textStyle: { color: t.cardFg },
+      formatter: (params: any) => {
+        let html = `<b>${params[0].axisValue}</b><br/>`
+        for (const p of params) html += `${p.marker} ${p.seriesName}: ${formatMoney(p.value)}<br/>`
+        return html
+      },
+    },
+    legend: { type: 'scroll' as const, top: 0, textStyle: { color: t.mutedForeground }, formatter: (n: string) => n.length > 6 ? n.slice(0, 6) + '…' : n },
+    grid: { top: 40, right: 20, bottom: 40, left: 60 },
+    xAxis: { type: 'category' as const, data: dates, axisLabel: { color: t.mutedForeground, rotate: 45, fontSize: 11, formatter: (v: string) => v.length > 7 ? v.slice(5) : v } },
+    yAxis: { type: 'value' as const, axisLabel: { color: t.mutedForeground, formatter: (v: number) => v >= 10000 ? `${(v / 10000).toFixed(1)}万` : String(v) }, splitLine: { lineStyle: { color: t.border } } },
+    color: t.COLORS,
+    series: series.map((s) => ({ ...s, type: 'line' as const, smooth: true, symbol: 'none' as const })),
+  }
+}
+
+function buildRadarOption(metrics: { name: string; value: number }[], t: ChartTheme): EChartsOption {
+  return {
     tooltip: {
       trigger: 'item' as const,
-      backgroundColor: '#1e293b',
-      borderColor: '#334155',
-      textStyle: { color: '#e2e8f0', fontSize: 12 },
+      backgroundColor: t.cardBg,
+      borderColor: t.border,
+      textStyle: { color: t.cardFg, fontSize: 12 },
       formatter: (p: any) => {
         const values: number[] = Array.isArray(p.value) ? p.value : [p.value]
         let html = `<b>${p.seriesName || ''}</b><br/>`
-        metrics.forEach((m, i) => {
-          html += `${m.name}: ${values[i] ?? '-'} 分<br/>`
-        })
+        metrics.forEach((m, i) => { html += `${m.name}: ${values[i] ?? '-'} 分<br/>` })
         return html
       },
     },
@@ -120,13 +112,18 @@ function buildRadarOption(metrics: { name: string; value: number }[]): EChartsOp
       center: ['50%', '55%'],
       radius: '70%',
       indicator: metrics.map((m) => ({ name: m.name, max: 100 })),
-      axisName: { color: '#cbd5e1', fontSize: 11 },
+      axisName: { color: t.mutedForeground, fontSize: 11 },
       splitArea: { areaStyle: { color: ['transparent'] } },
-      splitLine: { lineStyle: { color: '#334155' } },
+      splitLine: { lineStyle: { color: t.border } },
     },
     series: [{
       type: 'radar',
-      data: [{ value: metrics.map((m) => m.value), name: '财务健康', areaStyle: { color: 'rgba(249,115,22,0.2)' }, lineStyle: { color: '#f97316' }, itemStyle: { color: '#f97316' } }],
+      data: [{
+        value: metrics.map((m) => m.value), name: '财务健康',
+        areaStyle: { color: t.primaryRgba(0.2) },
+        lineStyle: { color: t.primary },
+        itemStyle: { color: t.primary },
+      }],
     }],
   }
 }
@@ -172,6 +169,7 @@ export function StatsOverview() {
 
   // 雷达图
   const [radarMetrics, setRadarMetrics] = useState<{ name: string; value: number }[]>([])
+  const t = useChartTheme()
 
   const loadData = useCallback(async () => {
     if (!currentBookId) return
@@ -284,11 +282,11 @@ export function StatsOverview() {
             <Card className="rounded-xl overflow-hidden">
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 mb-3">
-                  <TrendingUp size={18} className="text-[#f97316]" />
+                  <TrendingUp size={18} className="text-primary" />
                   <h3 className="text-sm font-semibold">月度收支趋势</h3>
                 </div>
                 <div style={{ height: 320 }}>
-                  <ReactECharts option={buildTrendLineOption(trendMonths, trendIncomes, trendExpenses)} style={{ width: '100%', height: '100%' }} />
+                  <ReactECharts option={buildTrendLineOption(trendMonths, trendIncomes, trendExpenses, t)} style={{ width: '100%', height: '100%' }} />
                 </div>
               </CardContent>
             </Card>
@@ -296,14 +294,14 @@ export function StatsOverview() {
             <Card className="rounded-xl overflow-hidden">
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 mb-3">
-                  <Wallet size={18} className="text-[#f97316]" />
+                  <Wallet size={18} className="text-primary" />
                   <h3 className="text-sm font-semibold">资产净值趋势</h3>
                 </div>
                 {nwDates.length === 0 ? (
                   <div className="flex items-center justify-center h-80 text-xs text-muted-foreground">暂无数据</div>
                 ) : (
                   <div style={{ height: 320 }}>
-                    <ReactECharts option={buildNetWorthOption(nwDates, nwBalances)} style={{ width: '100%', height: '100%' }} />
+                    <ReactECharts option={buildNetWorthOption(nwDates, nwBalances, t)} style={{ width: '100%', height: '100%' }} />
                   </div>
                 )}
               </CardContent>
@@ -315,14 +313,14 @@ export function StatsOverview() {
               <Card className="rounded-xl overflow-hidden h-full">
                 <CardContent className="p-4">
                   <div className="flex items-center gap-2 mb-3">
-                    <BarChart3 size={18} className="text-[#f97316]" />
+                    <BarChart3 size={18} className="text-primary" />
                     <h3 className="text-sm font-semibold">账户余额变化（近60天）</h3>
                   </div>
                   {balSeries.length === 0 ? (
                     <div className="flex items-center justify-center h-80 text-xs text-muted-foreground">暂无数据</div>
                   ) : (
                     <div style={{ height: 320 }}>
-                      <ReactECharts option={buildBalanceOption(balDates, balSeries)} style={{ width: '100%', height: '100%' }} />
+                      <ReactECharts option={buildBalanceOption(balDates, balSeries, t)} style={{ width: '100%', height: '100%' }} />
                     </div>
                   )}
                 </CardContent>
@@ -331,7 +329,7 @@ export function StatsOverview() {
             <Card className="rounded-xl overflow-hidden">
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 mb-3">
-                  <Target size={18} className="text-[#f97316]" />
+                  <Target size={18} className="text-primary" />
                   <h3 className="text-sm font-semibold">财务健康评估</h3>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -352,7 +350,7 @@ export function StatsOverview() {
                   </Tooltip>
                 </div>
                 <div style={{ height: 320 }}>
-                  <ReactECharts option={buildRadarOption(radarMetrics)} style={{ width: '100%', height: '100%' }} />
+                  <ReactECharts option={buildRadarOption(radarMetrics, t)} style={{ width: '100%', height: '100%' }} />
                 </div>
               </CardContent>
             </Card>

@@ -40,7 +40,7 @@ export function DatePicker({ value, onChange, placeholder = "选择日期", clas
             className
           )}
         >
-          {!compact && <CalendarIcon className="mr-2 h-4 w-4 text-[#f97316]" />}
+          {!compact && <CalendarIcon className="mr-2 h-4 w-4 text-primary" />}
           {value ? <span className={compact ? 'truncate' : ''}>{displayValue}</span> : <span>{placeholder}</span>}
           {value && (
             <span

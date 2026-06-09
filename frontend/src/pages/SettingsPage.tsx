@@ -280,8 +280,8 @@ export function SettingsPage() {
         <AccordionItem value="general" className="border rounded-xl px-5">
           <AccordionTrigger className="text-base font-semibold hover:no-underline">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-[#f97316]/10 flex items-center justify-center">
-                <Settings size={16} className="text-[#f97316]" />
+              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                <Settings size={16} className="text-primary" />
               </div>
               通用设置
             </div>
@@ -425,7 +425,7 @@ export function SettingsPage() {
                   onClick={handleSaveConfig}
                   disabled={configSaving}
                   size="sm"
-                  className="bg-[#f97316] hover:bg-[#ea580c] text-white"
+                  className="bg-primary hover:bg-primary/90 text-primary-foreground"
                 >
                   {configSaving ? '保存中...' : '保存配置'}
                 </Button>
@@ -438,8 +438,8 @@ export function SettingsPage() {
         <AccordionItem value="dictionary" className="border rounded-xl px-5">
           <AccordionTrigger className="text-base font-semibold hover:no-underline">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-[#f97316]/10 flex items-center justify-center">
-                <BookOpen size={16} className="text-[#f97316]" />
+              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                <BookOpen size={16} className="text-primary" />
               </div>
               字典管理
             </div>
@@ -468,7 +468,7 @@ export function SettingsPage() {
                 <Button
                   size="sm"
                   onClick={() => { resetForm(); setAddOpen(true) }}
-                  className="bg-[#f97316] hover:bg-[#ea580c] text-white h-8 text-xs"
+                  className="bg-primary hover:bg-primary/90 text-primary-foreground h-8 text-xs"
                 >
                   <Plus size={14} /> 添加
                 </Button>
@@ -484,7 +484,7 @@ export function SettingsPage() {
                   <Button
                     variant="link"
                     size="sm"
-                    className="text-[#f97316] text-xs"
+                    className="text-primary text-xs"
                     onClick={() => { resetForm(); setAddOpen(true) }}
                   >
                     点击添加
@@ -547,8 +547,8 @@ export function SettingsPage() {
         <AccordionItem value="attachments" className="border rounded-xl px-5">
           <AccordionTrigger className="text-base font-semibold hover:no-underline">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-[#f97316]/10 flex items-center justify-center">
-                <FolderOpen size={16} className="text-[#f97316]" />
+              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                <FolderOpen size={16} className="text-primary" />
               </div>
               附件管理
             </div>
@@ -662,7 +662,7 @@ export function SettingsPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddOpen(false)}>取消</Button>
             <Button
-              className="bg-[#f97316] hover:bg-[#ea580c] text-white"
+              className="bg-primary hover:bg-primary/90 text-primary-foreground"
               onClick={handleAdd}
               disabled={submitting}
             >
@@ -717,7 +717,7 @@ export function SettingsPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditTarget(null)}>取消</Button>
             <Button
-              className="bg-[#f97316] hover:bg-[#ea580c] text-white"
+              className="bg-primary hover:bg-primary/90 text-primary-foreground"
               onClick={handleEdit}
               disabled={submitting}
             >

@@ -54,7 +54,7 @@ export function RepaymentPlanTable({ plans }: Props) {
                     return <Badge className="text-[10px] bg-[#22c55e]/10 text-[#22c55e] whitespace-nowrap">已生成</Badge>
                   }
                   if (isPastDue) {
-                    return <Badge className="text-[10px] bg-[#f97316]/10 text-[#f97316] whitespace-nowrap">已到期</Badge>
+                    return <Badge className="text-[10px] bg-primary/10 text-primary whitespace-nowrap">已到期</Badge>
                   }
                   return <Badge variant="secondary" className="text-[10px] whitespace-nowrap">待还款</Badge>
                 })()}

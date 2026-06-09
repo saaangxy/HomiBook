@@ -10,9 +10,9 @@ export function HomePage() {
     <div>
       {currentBook ? (
         <div className="flex items-center gap-2.5 mb-5 px-5 py-3 bg-card border border-border rounded-xl">
-          <Book size={18} className="text-[#f97316]" />
+          <Book size={18} className="text-primary" />
           <span className="text-sm text-muted-foreground">当前账本：</span>
-          <span className="text-sm font-semibold text-[#f97316]">{currentBook.name}</span>
+          <span className="text-sm font-semibold text-primary">{currentBook.name}</span>
         </div>
       ) : (
         <div className="mb-5 p-5 bg-card border border-border rounded-xl text-center text-sm text-muted-foreground">
@@ -36,7 +36,7 @@ export function HomePage() {
 
         <Card className="bg-card border-border rounded-2xl">
           <CardContent className="flex flex-row items-start gap-4 p-6">
-            <div className="w-12 h-12 rounded-2xl bg-[#f97316]/10 text-[#f97316] flex items-center justify-center shrink-0">
+            <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
               <ArrowUpCircle size={22} />
             </div>
             <div>

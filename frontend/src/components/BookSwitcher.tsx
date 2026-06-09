@@ -35,9 +35,9 @@ export function BookSwitcher() {
       <DropdownMenuTrigger asChild>
         <Button
           variant="outline"
-          className="border-border bg-card text-foreground text-sm font-medium px-3.5 py-2 h-auto rounded-lg hover:border-[#f97316] hover:text-foreground"
+          className="border-border bg-card text-foreground text-sm font-medium px-3.5 py-2 h-auto rounded-lg hover:border-primary hover:text-foreground"
         >
-          <BookOpen size={16} className="text-[#f97316]" />
+          <BookOpen size={16} className="text-primary" />
           <span className="ml-2">{currentBook ? currentBook.name : '选择账本'}</span>
           <ChevronDown size={14} className="ml-1 text-muted-foreground" />
         </Button>
@@ -52,7 +52,7 @@ export function BookSwitcher() {
               onClick={() => setCurrentBook(book.id)}
               className={cn(
                 'py-2.5 px-3.5 cursor-pointer',
-                book.id === currentBookId ? 'text-[#f97316]' : 'text-foreground',
+                book.id === currentBookId ? 'text-primary' : 'text-foreground',
               )}
             >
               <BookOpen size={16} className="text-muted-foreground shrink-0" />

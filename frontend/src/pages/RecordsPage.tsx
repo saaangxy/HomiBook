@@ -732,7 +732,7 @@ export function RecordsPage() {
           <div className="flex items-center gap-2 shrink-0">
             <Button
               onClick={openCreate}
-              className="bg-[#f97316] hover:bg-[#ea580c] text-white rounded-lg h-8 text-xs"
+              className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg h-8 text-xs"
             >
               <Plus size={14} /> 记一笔
             </Button>
@@ -741,7 +741,7 @@ export function RecordsPage() {
                 <Button
                   onClick={handleSaveEdits}
                   disabled={editChanges.size === 0 || savingEdits}
-                  className="bg-[#f97316] hover:bg-[#ea580c] text-white rounded-lg h-8 text-xs"
+                  className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg h-8 text-xs"
                 >
                   <Save size={14} /> {savingEdits ? '保存中...' : '保存修改'}
                   {editChanges.size > 0 && (
@@ -773,7 +773,7 @@ export function RecordsPage() {
             >
               <Filter size={14} /> 筛选
               {activeFilterCount > 0 && (
-                <span className="ml-1 bg-[#f97316] text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center">
+                <span className="ml-1 bg-primary text-primary-foreground text-[10px] rounded-full w-4 h-4 flex items-center justify-center">
                   {activeFilterCount}
                 </span>
               )}
@@ -845,7 +845,7 @@ export function RecordsPage() {
                   const catGroup = getCategoryGroup(effectiveType)
                   const rowCategories = allCategories.filter((c) => c.group === catGroup)
                   return (
-                  <TableRow key={record.id} className={isChanged ? 'shadow-[inset_3px_0_0_#f97316] hover:bg-accent/50' : 'hover:bg-accent/50'}>
+                  <TableRow key={record.id} className={isChanged ? 'shadow-[inset_3px_0_0_hsl(var(--primary))] hover:bg-accent/50' : 'hover:bg-accent/50'}>
                     {!editMode && (
                       <TableCell className="py-2.5">
                         <input
@@ -860,7 +860,7 @@ export function RecordsPage() {
                     <TableCell className="py-2.5">
                       <div className="flex items-center gap-1.5">
                         {editMode && isChanged && (
-                          <span className="w-2 h-2 rounded-full bg-[#f97316] shrink-0" title="已修改" />
+                          <span className="w-2 h-2 rounded-full bg-primary shrink-0" title="已修改" />
                         )}
                         {editMode ? (
                           <DatePicker
@@ -1307,7 +1307,7 @@ export function RecordsPage() {
           {/* 抽屉底部按钮 */}
           <div className="flex items-center gap-2 pt-4 border-t">
             <Button variant="outline" className="flex-1" onClick={resetFilters}>重置</Button>
-            <Button className="flex-1 bg-[#f97316] hover:bg-[#ea580c] text-white" onClick={applyFilters}>应用</Button>
+            <Button className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground" onClick={applyFilters}>应用</Button>
           </div>
         </SheetContent>
       </Sheet>
@@ -1529,7 +1529,7 @@ export function RecordsPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => { setCreateOpen(false); setEditRecord(null) }}>取消</Button>
             <Button
-              className="bg-[#f97316] hover:bg-[#ea580c] text-white"
+              className="bg-primary hover:bg-primary/90 text-primary-foreground"
               onClick={editRecord ? handleUpdate : handleCreate}
               disabled={submitting}
             >
@@ -1719,7 +1719,7 @@ export function RecordsPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setBatchOpen(false); resetBatchForm() }}>取消</Button>
-            <Button className="bg-[#f97316] hover:bg-[#ea580c] text-white" onClick={handleBatchUpdate} disabled={submitting}>
+            <Button className="bg-primary hover:bg-primary/90 text-primary-foreground" onClick={handleBatchUpdate} disabled={submitting}>
               {submitting ? '更新中...' : '确认更新'}
             </Button>
           </DialogFooter>

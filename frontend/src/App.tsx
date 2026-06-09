@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { ThemeProvider } from '@/components/ThemeProvider'
 import { MainLayout } from './layouts/MainLayout'
 import { LoginPage } from './pages/LoginPage'
 import { HomePage } from './pages/HomePage'
@@ -28,8 +29,9 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider delayDuration={300}>
-        <BrowserRouter>
+      <ThemeProvider>
+        <TooltipProvider delayDuration={300}>
+          <BrowserRouter>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route
@@ -52,8 +54,9 @@ function App() {
               <Route path="admin/users" element={<UsersPage />} />
             </Route>
           </Routes>
-        </BrowserRouter>
-      </TooltipProvider>
+          </BrowserRouter>
+        </TooltipProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   )
 }

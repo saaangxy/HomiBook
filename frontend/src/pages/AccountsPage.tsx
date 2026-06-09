@@ -277,7 +277,7 @@ export function AccountsPage() {
         <h1 className="text-xl font-bold">账户管理</h1>
         <Button
           onClick={() => { resetForm(); setCreateOpen(true) }}
-          className="bg-[#f97316] hover:bg-[#ea580c] text-white rounded-lg"
+          className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg"
         >
           <Plus size={16} /> 添加账户
         </Button>
@@ -326,7 +326,7 @@ export function AccountsPage() {
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                        account.type === 'CREDIT_CARD' ? 'bg-[#ef4444]/10 text-[#ef4444]' : 'bg-[#f97316]/10 text-[#f97316]'
+                        account.type === 'CREDIT_CARD' ? 'bg-[#ef4444]/10 text-[#ef4444]' : 'bg-primary/10 text-primary'
                       }`}>
                         <CreditCard size={20} />
                       </div>
@@ -514,7 +514,7 @@ export function AccountsPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>取消</Button>
-            <Button className="bg-[#f97316] hover:bg-[#ea580c] text-white" onClick={handleCreate} disabled={submitting}>
+            <Button className="bg-primary hover:bg-primary/90 text-primary-foreground" onClick={handleCreate} disabled={submitting}>
               {submitting ? '创建中...' : '创建'}
             </Button>
           </DialogFooter>
@@ -589,7 +589,7 @@ export function AccountsPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditAccount(null)}>取消</Button>
-            <Button className="bg-[#f97316] hover:bg-[#ea580c] text-white" onClick={handleUpdate} disabled={submitting}>
+            <Button className="bg-primary hover:bg-primary/90 text-primary-foreground" onClick={handleUpdate} disabled={submitting}>
               {submitting ? '保存中...' : '保存'}
             </Button>
           </DialogFooter>
@@ -647,7 +647,7 @@ export function AccountsPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAdjustAccount(null)}>取消</Button>
-            <Button className="bg-[#f97316] hover:bg-[#ea580c] text-white" onClick={handleAdjust} disabled={submitting}>
+            <Button className="bg-primary hover:bg-primary/90 text-primary-foreground" onClick={handleAdjust} disabled={submitting}>
               {submitting ? '调整中...' : '确认调整'}
             </Button>
           </DialogFooter>
@@ -734,7 +734,7 @@ export function AccountsPage() {
           <AlertDialogFooter>
             <AlertDialogCancel>取消</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-[#f97316] hover:bg-[#ea580c]"
+              className="bg-primary hover:bg-primary/90"
               onClick={confirmAction?.onConfirm}
             >
               确认

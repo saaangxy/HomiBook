@@ -22,28 +22,21 @@ import { budgetApi } from '@/api/budget'
 import { AnalysisPanel } from './AnalysisPanel'
 import { BarChart3, Search, X, List, ChevronLeft, ChevronRight, HelpCircle } from 'lucide-react'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
+import { useChartTheme, type ChartTheme } from '@/hooks/useChartTheme'
 import dayjs from 'dayjs'
 
 function formatMoney(amount: number): string {
   return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(amount)
 }
 
-const COLORS = ['#f97316', '#ef4444', '#3b82f6', '#22c55e', '#a855f7', '#eab308', '#ec4899', '#14b8a6', '#8b5cf6', '#f43f5e']
-
-const chartTextStyle = {
-  legend: { textStyle: { color: '#cbd5e1' } },
-  xAxis: { axisLabel: { color: '#94a3b8' }, axisLine: { lineStyle: { color: '#334155' } } },
-  yAxis: { axisLabel: { color: '#94a3b8' }, splitLine: { lineStyle: { color: '#1e293b' } } },
-  tooltip: { backgroundColor: '#1e293b', borderColor: '#334155', textStyle: { color: '#e2e8f0' } },
-}
-
-function buildStackedBar(periods: string[], categories: { name: string; data: number[] }[]): EChartsOption {
+function buildStackedBar(periods: string[], categories: { name: string; data: number[] }[], t: ChartTheme): EChartsOption {
   return {
-    ...chartTextStyle,
     tooltip: {
-      ...chartTextStyle.tooltip,
       trigger: 'axis' as const,
       axisPointer: { type: 'shadow' as const },
+      backgroundColor: t.cardBg,
+      borderColor: t.border,
+      textStyle: { color: t.cardFg },
       formatter: (params: any) => {
         let html = `<b>${params[0].axisValue}</b><br/>`
         let total = 0
@@ -52,11 +45,11 @@ function buildStackedBar(periods: string[], categories: { name: string; data: nu
         return html
       },
     },
-    legend: { type: 'plain' as const, top: 0, ...chartTextStyle.legend },
+    legend: { type: 'plain' as const, top: 0, textStyle: { color: t.mutedForeground } },
     grid: { top: 60, right: 20, bottom: 40, left: 60 },
-    xAxis: { type: 'category' as const, data: periods, axisLabel: { ...chartTextStyle.xAxis.axisLabel, rotate: 45, fontSize: 11, formatter: (v: string) => v.length > 7 ? v.slice(5) : v } },
-    yAxis: { type: 'value' as const, ...chartTextStyle.yAxis, axisLabel: { ...chartTextStyle.yAxis.axisLabel, formatter: (v: number) => v >= 10000 ? `${(v / 10000).toFixed(1)}万` : String(v) } },
-    color: COLORS,
+    xAxis: { type: 'category' as const, data: periods, axisLabel: { color: t.mutedForeground, rotate: 45, fontSize: 11, formatter: (v: string) => v.length > 7 ? v.slice(5) : v }, axisLine: { lineStyle: { color: t.border } } },
+    yAxis: { type: 'value' as const, axisLabel: { color: t.mutedForeground, formatter: (v: number) => v >= 10000 ? `${(v / 10000).toFixed(1)}万` : String(v) }, splitLine: { lineStyle: { color: t.border } } },
+    color: t.COLORS,
     series: categories.map((c) => ({
       name: c.name,
       type: 'bar' as const,
@@ -75,14 +68,13 @@ const RADAR_TIPS: Record<string, string> = {
   '资金沉淀率': '1 - 转账/总流水，反映资金用于实际收支而非账户间划转的比例',
 }
 
-function buildRadarOption(metrics: { name: string; value: number }[]): EChartsOption {
+function buildRadarOption(metrics: { name: string; value: number }[], t: ChartTheme): EChartsOption {
   return {
-    ...chartTextStyle,
     tooltip: {
       trigger: 'item' as const,
-      backgroundColor: '#1e293b',
-      borderColor: '#334155',
-      textStyle: { color: '#e2e8f0', fontSize: 12 },
+      backgroundColor: t.cardBg,
+      borderColor: t.border,
+      textStyle: { color: t.cardFg, fontSize: 12 },
       formatter: (p: any) => {
         const values: number[] = Array.isArray(p.value) ? p.value : [p.value]
         let html = `<b>${p.seriesName || ''}</b><br/>`
@@ -97,13 +89,13 @@ function buildRadarOption(metrics: { name: string; value: number }[]): EChartsOp
       center: ['50%', '50%'],
       radius: '55%',
       indicator: metrics.map((m) => ({ name: m.name, max: 100 })),
-      axisName: { color: '#cbd5e1', fontSize: 11 },
+      axisName: { color: t.mutedForeground, fontSize: 11 },
       splitArea: { areaStyle: { color: ['transparent'] } },
-      splitLine: { lineStyle: { color: '#334155' } },
+      splitLine: { lineStyle: { color: t.border } },
     },
     series: [{
       type: 'radar',
-      data: [{ value: metrics.map((m) => m.value), name: '财务健康', areaStyle: { color: 'rgba(249,115,22,0.2)' }, lineStyle: { color: '#f97316' }, itemStyle: { color: '#f97316' } }],
+      data: [{ value: metrics.map((m) => m.value), name: '财务健康', areaStyle: { color: t.primaryRgba(0.2) }, lineStyle: { color: t.primary }, itemStyle: { color: t.primary } }],
     }],
   }
 }
@@ -242,6 +234,8 @@ export function StatsTimeView({ bookId, mode }: Props) {
     adminApi.listUsers().then(setUsers).catch(() => {})
     recordApi.getTags(bookId).then(setAvailableTags).catch(() => {})
   }, [bookId])
+
+  const t = useChartTheme()
 
   const loadData = useCallback(async () => {
     if (!bookId) return
@@ -448,7 +442,7 @@ export function StatsTimeView({ bookId, mode }: Props) {
                 placeholder="全部"
               />
             </div>
-            <Button onClick={handleSearch} className="bg-[#f97316] hover:bg-[#ea580c] text-white h-9 mt-5">
+            <Button onClick={handleSearch} className="bg-primary hover:bg-primary/90 text-primary-foreground h-9 mt-5">
               <Search size={14} /> 搜索
             </Button>
           </div>
@@ -497,7 +491,7 @@ export function StatsTimeView({ bookId, mode }: Props) {
               <Card className="rounded-xl overflow-hidden">
                 <CardContent className="p-4">
                   <div className="flex items-center gap-2 mb-3">
-                    <BarChart3 size={18} className="text-[#f97316]" />
+                    <BarChart3 size={18} className="text-primary" />
                     <h3 className="text-sm font-semibold">财务健康评估</h3>
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -518,7 +512,7 @@ export function StatsTimeView({ bookId, mode }: Props) {
                     </Tooltip>
                   </div>
                   <div style={{ height: 240 }}>
-                    <ReactECharts option={buildRadarOption(radarMetrics)} style={{ width: '100%', height: '100%' }} />
+                    <ReactECharts option={buildRadarOption(radarMetrics, t)} style={{ width: '100%', height: '100%' }} />
                   </div>
                 </CardContent>
               </Card>
@@ -539,7 +533,7 @@ export function StatsTimeView({ bookId, mode }: Props) {
             <Card className="rounded-xl overflow-hidden mb-6">
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 mb-3">
-                  <BarChart3 size={18} className="text-[#f97316]" />
+                  <BarChart3 size={18} className="text-primary" />
                   <h3 className="text-sm font-semibold">
                     {mode === 'yearly' ? '各月分类支出构成' : '每日分类支出构成'}
                   </h3>
@@ -549,7 +543,7 @@ export function StatsTimeView({ bookId, mode }: Props) {
                     <div className="flex items-center justify-center h-full text-xs text-muted-foreground">暂无数据</div>
                   ) : (
                     <ReactECharts
-                      option={buildStackedBar(periods, categories)}
+                      option={buildStackedBar(periods, categories, t)}
                       style={{ width: '100%', height: '100%' }}
                       onEvents={{ click: handleBarClick }}
                     />
@@ -567,7 +561,7 @@ export function StatsTimeView({ bookId, mode }: Props) {
                         <X size={14} />
                       </button>
                     </div>
-                    <span className="text-sm font-bold text-[#f97316]">
+                    <span className="text-sm font-bold text-primary">
                       {formatMoney(
                         categories
                           .find((c) => c.name === barSelected.name)

@@ -7,7 +7,8 @@ import { zSchema } from '../lib/schema-helpers.js'
 import { authenticate } from '../middleware/auth.js'
 
 const updateProfileSchema = z.object({
-  name: z.string().min(1).max(30),
+  name: z.string().min(1).max(30).optional(),
+  theme: z.string().optional(),
 })
 
 const changePasswordSchema = z.object({
@@ -107,7 +108,7 @@ export async function authRoutes(app: FastifyInstance) {
   // 修改个人信息
   app.patch('/me', {
     schema: {
-      description: '修改当前用户个人信息（名称）',
+      description: '修改当前用户个人信息（名称、主题）',
       tags: ['认证'],
       body: zSchema(updateProfileSchema),
     },
@@ -119,10 +120,14 @@ export async function authRoutes(app: FastifyInstance) {
     }
 
     const payload = req.user as { id: string }
+    const data: Record<string, string> = {}
+    if (parsed.data.name !== undefined) data.name = parsed.data.name
+    if (parsed.data.theme !== undefined) data.theme = parsed.data.theme
+
     const user = await prisma.user.update({
       where: { id: payload.id },
-      data: { name: parsed.data.name },
-      select: { id: true, email: true, name: true, role: true },
+      data,
+      select: { id: true, email: true, name: true, role: true, theme: true },
     })
 
     return user

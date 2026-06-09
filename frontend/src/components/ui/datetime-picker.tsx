@@ -115,7 +115,7 @@ function PickerColumn({
       <div className="absolute top-0 left-0 right-0 h-10 bg-gradient-to-b from-background to-transparent pointer-events-none z-10" />
       <div className="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-b from-transparent to-background pointer-events-none z-10" />
       {/* 居中选择框 */}
-      <div className="absolute top-1/2 left-1 right-1 h-9 -translate-y-1/2 pointer-events-none border-2 border-[#f97316] rounded-md z-0" />
+      <div className="absolute top-1/2 left-1 right-1 h-9 -translate-y-1/2 pointer-events-none border-2 border-primary rounded-md z-0" />
       {/* 滚动列表 */}
       <div
         ref={listRef}
@@ -206,7 +206,7 @@ export function DateTimePicker({ value, onChange, placeholder = "选择日期时
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           className={cn(
-            "w-full h-9 px-3 font-normal bg-background border-border focus:outline-none focus:ring-2 focus:ring-[#f97316] [&::-webkit-inner-spin-button]:appearance-none",
+            "w-full h-9 px-3 font-normal bg-background border-border focus:outline-none focus:ring-2 focus:ring-primary [&::-webkit-inner-spin-button]:appearance-none",
             !value && "text-muted-foreground",
             className
           )}

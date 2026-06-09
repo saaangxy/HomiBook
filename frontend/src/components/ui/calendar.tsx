@@ -139,7 +139,7 @@ export function Calendar({
               className={cn(
                 "h-8 w-8 rounded-md text-sm transition-colors",
                 isSelected
-                  ? "bg-[#f97316] text-white hover:bg-[#ea580c]"
+                  ? "bg-primary text-primary-foreground hover:bg-primary/90"
                   : isToday
                   ? "bg-muted text-foreground font-medium hover:bg-accent"
                   : "hover:bg-accent"

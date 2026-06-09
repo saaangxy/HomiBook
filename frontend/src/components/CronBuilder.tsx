@@ -106,8 +106,8 @@ function buildCron(
 }
 
 const btnBase = 'px-2 py-1 text-xs rounded border transition-colors'
-const btnSelected = `${btnBase} bg-[#f97316] text-white border-[#f97316]`
-const btnDefault = `${btnBase} bg-background text-foreground border-border hover:bg-[#f97316]/10 hover:text-[#f97316]`
+const btnSelected = `${btnBase} bg-primary text-primary-foreground border-primary`
+const btnDefault = `${btnBase} bg-background text-foreground border-border hover:bg-primary/10 hover:text-primary`
 
 function GridButton({ value, isSelected, onClick, children, minWidth = '36px' }: {
   value: number
@@ -198,7 +198,7 @@ export function CronBuilder({ value, onChange, className }: CronBuilderProps) {
             className={`inline-flex items-center justify-center text-xs font-medium transition-colors h-8 px-3
               ${idx === 0 ? 'rounded-l-md' : ''}
               ${idx === SCHEDULE_TYPES.length - 1 ? 'rounded-r-md' : ''}
-              ${scheduleType === sv ? 'bg-[#f97316] text-white' : 'text-foreground hover:bg-muted'}
+              ${scheduleType === sv ? 'bg-primary text-primary-foreground' : 'text-foreground hover:bg-muted'}
             `}
           >
             {label}

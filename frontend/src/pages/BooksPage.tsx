@@ -207,13 +207,13 @@ export function BooksPage() {
           <Button
             variant="outline"
             onClick={() => { setJoinStep('input'); setJoinCode(''); setJoinError(''); setJoinLookup(null); setJoinOpen(true) }}
-            className="border-border bg-card hover:border-[#f97316] rounded-lg"
+            className="border-border bg-card hover:border-primary rounded-lg"
           >
             <Share size={16} /> 加入账本
           </Button>
           <Button
             onClick={() => { setCreateName(''); setCreateError(''); setCreateOpen(true) }}
-            className="bg-[#f97316] hover:bg-[#ea580c] text-white rounded-lg"
+            className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg"
           >
             <Plus size={16} /> 创建账本
           </Button>
@@ -253,7 +253,7 @@ export function BooksPage() {
                         size="icon"
                         title="管理账本"
                         onClick={() => openManage(book)}
-                        className="w-[34px] h-[34px] rounded-lg border-border bg-background text-muted-foreground hover:border-[#f97316] hover:text-[#f97316]"
+                        className="w-[34px] h-[34px] rounded-lg border-border bg-background text-muted-foreground hover:border-primary hover:text-primary"
                       >
                         <Settings size={16} />
                       </Button>
@@ -323,7 +323,7 @@ export function BooksPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>取消</Button>
-            <Button className="bg-[#f97316] hover:bg-[#ea580c] text-white" onClick={handleCreate} disabled={creating}>
+            <Button className="bg-primary hover:bg-primary/90 text-primary-foreground" onClick={handleCreate} disabled={creating}>
               {creating ? '创建中...' : '创建'}
             </Button>
           </DialogFooter>
@@ -355,7 +355,7 @@ export function BooksPage() {
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setJoinOpen(false)}>取消</Button>
-                <Button className="bg-[#f97316] hover:bg-[#ea580c] text-white" onClick={handleLookup} disabled={joinCode.length < 1}>
+                <Button className="bg-primary hover:bg-primary/90 text-primary-foreground" onClick={handleLookup} disabled={joinCode.length < 1}>
                   验证
                 </Button>
               </DialogFooter>
@@ -364,7 +364,7 @@ export function BooksPage() {
             <>
               <div className="flex flex-col gap-4 text-center">
                 <p className="text-base">
-                  确认加入 <strong className="text-[#f97316]">{joinLookup?.bookName}</strong>？
+                  确认加入 <strong className="text-primary">{joinLookup?.bookName}</strong>？
                 </p>
                 {joinLookup?.expiresAt && (
                   <p className="text-[13px] text-muted-foreground">分享码有效期至 {new Date(joinLookup.expiresAt).toLocaleString('zh-CN')}</p>
@@ -373,7 +373,7 @@ export function BooksPage() {
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => { setJoinStep('input'); setJoinError('') }}>返回</Button>
-                <Button className="bg-[#f97316] hover:bg-[#ea580c] text-white" onClick={handleJoin} disabled={joining}>
+                <Button className="bg-primary hover:bg-primary/90 text-primary-foreground" onClick={handleJoin} disabled={joining}>
                   {joining ? '加入中...' : '确认加入'}
                 </Button>
               </DialogFooter>
@@ -414,7 +414,7 @@ export function BooksPage() {
                           value={addEmail}
                           onChange={(e) => { setAddEmail(e.target.value); setAddError('') }}
                         />
-                        <Button className="bg-[#f97316] hover:bg-[#ea580c] text-white" onClick={handleAddMember}>
+                        <Button className="bg-primary hover:bg-primary/90 text-primary-foreground" onClick={handleAddMember}>
                           添加
                         </Button>
                       </div>
@@ -496,7 +496,7 @@ export function BooksPage() {
                           onChange={(e) => setExpireHours(e.target.value)}
                         />
                       </div>
-                      <Button className="bg-[#f97316] hover:bg-[#ea580c] text-white" onClick={handleGenerateCode}>
+                      <Button className="bg-primary hover:bg-primary/90 text-primary-foreground" onClick={handleGenerateCode}>
                         生成
                       </Button>
                     </div>
@@ -504,7 +504,7 @@ export function BooksPage() {
                     {shareCodes.map((sc) => (
                       <div key={sc.id} className="flex items-center justify-between px-3.5 py-2.5 bg-background border border-border rounded-lg">
                         <div>
-                          <div className="text-base font-bold text-[#f97316] tracking-[2px]" style={{ fontFamily: 'monospace' }}>{sc.code}</div>
+                          <div className="text-base font-bold text-primary tracking-[2px]" style={{ fontFamily: 'monospace' }}>{sc.code}</div>
                           <div className="text-xs text-muted-foreground mt-0.5">
                             {sc.expiresAt ? `有效期至 ${new Date(sc.expiresAt).toLocaleString('zh-CN')}` : '永久有效'}
                             {sc.isExpired && <span className="text-[#ef4444] ml-2">已过期</span>}
@@ -590,7 +590,7 @@ export function BooksPage() {
           <AlertDialogFooter>
             <AlertDialogCancel>取消</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-[#f97316] hover:bg-[#ea580c]"
+              className="bg-primary hover:bg-primary/90"
               onClick={confirmAction?.onConfirm}
             >
               确认

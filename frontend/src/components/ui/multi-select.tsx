@@ -113,7 +113,7 @@ export function MultiSelect({
             >
               <span className={cn(
                 'flex h-4 w-4 items-center justify-center rounded border border-border',
-                allSelected && 'bg-[#f97316] border-[#f97316]',
+                allSelected && 'bg-primary border-primary',
               )}>
                 {allSelected && <Check className="h-3 w-3 text-white" />}
               </span>
@@ -138,7 +138,7 @@ export function MultiSelect({
                   >
                     <span className={cn(
                       'flex h-4 w-4 shrink-0 items-center justify-center rounded border border-border',
-                      isSelected && 'bg-[#f97316] border-[#f97316]',
+                      isSelected && 'bg-primary border-primary',
                     )}>
                       {isSelected && <Check className="h-3 w-3 text-white" />}
                     </span>
