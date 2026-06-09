@@ -215,20 +215,22 @@
   box-shadow: 0 2px 8px hsl(22 25% 20% / 0.04);
 }
 
-/* ---- 卡片样式：手工票据 ---- */
-[data-theme="craft"] .card,
-[data-theme="craft"] [class*="rounded-xl"][class*="border"] {
+/* ---- 卡片样式：手工票据（排除弹窗等浮层元素） ---- */
+[data-theme="craft"] .card:not([role="dialog"]) {
+  position: relative;
+}
+
+[data-theme="craft"] .card:not([role="dialog"]),
+[data-theme="craft"] [class*="rounded-xl"][class*="border"]:not([role="dialog"]) {
   border: 1.5px solid hsl(215 12% 68% / 0.5);
   border-radius: 4px 16px 4px 16px !important;
   box-shadow:
     0 1px 3px hsl(22 25% 20% / 0.06),
     0 4px 8px hsl(22 25% 20% / 0.04);
-  position: relative;
 }
 
-/* 票据左上角撕纸孔 */
-[data-theme="craft"] .card::before,
-[data-theme="craft"] [class*="rounded-xl"][class*="border"]::before {
+/* 票据左上角撕纸孔（仅 .card 元素） */
+[data-theme="craft"] .card:not([role="dialog"])::before {
   content: '';
   position: absolute;
   top: 8px;
@@ -521,8 +523,8 @@ body {
   transition: background-color 0.5s ease, background-image 0.5s ease;
 }
 
-.card,
-[class*="rounded"][class*="border"],
+.card:not([role="dialog"]),
+[class*="rounded"][class*="border"]:not([role="dialog"]),
 [data-sidebar="sidebar"],
 header,
 nav {

@@ -55,7 +55,7 @@ function buildStackedBar(periods: string[], categories: { name: string; data: nu
       type: 'bar' as const,
       data: c.data,
       stack: 'total',
-      emphasis: { focus: 'series' as const },
+      emphasis: { focus: 'none' as const },
     })),
   }
 }

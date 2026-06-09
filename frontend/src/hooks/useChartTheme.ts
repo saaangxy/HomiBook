@@ -32,17 +32,14 @@ export function useChartTheme(): ChartTheme {
       cardFg: `hsl(${cardForeground})`,
       bg: `hsl(${background})`,
 
-      // COLORS 数组第一个用 primary，其余保持不变
+      // 固定调色板（不随主题变化，避免 ECharts 渲染问题）
       COLORS: [
-        `hsl(${primary})`,
-        '#ef4444', '#3b82f6', '#22c55e', '#a855f7',
+        '#f97316', '#ef4444', '#3b82f6', '#22c55e', '#a855f7',
         '#eab308', '#ec4899', '#14b8a6', '#8b5cf6', '#f43f5e',
       ],
 
-      // COLORS 不含 expense(红) 的版本（用于 StatsTimeView 等）
       COLORS_ALL: [
-        `hsl(${primary})`,
-        '#ef4444', '#3b82f6', '#22c55e', '#a855f7',
+        '#f97316', '#ef4444', '#3b82f6', '#22c55e', '#a855f7',
         '#eab308', '#ec4899', '#14b8a6', '#8b5cf6', '#f43f5e',
       ],
 
