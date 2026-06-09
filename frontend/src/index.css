@@ -152,26 +152,49 @@
     0 0 0 5px hsl(15 50% 44% / 0.2);
 }
 
-/* ---- 侧边栏 = 实体账本封面 ---- */
+/* ---- 侧边栏 = 蓝墨水布面账本封面 ---- */
 [data-theme="craft"] [data-sidebar="sidebar"] {
-  /* 深棕色皮革/布面封面 */
   background-color: hsl(var(--sidebar-background)) !important;
   background-image:
-    /* 封面布纹 */
+    /* 顶部柔光 */
+    radial-gradient(ellipse at 30% 25%, hsl(212 28% 55% / 0.1) 0%, transparent 55%),
+    /* 底部阴影深度 */
+    radial-gradient(ellipse at 70% 85%, hsl(215 30% 8% / 0.3) 0%, transparent 50%),
+    /* 布纹纹理 — 45度斜纹 */
     repeating-linear-gradient(
-      90deg,
+      45deg,
       transparent,
-      transparent 2px,
-      hsl(22 18% 26% / 0.4) 2px,
-      hsl(22 18% 26% / 0.4) 3px
+      transparent 3px,
+      hsl(212 25% 32% / 0.25) 3px,
+      hsl(212 25% 32% / 0.25) 6px
     ),
-    /* 细微磨损 */
-    url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n2'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n2)' opacity='0.06'/%3E%3C/svg%3E");
-  /* 书脊阴影 — 右侧投下厚度阴影到"书页"上 */
+    /* 交叉布纹 — 反向斜纹 */
+    repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 3px,
+      hsl(212 25% 32% / 0.12) 3px,
+      hsl(212 25% 32% / 0.12) 6px
+    ),
+    /* 细微噪点 */
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n2'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n2)' opacity='0.05'/%3E%3C/svg%3E");
+  /* 手工纸板裁切阴影 */
   box-shadow:
-    4px 0 12px hsl(22 30% 15% / 0.3),
-    2px 0 6px hsl(22 30% 15% / 0.15) !important;
-  border-right: 3px solid hsl(22 18% 22%) !important;
+    inset -1px 0 0 hsl(212 25% 35% / 0.25),
+    4px 4px 0px hsl(42 25% 22% / 0.05),
+    4px 0 14px hsl(215 30% 12% / 0.25) !important;
+  border-right: 2px dashed hsl(212 22% 42% / 0.35) !important;
+}
+
+/* 蓝墨水封面上的手绘装饰框 */
+[data-theme="craft"] [data-sidebar="sidebar"]::after {
+  content: '';
+  position: absolute;
+  inset: 10px;
+  border: 1.5px dashed hsl(212 20% 48% / 0.18);
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 1;
 }
 
 /* 侧边栏文字在深色封面上 */
@@ -181,10 +204,10 @@
 
 /* ---- 翻开错落感：主内容区 ---- */
 [data-theme="craft"] main {
-  /* 书页内阴影 — 靠近书脊处微微凹陷 */
+  /* 书页内阴影 — 靠近蓝墨书脊处微微凹陷 */
   box-shadow:
-    inset 6px 0 12px hsl(22 30% 15% / 0.08),
-    inset 3px 0 4px hsl(22 30% 15% / 0.04);
+    inset 6px 0 12px hsl(215 25% 15% / 0.08),
+    inset 3px 0 4px hsl(215 25% 15% / 0.04);
 }
 
 [data-theme="craft"] header {
