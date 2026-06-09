@@ -453,6 +453,7 @@ export function RecurringTransactionsPage() {
                     {([true, false] as const).map((val, idx) => (
                         <button
                             key={String(val)} type="button"
+                            data-toggle-btn=""
                             className={`px-4 text-xs font-medium transition-colors ${
                                 idx === 0 ? 'border-r border-border' : ''
                             } ${

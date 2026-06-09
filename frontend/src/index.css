@@ -559,7 +559,7 @@
 }
 
 /* ===== 按钮：方括号终端风格 ===== */
-[data-theme="telegram"] button:not([role="menuitem"]):not([role="checkbox"]):not([role="radio"]):not([class*="ghost"]) {
+[data-theme="telegram"] button:not([role="menuitem"]):not([role="checkbox"]):not([role="radio"]):not([class*="ghost"]):not([data-toggle-btn]) {
   border-radius: 0 !important;
   border: 2px solid hsl(120 10% 60%) !important;
   background: hsl(84 5% 20%) !important;
@@ -570,7 +570,7 @@
   font-size: 13px;
 }
 
-[data-theme="telegram"] button:not([role="menuitem"]):not([role="checkbox"]):not([role="radio"]):not([class*="ghost"]):hover {
+[data-theme="telegram"] button:not([role="menuitem"]):not([role="checkbox"]):not([role="radio"]):not([class*="ghost"]):not([data-toggle-btn]):hover {
   background: hsl(120 35% 20%) !important;
   border-color: hsl(120 35% 45%) !important;
   color: hsl(120 75% 85%) !important;
@@ -1085,7 +1085,7 @@
 }
 
 /* ===== 按钮：橄榄绿 3D 偏移阴影（参照按钮风格） ===== */
-[data-theme="botanical"] button:not([role="menuitem"]):not([role="checkbox"]):not([role="radio"]):not([class*="ghost"]) {
+[data-theme="botanical"] button:not([role="menuitem"]):not([role="checkbox"]):not([role="radio"]):not([class*="ghost"]):not([data-toggle-btn]) {
   border-radius: 2px !important;
   border: none !important;
   background: hsl(90 22% 29%) !important;
@@ -1098,13 +1098,13 @@
   transition: all 0.2s ease;
 }
 
-[data-theme="botanical"] button:not([role="menuitem"]):not([role="checkbox"]):not([role="radio"]):not([class*="ghost"]):hover {
+[data-theme="botanical"] button:not([role="menuitem"]):not([role="checkbox"]):not([role="radio"]):not([class*="ghost"]):not([data-toggle-btn]):hover {
   background: hsl(90 26% 18%) !important;
   box-shadow: 5px 5px 0 hsl(90 26% 14% / 0.35) !important;
   transform: translate(-1px, -1px);
 }
 
-[data-theme="botanical"] button:not([role="menuitem"]):not([role="checkbox"]):not([role="radio"]):not([class*="ghost"]):active {
+[data-theme="botanical"] button:not([role="menuitem"]):not([role="checkbox"]):not([role="radio"]):not([class*="ghost"]):not([data-toggle-btn]):active {
   box-shadow: 1px 1px 0 hsl(90 26% 18% / 0.3) !important;
   transform: translate(2px, 2px);
   transition: all 0.05s ease;
@@ -1582,7 +1582,7 @@
 }
 
 /* ===== 按钮：黑底白字 + 偏移阴影 + hover 变红 ===== */
-[data-theme="mondrian"] button:not([role="menuitem"]):not([role="checkbox"]):not([role="radio"]):not([class*="ghost"]):not([data-calendar-cell]) {
+[data-theme="mondrian"] button:not([role="menuitem"]):not([role="checkbox"]):not([role="radio"]):not([class*="ghost"]):not([data-calendar-cell]):not([data-toggle-btn]) {
   border-radius: 0 !important;
   border: 2px solid hsl(0 0% 10%) !important;
   background: hsl(0 0% 10%) !important;
@@ -1595,14 +1595,14 @@
   transition: all 0.2s ease;
 }
 
-[data-theme="mondrian"] button:not([role="menuitem"]):not([role="checkbox"]):not([role="radio"]):not([class*="ghost"]):not([data-calendar-cell]):hover {
+[data-theme="mondrian"] button:not([role="menuitem"]):not([role="checkbox"]):not([role="radio"]):not([class*="ghost"]):not([data-calendar-cell]):not([data-toggle-btn]):hover {
   background: hsl(355 78% 56%) !important;
   border-color: hsl(355 78% 56%) !important;
   box-shadow: 6px 6px 0 hsla(355, 78%, 56%, 0.25) !important;
   transform: translate(-1px, -1px);
 }
 
-[data-theme="mondrian"] button:not([role="menuitem"]):not([role="checkbox"]):not([role="radio"]):not([class*="ghost"]):not([data-calendar-cell]):active {
+[data-theme="mondrian"] button:not([role="menuitem"]):not([role="checkbox"]):not([role="radio"]):not([class*="ghost"]):not([data-calendar-cell]):not([data-toggle-btn]):active {
   box-shadow: 2px 2px 0 hsla(0, 0%, 10%, 0.2) !important;
   transform: translate(2px, 2px);
   transition: all 0.05s ease;
