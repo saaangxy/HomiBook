@@ -20,8 +20,8 @@ const THEME_COLORS: Record<string, string[]> = {
     '#6b8b5a', '#e0c878', '#4a8a4a', '#f0d060', '#8b7355',
   ],
   botanical: [
-    '#4a7c3f', '#8b9a6b', '#c47a8a', '#5c8a5c', '#9ab87a',
-    '#6b8b4a', '#a0c080', '#d4a0a8', '#3a6a3a', '#7a9a5a',
+    '#4a5a3a', '#8b5e6b', '#6b7a4a', '#b88595', '#2e3a22',
+    '#9c8b6e', '#5a7a4a', '#c4b89a', '#7a6a4a', '#5a6a3a',
   ],
   candy: [
     '#e891a8', '#5cc4a0', '#f0c040', '#a890d0', '#f08060',

@@ -231,6 +231,11 @@
   resolved "https://registry.npmmirror.com/@fontsource/amatic-sc/-/amatic-sc-5.2.7.tgz"
   integrity sha512-fZanMNAXHSguiPeZqEQ8gFMgK0mQKivdDEQx+Z/zL29fgI7I3ZDLjNd0j/+T0rq7Gq50QUCdOGdK+Ues7ukjDg==
 
+"@fontsource/cormorant-garamond@^5.2.11":
+  version "5.2.11"
+  resolved "https://registry.npmmirror.com/@fontsource/cormorant-garamond/-/cormorant-garamond-5.2.11.tgz"
+  integrity sha512-5JjpN023lhA5soijgVT0BdRGzmlijm402ppjccMd6h+vRE0mX2lJnE+41UPfnlidrkV9/rCo1mf58WZlHnB0CA==
+
 "@fontsource/crimson-text@^5.2.7":
   version "5.2.7"
   resolved "https://registry.npmmirror.com/@fontsource/crimson-text/-/crimson-text-5.2.7.tgz"
@@ -245,6 +250,16 @@
   version "5.2.8"
   resolved "https://registry.npmmirror.com/@fontsource/noto-serif-sc/-/noto-serif-sc-5.2.8.tgz"
   integrity sha512-C7fAr+d1GjOAw1qIbntsnqbA3l5dkdzcmNNgeCXLC8QZ7VNubL7MTrX8UcYKHceX4mI//z8gGtXbOeeQrB6P7g==
+
+"@fontsource/playfair-display@^5.2.8":
+  version "5.2.8"
+  resolved "https://registry.npmmirror.com/@fontsource/playfair-display/-/playfair-display-5.2.8.tgz"
+  integrity sha512-fUEhib70SszNhQVsGbUMSsWJhr7Je0rdeuZdtGpDNu0GKF1xJM8QhpI/y0pckU25GcChXm9TLOmeZupkvvZo2g==
+
+"@fontsource/source-serif-4@^5.2.9":
+  version "5.2.9"
+  resolved "https://registry.npmmirror.com/@fontsource/source-serif-4/-/source-serif-4-5.2.9.tgz"
+  integrity sha512-er/Pym9emsEVJNf947umJ4kXarXfsiN6CN7kTYinefKRaHLwiquiiHOZvKvxWgkV8JMCf3pV3g0NcsPFpVCH9w==
 
 "@fontsource/zcool-kuaile@^5.2.8":
   version "5.2.8"
