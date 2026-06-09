@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
 import { Card, CardContent } from '@/components/ui/card'
@@ -92,6 +92,16 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
   // 选中项
   const [selected, setSelected] = useState<SelectedInfo>(null)
   const t = useChartTheme()
+
+  const pieOptions = useMemo(() => {
+    const options: Record<string, EChartsOption | null> = {}
+    for (const groupBy of ['category', 'ownerId', 'accountId'] as const) {
+      const rawData = groupData[groupBy] || []
+      const data = rawData.map((d) => ({ name: d.label, value: d.amount })).sort((a, b) => b.value - a.value)
+      options[groupBy] = data.length > 0 ? buildPie(data, t) : null
+    }
+    return options
+  }, [groupData, t])
 
   // 详情弹窗
   const [detailOpen, setDetailOpen] = useState(false)
@@ -246,7 +256,8 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
                       <div className="flex items-center justify-center h-full text-xs text-muted-foreground">暂无数据</div>
                     ) : (
                       <ReactECharts
-                        option={buildPie(data, t)}
+                        option={pieOptions[groupBy]}
+                        notMerge={true}
                         style={{ width: '100%', height: '100%' }}
                         onEvents={{ click: handlePieClick(groupBy, rawData) }}
                       />

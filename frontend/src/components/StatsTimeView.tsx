@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
 import { Card, CardContent } from '@/components/ui/card'
@@ -55,7 +55,10 @@ function buildStackedBar(periods: string[], categories: { name: string; data: nu
       type: 'bar' as const,
       data: c.data,
       stack: 'total',
-      emphasis: { focus: 'none' as const },
+      emphasis: {
+        focus: 'series' as const,
+        itemStyle: { shadowBlur: 10, shadowOffsetX: 0, shadowColor: 'rgba(0,0,0,0.35)' },
+      },
     })),
   }
 }
@@ -236,6 +239,15 @@ export function StatsTimeView({ bookId, mode }: Props) {
   }, [bookId])
 
   const t = useChartTheme()
+
+  const stackedBarOption = useMemo(
+    () => (periods.length > 0 ? buildStackedBar(periods, categories, t) : null),
+    [periods, categories, t],
+  )
+  const radarOption = useMemo(
+    () => (radarMetrics.length > 0 ? buildRadarOption(radarMetrics, t) : null),
+    [radarMetrics, t],
+  )
 
   const loadData = useCallback(async () => {
     if (!bookId) return
@@ -512,7 +524,7 @@ export function StatsTimeView({ bookId, mode }: Props) {
                     </Tooltip>
                   </div>
                   <div style={{ height: 240 }}>
-                    <ReactECharts option={buildRadarOption(radarMetrics, t)} style={{ width: '100%', height: '100%' }} />
+                    <ReactECharts option={radarOption} notMerge={true} style={{ width: '100%', height: '100%' }} />
                   </div>
                 </CardContent>
               </Card>
@@ -543,7 +555,8 @@ export function StatsTimeView({ bookId, mode }: Props) {
                     <div className="flex items-center justify-center h-full text-xs text-muted-foreground">暂无数据</div>
                   ) : (
                     <ReactECharts
-                      option={buildStackedBar(periods, categories, t)}
+                      option={stackedBarOption}
+                      notMerge={true}
                       style={{ width: '100%', height: '100%' }}
                       onEvents={{ click: handleBarClick }}
                     />

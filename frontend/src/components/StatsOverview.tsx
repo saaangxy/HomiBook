@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
 import { Card, CardContent } from '@/components/ui/card'
@@ -171,6 +171,23 @@ export function StatsOverview() {
   const [radarMetrics, setRadarMetrics] = useState<{ name: string; value: number }[]>([])
   const t = useChartTheme()
 
+  const trendLineOption = useMemo(
+    () => (trendMonths.length > 0 ? buildTrendLineOption(trendMonths, trendIncomes, trendExpenses, t) : null),
+    [trendMonths, trendIncomes, trendExpenses, t],
+  )
+  const netWorthOption = useMemo(
+    () => (nwDates.length > 0 ? buildNetWorthOption(nwDates, nwBalances, t) : null),
+    [nwDates, nwBalances, t],
+  )
+  const balanceOption = useMemo(
+    () => (balSeries.length > 0 ? buildBalanceOption(balDates, balSeries, t) : null),
+    [balDates, balSeries, t],
+  )
+  const radarOption = useMemo(
+    () => (radarMetrics.length > 0 ? buildRadarOption(radarMetrics, t) : null),
+    [radarMetrics, t],
+  )
+
   const loadData = useCallback(async () => {
     if (!currentBookId) return
     setLoading(true)
@@ -286,7 +303,7 @@ export function StatsOverview() {
                   <h3 className="text-sm font-semibold">月度收支趋势</h3>
                 </div>
                 <div style={{ height: 320 }}>
-                  <ReactECharts option={buildTrendLineOption(trendMonths, trendIncomes, trendExpenses, t)} style={{ width: '100%', height: '100%' }} />
+                  <ReactECharts option={trendLineOption} notMerge={true} style={{ width: '100%', height: '100%' }} />
                 </div>
               </CardContent>
             </Card>
@@ -301,7 +318,7 @@ export function StatsOverview() {
                   <div className="flex items-center justify-center h-80 text-xs text-muted-foreground">暂无数据</div>
                 ) : (
                   <div style={{ height: 320 }}>
-                    <ReactECharts option={buildNetWorthOption(nwDates, nwBalances, t)} style={{ width: '100%', height: '100%' }} />
+                    <ReactECharts option={netWorthOption} notMerge={true} style={{ width: '100%', height: '100%' }} />
                   </div>
                 )}
               </CardContent>
@@ -320,7 +337,7 @@ export function StatsOverview() {
                     <div className="flex items-center justify-center h-80 text-xs text-muted-foreground">暂无数据</div>
                   ) : (
                     <div style={{ height: 320 }}>
-                      <ReactECharts option={buildBalanceOption(balDates, balSeries, t)} style={{ width: '100%', height: '100%' }} />
+                      <ReactECharts option={balanceOption} notMerge={true} style={{ width: '100%', height: '100%' }} />
                     </div>
                   )}
                 </CardContent>
@@ -350,7 +367,7 @@ export function StatsOverview() {
                   </Tooltip>
                 </div>
                 <div style={{ height: 320 }}>
-                  <ReactECharts option={buildRadarOption(radarMetrics, t)} style={{ width: '100%', height: '100%' }} />
+                  <ReactECharts option={radarOption} notMerge={true} style={{ width: '100%', height: '100%' }} />
                 </div>
               </CardContent>
             </Card>
