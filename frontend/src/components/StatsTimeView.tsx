@@ -79,10 +79,17 @@ function buildRadarOption(metrics: { name: string; value: number }[], t: ChartTh
       borderColor: t.border,
       textStyle: { color: t.cardFg, fontSize: 12 },
       formatter: (p: any) => {
-        const values: number[] = Array.isArray(p.value) ? p.value : [p.value]
+        const fullValues: number[] = p.data?.value ?? (Array.isArray(p.value) ? p.value : [])
+        const hoverIdx: number | undefined = p.dimensionIndex
         let html = `<b>${p.seriesName || ''}</b><br/>`
         metrics.forEach((m, i) => {
-          html += `${m.name}: ${values[i] ?? '-'} 分<br/>`
+          const v = fullValues[i]
+          const display = v != null ? `${v} 分` : '-'
+          if (hoverIdx === i) {
+            html += `<span style="font-weight:bold;color:${t.primary}">◆ ${m.name}: ${display}</span><br/>`
+          } else {
+            html += `&nbsp;&nbsp;${m.name}: ${display}<br/>`
+          }
         })
         return html
       },

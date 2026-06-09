@@ -42,6 +42,17 @@ const DEFAULT_COLORS = [
   '#eab308', '#ec4899', '#14b8a6', '#8b5cf6', '#f43f5e',
 ]
 
+/** 将 CSS 变量中的 "H S% L%" 转为 ECharts canvas 兼容的 "hsl(H, S%, L%)" 逗号分隔格式 */
+function toHsl(spaceSep: string): string {
+  const parts = spaceSep.split(' ')
+  return `hsl(${parts[0]}, ${parts[1]}, ${parts[2]})`
+}
+
+function toHsla(spaceSep: string, alpha: number): string {
+  const parts = spaceSep.split(' ')
+  return `hsla(${parts[0]}, ${parts[1]}, ${parts[2]}, ${alpha})`
+}
+
 export function useChartTheme(): ChartTheme {
   const { theme } = useThemeContext()
 
@@ -56,26 +67,26 @@ export function useChartTheme(): ChartTheme {
     const colors = THEME_COLORS[theme.id] || DEFAULT_COLORS
 
     return {
-      primary: `hsl(${p})`,
-      foreground: `hsl(${fg})`,
-      mutedForeground: `hsl(${mf})`,
-      border: `hsl(${b})`,
-      cardBg: `hsl(${c})`,
-      cardFg: `hsl(${cf})`,
-      bg: `hsl(${bg})`,
+      primary: toHsl(p),
+      foreground: toHsl(fg),
+      mutedForeground: toHsl(mf),
+      border: toHsl(b),
+      cardBg: toHsl(c),
+      cardFg: toHsl(cf),
+      bg: toHsl(bg),
 
       COLORS: colors,
       COLORS_ALL: colors,
 
-      legendTextStyle: { color: `hsl(${mf})` },
-      axisLabel: { color: `hsl(${mf})` },
-      axisLine: { lineStyle: { color: `hsl(${b})` } },
-      splitLine: { lineStyle: { color: `hsl(${b})` } },
-      tooltipBg: `hsl(${c})`,
-      tooltipBorder: `hsl(${b})`,
-      tooltipText: `hsl(${cf})`,
+      legendTextStyle: { color: toHsl(mf) },
+      axisLabel: { color: toHsl(mf) },
+      axisLine: { lineStyle: { color: toHsl(b) } },
+      splitLine: { lineStyle: { color: toHsl(b) } },
+      tooltipBg: toHsl(c),
+      tooltipBorder: toHsl(b),
+      tooltipText: toHsl(cf),
 
-      primaryRgba: (alpha: number) => `hsla(${p} / ${alpha})`,
+      primaryRgba: (alpha: number) => toHsla(p, alpha),
     }
   }, [theme])
 }

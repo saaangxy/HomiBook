@@ -1249,11 +1249,10 @@
 
 /* ===== 卡片悬停：种子纸浮起 ===== */
 [data-theme="botanical"] .card:not([role="dialog"]):hover {
-  transform: translateY(-2px);
   box-shadow:
     3px 6px 0 hsl(36 25% 20% / 0.06),
     0 10px 24px hsl(36 25% 15% / 0.1) !important;
-  transition: all 0.3s ease;
+  transition: box-shadow 0.3s ease;
 }
 
 /* ===== 登录页：老木桌 + 种子纸信封 ===== */
