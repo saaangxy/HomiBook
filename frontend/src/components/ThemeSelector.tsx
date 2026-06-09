@@ -1,6 +1,6 @@
 import { useThemeContext } from '@/components/ThemeProvider'
 import { creativeThemeIds, themes } from '@/themes'
-import { Monitor, Check } from 'lucide-react'
+import { Monitor, Sun, Moon, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface ThemeSelectorProps {
@@ -21,8 +21,10 @@ export function ThemeSelector({ showSystem = true, compact = false, value, onCha
   const setTheme = onChange || ctx.setTheme
 
   const allOptions = [
-    ...(showSystem ? [{ id: 'system', name: '跟随系统', description: '自动匹配系统明暗模式' }] : []),
-    ...creativeThemeIds.map(id => ({ id, name: themes[id].name, description: themes[id].description })),
+    ...(showSystem ? [{ id: 'system', name: '跟随系统', description: '自动匹配系统明暗模式', type: 'system' as const }] : []),
+    { id: 'light', name: '浅色', description: '干净清爽的浅色主题', type: 'light' as const },
+    { id: 'dark', name: '深色', description: '深色背景配橙色强调', type: 'dark' as const },
+    ...creativeThemeIds.map(id => ({ id, name: themes[id].name, description: themes[id].description, type: 'creative' as const })),
   ]
 
   if (compact) {
@@ -30,8 +32,8 @@ export function ThemeSelector({ showSystem = true, compact = false, value, onCha
       <div className="grid grid-cols-2 gap-2">
         {allOptions.map((opt) => {
           const isActive = themeId === opt.id || (opt.id === 'system' && themeId === 'system')
-          const isSystem = opt.id === 'system'
-          const t = isSystem ? null : themes[opt.id]
+          const t = themes[opt.id]
+          const isBase = opt.type === 'system' || opt.type === 'light' || opt.type === 'dark'
           return (
             <button
               key={opt.id}
@@ -43,9 +45,17 @@ export function ThemeSelector({ showSystem = true, compact = false, value, onCha
                   : 'border-border hover:bg-accent',
               )}
             >
-              {isSystem ? (
+              {opt.type === 'system' ? (
                 <div className="flex items-center justify-center w-7 h-7 rounded-full bg-muted">
                   <Monitor size={14} className="text-muted-foreground" />
+                </div>
+              ) : opt.type === 'light' ? (
+                <div className="flex items-center justify-center w-7 h-7 rounded-full bg-amber-100">
+                  <Sun size={14} className="text-amber-500" />
+                </div>
+              ) : opt.type === 'dark' ? (
+                <div className="flex items-center justify-center w-7 h-7 rounded-full bg-slate-700">
+                  <Moon size={14} className="text-slate-200" />
                 </div>
               ) : (
                 <div className="flex gap-0.5">
@@ -72,8 +82,7 @@ export function ThemeSelector({ showSystem = true, compact = false, value, onCha
     <div className="grid grid-cols-2 gap-3">
       {allOptions.map((opt) => {
         const isActive = themeId === opt.id
-        const isSystem = opt.id === 'system'
-        const t = isSystem ? null : themes[opt.id]
+        const t = themes[opt.id]
         return (
           <button
             key={opt.id}
@@ -86,9 +95,17 @@ export function ThemeSelector({ showSystem = true, compact = false, value, onCha
             )}
           >
             <div className="flex items-center gap-2.5">
-              {isSystem ? (
+              {opt.type === 'system' ? (
                 <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-muted">
                   <Monitor size={20} className="text-muted-foreground" />
+                </div>
+              ) : opt.type === 'light' ? (
+                <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-amber-100">
+                  <Sun size={20} className="text-amber-500" />
+                </div>
+              ) : opt.type === 'dark' ? (
+                <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-slate-700">
+                  <Moon size={20} className="text-slate-200" />
                 </div>
               ) : (
                 <div className="flex gap-1">
