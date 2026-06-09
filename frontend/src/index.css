@@ -1,3 +1,5 @@
+@import '@fontsource/amatic-sc';
+@import '@fontsource/crimson-text';
 @import '@fontsource/zcool-xiaowei';
 @import '@fontsource/jetbrains-mono';
 @import '@fontsource/noto-serif-sc';
@@ -104,50 +106,148 @@
    主题纹理和装饰
    ================================================================ */
 
-/* ---- 手工杂货铺：牛皮纸纹理 + 缝线装饰 ---- */
+/* ---- 手工杂货铺：手工票据 + 复古收银机 + 橡皮章 + 账本封面 ---- */
 [data-theme="craft"] {
-  --theme-font: "ZCOOL XiaoWei", "楷体", KaiTi, serif;
+  --theme-font: "Crimson Text", "Noto Serif SC", "宋体", SimSun, serif;
 }
 
+/* ---- 纸张纹理：米白纸 + 票据横线 ---- */
 [data-theme="craft"] body {
   background-color: hsl(var(--background));
   background-image:
-    /* 牛皮纸纤维纹理 */
+    /* 票据横线（淡蓝灰，模拟老式收银机纸卷） */
     repeating-linear-gradient(
-      2deg,
+      0deg,
       transparent,
-      transparent 3px,
-      hsl(36 25% 88% / 0.3) 3px,
-      hsl(36 25% 88% / 0.3) 4px
+      transparent 28px,
+      hsl(215 15% 78% / 0.15) 28px,
+      hsl(215 15% 78% / 0.15) 29px
     ),
-    /* 细微噪点 */
-    url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    /* 左侧红色票据边线 */
+    linear-gradient(90deg, hsl(0 45% 55% / 0.06) 0px, transparent 1px),
+    /* 纸张噪点 */
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
   background-attachment: fixed;
 }
 
+/* ---- 标题字体：Amatic SC 手写风 ---- */
+[data-theme="craft"] h1,
+[data-theme="craft"] h2,
+[data-theme="craft"] [data-sidebar="sidebar"] span[class*="font-extrabold"],
+[data-theme="craft"] header span[class*="font-semibold"] {
+  font-family: "Amatic SC", "ZCOOL XiaoWei", cursive;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+/* ---- 橡皮章效果：Logo 容器 ---- */
+[data-theme="craft"] [data-sidebar="sidebar"] [class*="rounded-xl"][class*="bg-primary"],
+[data-theme="craft"] a[class*="flex"] > [class*="bg-primary"] {
+  transform: rotate(-2.5deg);
+  border-radius: 8px !important;
+  box-shadow:
+    0 2px 6px hsl(15 50% 44% / 0.35),
+    inset 0 1px 3px hsl(0 0% 100% / 0.15),
+    0 0 0 3px hsl(42 30% 90%),
+    0 0 0 5px hsl(15 50% 44% / 0.2);
+}
+
+/* ---- 侧边栏 = 实体账本封面 ---- */
+[data-theme="craft"] [data-sidebar="sidebar"] {
+  /* 深棕色皮革/布面封面 */
+  background-color: hsl(var(--sidebar-background)) !important;
+  background-image:
+    /* 封面布纹 */
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 2px,
+      hsl(22 18% 26% / 0.4) 2px,
+      hsl(22 18% 26% / 0.4) 3px
+    ),
+    /* 细微磨损 */
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n2'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n2)' opacity='0.06'/%3E%3C/svg%3E");
+  /* 书脊阴影 — 右侧投下厚度阴影到"书页"上 */
+  box-shadow:
+    4px 0 12px hsl(22 30% 15% / 0.3),
+    2px 0 6px hsl(22 30% 15% / 0.15) !important;
+  border-right: 3px solid hsl(22 18% 22%) !important;
+}
+
+/* 侧边栏文字在深色封面上 */
+[data-theme="craft"] [data-sidebar="sidebar"] * {
+  color: hsl(var(--sidebar-foreground)) !important;
+}
+
+/* ---- 翻开错落感：主内容区 ---- */
+[data-theme="craft"] main {
+  /* 书页内阴影 — 靠近书脊处微微凹陷 */
+  box-shadow:
+    inset 6px 0 12px hsl(22 30% 15% / 0.08),
+    inset 3px 0 4px hsl(22 30% 15% / 0.04);
+}
+
+[data-theme="craft"] header {
+  border-bottom: 2px solid hsl(215 15% 72% / 0.35) !important;
+  box-shadow: 0 2px 8px hsl(22 25% 20% / 0.04);
+}
+
+/* ---- 卡片样式：手工票据 ---- */
 [data-theme="craft"] .card,
-[data-theme="craft"] [class*="rounded"][class*="border"] {
-  border-style: dashed;
-  border-width: 2px;
+[data-theme="craft"] [class*="rounded-xl"][class*="border"] {
+  border: 1.5px solid hsl(215 12% 68% / 0.5);
+  border-radius: 4px 16px 4px 16px !important;
+  box-shadow:
+    0 1px 3px hsl(22 25% 20% / 0.06),
+    0 4px 8px hsl(22 25% 20% / 0.04);
+  position: relative;
 }
 
-[data-theme="craft"] ::selection {
-  background: hsl(22 65% 42% / 0.25);
-  color: hsl(24 25% 18%);
-}
-
-/* 缝线装饰 - 卡片左上角 */
-[data-theme="craft"] [data-slot="sidebar"]::before {
+/* 票据左上角撕纸孔 */
+[data-theme="craft"] .card::before,
+[data-theme="craft"] [class*="rounded-xl"][class*="border"]::before {
   content: '';
   position: absolute;
-  top: 12px;
-  right: 12px;
-  width: 24px;
-  height: 24px;
-  background: radial-gradient(circle, hsl(15 50% 48%) 20%, transparent 22%);
-  background-size: 6px 6px;
-  opacity: 0.4;
+  top: 8px;
+  left: 10px;
+  width: 32px;
+  height: 14px;
+  background:
+    radial-gradient(circle 3px, transparent 40%, hsl(215 12% 68% / 0.3) 42%, transparent 44%),
+    radial-gradient(circle 3px, transparent 40%, hsl(215 12% 68% / 0.3) 42%, transparent 44%),
+    radial-gradient(circle 3px, transparent 40%, hsl(215 12% 68% / 0.3) 42%, transparent 44%);
+  background-size: 10px 14px;
+  background-position: 0 0, 10px 0, 20px 0;
+  background-repeat: no-repeat;
   pointer-events: none;
+  z-index: 1;
+}
+
+/* ---- 选中文字：复古蓝墨水色 ---- */
+[data-theme="craft"] ::selection {
+  background: hsl(212 28% 38% / 0.2);
+  color: hsl(215 28% 20%);
+}
+
+/* ---- 橡皮章圆章 — 用于 badge/标签 ---- */
+[data-theme="craft"] [class*="badge"] {
+  transform: rotate(-1.5deg);
+  border-radius: 50% !important;
+  border: 2px solid hsl(0 45% 50% / 0.5) !important;
+  background: transparent !important;
+  color: hsl(0 45% 45%) !important;
+  font-family: "Amatic SC", cursive;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 4px 10px !important;
+  box-shadow: 0 0 0 1px hsl(0 45% 50% / 0.15);
+}
+
+/* ---- 收银机数字：等宽数字强调 ---- */
+[data-theme="craft"] [class*="font-mono"],
+[data-theme="craft"] [class*="tabular-nums"] {
+  font-family: "Crimson Text", "JetBrains Mono", serif;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---- 旧式电报机：泛黄纸张 + 点阵纹理 ---- */
@@ -286,7 +386,7 @@
 }
 
 /* 玻璃罐高光条纹 */
-[data-theme="candy"] [data-slot="sidebar"]::after {
+[data-theme="candy"] [data-sidebar="sidebar"]::after {
   content: '';
   position: absolute;
   top: 0;
@@ -320,7 +420,7 @@ body {
 
 .card,
 [class*="rounded"][class*="border"],
-[data-slot="sidebar"],
+[data-sidebar="sidebar"],
 header,
 nav {
   transition: background-color 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease;
