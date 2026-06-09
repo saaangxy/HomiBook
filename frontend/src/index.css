@@ -355,52 +355,464 @@
   border-style: solid !important;
 }
 
-/* ---- 旧式电报机：泛黄纸张 + 点阵纹理 ---- */
+/* ---- 旧式电报机·针式打印机：绿屏CRT + 打印纸 + 暗室 ---- */
 [data-theme="telegram"] {
   --theme-font: "JetBrains Mono", "Courier New", monospace;
 }
 
+/* ===== 字体全局覆盖 ===== */
+[data-theme="telegram"] body,
+[data-theme="telegram"] button,
+[data-theme="telegram"] input,
+[data-theme="telegram"] textarea,
+[data-theme="telegram"] select {
+  font-family: "JetBrains Mono", "Courier New", monospace !important;
+}
+
+/* ===== 暗室背景 + 地板瓷砖格 ===== */
 [data-theme="telegram"] body {
   background-color: hsl(var(--background));
   background-image:
-    /* 点阵打印纹理 */
-    radial-gradient(circle, hsl(225 35% 15% / 0.06) 1px, transparent 1px);
-  background-size: 8px 8px;
+    /* 地板瓷砖线 */
+    linear-gradient(90deg, hsl(84 5% 18% / 0.5) 1px, transparent 1px),
+    linear-gradient(0deg, hsl(84 5% 18% / 0.5) 1px, transparent 1px),
+    /* 中心大张打印纸发光 */
+    radial-gradient(ellipse at 50% 50%, hsl(120 35% 35% / 0.04) 0%, transparent 70%),
+    /* 噪点纹理 */
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  background-size: 40px 40px, 40px 40px, 100% 100%, 256px 256px;
   background-attachment: fixed;
 }
 
-[data-theme="telegram"] .card,
-[data-theme="telegram"] [class*="rounded"][class*="border"] {
-  border-style: solid;
-  border-width: 1.5px;
-  box-shadow: 2px 2px 0 hsl(225 35% 15% / 0.08);
+/* ===== 主内容区：大张打印纸 ===== */
+[data-theme="telegram"] main {
+  background-color: hsl(42 22% 92%);
+  background-image:
+    /* 打印纸横线 */
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 27px,
+      hsl(120 12% 82% / 0.35) 27px,
+      hsl(120 12% 82% / 0.35) 28px
+    ),
+    /* 纸面噪点 */
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='pn'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23pn)' opacity='0.03'/%3E%3C/svg%3E");
+  color: hsl(120 9% 14%);
+  border-left: 2px solid hsl(120 10% 75% / 0.3);
+  border-right: 2px solid hsl(120 10% 75% / 0.3);
+  box-shadow:
+    0 0 60px hsl(120 35% 15% / 0.15),
+    0 0 120px hsl(120 20% 8% / 0.06);
 }
 
-[data-theme="telegram"] ::selection {
-  background: hsl(225 40% 25%);
-  color: hsl(40 30% 95%);
+
+/* ===== Header：打印纸页眉 ===== */
+[data-theme="telegram"] header {
+  background-color: hsl(42 22% 92%) !important;
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 27px,
+      hsl(120 12% 82% / 0.2) 27px,
+      hsl(120 12% 82% / 0.2) 28px
+    );
+  border-bottom: 2px dashed hsl(120 10% 60% / 0.4) !important;
+  color: hsl(120 9% 14%) !important;
 }
 
-/* 电报机穿孔线 - 分割线样式 */
-[data-theme="telegram"] hr,
-[data-theme="telegram"] [class*="separator"] {
-  border: none;
-  border-top: 2px dashed hsl(225 15% 55% / 0.5);
-  position: relative;
-}
-
-[data-theme="telegram"] hr::before,
-[data-theme="telegram"] [class*="separator"]::before {
-  content: '• • • • • • • • • • • • • • •';
+/* Header 撕纸边缘 */
+[data-theme="telegram"] header::after {
+  content: '';
   position: absolute;
-  top: -10px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 8px;
-  letter-spacing: 3px;
-  color: hsl(225 15% 55% / 0.4);
-  white-space: nowrap;
+  bottom: -4px;
+  left: 0;
+  width: 100%;
+  height: 6px;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 3px,
+      hsl(42 22% 92%) 3px,
+      hsl(42 22% 92%) 6px
+    );
+  /* 锯齿撕边 */
+  clip-path: polygon(
+    0% 100%, 2% 20%, 4% 80%, 6% 30%, 8% 70%, 10% 40%, 12% 60%, 14% 20%,
+    16% 80%, 18% 35%, 20% 65%, 22% 25%, 24% 75%, 26% 45%, 28% 55%, 30% 30%,
+    32% 70%, 34% 40%, 36% 60%, 38% 20%, 40% 80%, 42% 35%, 44% 65%, 46% 50%,
+    48% 70%, 50% 25%, 52% 75%, 54% 40%, 56% 60%, 58% 30%, 60% 70%, 62% 45%,
+    64% 55%, 66% 20%, 68% 80%, 70% 35%, 72% 65%, 74% 50%, 76% 30%, 78% 70%,
+    80% 40%, 82% 60%, 84% 25%, 86% 75%, 88% 45%, 90% 55%, 92% 20%, 94% 80%,
+    96% 35%, 98% 65%, 100% 50%
+  );
   pointer-events: none;
+  z-index: 1;
+}
+
+/* ===== 侧边栏：暗绿屏终端/电报机外壳 ===== */
+[data-theme="telegram"] [data-sidebar="sidebar"] {
+  background-color: hsl(var(--sidebar-background)) !important;
+  background-image:
+    /* CRT 扫描线 */
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      hsl(120 20% 12% / 0.3) 2px,
+      hsl(120 20% 12% / 0.3) 4px
+    ),
+    /* 屏幕荧光 */
+    radial-gradient(ellipse at 50% 40%, hsl(120 35% 25% / 0.08) 0%, transparent 60%),
+    /* 金属外壳纹理 */
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='metal'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.2' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23metal)' opacity='0.04'/%3E%3C/svg%3E");
+  border-right: 1px solid hsl(120 15% 15%) !important;
+  box-shadow:
+    inset -2px 0 8px hsl(120 10% 5% / 0.4),
+    4px 0 12px hsl(120 10% 5% / 0.3) !important;
+}
+
+[data-theme="telegram"] [data-sidebar="sidebar"] * {
+  color: hsl(var(--sidebar-foreground)) !important;
+}
+
+/* 侧边栏顶部：绿色显示器图标 + 脉冲状态灯 */
+[data-theme="telegram"] [data-sidebar="sidebar"] [class*="rounded-xl"][class*="bg-primary"]::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  background: hsl(120 80% 50%);
+  border-radius: 50%;
+  box-shadow: 0 0 6px hsl(120 80% 50% / 0.7), 0 0 12px hsl(120 80% 50% / 0.3);
+  animation: telegram-blink 2s steps(1) infinite;
+}
+
+@keyframes telegram-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* 侧边栏导航项：> 提示符前缀 */
+[data-theme="telegram"] [data-sidebar="sidebar"] a[class*="flex"]::before {
+  content: '>';
+  margin-right: 6px;
+  color: hsl(120 50% 45%);
+  font-weight: 700;
+}
+
+/* ===== 卡片：打印纸票据（方角 + 穿孔边） ===== */
+[data-theme="telegram"] .card:not([role="dialog"]),
+[data-theme="telegram"] [class*="rounded-xl"][class*="border"]:not([role="dialog"]) {
+  border-radius: 0 !important;
+  border: 1.5px solid hsl(120 10% 72% / 0.6) !important;
+  background-color: hsl(42 22% 94%) !important;
+  background-image:
+    /* 票据横线 */
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 27px,
+      hsl(120 10% 80% / 0.2) 27px,
+      hsl(120 10% 80% / 0.2) 28px
+    );
+  box-shadow:
+    2px 2px 0 hsl(120 10% 60% / 0.15),
+    0 4px 12px hsl(120 10% 10% / 0.08) !important;
+  color: hsl(120 9% 14%) !important;
+}
+
+/* 卡片顶部穿孔线 */
+[data-theme="telegram"] .card:not([role="dialog"])::before {
+  content: '';
+  position: absolute;
+  top: 12px;
+  left: 8px;
+  right: 8px;
+  height: 6px;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 10px,
+      hsl(120 8% 70% / 0.25) 10px,
+      hsl(120 8% 70% / 0.25) 12px
+    );
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* 卡片内容区避开穿孔线 */
+[data-theme="telegram"] .card:not([role="dialog"]) > :first-child {
+  padding-top: 8px;
+}
+
+/* ===== 按钮：方括号终端风格 ===== */
+[data-theme="telegram"] button:not([role="menuitem"]):not([role="checkbox"]):not([role="radio"]):not([class*="ghost"]) {
+  border-radius: 0 !important;
+  border: 2px solid hsl(120 10% 60%) !important;
+  background: hsl(84 5% 20%) !important;
+  color: hsl(120 30% 72%) !important;
+  transition: all 0.15s steps(2);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 13px;
+}
+
+[data-theme="telegram"] button:not([role="menuitem"]):not([role="checkbox"]):not([role="radio"]):not([class*="ghost"]):hover {
+  background: hsl(120 35% 20%) !important;
+  border-color: hsl(120 35% 45%) !important;
+  color: hsl(120 75% 85%) !important;
+  box-shadow: 0 0 12px hsl(120 35% 35% / 0.3);
+}
+
+/* Primary 按钮：绿屏强调 */
+[data-theme="telegram"] button[class*="primary"]:not([role="menuitem"]),
+[data-theme="telegram"] [class*="bg-primary"] button {
+  background: hsl(120 30% 18%) !important;
+  border-color: hsl(120 35% 40%) !important;
+  color: hsl(120 75% 85%) !important;
+}
+
+[data-theme="telegram"] button[class*="destructive"] {
+  border-color: hsl(6 68% 48%) !important;
+  color: hsl(6 70% 75%) !important;
+}
+
+/* Ghost 按钮：虚线链接风格 */
+[data-theme="telegram"] button[class*="ghost"] {
+  text-decoration: underline;
+  text-decoration-style: dashed;
+  text-underline-offset: 4px;
+  text-decoration-color: hsl(120 20% 50% / 0.5);
+  letter-spacing: 0.04em;
+}
+
+/* ===== 输入框：下划线等宽风格 ===== */
+[data-theme="telegram"] input:not([type="checkbox"]):not([type="radio"]),
+[data-theme="telegram"] textarea,
+[data-theme="telegram"] select {
+  border-radius: 0 !important;
+  border: none !important;
+  border-bottom: 2px solid hsl(120 10% 55% / 0.5) !important;
+  background: transparent !important;
+  font-family: "JetBrains Mono", "Courier New", monospace !important;
+  color: hsl(120 9% 14%) !important;
+  padding-left: 2px !important;
+  padding-right: 2px !important;
+  transition: border-color 0.15s;
+}
+
+[data-theme="telegram"] input:focus:not([type="checkbox"]):not([type="radio"]),
+[data-theme="telegram"] textarea:focus,
+[data-theme="telegram"] select:focus {
+  border-bottom-color: hsl(120 35% 40%) !important;
+  outline: none !important;
+  box-shadow: 0 2px 8px hsl(120 35% 35% / 0.15);
+}
+
+/* 侧边栏中的输入框 */
+[data-theme="telegram"] [data-sidebar="sidebar"] input,
+[data-theme="telegram"] [data-sidebar="sidebar"] textarea {
+  border-bottom-color: hsl(120 20% 25%) !important;
+  color: hsl(120 35% 55%) !important;
+}
+
+/* ===== 复选/单选：方括号标记 [✓] ===== */
+[data-theme="telegram"] [role="checkbox"][data-state="checked"]::before {
+  content: '[✓]';
+  font-family: "JetBrains Mono", monospace;
+  color: hsl(120 35% 42%);
+}
+
+/* ===== Badge：日期戳/标签风格 ===== */
+[data-theme="telegram"] [class*="badge"] {
+  border-radius: 0 !important;
+  border: 1px solid hsl(120 10% 55% / 0.5) !important;
+  background: transparent !important;
+  color: hsl(120 15% 30%) !important;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 2px 8px !important;
+}
+
+/* ===== 分割线：穿孔纸边 ===== */
+[data-theme="telegram"] hr {
+  border: none;
+  border-top: 2px dashed hsl(120 10% 60% / 0.4);
+  margin: 20px 0;
+}
+
+/* ===== 选中文字：绿屏反色 ===== */
+[data-theme="telegram"] ::selection {
+  background: hsl(120 35% 35% / 0.25);
+  color: hsl(120 9% 14%);
+}
+
+/* ===== 滚动条：绿屏CRT风格 ===== */
+[data-theme="telegram"] ::-webkit-scrollbar-thumb {
+  background: hsl(120 20% 25%);
+  border-radius: 0;
+}
+
+[data-theme="telegram"] ::-webkit-scrollbar-thumb:hover {
+  background: hsl(120 30% 35%);
+}
+
+[data-theme="telegram"] * {
+  scrollbar-color: hsl(120 20% 25%) transparent;
+}
+
+/* ===== 下拉菜单/弹出层：打印纸票据 ===== */
+[data-theme="telegram"] [role="dialog"],
+[data-theme="telegram"] [role="alertdialog"],
+[data-theme="telegram"] [role="menu"],
+[data-theme="telegram"] [role="listbox"] {
+  border-radius: 0 !important;
+  border: 2px solid hsl(120 15% 45%) !important;
+  background-color: hsl(42 22% 93%) !important;
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 27px,
+      hsl(120 10% 80% / 0.25) 27px,
+      hsl(120 10% 80% / 0.25) 28px
+    );
+  box-shadow:
+    4px 4px 0 hsl(120 10% 50% / 0.12),
+    0 12px 32px hsl(120 10% 10% / 0.2) !important;
+  color: hsl(120 9% 14%) !important;
+}
+
+/* ===== 表格：打印纸行线 ===== */
+[data-theme="telegram"] table {
+  border-collapse: collapse;
+  font-family: "JetBrains Mono", monospace;
+}
+
+[data-theme="telegram"] th {
+  border-bottom: 2px solid hsl(120 10% 55% / 0.5);
+  padding: 8px 12px;
+  text-align: left;
+  text-transform: uppercase;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: hsl(120 12% 35%);
+}
+
+[data-theme="telegram"] td {
+  border-bottom: 1px solid hsl(120 10% 72% / 0.3);
+  padding: 8px 12px;
+}
+
+/* ===== 标签页：下划线终端风格 ===== */
+[data-theme="telegram"] [role="tab"] {
+  border-radius: 0 !important;
+  border-bottom: 2px solid transparent !important;
+  font-family: "JetBrains Mono", monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+[data-theme="telegram"] [role="tab"][data-state="active"] {
+  border-bottom-color: hsl(120 35% 35%) !important;
+}
+
+/* ===== 提示框：终端绿屏Tooltip ===== */
+[data-theme="telegram"] [role="tooltip"],
+[data-theme="telegram"] [data-slot="tooltip-content"] {
+  border-radius: 0 !important;
+  border: 1px solid hsl(120 35% 30%) !important;
+  background: hsl(120 10% 8%) !important;
+  color: hsl(120 35% 55%) !important;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  box-shadow: 0 0 16px hsl(120 35% 15% / 0.5);
+}
+
+/* ===== 登录页：暗室中的打印纸 ===== */
+[data-theme="telegram"] .login-bg-orb {
+  background-color: hsl(120 35% 25% / 0.06) !important;
+}
+
+[data-theme="telegram"] .login-bg-accent {
+  background: radial-gradient(ellipse, hsl(120 35% 30% / 0.04) 0%, transparent 70%) !important;
+}
+
+[data-theme="telegram"] .login-card {
+  border-radius: 0 !important;
+  border: 2px solid hsl(120 15% 45%) !important;
+  background-color: hsl(42 22% 93%) !important;
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 27px,
+      hsl(120 10% 80% / 0.2) 27px,
+      hsl(120 10% 80% / 0.2) 28px
+    );
+  box-shadow:
+    6px 6px 0 hsl(120 10% 40% / 0.1),
+    0 20px 50px hsl(120 10% 5% / 0.15) !important;
+  color: hsl(120 9% 14%) !important;
+}
+
+[data-theme="telegram"] .login-card h1,
+[data-theme="telegram"] .login-card h2 {
+  font-family: "JetBrains Mono", monospace !important;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+/* 登录页覆盖层：终端绿屏 */
+[data-theme="telegram"] .login-overlay {
+  background-color: hsl(120 10% 6%) !important;
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      hsl(120 20% 10% / 0.4) 2px,
+      hsl(120 20% 10% / 0.4) 4px
+    ),
+    radial-gradient(ellipse at 50% 45%, hsl(120 35% 15% / 0.08) 0%, transparent 60%);
+}
+
+[data-theme="telegram"] .login-overlay-container::after {
+  content: '';
+  position: absolute;
+  inset: 12px;
+  border: 1px dashed hsl(120 30% 25% / 0.3);
+  pointer-events: none;
+  z-index: 101;
+}
+
+[data-theme="telegram"] .login-overlay-panel h2 {
+  font-family: "JetBrains Mono", monospace !important;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+[data-theme="telegram"] .login-overlay-panel button {
+  font-family: "JetBrains Mono", monospace !important;
+  border-radius: 0 !important;
+  border: 2px solid hsl(120 30% 25%) !important;
+  background: hsl(120 10% 12%) !important;
+  color: hsl(120 35% 55%) !important;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+[data-theme="telegram"] .login-overlay-panel button:hover {
+  border-color: hsl(120 35% 40%) !important;
+  box-shadow: 0 0 16px hsl(120 35% 25% / 0.4);
 }
 
 /* ---- 植物记账簿：种子纸纹理 + 植物装饰 ---- */

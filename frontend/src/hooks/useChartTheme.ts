@@ -16,8 +16,8 @@ const THEME_COLORS: Record<string, string[]> = {
     '#5c8a7a', '#e0b878', '#8b5e4b', '#4a7c8c', '#b84a3c',
   ],
   telegram: [
-    '#3a3a3a', '#c4a44a', '#6b6b6b', '#8b7355', '#d4b86a',
-    '#4a4a4a', '#a08050', '#5a5a5a', '#e0c878', '#2c2c2c',
+    '#3a7a3a', '#5cb85c', '#d94a3a', '#c4a44a', '#1a8a3a',
+    '#6b8b5a', '#e0c878', '#4a8a4a', '#f0d060', '#8b7355',
   ],
   botanical: [
     '#4a7c3f', '#8b9a6b', '#c47a8a', '#5c8a5c', '#9ab87a',
