@@ -24,6 +24,7 @@ model User {
   accounts             Account[]
   records              Record[]
   recurringTransactions RecurringTransaction[]
+  apiKeys              ApiKey[]
 }
 
 // 账本
@@ -287,4 +288,17 @@ model RepaymentPlan {
   generatedRecordId        String?  // 关联的流水记录 ID
 
   @@index([recurringTransactionId])
+}
+
+// API Key
+model ApiKey {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  prefix     String
+  hash       String    @unique
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 }
