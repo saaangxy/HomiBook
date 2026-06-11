@@ -3,11 +3,17 @@ import { prisma } from '../app.js'
 
 export class AuthService {
   // 注册
-  async register(email: string, password: string, name?: string) {
+  async register(username: string, email: string, password: string, nickname?: string) {
     // 检查邮箱是否已存在
-    const existing = await prisma.user.findUnique({ where: { email } })
-    if (existing) {
+    const existingEmail = await prisma.user.findUnique({ where: { email } })
+    if (existingEmail) {
       throw Object.assign(new Error('电子邮件已存在'), { statusCode: 400 })
+    }
+
+    // 检查用户名是否已存在
+    const existingUsername = await prisma.user.findUnique({ where: { username } })
+    if (existingUsername) {
+      throw Object.assign(new Error('账号已存在'), { statusCode: 400 })
     }
 
     // 密码加密
@@ -20,9 +26,10 @@ export class AuthService {
     // 创建用户
     const user = await prisma.user.create({
       data: {
+        username,
         email,
         password: hashedPassword,
-        name,
+        nickname,
         role,
         status: 'ACTIVE',
       },
@@ -51,7 +58,7 @@ export class AuthService {
   async getUserById(id: string) {
     return prisma.user.findUnique({
       where: { id },
-      select: { id: true, email: true, name: true, role: true, status: true, theme: true },
+      select: { id: true, email: true, username: true, nickname: true, role: true, status: true, theme: true },
     })
   }
 }

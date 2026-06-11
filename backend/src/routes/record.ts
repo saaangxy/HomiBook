@@ -132,7 +132,7 @@ export async function recordRoutes(app: FastifyInstance) {
           account: { select: { id: true, name: true, type: true } },
           fromAccount: { select: { id: true, name: true } },
           toAccount: { select: { id: true, name: true } },
-          owner: { select: { id: true, name: true, email: true } },
+          owner: { select: { id: true, nickname: true, email: true } },
           recordAttachments: { select: { id: true, path: true, originalFilename: true } },
         },
         orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
@@ -147,7 +147,7 @@ export async function recordRoutes(app: FastifyInstance) {
         ...r,
         tags: JSON.parse(r.tags),
         attachments: r.recordAttachments.map((a) => ({ id: a.id, url: a.path, originalFilename: a.originalFilename })),
-        ownerName: r.owner.name || r.owner.email,
+        ownerName: r.owner.nickname || r.owner.email,
       })),
       total,
       page,
@@ -713,9 +713,9 @@ export async function recordRoutes(app: FastifyInstance) {
     } else if (groupBy === 'ownerId') {
       const users = await prisma.user.findMany({
         where: { id: { in: keys } },
-        select: { id: true, name: true, email: true },
+        select: { id: true, nickname: true, email: true },
       })
-      for (const u of users) labelMap[u.id] = u.name || u.email || u.id
+      for (const u of users) labelMap[u.id] = u.nickname || u.email || u.id
     } else {
       const accts = await prisma.account.findMany({
         where: { id: { in: keys } },
@@ -792,7 +792,7 @@ export async function recordRoutes(app: FastifyInstance) {
         account: { select: { id: true, name: true, type: true } },
         fromAccount: { select: { id: true, name: true } },
         toAccount: { select: { id: true, name: true } },
-        owner: { select: { id: true, name: true, email: true } },
+        owner: { select: { id: true, nickname: true, email: true } },
         recordAttachments: { select: { id: true, path: true, originalFilename: true } },
       },
     })
@@ -909,7 +909,7 @@ export async function recordRoutes(app: FastifyInstance) {
         account: { select: { id: true, name: true, type: true } },
         fromAccount: { select: { id: true, name: true } },
         toAccount: { select: { id: true, name: true } },
-        owner: { select: { id: true, name: true, email: true } },
+        owner: { select: { id: true, nickname: true, email: true } },
         recordAttachments: { select: { id: true, path: true, originalFilename: true } },
       },
     })
@@ -1010,7 +1010,7 @@ export async function recordRoutes(app: FastifyInstance) {
         account: { select: { id: true, name: true, type: true } },
         fromAccount: { select: { id: true, name: true } },
         toAccount: { select: { id: true, name: true } },
-        owner: { select: { id: true, name: true, email: true } },
+        owner: { select: { id: true, nickname: true, email: true } },
         recordAttachments: { select: { id: true, path: true, originalFilename: true } },
       },
     })

@@ -44,7 +44,8 @@ export function UsersPage() {
 
   const [formEmail, setFormEmail] = useState('')
   const [formPassword, setFormPassword] = useState('')
-  const [formName, setFormName] = useState('')
+  const [formUsername, setFormUsername] = useState('')
+  const [formNickname, setFormNickname] = useState('')
   const [formRole, setFormRole] = useState('USER')
   const [formError, setFormError] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -69,7 +70,8 @@ export function UsersPage() {
   const resetForm = () => {
     setFormEmail('')
     setFormPassword('')
-    setFormName('')
+    setFormUsername('')
+    setFormNickname('')
     setFormRole('USER')
     setFormError('')
     setSubmitting(false)
@@ -78,11 +80,11 @@ export function UsersPage() {
 
   const handleCreate = async () => {
     setFormError('')
-    if (!formEmail || !formPassword) { setFormError('请填写邮箱和密码'); return }
+    if (!formUsername || !formEmail || !formPassword) { setFormError('请填写账号、邮箱和密码'); return }
     if (formPassword.length < 6) { setFormError('密码至少6位'); return }
     setSubmitting(true)
     try {
-      await adminApi.createUser({ email: formEmail, password: formPassword, name: formName || undefined, role: formRole })
+      await adminApi.createUser({ username: formUsername, email: formEmail, password: formPassword, nickname: formNickname || undefined, role: formRole })
       setCreateOpen(false)
       resetForm()
       fetchUsers()
@@ -158,6 +160,7 @@ export function UsersPage() {
           <TableHeader>
             <TableRow className="border-b border-border bg-background hover:bg-background">
               <TableHead className="text-left px-5 py-3.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">用户</TableHead>
+              <TableHead className="text-left px-5 py-3.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">账号</TableHead>
               <TableHead className="text-left px-5 py-3.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">角色</TableHead>
               <TableHead className="text-left px-5 py-3.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">状态</TableHead>
               <TableHead className="text-left px-5 py-3.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">创建时间</TableHead>
@@ -167,15 +170,16 @@ export function UsersPage() {
           <TableBody>
             {users.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-12 text-sm text-muted-foreground">暂无用户</TableCell>
+                <TableCell colSpan={6} className="text-center py-12 text-sm text-muted-foreground">暂无用户</TableCell>
               </TableRow>
             ) : (
               users.map((user) => (
                 <TableRow key={user.id} className="border-b border-border">
                   <TableCell className="px-5 py-3.5 text-sm">
-                    <div className="font-semibold">{user.name || '未命名'}</div>
+                    <div className="font-semibold">{user.nickname || '未命名'}</div>
                     <div className="text-xs text-muted-foreground mt-0.5">{user.email}</div>
                   </TableCell>
+                  <TableCell className="px-5 py-3.5 text-sm font-mono text-muted-foreground">{user.username}</TableCell>
                   <TableCell className="px-5 py-3.5 text-sm">
                     <Badge variant={user.role === 'ADMIN' ? 'default' : 'secondary'} className="inline-flex items-center gap-1 text-xs">
                       {user.role === 'ADMIN' ? <Shield size={12} /> : <ShieldOff size={12} />}
@@ -271,6 +275,7 @@ export function UsersPage() {
           </DialogHeader>
           <div className="flex flex-col gap-3">
             {formError && <Alert variant="destructive"><AlertDescription>{formError}</AlertDescription></Alert>}
+            <Input aria-label="账号" type="text" placeholder="账号" value={formUsername} onChange={(e) => setFormUsername(e.target.value)} className="bg-background border-border h-11 rounded-[10px]" />
             <Input aria-label="邮箱" type="email" placeholder="邮箱地址" value={formEmail} onChange={(e) => setFormEmail(e.target.value)} className="bg-background border-border h-11 rounded-[10px]" />
             <div className="relative">
               <Input
@@ -289,7 +294,7 @@ export function UsersPage() {
                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
-            <Input aria-label="用户名" placeholder="用户名（可选）" value={formName} onChange={(e) => setFormName(e.target.value)} className="bg-background border-border h-11 rounded-[10px]" />
+            <Input aria-label="昵称" placeholder="昵称（可选）" value={formNickname} onChange={(e) => setFormNickname(e.target.value)} className="bg-background border-border h-11 rounded-[10px]" />
             <Select value={formRole} onValueChange={setFormRole}>
               <SelectTrigger className="bg-background border-border h-11 rounded-[10px]">
                 <SelectValue />
@@ -355,7 +360,7 @@ export function UsersPage() {
           <div className="flex flex-col gap-3">
             {formError && <Alert variant="destructive"><AlertDescription>{formError}</AlertDescription></Alert>}
             <p className="text-sm text-muted-foreground leading-relaxed">
-              确定要删除用户 <strong className="text-foreground">{targetUser?.name || targetUser?.email}</strong> 吗？此操作不可撤销。
+              确定要删除用户 <strong className="text-foreground">{targetUser?.nickname || targetUser?.email}</strong> 吗？此操作不可撤销。
             </p>
           </div>
           <DialogFooter>

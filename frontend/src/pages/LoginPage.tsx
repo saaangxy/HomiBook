@@ -258,9 +258,10 @@ const styles = {
 
 export function LoginPage() {
   const [isActive, setIsActive] = useState(false)
-  const [loginEmail, setLoginEmail] = useState('')
+  const [loginAccount, setLoginAccount] = useState('')
   const [loginPassword, setLoginPassword] = useState('')
-  const [registerName, setRegisterName] = useState('')
+  const [registerUsername, setRegisterUsername] = useState('')
+  const [registerNickname, setRegisterNickname] = useState('')
   const [registerEmail, setRegisterEmail] = useState('')
   const [registerPassword, setRegisterPassword] = useState('')
   const [error, setError] = useState('')
@@ -290,7 +291,7 @@ export function LoginPage() {
     setIsLoading(true)
 
     try {
-      const res = await authApi.login(loginEmail, loginPassword)
+      const res = await authApi.login(loginAccount, loginPassword)
       setAuth(res.token, res.user)
       navigate('/')
     } catch (err: any) {
@@ -306,7 +307,7 @@ export function LoginPage() {
     setIsLoading(true)
 
     try {
-      await authApi.register(registerEmail, registerPassword, registerName || undefined)
+      await authApi.register(registerUsername, registerEmail, registerPassword, registerNickname || undefined)
       setIsActive(false)
       setError('')
     } catch (err: any) {
@@ -379,10 +380,10 @@ export function LoginPage() {
             <h2 style={styles.formTitle}>登录</h2>
             <p style={styles.formSubtitle}>登录以继续管理你的账本</p>
             <input
-              type="email"
-              placeholder="邮箱地址"
-              value={loginEmail}
-              onChange={(e) => setLoginEmail(e.target.value)}
+              type="text"
+              placeholder="账号或邮箱"
+              value={loginAccount}
+              onChange={(e) => setLoginAccount(e.target.value)}
               style={getInputStyle('loginEmail')}
               onFocus={() => setFocusedInput('loginEmail')}
               onBlur={() => setFocusedInput(null)}
@@ -462,10 +463,10 @@ export function LoginPage() {
             <h2 style={styles.formTitle}>欢迎回来</h2>
             <p style={styles.formSubtitle}>登录以继续管理你的账本</p>
             <input
-              type="email"
-              placeholder="邮箱地址"
-              value={loginEmail}
-              onChange={(e) => setLoginEmail(e.target.value)}
+              type="text"
+              placeholder="账号或邮箱"
+              value={loginAccount}
+              onChange={(e) => setLoginAccount(e.target.value)}
               style={getInputStyle('loginEmail')}
               onFocus={() => setFocusedInput('loginEmail')}
               onBlur={() => setFocusedInput(null)}
@@ -544,11 +545,21 @@ export function LoginPage() {
             <p style={styles.formSubtitle}>开始管理你的家庭财务</p>
             <input
               type="text"
-              placeholder="用户名"
-              value={registerName}
-              onChange={(e) => setRegisterName(e.target.value)}
-              style={getInputStyle('regName')}
-              onFocus={() => setFocusedInput('regName')}
+              placeholder="账号"
+              value={registerUsername}
+              onChange={(e) => setRegisterUsername(e.target.value)}
+              style={getInputStyle('regUsername')}
+              onFocus={() => setFocusedInput('regUsername')}
+              onBlur={() => setFocusedInput(null)}
+              required
+            />
+            <input
+              type="text"
+              placeholder="昵称（可选）"
+              value={registerNickname}
+              onChange={(e) => setRegisterNickname(e.target.value)}
+              style={getInputStyle('regNickname')}
+              onFocus={() => setFocusedInput('regNickname')}
               onBlur={() => setFocusedInput(null)}
             />
             <input

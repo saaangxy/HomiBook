@@ -125,7 +125,7 @@ export async function accountRoutes(app: FastifyInstance) {
 
     const accounts = await prisma.account.findMany({
       where: { accountBookId: bookId },
-      include: { owner: { select: { id: true, name: true, email: true } } },
+      include: { owner: { select: { id: true, nickname: true, email: true } } },
       orderBy: { createdAt: 'desc' },
     })
 
@@ -136,7 +136,7 @@ export async function accountRoutes(app: FastifyInstance) {
         const base: Record<string, unknown> = {
           ...a,
           computedBalance,
-          ownerName: a.owner.name || a.owner.email,
+          ownerName: a.owner.nickname || a.owner.email,
         }
         delete (base as any).owner
         return sanitizeAccount(base, userId)
@@ -185,13 +185,13 @@ export async function accountRoutes(app: FastifyInstance) {
         bankName,
         visibility,
       },
-      include: { owner: { select: { id: true, name: true, email: true } } },
+      include: { owner: { select: { id: true, nickname: true, email: true } } },
     })
 
     const result: Record<string, unknown> = {
       ...account,
       computedBalance: account.balance,
-      ownerName: account.owner.name || account.owner.email,
+      ownerName: account.owner.nickname || account.owner.email,
     }
     delete (result as any).owner
     return sanitizeAccount(result, userId)
@@ -359,7 +359,7 @@ export async function accountRoutes(app: FastifyInstance) {
 
     const account = await prisma.account.findUnique({
       where: { id },
-      include: { owner: { select: { id: true, name: true, email: true } } },
+      include: { owner: { select: { id: true, nickname: true, email: true } } },
     })
     if (!account) {
       return reply.status(404).send({ message: '账户不存在' })
@@ -376,7 +376,7 @@ export async function accountRoutes(app: FastifyInstance) {
     const result: Record<string, unknown> = {
       ...account,
       computedBalance,
-      ownerName: account.owner.name || account.owner.email,
+      ownerName: account.owner.nickname || account.owner.email,
     }
     delete (result as any).owner
     return sanitizeAccount(result, userId)
@@ -416,13 +416,13 @@ export async function accountRoutes(app: FastifyInstance) {
     const account = await prisma.account.update({
       where: { id },
       data: parsed.data,
-      include: { owner: { select: { id: true, name: true, email: true } } },
+      include: { owner: { select: { id: true, nickname: true, email: true } } },
     })
 
     const result: Record<string, unknown> = {
       ...account,
       computedBalance: account.balance,
-      ownerName: account.owner.name || account.owner.email,
+      ownerName: account.owner.nickname || account.owner.email,
     }
     delete (result as any).owner
     return sanitizeAccount(result, userId)

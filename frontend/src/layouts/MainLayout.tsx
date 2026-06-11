@@ -90,13 +90,13 @@ function SidebarUserFooter() {
       <div className="flex items-center gap-3 p-3 group-data-[collapsible=icon]:p-1 cursor-pointer hover:bg-accent rounded-[10px] transition-colors">
         <Avatar className="w-9 h-9 group-data-[collapsible=icon]:w-7 group-data-[collapsible=icon]:h-7 rounded-[10px] bg-primary shrink-0">
           <AvatarFallback className="text-primary-foreground text-sm font-bold bg-primary">
-            {(user?.name?.[0] || user?.email?.[0] || 'U').toUpperCase()}
+            {(user?.nickname?.[0] || user?.username?.[0] || user?.email?.[0] || 'U').toUpperCase()}
           </AvatarFallback>
         </Avatar>
         {state === 'expanded' && (
           <div className="overflow-hidden whitespace-nowrap">
             <div className="text-sm font-semibold text-sidebar-foreground">
-              {user?.name || '用户'}
+              {user?.nickname || user?.username || '用户'}
             </div>
             <div className="text-xs text-sidebar-foreground/50 mt-0.5 overflow-hidden text-ellipsis">
               {user?.email || ''}

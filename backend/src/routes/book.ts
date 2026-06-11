@@ -229,9 +229,9 @@ export async function bookRoutes(app: FastifyInstance) {
     const book = await prisma.accountBook.findUnique({
       where: { id },
       include: {
-        owner: { select: { id: true, name: true, email: true } },
+        owner: { select: { id: true, nickname: true, email: true } },
         members: {
-          include: { user: { select: { id: true, name: true, email: true } } },
+          include: { user: { select: { id: true, nickname: true, email: true } } },
           orderBy: { joinedAt: 'asc' },
         },
         _count: { select: { members: true } },
@@ -315,7 +315,7 @@ export async function bookRoutes(app: FastifyInstance) {
 
     const members = await prisma.accountBookMember.findMany({
       where: { accountBookId: id },
-      include: { user: { select: { id: true, name: true, email: true } } },
+      include: { user: { select: { id: true, nickname: true, email: true } } },
       orderBy: { joinedAt: 'asc' },
     })
 
@@ -357,7 +357,7 @@ export async function bookRoutes(app: FastifyInstance) {
         accountBookId: id,
         userId: targetUser.id,
       },
-      include: { user: { select: { id: true, name: true, email: true } } },
+      include: { user: { select: { id: true, nickname: true, email: true } } },
     })
 
     return reply.status(201).send({
@@ -428,7 +428,7 @@ export async function bookRoutes(app: FastifyInstance) {
     const updated = await prisma.accountBookMember.update({
       where: { id: memberId },
       data: { role: parsed.data.role },
-      include: { user: { select: { id: true, name: true, email: true } } },
+      include: { user: { select: { id: true, nickname: true, email: true } } },
     })
 
     return {

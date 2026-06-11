@@ -7,7 +7,7 @@ import { zSchema } from '../lib/schema-helpers.js'
 import { authenticate } from '../middleware/auth.js'
 
 const updateProfileSchema = z.object({
-  name: z.string().min(1).max(30).optional(),
+  nickname: z.string().min(1).max(30).optional(),
   theme: z.string().optional(),
 })
 
@@ -35,13 +35,14 @@ export async function authRoutes(app: FastifyInstance) {
       return reply.status(400).send({ message: '请求参数无效' })
     }
 
-    const { email, password, name } = parsed.data
-    const user = await authService.register(email, password, name)
+    const { username, email, password, nickname } = parsed.data
+    const user = await authService.register(username, email, password, nickname)
 
     return {
       id: user.id,
+      username: user.username,
       email: user.email,
-      name: user.name,
+      nickname: user.nickname,
       role: user.role,
     }
   })
@@ -59,11 +60,14 @@ export async function authRoutes(app: FastifyInstance) {
       return reply.status(400).send({ message: '请求参数无效' })
     }
 
-    const { email, password } = parsed.data
+    const { account, password } = parsed.data
 
-    const user = await prisma.user.findUnique({ where: { email } })
+    // 支持账号或邮箱登录
+    const user = await prisma.user.findFirst({
+      where: { OR: [{ email: account }, { username: account }] },
+    })
     if (!user) {
-      return reply.status(401).send({ message: '邮箱或密码错误' })
+      return reply.status(401).send({ message: '账号或密码错误' })
     }
 
     // 检查账户状态
@@ -73,7 +77,7 @@ export async function authRoutes(app: FastifyInstance) {
 
     const valid = await authService.validatePassword(password, user.password)
     if (!valid) {
-      return reply.status(401).send({ message: '邮箱或密码错误' })
+      return reply.status(401).send({ message: '账号或密码错误' })
     }
 
     const token = app.jwt.sign({ id: user.id, email: user.email, role: user.role })
@@ -82,8 +86,9 @@ export async function authRoutes(app: FastifyInstance) {
       token,
       user: {
         id: user.id,
+        username: user.username,
         email: user.email,
-        name: user.name,
+        nickname: user.nickname,
         role: user.role,
         theme: user.theme,
       },
@@ -122,13 +127,13 @@ export async function authRoutes(app: FastifyInstance) {
 
     const payload = req.user as { id: string }
     const data: Record<string, string> = {}
-    if (parsed.data.name !== undefined) data.name = parsed.data.name
+    if (parsed.data.nickname !== undefined) data.nickname = parsed.data.nickname
     if (parsed.data.theme !== undefined) data.theme = parsed.data.theme
 
     const user = await prisma.user.update({
       where: { id: payload.id },
       data,
-      select: { id: true, email: true, name: true, role: true, theme: true },
+      select: { id: true, email: true, username: true, nickname: true, role: true, theme: true },
     })
 
     return user

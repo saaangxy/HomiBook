@@ -11,8 +11,9 @@ datasource db {
 model User {
   id        String   @id @default(uuid())
   email     String   @unique
+  username  String   @unique
   password  String
-  name      String?
+  nickname  String?  @map("name")
   role      String   @default("USER")
   status    String   @default("ACTIVE")
   theme     String   @default("dark")

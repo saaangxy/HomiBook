@@ -34,21 +34,21 @@ function ProfileDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const { user } = useAuthStore()
-  const [name, setName] = useState(user?.name || '')
+  const [nickname, setNickname] = useState(user?.nickname || '')
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
   const [isError, setIsError] = useState(false)
 
-  const handleSaveName = async () => {
-    if (!name.trim()) {
+  const handleSaveNickname = async () => {
+    if (!nickname.trim()) {
       setIsError(true)
-      setMsg('名称不能为空')
+      setMsg('昵称不能为空')
       return
     }
     setSaving(true)
     setMsg('')
     try {
-      const updated = await authApi.updateProfile(name.trim())
+      const updated = await authApi.updateProfile(nickname.trim())
       useAuthStore.getState().updateUser(updated)
       setIsError(false)
       setMsg('保存成功')
@@ -62,7 +62,7 @@ function ProfileDialog({
 
   const handleOpenChange = (open: boolean) => {
     if (open) {
-      setName(user?.name || '')
+      setNickname(user?.nickname || '')
       setMsg('')
       setIsError(false)
     }
@@ -74,7 +74,7 @@ function ProfileDialog({
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle>个人信息</DialogTitle>
-          <DialogDescription>修改您的名称和个人主题</DialogDescription>
+          <DialogDescription>修改您的昵称和个人主题</DialogDescription>
         </DialogHeader>
         <div className="space-y-4 mt-2">
           <div>
@@ -82,18 +82,18 @@ function ProfileDialog({
             <p className="text-sm mt-0.5">{user?.email}</p>
           </div>
           <div>
-            <Label htmlFor="profile-name">名称</Label>
+            <Label htmlFor="profile-name">昵称</Label>
             <div className="flex gap-2 mt-1.5">
               <Input
                 id="profile-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="输入名称"
+                value={nickname}
+                onChange={(e) => setNickname(e.target.value)}
+                placeholder="输入昵称"
                 maxLength={30}
                 className="flex-1"
               />
               <Button
-                onClick={handleSaveName}
+                onClick={handleSaveNickname}
                 disabled={saving}
                 className="rounded-[10px] bg-primary hover:bg-primary/90"
               >

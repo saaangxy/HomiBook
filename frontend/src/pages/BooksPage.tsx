@@ -425,7 +425,7 @@ export function BooksPage() {
                       <div key={m.id} className="flex items-center justify-between py-2.5 border-b border-border last:border-0">
                         <div className="flex flex-col gap-0.5">
                           <span className="text-sm font-medium">
-                            {m.user.name || m.user.email}
+                            {m.user.nickname || m.user.email}
                             {m.userId === manageBook?.ownerId && (
                               <Badge className="ml-2 text-[10px]">归属人</Badge>
                             )}
@@ -451,7 +451,7 @@ export function BooksPage() {
                               size="sm"
                               onClick={() => setConfirmAction({
                                 title: '移除成员',
-                                description: `确定移除 ${m.user.name || m.user.email}？`,
+                                description: `确定移除 ${m.user.nickname || m.user.email}？`,
                                 onConfirm: () => { handleRemoveMember(m); setConfirmAction(null) },
                               })}
                               className="text-xs border-[#7f1d1d] bg-[#ef4444]/10 text-[#ef4444] rounded-md"

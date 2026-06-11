@@ -46,7 +46,7 @@ export async function recurringRoutes(app: FastifyInstance) {
       include: {
         account: { select: { id: true, name: true, type: true } },
         toAccount: { select: { id: true, name: true, type: true } },
-        owner: { select: { id: true, name: true, email: true } },
+        owner: { select: { id: true, nickname: true, email: true } },
         repaymentPlans: { orderBy: { period: 'asc' } },
       },
     })
@@ -135,7 +135,7 @@ export async function recurringRoutes(app: FastifyInstance) {
       include: {
         account: { select: { id: true, name: true, type: true } },
         toAccount: { select: { id: true, name: true, type: true } },
-        owner: { select: { id: true, name: true, email: true } },
+        owner: { select: { id: true, nickname: true, email: true } },
         repaymentPlans: { orderBy: { period: 'asc' } },
       },
     })
@@ -209,7 +209,7 @@ export async function recurringRoutes(app: FastifyInstance) {
       include: {
         account: { select: { id: true, name: true, type: true } },
         toAccount: { select: { id: true, name: true, type: true } },
-        owner: { select: { id: true, name: true, email: true } },
+        owner: { select: { id: true, nickname: true, email: true } },
       },
     })
 
@@ -324,7 +324,7 @@ export async function recurringRoutes(app: FastifyInstance) {
       include: {
         account: { select: { id: true, name: true, type: true } },
         toAccount: { select: { id: true, name: true, type: true } },
-        owner: { select: { id: true, name: true, email: true } },
+        owner: { select: { id: true, nickname: true, email: true } },
         repaymentPlans: { orderBy: { period: 'asc' } },
       },
     })

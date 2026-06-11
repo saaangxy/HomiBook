@@ -6,14 +6,15 @@ import { authenticate, requireAdmin } from '../middleware/auth.js'
 import { zSchema } from '../lib/schema-helpers.js'
 
 const createUserSchema = z.object({
+  username: z.string().min(3, '账号至少3位').max(30, '账号最多30位').regex(/^[a-zA-Z0-9_]+$/, '账号只能包含字母、数字和下划线'),
   email: z.string().email(),
   password: z.string().min(6),
-  name: z.string().optional(),
+  nickname: z.string().optional(),
   role: z.enum(['ADMIN', 'USER']).default('USER'),
 })
 
 const updateUserSchema = z.object({
-  name: z.string().optional(),
+  nickname: z.string().optional(),
   role: z.enum(['ADMIN', 'USER']).optional(),
   status: z.enum(['ACTIVE', 'DISABLED']).optional(),
 })
@@ -38,7 +39,8 @@ export async function adminRoutes(app: FastifyInstance) {
       select: {
         id: true,
         email: true,
-        name: true,
+        username: true,
+        nickname: true,
         role: true,
         status: true,
         createdAt: true,
@@ -61,27 +63,34 @@ export async function adminRoutes(app: FastifyInstance) {
       return reply.status(400).send({ message: '请求参数无效' })
     }
 
-    const { email, password, name, role } = parsed.data
+    const { username, email, password, nickname, role } = parsed.data
 
-    const existing = await prisma.user.findUnique({ where: { email } })
-    if (existing) {
+    const existingEmail = await prisma.user.findUnique({ where: { email } })
+    if (existingEmail) {
       return reply.status(400).send({ message: '电子邮件已存在' })
+    }
+
+    const existingUsername = await prisma.user.findUnique({ where: { username } })
+    if (existingUsername) {
+      return reply.status(400).send({ message: '账号已存在' })
     }
 
     const hashedPassword = await bcrypt.hash(password, 10)
 
     const user = await prisma.user.create({
       data: {
+        username,
         email,
         password: hashedPassword,
-        name,
+        nickname,
         role,
         status: 'ACTIVE',
       },
       select: {
         id: true,
         email: true,
-        name: true,
+        username: true,
+        nickname: true,
         role: true,
         status: true,
         createdAt: true,
@@ -117,7 +126,8 @@ export async function adminRoutes(app: FastifyInstance) {
       select: {
         id: true,
         email: true,
-        name: true,
+        username: true,
+        nickname: true,
         role: true,
         status: true,
         createdAt: true,
@@ -175,6 +185,16 @@ export async function adminRoutes(app: FastifyInstance) {
     const user = await prisma.user.findUnique({ where: { id } })
     if (!user) {
       return reply.status(404).send({ message: '用户不存在' })
+    }
+
+    // 不能删除最后一个管理员
+    if (user.role === 'ADMIN') {
+      const adminCount = await prisma.user.count({
+        where: { role: 'ADMIN', status: 'ACTIVE' },
+      })
+      if (adminCount <= 1) {
+        return reply.status(400).send({ message: '不能删除唯一的管理员' })
+      }
     }
 
     await prisma.user.delete({ where: { id } })

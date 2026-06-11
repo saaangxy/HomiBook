@@ -116,7 +116,7 @@ function filterValueLabel(key: keyof FilterState, value: string[] | string, acco
       const ids = value as string[]
       const labels = ids.map((id) => {
         const u = users.find((u) => u.id === id)
-        return u?.name || u?.email || id
+        return u?.nickname || u?.username || u?.email || id
       })
       return `归属人: ${labels.join(', ')}`
     }
@@ -1206,7 +1206,7 @@ export function RecordsPage() {
             <div>
               <Label className="text-xs text-muted-foreground mb-1.5 block">归属人</Label>
               <MultiSelect
-                items={users.map((u) => ({ value: u.id, label: u.name || u.email || u.id }))}
+                items={users.map((u) => ({ value: u.id, label: u.nickname || u.username || u.email || u.id }))}
                 selected={draftFilters.ownerIds}
                 onChange={(v) => setDraftFilters((p) => ({ ...p, ownerIds: v }))}
                 placeholder="全部成员"

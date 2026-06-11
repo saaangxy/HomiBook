@@ -15,7 +15,7 @@ export interface BookDetail {
   ownerId: string
   createdAt: string
   updatedAt: string
-  owner: { id: string; name: string | null; email: string }
+  owner: { id: string; nickname: string | null; email: string }
   members: BookMember[]
   memberCount: number
 }
@@ -25,7 +25,7 @@ export interface BookMember {
   userId: string
   role: string
   joinedAt: string
-  user: { id: string; name: string | null; email: string }
+  user: { id: string; nickname: string | null; email: string }
 }
 
 export interface ShareCode {
@@ -69,7 +69,7 @@ export const bookApi = {
     api.delete(`/api/books/${bookId}/members/${memberId}`),
 
   updateMemberRole: (bookId: string, memberId: string, role: string) =>
-    api.patch<{ id: string; userId: string; role: string; joinedAt: string; user: { id: string; name: string | null; email: string } }>(
+    api.patch<{ id: string; userId: string; role: string; joinedAt: string; user: { id: string; nickname: string | null; email: string } }>(
       `/api/books/${bookId}/members/${memberId}/role`,
       { role }
     ),

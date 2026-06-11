@@ -3,7 +3,8 @@ import { api } from './http'
 export interface AdminUser {
   id: string
   email: string
-  name: string | null
+  username: string | null
+  nickname: string | null
   role: 'ADMIN' | 'USER'
   status: 'ACTIVE' | 'DISABLED'
   createdAt: string
@@ -12,10 +13,10 @@ export interface AdminUser {
 export const adminApi = {
   listUsers: () => api.get<{ users: AdminUser[] }>('/api/admin/users').then((r) => r.users),
 
-  createUser: (data: { email: string; password: string; name?: string; role?: string }) =>
+  createUser: (data: { username: string; email: string; password: string; nickname?: string; role?: string }) =>
     api.post<AdminUser>('/api/admin/users', data),
 
-  updateUser: (id: string, data: { name?: string; role?: string; status?: string }) =>
+  updateUser: (id: string, data: { nickname?: string; role?: string; status?: string }) =>
     api.patch<AdminUser>(`/api/admin/users/${id}`, data),
 
   changePassword: (id: string, password: string) =>

@@ -146,7 +146,8 @@ const styles = {
 }
 
 export function RegisterPage() {
-  const [name, setName] = useState('')
+  const [username, setUsername] = useState('')
+  const [nickname, setNickname] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -161,7 +162,7 @@ export function RegisterPage() {
     setIsLoading(true)
 
     try {
-      await authApi.register(email, password, name || undefined)
+      await authApi.register(username, email, password, nickname || undefined)
       navigate('/login')
     } catch (err: any) {
       setError(err.message || 'Registration failed')
@@ -189,14 +190,31 @@ export function RegisterPage() {
             <User size={20} style={styles.inputIcon} />
             <input
               type="text"
-              placeholder="Your name (optional)"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onFocus={() => setFocusedInput('name')}
+              placeholder="Username (required)"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              onFocus={() => setFocusedInput('username')}
               onBlur={() => setFocusedInput(null)}
               style={{
                 ...styles.input,
-                ...(focusedInput === 'name' ? styles.inputFocus : {}),
+                ...(focusedInput === 'username' ? styles.inputFocus : {}),
+              }}
+              required
+            />
+          </div>
+
+          <div style={styles.inputWrapper}>
+            <User size={20} style={styles.inputIcon} />
+            <input
+              type="text"
+              placeholder="Nickname (optional)"
+              value={nickname}
+              onChange={(e) => setNickname(e.target.value)}
+              onFocus={() => setFocusedInput('nickname')}
+              onBlur={() => setFocusedInput(null)}
+              style={{
+                ...styles.input,
+                ...(focusedInput === 'nickname' ? styles.inputFocus : {}),
               }}
             />
           </div>

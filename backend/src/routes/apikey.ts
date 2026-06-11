@@ -19,7 +19,7 @@ export async function apiKeyRoutes(app: FastifyInstance) {
   }, async () => {
     const keys = await prisma.apiKey.findMany({
       include: {
-        user: { select: { id: true, email: true, name: true } },
+        user: { select: { id: true, email: true, nickname: true } },
       },
       orderBy: { createdAt: 'desc' },
     })
@@ -27,7 +27,7 @@ export async function apiKeyRoutes(app: FastifyInstance) {
     return keys.map((k) => ({
       id: k.id,
       userId: k.userId,
-      userName: k.user.name || k.user.email,
+      userName: k.user.nickname || k.user.email,
       name: k.name,
       prefix: k.prefix,
       lastUsedAt: k.lastUsedAt,
