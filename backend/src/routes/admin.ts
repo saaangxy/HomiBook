@@ -120,6 +120,16 @@ export async function adminRoutes(app: FastifyInstance) {
       return reply.status(404).send({ message: '用户不存在' })
     }
 
+    // 不能将最后一个管理员的角色降级
+    if (user.role === 'ADMIN' && parsed.data.role && parsed.data.role !== 'ADMIN') {
+      const adminCount = await prisma.user.count({
+        where: { role: 'ADMIN', status: 'ACTIVE' },
+      })
+      if (adminCount <= 1) {
+        return reply.status(400).send({ message: '不能移除唯一管理员的权限' })
+      }
+    }
+
     const updated = await prisma.user.update({
       where: { id },
       data: parsed.data,
