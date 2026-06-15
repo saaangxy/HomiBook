@@ -30,6 +30,7 @@ export interface UnmatchedAccount {
 export interface UnmatchedCategory {
   sourceCategory: string
   suggestedCode: string | null
+  types: string[]  // 该分类在数据中出现的记录类型：INCOME | EXPENSE | TRANSFER
 }
 
 export interface DictEntry {

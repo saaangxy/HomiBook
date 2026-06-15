@@ -70,6 +70,25 @@ const TYPE_COLORS: Record<string, string> = {
   TRANSFER: 'text-[#3b82f6]',
 }
 
+const TYPE_BG: Record<string, string> = {
+  INCOME: 'bg-[#22c55e]/10 border-[#22c55e]/30',
+  EXPENSE: 'bg-[#ef4444]/10 border-[#ef4444]/30',
+  TRANSFER: 'bg-[#3b82f6]/10 border-[#3b82f6]/30',
+}
+
+// 记录类型 → 字典分组映射
+const TYPE_TO_GROUP: Record<string, string> = {
+  EXPENSE: 'transaction_category_expense',
+  INCOME: 'transaction_category_income',
+  TRANSFER: 'transaction_category_transfer',
+}
+
+const GROUP_HEADING: Record<string, string> = {
+  transaction_category_expense: '支出分类',
+  transaction_category_income: '收入分类',
+  transaction_category_transfer: '转账分类',
+}
+
 function TrucCell({ text, maxW = 'max-w-[100px]', className = '' }: { text: string | null | undefined; maxW?: string; className?: string }) {
   const display = text || '-'
   return (
@@ -528,73 +547,107 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
               )}
 
               {/* 未映射分类 */}
-              {unmatchedCategories.length > 0 && (
+              {unmatchedCategories.length > 0 && (() => {
+                // 按类型分组
+                const grouped = new Map<string, typeof unmatchedCategories>()
+                for (const uc of unmatchedCategories) {
+                  for (const t of uc.types) {
+                    const list = grouped.get(t) || []
+                    list.push(uc)
+                    grouped.set(t, list)
+                  }
+                }
+                return (
                 <div>
                   <p className="text-sm font-medium mb-2">
                     <AlertCircle size={14} className="inline text-yellow-500 mr-1" />
                     未映射的分类 ({unmatchedCategories.length})
                   </p>
-                  <div className="space-y-2">
-                    {unmatchedCategories.map(uc => {
-                      const cr = categoryResolutions[uc.sourceCategory]
-                      const selectedItem = allDictItems.find(d => d.code === cr?.targetCode)
-                      const updateCr = (patch: Partial<typeof cr>) => setCategoryResolutions({
-                        ...categoryResolutions,
-                        [uc.sourceCategory]: { ...cr, targetCode: cr?.targetCode ?? '', save: cr?.save ?? true, payerContains: cr?.payerContains ?? '', descriptionContains: cr?.descriptionContains ?? '', ...patch },
-                      })
+                  <div className="space-y-3">
+                    {(['EXPENSE', 'INCOME', 'TRANSFER'] as const).map(type => {
+                      const items = grouped.get(type)
+                      if (!items || items.length === 0) return null
                       return (
-                      <div key={uc.sourceCategory} className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 flex-wrap">
-                        <span className="text-sm min-w-[72px]">{uc.sourceCategory}</span>
-                        <Input
-                          placeholder="交易方包含"
-                          value={cr?.payerContains || ''}
-                          onChange={(e) => updateCr({ payerContains: e.target.value })}
-                          className="h-8 text-xs w-[110px] bg-background"
-                        />
-                        <Input
-                          placeholder="说明包含"
-                          value={cr?.descriptionContains || ''}
-                          onChange={(e) => updateCr({ descriptionContains: e.target.value })}
-                          className="h-8 text-xs w-[110px] bg-background"
-                        />
-                        <span className="text-xs text-muted-foreground">→</span>
-                        <Popover open={comboOpen === uc.sourceCategory} onOpenChange={(o) => setComboOpen(o ? uc.sourceCategory : null)}>
-                          <PopoverTrigger asChild>
-                            <Button variant="outline" size="sm" className="h-8 text-xs flex-1 min-w-[140px] justify-between bg-background font-normal">
-                              {selectedItem ? (
-                                <span>{selectedItem.code} <span className="text-muted-foreground ml-1">{selectedItem.label}</span></span>
-                              ) : (
-                                <span className="text-muted-foreground">选择系统分类…</span>
-                              )}
-                              <ChevronDown size={12} className="ml-1 shrink-0 opacity-50" />
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-[260px] p-0" align="start">
-                            <Command>
-                              <CommandInput placeholder="搜索分类..." className="h-8 text-xs" />
-                              <CommandList className="max-h-56">
-                                <CommandEmpty className="text-xs py-4 text-center text-muted-foreground">无匹配分类</CommandEmpty>
-                                <CategoryCommandGroup heading="支出分类" groupKey="transaction_category_expense" items={allDictItems} selectedCode={cr?.targetCode} onSelect={(code) => { updateCr({ targetCode: code }); setComboOpen(null) }} />
-                                <CategoryCommandGroup heading="收入分类" groupKey="transaction_category_income" items={allDictItems} selectedCode={cr?.targetCode} onSelect={(code) => { updateCr({ targetCode: code }); setComboOpen(null) }} />
-                                <CategoryCommandGroup heading="转账分类" groupKey="transaction_category_transfer" items={allDictItems} selectedCode={cr?.targetCode} onSelect={(code) => { updateCr({ targetCode: code }); setComboOpen(null) }} />
-                              </CommandList>
-                            </Command>
-                          </PopoverContent>
-                        </Popover>
-                        <label className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer whitespace-nowrap">
-                          <input
-                            type="checkbox"
-                            checked={cr?.save ?? true}
-                            onChange={(e) => updateCr({ save: e.target.checked })}
-                            className="rounded"
-                          />
-                          保存
-                        </label>
+                      <div key={type}>
+                        <Badge variant="outline" className={`text-[11px] mb-1.5 px-2 py-0.5 ${TYPE_BG[type]} ${TYPE_COLORS[type]}`}>
+                          {TYPE_LABELS[type]}（{items.length}）
+                        </Badge>
+                        <div className="space-y-2">
+                          {items.map(uc => {
+                            const cr = categoryResolutions[uc.sourceCategory]
+                            const selectedItem = allDictItems.find(d => d.code === cr?.targetCode)
+                            const allowedGroups = (uc.types || []).map(t => TYPE_TO_GROUP[t]).filter(Boolean)
+                            const filteredItems = allowedGroups.length > 0
+                              ? allDictItems.filter(d => allowedGroups.includes(d.group))
+                              : allDictItems
+                            const updateCr = (patch: Partial<typeof cr>) => setCategoryResolutions({
+                              ...categoryResolutions,
+                              [uc.sourceCategory]: { ...cr, targetCode: cr?.targetCode ?? '', save: cr?.save ?? true, payerContains: cr?.payerContains ?? '', descriptionContains: cr?.descriptionContains ?? '', ...patch },
+                            })
+                            return (
+                            <div key={uc.sourceCategory} className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 flex-wrap">
+                              <span className="text-sm min-w-[72px]">{uc.sourceCategory}</span>
+                              <Input
+                                placeholder="交易方包含"
+                                value={cr?.payerContains || ''}
+                                onChange={(e) => updateCr({ payerContains: e.target.value })}
+                                className="h-8 text-xs w-[110px] bg-background"
+                              />
+                              <Input
+                                placeholder="说明包含"
+                                value={cr?.descriptionContains || ''}
+                                onChange={(e) => updateCr({ descriptionContains: e.target.value })}
+                                className="h-8 text-xs w-[110px] bg-background"
+                              />
+                              <span className="text-xs text-muted-foreground">→</span>
+                              <Popover open={comboOpen === uc.sourceCategory} onOpenChange={(o) => setComboOpen(o ? uc.sourceCategory : null)}>
+                                <PopoverTrigger asChild>
+                                  <Button variant="outline" size="sm" className="h-8 text-xs flex-1 min-w-[140px] justify-between bg-background font-normal">
+                                    {selectedItem ? (
+                                      <span>{selectedItem.code} <span className="text-muted-foreground ml-1">{selectedItem.label}</span></span>
+                                    ) : (
+                                      <span className="text-muted-foreground">选择系统分类…</span>
+                                    )}
+                                    <ChevronDown size={12} className="ml-1 shrink-0 opacity-50" />
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-[260px] p-0" align="start">
+                                  <Command>
+                                    <CommandInput placeholder="搜索分类..." className="h-8 text-xs" />
+                                    <CommandList className="max-h-56">
+                                      <CommandEmpty className="text-xs py-4 text-center text-muted-foreground">无匹配分类</CommandEmpty>
+                                      {allowedGroups.length > 0 ? (
+                                        allowedGroups.map(g => (
+                                          <CategoryCommandGroup key={g} heading={GROUP_HEADING[g]} groupKey={g} items={filteredItems} selectedCode={cr?.targetCode} onSelect={(code) => { updateCr({ targetCode: code }); setComboOpen(null) }} />
+                                        ))
+                                      ) : (
+                                        <>
+                                          <CategoryCommandGroup heading="支出分类" groupKey="transaction_category_expense" items={allDictItems} selectedCode={cr?.targetCode} onSelect={(code) => { updateCr({ targetCode: code }); setComboOpen(null) }} />
+                                          <CategoryCommandGroup heading="收入分类" groupKey="transaction_category_income" items={allDictItems} selectedCode={cr?.targetCode} onSelect={(code) => { updateCr({ targetCode: code }); setComboOpen(null) }} />
+                                          <CategoryCommandGroup heading="转账分类" groupKey="transaction_category_transfer" items={allDictItems} selectedCode={cr?.targetCode} onSelect={(code) => { updateCr({ targetCode: code }); setComboOpen(null) }} />
+                                        </>
+                                      )}
+                                    </CommandList>
+                                  </Command>
+                                </PopoverContent>
+                              </Popover>
+                              <label className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer whitespace-nowrap">
+                                <input
+                                  type="checkbox"
+                                  checked={cr?.save ?? true}
+                                  onChange={(e) => updateCr({ save: e.target.checked })}
+                                  className="rounded"
+                                />
+                                保存
+                              </label>
+                            </div>
+                          )})}
+                        </div>
                       </div>
                     )})}
                   </div>
                 </div>
-              )}
+              )})()}
 
               {/* 预览记录表 */}
               {previewRecords.length > 0 && (

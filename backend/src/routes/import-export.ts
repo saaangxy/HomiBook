@@ -365,8 +365,17 @@ async function resolveCategories(source: string, rows: ParsedRow[]) {
     return best
   }
 
+  // 收集每个分类出现的记录类型
+  const categoryTypes = new Map<string, Set<string>>()
+  for (const r of rows) {
+    if (!r.categoryCode) continue
+    const types = categoryTypes.get(r.categoryCode) || new Set()
+    types.add(r.type)
+    categoryTypes.set(r.categoryCode, types)
+  }
+
   // 未映射的分类
-  const unmatched: { sourceCategory: string; suggestedCode: string | null }[] = []
+  const unmatched: { sourceCategory: string; suggestedCode: string | null; types: string[] }[] = []
   const seen = new Set<string>()
 
   for (const cat of sourceCategories) {
@@ -385,7 +394,7 @@ async function resolveCategories(source: string, rows: ParsedRow[]) {
         break
       }
     }
-    unmatched.push({ sourceCategory: cat, suggestedCode: matched })
+    unmatched.push({ sourceCategory: cat, suggestedCode: matched, types: [...(categoryTypes.get(cat) || [])] })
   }
 
   // 填充 mappedCategoryCode
