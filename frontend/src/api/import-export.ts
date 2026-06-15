@@ -3,7 +3,7 @@ import { api } from './http'
 // 预览导入 — 解析后的记录
 export interface ParsedImportRow {
   date: string
-  type: 'INCOME' | 'EXPENSE' | 'TRANSFER'
+  type: 'INCOME' | 'EXPENSE' | 'TRANSFER' | 'UNKNOWN'
   amount: number
   accountName: string
   accountId: string | null
@@ -42,6 +42,7 @@ export interface DictEntry {
 // 预览结果
 export interface ImportPreviewResult {
   records: ParsedImportRow[]
+  unrecognizedRecords: ParsedImportRow[]
   unmatchedAccounts: UnmatchedAccount[]
   unmatchedCategories: UnmatchedCategory[]
   allDictItems: DictEntry[]
@@ -49,6 +50,7 @@ export interface ImportPreviewResult {
     totalRows: number
     parsedRows: number
     skippedRows: number
+    unrecognizedCount: number
     errors: string[]
   }
 }

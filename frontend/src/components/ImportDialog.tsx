@@ -143,6 +143,10 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
   const [showAllRecords, setShowAllRecords] = useState(false)
   const [comboOpen, setComboOpen] = useState<string | null>(null) // 当前打开的 combobox 对应的 sourceCategory
 
+  // 无法自动识别的记录（不计收支未知类型）
+  const [unrecognizedRecords, setUnrecognizedRecords] = useState<ParsedImportRow[]>([])
+  const [unrecognizedResolutions, setUnrecognizedResolutions] = useState<Record<number, { type: string; accountId: string; categoryCode: string }>>({})
+
   // 结果
   const [importResult, setImportResult] = useState<{ imported: number; accountsCreated: number } | null>(null)
 
@@ -162,6 +166,8 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
     setAccountResolutions({})
     setCategoryResolutions({})
     setShowAllRecords(false)
+    setUnrecognizedRecords([])
+    setUnrecognizedResolutions({})
     setImportResult(null)
   }
 
@@ -200,6 +206,18 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
         catRes[uc.sourceCategory] = { targetCode: uc.suggestedCode || '', save: true, payerContains: '', descriptionContains: '' }
       }
       setCategoryResolutions(catRes)
+
+      // 初始化无法识别的记录
+      setUnrecognizedRecords(result.unrecognizedRecords || [])
+      const unresRes: Record<number, { type: string; accountId: string; categoryCode: string }> = {}
+      for (const r of result.unrecognizedRecords || []) {
+        unresRes[r.rowIndex] = {
+          type: '',
+          accountId: r.accountId || accounts[0]?.id || '',
+          categoryCode: r.mappedCategoryCode || r.categoryCode || '',
+        }
+      }
+      setUnrecognizedResolutions(unresRes)
 
       setStep('preview')
     } catch (e: any) {
@@ -288,10 +306,33 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
         }
       })
 
+      // 合并已手动处理的无法识别记录
+      const resolvedUnrecognized = unrecognizedRecords
+        .filter(r => {
+          const res = unrecognizedResolutions[r.rowIndex]
+          return res?.type && res?.accountId
+        })
+        .map(r => {
+          const res = unrecognizedResolutions[r.rowIndex]
+          return {
+            date: r.date,
+            type: res.type,
+            amount: r.amount,
+            accountId: res.accountId,
+            toAccountId: undefined as string | undefined,
+            categoryCode: res.categoryCode || r.mappedCategoryCode || r.categoryCode || null,
+            payer: r.payer,
+            remark: r.remark,
+            tags: r.tags,
+          }
+        })
+
+      const allRecords = [...records, ...resolvedUnrecognized]
+
       const result = await importExportApi.import({
         accountBookId: bookId,
         source,
-        records,
+        records: allRecords,
         accountCreations,
         newMappings,
       })
@@ -315,7 +356,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogTrigger />
-      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+      <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col">
         {/* Step 1: 选择来源 */}
         {step === 'source' && (
           <>
@@ -454,7 +495,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                     <p className="text-xs text-muted-foreground mt-1">跳过</p>
                   </div>
                   <div className="rounded-lg bg-muted p-3 text-center">
-                    <p className="text-2xl font-semibold">{unmatchedAccounts.length + unmatchedCategories.length}</p>
+                    <p className="text-2xl font-semibold">{unmatchedAccounts.length + unmatchedCategories.length + unrecognizedRecords.length}</p>
                     <p className="text-xs text-muted-foreground mt-1">待处理</p>
                   </div>
                 </div>
@@ -649,6 +690,81 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                 </div>
               )})()}
 
+              {/* 无法自动识别的记录 */}
+              {unrecognizedRecords.length > 0 && (
+                <div>
+                  <p className="text-sm font-medium mb-2">
+                    <AlertCircle size={14} className="inline text-orange-500 mr-1" />
+                    需手动处理的记录 ({unrecognizedRecords.length})
+                  </p>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    以下记录无法自动识别类型，请手动设置类型、账户和分类后导入。未设置的记录将被跳过。
+                  </p>
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {unrecognizedRecords.map(r => {
+                      const res = unrecognizedResolutions[r.rowIndex]
+                      const isResolved = !!(res?.type && res?.accountId)
+                      const updateRes = (patch: Partial<typeof res>) => {
+                        const cur = unrecognizedResolutions[r.rowIndex] || { type: '', accountId: '', categoryCode: '' }
+                        setUnrecognizedResolutions({ ...unrecognizedResolutions, [r.rowIndex]: { ...cur, ...patch } })
+                      }
+                      // 按类型筛选可选分类
+                      const resolvedType = res?.type
+                      const allowedGroup = resolvedType ? TYPE_TO_GROUP[resolvedType] : null
+                      const filteredCategories = allowedGroup
+                        ? allDictItems.filter(d => d.group === allowedGroup)
+                        : allDictItems
+                      return (
+                        <div key={r.rowIndex} className={`flex items-center gap-2 p-3 rounded-lg border text-xs ${isResolved ? 'border-[#22c55e]/30 bg-[#22c55e]/5' : 'border-orange-300 bg-orange-50 dark:bg-orange-950/20'}`}>
+                          <span className="font-mono whitespace-nowrap text-muted-foreground">{new Date(r.date).toLocaleDateString('zh-CN')}</span>
+                          <span className="font-mono whitespace-nowrap">{r.amount.toFixed(2)}</span>
+                          <TrucCell text={r.accountName} maxW="max-w-[60px]" />
+                          <TrucCell text={r.payer} maxW="max-w-[60px]" className="text-muted-foreground" />
+                          <TrucCell text={r.remark} maxW="max-w-[120px]" className="text-muted-foreground" />
+                          <Select value={res?.type || ''} onValueChange={(v) => updateRes({ type: v, categoryCode: '' })}>
+                            <SelectTrigger className="h-8 text-xs w-20 shrink-0 bg-background">
+                              <SelectValue placeholder="类型" />
+                            </SelectTrigger>
+                            <SelectContent className="bg-card border-border">
+                              <SelectItem value="EXPENSE" className="text-xs">支出</SelectItem>
+                              <SelectItem value="INCOME" className="text-xs">收入</SelectItem>
+                              <SelectItem value="TRANSFER" className="text-xs">转账</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Select value={res?.accountId || ''} onValueChange={(v) => updateRes({ accountId: v })}>
+                            <SelectTrigger className="h-8 text-xs w-28 shrink-0 bg-background">
+                              <SelectValue placeholder="选择账户" />
+                            </SelectTrigger>
+                            <SelectContent className="bg-card border-border max-h-48">
+                              {accounts.map(a => (
+                                <SelectItem key={a.id} value={a.id} className="text-xs">{a.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Select value={res?.categoryCode || ''} onValueChange={(v) => updateRes({ categoryCode: v })}>
+                            <SelectTrigger className="h-8 text-xs w-32 shrink-0 bg-background">
+                              <SelectValue placeholder="选择分类" />
+                            </SelectTrigger>
+                            <SelectContent className="bg-card border-border max-h-48">
+                              {filteredCategories.map(d => (
+                                <SelectItem key={d.code} value={d.code} className="text-xs">
+                                  {d.code} {d.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {isResolved ? (
+                            <CheckCircle size={14} className="text-[#22c55e] shrink-0" />
+                          ) : (
+                            <span className="text-[10px] text-orange-500 shrink-0">未设置</span>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* 预览记录表 */}
               {previewRecords.length > 0 && (
                 <div>
@@ -725,9 +841,13 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
               <Button
                 className="bg-primary hover:bg-primary/90 text-primary-foreground"
                 onClick={handleImport}
-                disabled={loading || previewRecords.length === 0}
+                disabled={loading || (previewRecords.length === 0 && unrecognizedRecords.filter(r => unrecognizedResolutions[r.rowIndex]?.type && unrecognizedResolutions[r.rowIndex]?.accountId).length === 0)}
               >
-                {loading ? <Spinner /> : `导入 ${previewRecords.length} 条记录`}
+                {(() => {
+                  const resolvedCount = unrecognizedRecords.filter(r => unrecognizedResolutions[r.rowIndex]?.type && unrecognizedResolutions[r.rowIndex]?.accountId).length
+                  const total = previewRecords.length + resolvedCount
+                  return loading ? <Spinner /> : `导入 ${total} 条记录`
+                })()}
               </Button>
             </DialogFooter>
           </>

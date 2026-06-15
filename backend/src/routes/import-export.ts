@@ -73,7 +73,7 @@ async function assertIsMember(bookId: string, userId: string) {
 
 interface ParsedRow {
   date: string
-  type: 'INCOME' | 'EXPENSE' | 'TRANSFER'
+  type: 'INCOME' | 'EXPENSE' | 'TRANSFER' | 'UNKNOWN'
   amount: number
   accountName: string
   accountId: string | null
@@ -167,7 +167,7 @@ function parseAlipayCSV(buffer: Buffer): { rows: ParsedRow[]; errors: string[] }
       }
 
       // 确定记录类型
-      let recordType: 'INCOME' | 'EXPENSE' | 'TRANSFER' = 'EXPENSE'
+      let recordType: 'INCOME' | 'EXPENSE' | 'TRANSFER' | 'UNKNOWN' = 'EXPENSE'
       let toAccountName: string | null = null
 
       if (direction === '收入') {
@@ -175,8 +175,8 @@ function parseAlipayCSV(buffer: Buffer): { rows: ParsedRow[]; errors: string[] }
       } else if (direction === '支出') {
         recordType = 'EXPENSE'
       } else if (direction === '不计支出' || direction === '不计收支') {
-        // 花呗还款 → 转账（交易对方=花呗，或商品说明含花呗还款）
-        const isHuabeiRepay = (category === '金融借贷' || counterparty === '花呗')
+        // 花呗还款 → 转账
+        const isHuabeiRepay = (category === '金融借贷' || category === '信用借还' || counterparty === '花呗')
           && (counterparty === '花呗' || /花呗/.test(description))
         // 余额宝转入/转出 → 转账
         const isYueBaoTransfer = category === '投资理财'
@@ -186,13 +186,27 @@ function parseAlipayCSV(buffer: Buffer): { rows: ParsedRow[]; errors: string[] }
           && (counterparty === '蚂蚁财富' || /蚂蚁财富/.test(description) || /蚂蚁智还/.test(description))
         // 余额宝收益 / 基金分红 → 收入
         const isIncome = /收益|分红/.test(description) || /收益/.test(counterparty)
+        // 提现：支付宝→银行卡
+        const isWithdraw = /提现/.test(description)
+          && (counterparty || '').length > 0
+          && !ALIPAY_INTERNAL_PATTERN.test(counterparty)
+        // 充值：银行卡→支付宝
+        const isTopup = /充值/.test(description)
 
         if (isHuabeiRepay) {
           recordType = 'TRANSFER'
           toAccountName = '支付宝'
         } else if (isIncome) {
-          // 收益/分红优先于转账判断（余额宝收益、基金分红等）
+          // 收益/分红优先于转账判断
           recordType = 'INCOME'
+        } else if (isWithdraw) {
+          // 提现：支付宝内部账户 → 银行卡
+          recordType = 'TRANSFER'
+          toAccountName = counterparty
+        } else if (isTopup) {
+          // 充值：银行卡 → 支付宝内部账户
+          recordType = 'TRANSFER'
+          toAccountName = '支付宝'
         } else if (isYueBaoTransfer) {
           recordType = 'TRANSFER'
           toAccountName = '支付宝'
@@ -207,7 +221,8 @@ function parseAlipayCSV(buffer: Buffer): { rows: ParsedRow[]; errors: string[] }
         } else if (status === '退款成功') {
           recordType = 'INCOME'
         } else {
-          recordType = 'EXPENSE'
+          // 无法自动识别 → 标记为需手动处理
+          recordType = 'UNKNOWN'
         }
       } else if (direction === '不计收入') {
         if (/余额宝.*收益/.test(description)) {
@@ -493,29 +508,37 @@ export async function importExportRoutes(app: FastifyInstance) {
     // 匹配分类
     const { unmatched: unmatchedCategories, allDictItems } = await resolveCategories(source, parseResult.rows)
 
+    // 分离正常记录和无法自动识别的记录
+    const normalRecords = parseResult.rows.filter(r => r.type !== 'UNKNOWN')
+    const unrecognizedRecords = parseResult.rows.filter(r => r.type === 'UNKNOWN')
+
+    const mapRow = (r: ParsedRow) => ({
+      date: r.date,
+      type: r.type,
+      amount: r.amount,
+      accountName: r.accountName,
+      accountId: r.accountId,
+      toAccountName: r.toAccountName,
+      toAccountId: r.toAccountId,
+      categoryCode: r.categoryCode,
+      mappedCategoryCode: r.mappedCategoryCode,
+      payer: r.payer,
+      remark: r.remark,
+      tags: r.tags,
+      rowIndex: r.rowIndex,
+    })
+
     return {
-      records: parseResult.rows.map(r => ({
-        date: r.date,
-        type: r.type,
-        amount: r.amount,
-        accountName: r.accountName,
-        accountId: r.accountId,
-        toAccountName: r.toAccountName,
-        toAccountId: r.toAccountId,
-        categoryCode: r.categoryCode,
-        mappedCategoryCode: r.mappedCategoryCode,
-        payer: r.payer,
-        remark: r.remark,
-        tags: r.tags,
-        rowIndex: r.rowIndex,
-      })),
+      records: normalRecords.map(mapRow),
+      unrecognizedRecords: unrecognizedRecords.map(mapRow),
       unmatchedAccounts,
       unmatchedCategories,
       allDictItems,
       stats: {
         totalRows: parseResult.rows.length + parseResult.errors.length,
-        parsedRows: parseResult.rows.length,
+        parsedRows: normalRecords.length,
         skippedRows: parseResult.errors.length,
+        unrecognizedCount: unrecognizedRecords.length,
         errors: parseResult.errors,
       },
     }
