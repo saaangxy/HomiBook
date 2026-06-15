@@ -47,7 +47,8 @@ import { Spinner } from '@/components/ui/spinner'
 import { settingsApi, type DictItem } from '@/api/settings'
 import { holidayApi } from '@/api/holiday'
 import { ThemeSelector } from '@/components/ThemeSelector'
-import { Plus, Pencil, Trash2, Settings, BookOpen, Check, FolderOpen, FileSearch, RefreshCw, Key, Copy, EyeOff } from 'lucide-react'
+import { importExportApi, type CategoryMapping } from '@/api/import-export'
+import { Plus, Pencil, Trash2, Settings, BookOpen, Check, FolderOpen, FileSearch, RefreshCw, Key, Copy, EyeOff, Link2 } from 'lucide-react'
 import { apikeyApi, type ApiKeyItem, type ApiKeyCreated } from '@/api/apikey'
 
 const DICT_GROUPS: { key: string; label: string }[] = [
@@ -115,6 +116,21 @@ export function SettingsPage() {
   const [keyCopied, setKeyCopied] = useState(false)
 
   const [deleteApiKeyTarget, setDeleteApiKeyTarget] = useState<ApiKeyItem | null>(null)
+
+  // 导入分类映射管理
+  const [mappingSource, setMappingSource] = useState('alipay')
+  const [mappings, setMappings] = useState<CategoryMapping[]>([])
+  const [mappingsLoading, setMappingsLoading] = useState(false)
+  const [mappingsError, setMappingsError] = useState('')
+  const [mappingAddOpen, setMappingAddOpen] = useState(false)
+  const [mappingNewSourceCategory, setMappingNewSourceCategory] = useState('')
+  const [mappingNewPayerContains, setMappingNewPayerContains] = useState('')
+  const [mappingNewDescriptionContains, setMappingNewDescriptionContains] = useState('')
+  const [mappingNewTargetCode, setMappingNewTargetCode] = useState('')
+  const [mappingFormError, setMappingFormError] = useState('')
+  const [mappingSubmitting, setMappingSubmitting] = useState(false)
+  const [mappingDeleteTarget, setMappingDeleteTarget] = useState<CategoryMapping | null>(null)
+  const [allCategoryCodes, setAllCategoryCodes] = useState<string[]>([])
 
   // 加载通用配置
   useEffect(() => {
@@ -299,6 +315,10 @@ export function SettingsPage() {
     if (value.includes('apikeys')) {
       loadApiKeys()
     }
+    if (value.includes('import-mappings')) {
+      loadMappings(mappingSource)
+      loadAllCategoryCodes()
+    }
   }
 
   // 创建 API Key
@@ -334,6 +354,75 @@ export function SettingsPage() {
     setApiKeyFormName('')
     setApiKeyFormError('')
     setApiKeySubmitting(false)
+  }
+
+  // 加载分类映射
+  const loadMappings = useCallback(async (source: string) => {
+    setMappingsLoading(true)
+    setMappingsError('')
+    try {
+      const result = await importExportApi.getMappings(source)
+      setMappings(result.mappings)
+    } catch (e: any) {
+      setMappingsError(e.message)
+    } finally {
+      setMappingsLoading(false)
+    }
+  }, [])
+
+  // 加载全部分类编码（用于映射目标选择）
+  const loadAllCategoryCodes = useCallback(async () => {
+    try {
+      const groups = ['transaction_category_income', 'transaction_category_expense', 'transaction_category_transfer']
+      const results = await Promise.all(groups.map((g) => settingsApi.getDictionary(g)))
+      const codes: string[] = []
+      const seen = new Set<string>()
+      for (const arr of results) {
+        for (const item of arr) {
+          if (!seen.has(item.code)) { seen.add(item.code); codes.push(item.code) }
+        }
+      }
+      setAllCategoryCodes(codes)
+    } catch { /* ignore */ }
+  }, [])
+
+  // 新增映射
+  const handleAddMapping = async () => {
+    if (!mappingNewSourceCategory.trim()) { setMappingFormError('请输入CSV分类名'); return }
+    if (!mappingNewTargetCode) { setMappingFormError('请选择目标系统分类'); return }
+    setMappingSubmitting(true)
+    setMappingFormError('')
+    try {
+      await importExportApi.saveMappings([{
+        source: mappingSource,
+        sourceCategory: mappingNewSourceCategory.trim(),
+        payerContains: mappingNewPayerContains.trim() || undefined,
+        descriptionContains: mappingNewDescriptionContains.trim() || undefined,
+        targetCategoryCode: mappingNewTargetCode,
+      }])
+      setMappingAddOpen(false)
+      setMappingNewSourceCategory('')
+      setMappingNewPayerContains('')
+      setMappingNewDescriptionContains('')
+      setMappingNewTargetCode('')
+      loadMappings(mappingSource)
+    } catch (e: any) {
+      setMappingFormError(e.message)
+    } finally {
+      setMappingSubmitting(false)
+    }
+  }
+
+  // 删除映射
+  const handleDeleteMapping = async () => {
+    if (!mappingDeleteTarget) return
+    try {
+      await importExportApi.deleteMapping(mappingDeleteTarget.id)
+      setMappingDeleteTarget(null)
+      loadMappings(mappingSource)
+    } catch (e: any) {
+      setMappingsError(e.message)
+    }
   }
 
   if (configLoading) {
@@ -829,6 +918,98 @@ export function SettingsPage() {
             )}
           </AccordionContent>
         </AccordionItem>
+
+        {/* 导入分类映射 */}
+        <AccordionItem value="import-mappings" className="border rounded-xl px-5">
+          <AccordionTrigger className="text-base font-semibold hover:no-underline">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                <Link2 size={16} className="text-primary" />
+              </div>
+              导入分类映射
+            </div>
+          </AccordionTrigger>
+          <AccordionContent className="pt-2 pb-5">
+            <p className="text-sm text-muted-foreground mb-4">
+              将 CSV 文件中的交易分类映射到系统中的分类编码，导入时自动匹配。
+            </p>
+
+            {mappingsError && (
+              <Alert variant="destructive" className="mb-4">
+                <AlertDescription>{mappingsError}</AlertDescription>
+              </Alert>
+            )}
+
+            <div className="flex items-center justify-between mb-3">
+              <Select value={mappingSource} onValueChange={(v) => { setMappingSource(v); loadMappings(v) }}>
+                <SelectTrigger className="w-28 h-8 text-xs bg-background">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-card border-border">
+                  <SelectItem value="alipay" className="text-xs">支付宝</SelectItem>
+                  <SelectItem value="wechat" className="text-xs">微信</SelectItem>
+                  <SelectItem value="csv" className="text-xs">其他CSV</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                size="sm"
+                onClick={() => { setMappingNewSourceCategory(''); setMappingNewPayerContains(''); setMappingNewDescriptionContains(''); setMappingNewTargetCode(''); setMappingFormError(''); setMappingAddOpen(true) }}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground h-8 text-xs"
+              >
+                <Plus size={14} /> 新增映射
+              </Button>
+            </div>
+
+            {mappingsLoading ? (
+              <Spinner className="py-8" />
+            ) : mappings.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center gap-2 border rounded-lg border-dashed">
+                <Link2 size={28} className="opacity-25" />
+                <p className="text-sm text-muted-foreground">暂无映射</p>
+              </div>
+            ) : (
+              <div className="border rounded-lg overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/50 hover:bg-muted/50">
+                      <TableHead className="text-xs">CSV 原始分类</TableHead>
+                      <TableHead className="text-xs">交易方包含</TableHead>
+                      <TableHead className="text-xs">说明包含</TableHead>
+                      <TableHead className="text-xs">系统分类编码</TableHead>
+                      <TableHead className="text-xs w-16 text-right">操作</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {mappings.map((m) => (
+                      <TableRow key={m.id} className="hover:bg-accent/50">
+                        <TableCell className="text-sm py-2.5">{m.sourceCategory}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground py-2.5">
+                          {m.payerContains || '—'}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground py-2.5">
+                          {m.descriptionContains || '—'}
+                        </TableCell>
+                        <TableCell className="text-xs font-mono text-muted-foreground py-2.5">
+                          {m.targetCategoryCode}
+                        </TableCell>
+                        <TableCell className="text-right py-2.5">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-[#ef4444]"
+                            onClick={() => setMappingDeleteTarget(m)}
+                          >
+                            <Trash2 size={13} />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </AccordionContent>
+        </AccordionItem>
       </Accordion>
 
       {/* 添加字典弹窗 */}
@@ -1043,6 +1224,95 @@ export function SettingsPage() {
             <AlertDialogAction
               className="bg-[#ef4444] hover:bg-[#dc2626]"
               onClick={handleDeleteApiKey}
+            >
+              确认删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* 新增分类映射弹窗 */}
+      <Dialog open={mappingAddOpen} onOpenChange={setMappingAddOpen}>
+        <DialogTrigger />
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>新增分类映射</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-3">
+            {mappingFormError && (
+              <Alert variant="destructive">
+                <AlertDescription>{mappingFormError}</AlertDescription>
+              </Alert>
+            )}
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">CSV 原始分类名</Label>
+              <Input
+                placeholder="例如：餐饮美食"
+                value={mappingNewSourceCategory}
+                onChange={(e) => { setMappingNewSourceCategory(e.target.value); setMappingFormError('') }}
+                className="bg-background border-border"
+                autoFocus
+              />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">交易方包含 (可选)</Label>
+              <Input
+                placeholder="例如：麦当劳，留空则不限制"
+                value={mappingNewPayerContains}
+                onChange={(e) => setMappingNewPayerContains(e.target.value)}
+                className="bg-background border-border"
+              />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">商品说明包含 (可选)</Label>
+              <Input
+                placeholder="例如：早餐，留空则不限制"
+                value={mappingNewDescriptionContains}
+                onChange={(e) => setMappingNewDescriptionContains(e.target.value)}
+                className="bg-background border-border"
+              />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">目标系统分类编码</Label>
+              <Select value={mappingNewTargetCode} onValueChange={setMappingNewTargetCode}>
+                <SelectTrigger className="bg-background border-border">
+                  <SelectValue placeholder="选择系统分类..." />
+                </SelectTrigger>
+                <SelectContent className="bg-card border-border max-h-48">
+                  {allCategoryCodes.map(code => (
+                    <SelectItem key={code} value={code} className="text-xs">{code}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMappingAddOpen(false)}>取消</Button>
+            <Button
+              className="bg-primary hover:bg-primary/90 text-primary-foreground"
+              onClick={handleAddMapping}
+              disabled={mappingSubmitting}
+            >
+              {mappingSubmitting ? '添加中...' : '添加'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 删除映射确认弹窗 */}
+      <AlertDialog open={!!mappingDeleteTarget} onOpenChange={() => setMappingDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除分类映射</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要删除 <strong className="text-[#ef4444]">{mappingDeleteTarget?.sourceCategory}</strong> → {mappingDeleteTarget?.targetCategoryCode} 的映射吗？
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-[#ef4444] hover:bg-[#dc2626]"
+              onClick={handleDeleteMapping}
             >
               确认删除
             </AlertDialogAction>

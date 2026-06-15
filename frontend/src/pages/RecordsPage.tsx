@@ -55,6 +55,8 @@ import { accountApi, type AccountItem } from '@/api/account'
 import { adminApi, type AdminUser } from '@/api/admin'
 import { settingsApi, type DictItem } from '@/api/settings'
 import { useBookStore } from '../stores/book'
+import { ImportDialog } from '@/components/ImportDialog'
+import { importExportApi } from '@/api/import-export'
 import {
   Plus, ArrowUpRight, ArrowDownRight, ArrowLeftRight,
   Pencil, Trash2, Copy, Filter, X, ChevronLeft, ChevronRight,
@@ -177,6 +179,9 @@ export function RecordsPage() {
 
   // 选择
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+
+  // 导入弹窗
+  const [importOpen, setImportOpen] = useState(false)
 
   // 弹窗状态
   const [createOpen, setCreateOpen] = useState(false)
@@ -655,6 +660,23 @@ export function RecordsPage() {
     setEditMode(false)
   }
 
+  const handleExport = () => {
+    if (!currentBookId) return
+    const params: Record<string, string | number> = { bookId: currentBookId }
+    if (filters.types.length > 0) params.type = filters.types.join(',')
+    if (filters.accountIds.length > 0) params.accountId = filters.accountIds.join(',')
+    if (filters.categoryCodes.length > 0) params.categoryCode = filters.categoryCodes.join(',')
+    if (filters.dateFrom) params.dateFrom = filters.dateFrom
+    if (filters.dateTo) params.dateTo = filters.dateTo
+    if (filters.ownerIds.length > 0) params.ownerId = filters.ownerIds.join(',')
+    if (filters.payer) params.payer = filters.payer
+    if (filters.amountFrom) params.amountFrom = filters.amountFrom
+    if (filters.amountTo) params.amountTo = filters.amountTo
+    if (filters.remark) params.remark = filters.remark
+    if (filters.tags.length > 0) params.tags = filters.tags.join(',')
+    importExportApi.exportCsv(params).catch(e => setError(e.message))
+  }
+
   // 空状态
   if (!currentBookId) {
     return (
@@ -787,6 +809,12 @@ export function RecordsPage() {
                 重置
               </Button>
             )}
+            <Button variant="outline" onClick={() => setImportOpen(true)} className="h-8 text-xs rounded-lg">
+              <Upload size={14} /> 导入
+            </Button>
+            <Button variant="outline" onClick={handleExport} className="h-8 text-xs rounded-lg">
+              <Download size={14} /> 导出
+            </Button>
           </div>
         </div>
 
@@ -1731,6 +1759,16 @@ export function RecordsPage() {
         open={viewingAttachments !== null}
         onOpenChange={() => setViewingAttachments(null)}
         attachments={viewingAttachments || []}
+      />
+
+      {/* 导入弹窗 */}
+      <ImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        bookId={currentBookId || ''}
+        accounts={accounts}
+        dictCodes={allCategories.map(c => ({ code: c.code, label: c.label, group: c.group }))}
+        onImportComplete={() => { loadRecords(); loadSummary(); loadAccounts(); loadCategories(); loadTags() }}
       />
     </div>
   )

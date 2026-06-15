@@ -9,6 +9,7 @@ import { holidayRoutes } from './routes/holiday.js'
 import { budgetRoutes } from './routes/budget.js'
 import { recurringRoutes } from './routes/recurring.js'
 import { apiKeyRoutes } from './routes/apikey.js'
+import { importExportRoutes } from './routes/import-export.js'
 import { seedDefaults } from './seed.js'
 import { startScheduler } from './services/scheduler.js'
 
@@ -29,6 +30,7 @@ async function main() {
   app.register(budgetRoutes, { prefix: '/api/budgets' })
   app.register(recurringRoutes, { prefix: '/api/recurring' })
   app.register(apiKeyRoutes, { prefix: '/api/apikeys' })
+  app.register(importExportRoutes, { prefix: '/api/records' })
 
   // 启动固定收支调度器
   startScheduler()

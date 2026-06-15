@@ -46,6 +46,23 @@ async function uploadFile(url: string, file: File): Promise<{ id: string; url: s
   return res.json()
 }
 
+async function uploadForm(url: string, file: File, extraFields: Record<string, string>): Promise<any> {
+  const token = getToken()
+  const formData = new FormData()
+  formData.append('file', file)
+  for (const [key, value] of Object.entries(extraFields)) {
+    formData.append(key, value)
+  }
+  const headers: Record<string, string> = {}
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  const res = await fetch(url, { method: 'POST', headers, body: formData })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ message: 'Upload failed' }))
+    throw new Error(error.message || `HTTP ${res.status}`)
+  }
+  return res.json()
+}
+
 export const api = {
   get: <T>(url: string) => request<T>(url),
   post: <T>(url: string, data: unknown) => request<T>(url, { method: 'POST', body: JSON.stringify(data) }),
@@ -53,4 +70,5 @@ export const api = {
   patch: <T>(url: string, data: unknown) => request<T>(url, { method: 'PATCH', body: JSON.stringify(data) }),
   delete: <T>(url: string) => request<T>(url, { method: 'DELETE' }),
   uploadFile,
+  uploadForm,
 }

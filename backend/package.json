@@ -20,7 +20,9 @@
     "@scalar/fastify-api-reference": "^1.58.0",
     "bcryptjs": "^3.0.3",
     "cron-parser": "^5.5.0",
+    "csv-parse": "^6.2.1",
     "fastify": "^4.29.1",
+    "iconv-lite": "^0.7.2",
     "node-cron": "^4.2.1",
     "zod": "^4.4.3",
     "zod-to-json-schema": "^3.25.2"
