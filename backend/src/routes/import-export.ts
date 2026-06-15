@@ -7,11 +7,12 @@ import { authenticate } from '../middleware/auth.js'
 import { zSchema } from '../lib/schema-helpers.js'
 import { refreshAccountBalance } from './account.js'
 
-// 支付方式 → 账户类型映射
-const PAYMENT_METHOD_MAP: Record<string, { type: string; defaultName: string }> = {
-  '余额': { type: 'ALIPAY', defaultName: '支付宝余额' },
-  '余额宝': { type: 'INVESTMENT', defaultName: '余额宝' },
-  // 花呗统一为支付宝账户，不单独创建
+// 支付宝体系内账户关键词 — 统一映射到"支付宝"账户，其余（银行卡等）保持原名
+const ALIPAY_INTERNAL_PATTERN = /花呗|余额宝|余额|账户余额|集分宝|红包|淘金币|支付宝|他人代付/
+function resolveAlipayAccountName(name: string) {
+  if (!name) return '支付宝'
+  if (ALIPAY_INTERNAL_PATTERN.test(name)) return '支付宝'
+  return name
 }
 
 // 按名称关键词推断账户类型
@@ -29,10 +30,7 @@ const NAME_TYPE_RULES: { test: (name: string) => boolean; type: string }[] = [
 function inferAccount(paymentMethod: string): { type: string; defaultName: string; bankName?: string; accountNo?: string } | null {
   if (!paymentMethod) return null
 
-  // 1. 精确匹配 PAYMENT_METHOD_MAP
-  if (PAYMENT_METHOD_MAP[paymentMethod]) return PAYMENT_METHOD_MAP[paymentMethod]
-
-  // 2. 银行卡：XX银行储蓄卡(NNNN) 或 XX银行信用卡(NNNN)
+  // 1. 银行卡：XX银行储蓄卡(NNNN) 或 XX银行信用卡(NNNN)
   const cardMatch = paymentMethod.match(/^(.+?银行).*?[储蓄信用]卡.*?[\(（](\d+)[\)）]/)
   if (cardMatch) {
     return {
@@ -43,21 +41,21 @@ function inferAccount(paymentMethod: string): { type: string; defaultName: strin
     }
   }
 
-  // 3. 通用银行匹配（储蓄卡/信用卡，可能无卡号）
+  // 2. 通用银行匹配（储蓄卡/信用卡，可能无卡号）
   const bankMatch = paymentMethod.match(/^(.+?银行)/)
   if (bankMatch) {
     const type = /信用/.test(paymentMethod) ? 'CREDIT_CARD' : 'BANK_DEBIT'
     return { type, defaultName: paymentMethod, bankName: bankMatch[1] }
   }
 
-  // 4. 按名称关键词规则匹配
+  // 3. 按名称关键词规则匹配
   for (const rule of NAME_TYPE_RULES) {
     if (rule.test(paymentMethod)) {
       return { type: rule.type, defaultName: paymentMethod }
     }
   }
 
-  // 5. 其他
+  // 4. 其他
   return { type: 'OTHER', defaultName: paymentMethod }
 }
 
@@ -144,10 +142,11 @@ function parseAlipayCSV(buffer: Buffer): { rows: ParsedRow[]; errors: string[] }
       const tradeTime = r['交易时间'] || ''
       const category = r['交易分类'] || ''
       const counterparty = r['交易对方'] || ''
+      const counterpartyAccount = r['对方账号'] || ''
       const description = r['商品说明'] || ''
       const direction = r['收/支'] || ''
       const amountStr = r['金额'] || ''
-      const paymentMethod = r['收/支方式'] || ''
+      const paymentMethod = r['收/付款方式'] || r['收/支方式'] || ''
       const status = r['交易状态'] || ''
       const orderNo = (r['交易订单号'] || '').trim()
       const merchantNo = (r['商家订单号'] || '').trim()
@@ -175,7 +174,7 @@ function parseAlipayCSV(buffer: Buffer): { rows: ParsedRow[]; errors: string[] }
         recordType = 'INCOME'
       } else if (direction === '支出') {
         recordType = 'EXPENSE'
-      } else if (direction === '不计支出') {
+      } else if (direction === '不计支出' || direction === '不计收支') {
         // 花呗还款 → 转账（交易对方=花呗，或商品说明含花呗还款）
         const isHuabeiRepay = (category === '金融借贷' || counterparty === '花呗')
           && (counterparty === '花呗' || /花呗/.test(description))
@@ -185,13 +184,18 @@ function parseAlipayCSV(buffer: Buffer): { rows: ParsedRow[]; errors: string[] }
         // 蚂蚁财富转入转出 → 转账
         const isAntTransfer = category === '投资理财'
           && (counterparty === '蚂蚁财富' || /蚂蚁财富/.test(description) || /蚂蚁智还/.test(description))
+        // 余额宝收益 / 基金分红 → 收入
+        const isIncome = /收益|分红/.test(description) || /收益/.test(counterparty)
 
         if (isHuabeiRepay) {
           recordType = 'TRANSFER'
           toAccountName = '支付宝'
+        } else if (isIncome) {
+          // 收益/分红优先于转账判断（余额宝收益、基金分红等）
+          recordType = 'INCOME'
         } else if (isYueBaoTransfer) {
           recordType = 'TRANSFER'
-          toAccountName = '余额宝'
+          toAccountName = '支付宝'
         } else if (isAntTransfer) {
           if (/转出到银行卡/.test(description)) {
             recordType = 'TRANSFER'
@@ -215,10 +219,22 @@ function parseAlipayCSV(buffer: Buffer): { rows: ParsedRow[]; errors: string[] }
         recordType = 'EXPENSE'
       }
 
-      // 构建备注
+      // 统一支付宝子账户
+      const resolvedAccountName = resolveAlipayAccountName(paymentMethod)
+      const resolvedToAccountName = toAccountName ? resolveAlipayAccountName(toAccountName) : null
+
+      // 支付宝内部转账忽略（余额↔余额宝互转等）
+      if (recordType === 'TRANSFER' && resolvedAccountName === '支付宝' && resolvedToAccountName === '支付宝') {
+        continue
+      }
+
+      // 构建备注：商品说明 | 对方账号 | 交易状态 | 订单号 | 商家订单号 | 备注
       const remarkParts: string[] = []
       if (description) remarkParts.push(description)
+      if (counterpartyAccount) remarkParts.push(`对方:${counterpartyAccount}`)
+      if (status && status !== '交易成功') remarkParts.push(`状态:${status}`)
       if (orderNo) remarkParts.push(`订单:${orderNo}`)
+      if (merchantNo) remarkParts.push(`商户单:${merchantNo}`)
       if (remark) remarkParts.push(remark)
       const combinedRemark = remarkParts.join(' | ')
 
@@ -226,9 +242,9 @@ function parseAlipayCSV(buffer: Buffer): { rows: ParsedRow[]; errors: string[] }
         date,
         type: recordType,
         amount,
-        accountName: paymentMethod === '花呗' ? '支付宝' : (paymentMethod || '支付宝'),
+        accountName: resolvedAccountName,
         accountId: null,
-        toAccountName,
+        toAccountName: resolvedToAccountName,
         toAccountId: null,
         categoryCode: category || null,
         mappedCategoryCode: null,
@@ -413,6 +429,8 @@ const importConfirmSchema = z.object({
   newMappings: z.array(z.object({
     sourceCategory: z.string(),
     targetCategoryCode: z.string(),
+    payerContains: z.string().optional(),
+    descriptionContains: z.string().optional(),
   })).optional(),
 })
 
@@ -540,9 +558,20 @@ export async function importExportRoutes(app: FastifyInstance) {
     for (const m of newMappings) {
       await prisma.importCategoryMapping.upsert({
         where: {
-          source_sourceCategory: { source, sourceCategory: m.sourceCategory },
+          source_sourceCategory_payerContains_descriptionContains: {
+            source,
+            sourceCategory: m.sourceCategory,
+            payerContains: m.payerContains || '',
+            descriptionContains: m.descriptionContains || '',
+          },
         },
-        create: { source, sourceCategory: m.sourceCategory, targetCategoryCode: m.targetCategoryCode },
+        create: {
+          source,
+          sourceCategory: m.sourceCategory,
+          payerContains: m.payerContains || '',
+          descriptionContains: m.descriptionContains || '',
+          targetCategoryCode: m.targetCategoryCode,
+        },
         update: { targetCategoryCode: m.targetCategoryCode },
       })
     }

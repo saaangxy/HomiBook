@@ -36,6 +36,7 @@ import {
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Spinner } from '@/components/ui/spinner'
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip'
 import { importExportApi, type UnmatchedAccount, type UnmatchedCategory, type ParsedImportRow, type DictEntry } from '@/api/import-export'
 import { ACCOUNT_TYPE_LABELS, type AccountItem, type AccountType } from '@/api/account'
 import { Upload, FileText, CheckCircle, AlertCircle, ArrowLeft, ArrowRight, ChevronDown } from 'lucide-react'
@@ -67,6 +68,18 @@ const TYPE_COLORS: Record<string, string> = {
   INCOME: 'text-[#22c55e]',
   EXPENSE: 'text-[#ef4444]',
   TRANSFER: 'text-[#3b82f6]',
+}
+
+function TrucCell({ text, maxW = 'max-w-[100px]', className = '' }: { text: string | null | undefined; maxW?: string; className?: string }) {
+  const display = text || '-'
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className={`truncate block ${maxW} ${className}`}>{display}</span>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-[300px] text-xs break-all">{display}</TooltipContent>
+    </Tooltip>
+  )
 }
 
 function CategoryCommandGroup({ heading, groupKey, items, selectedCode, onSelect }: {
@@ -587,47 +600,60 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
               {previewRecords.length > 0 && (
                 <div>
                   <p className="text-sm font-medium mb-2">记录预览（{previewRecords.length}条）</p>
-                  <div className="border rounded-lg overflow-hidden max-h-64 overflow-y-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="bg-muted/50 hover:bg-muted/50">
-                          <TableHead className="text-xs whitespace-nowrap py-2">类型</TableHead>
-                          <TableHead className="text-xs whitespace-nowrap py-2">日期</TableHead>
-                          <TableHead className="text-xs whitespace-nowrap py-2">金额</TableHead>
-                          <TableHead className="text-xs whitespace-nowrap py-2">账户</TableHead>
-                          <TableHead className="text-xs whitespace-nowrap py-2">分类</TableHead>
-                          <TableHead className="text-xs whitespace-nowrap py-2">说明</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {displayRecords.map((r, i) => (
-                          <TableRow key={i} className="hover:bg-accent/50">
-                            <TableCell className={`text-xs font-medium py-2 whitespace-nowrap ${TYPE_COLORS[r.type]}`}>
-                              {TYPE_LABELS[r.type]}
-                              {r.type === 'TRANSFER' && r.toAccountName && `→${r.toAccountName}`}
-                            </TableCell>
-                            <TableCell className="text-xs py-2 whitespace-nowrap">
-                              {new Date(r.date).toLocaleDateString('zh-CN')}
-                            </TableCell>
-                            <TableCell className="text-xs py-2 font-mono whitespace-nowrap">
-                              {r.amount.toFixed(2)}
-                            </TableCell>
-                            <TableCell className={`text-xs py-2 whitespace-nowrap ${r.accountId ? '' : 'text-yellow-500'}`}>
-                              {r.accountName || '-'}
-                            </TableCell>
-                            <TableCell className={`text-xs py-2 whitespace-nowrap ${
-                              r.mappedCategoryCode ? 'text-green-500' : r.categoryCode ? 'text-yellow-500' : 'text-muted-foreground'
-                            }`}>
-                              {r.mappedCategoryCode || r.categoryCode || '-'}
-                            </TableCell>
-                            <TableCell className="text-xs py-2 max-w-[200px] truncate text-muted-foreground">
-                              {r.remark}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
+                  <TooltipProvider>
+                    <div className="border rounded-lg overflow-hidden max-h-64 overflow-y-auto">
+                      <div className="overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="bg-muted/50 hover:bg-muted/50">
+                              <TableHead className="text-xs whitespace-nowrap py-2">类型</TableHead>
+                              <TableHead className="text-xs whitespace-nowrap py-2">日期</TableHead>
+                              <TableHead className="text-xs whitespace-nowrap py-2">金额</TableHead>
+                              <TableHead className="text-xs whitespace-nowrap py-2">账户</TableHead>
+                              <TableHead className="text-xs whitespace-nowrap py-2">目标账户</TableHead>
+                              <TableHead className="text-xs whitespace-nowrap py-2">交易对方</TableHead>
+                              <TableHead className="text-xs whitespace-nowrap py-2">原始分类</TableHead>
+                              <TableHead className="text-xs whitespace-nowrap py-2">映射分类</TableHead>
+                              <TableHead className="text-xs whitespace-nowrap py-2">说明</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {displayRecords.map((r, i) => (
+                              <TableRow key={i} className="hover:bg-accent/50">
+                                <TableCell className={`text-xs font-medium py-2 whitespace-nowrap ${TYPE_COLORS[r.type]}`}>
+                                  {TYPE_LABELS[r.type]}
+                                </TableCell>
+                                <TableCell className="text-xs py-2 whitespace-nowrap">
+                                  {new Date(r.date).toLocaleDateString('zh-CN')}
+                                </TableCell>
+                                <TableCell className="text-xs py-2 font-mono whitespace-nowrap">
+                                  {r.amount.toFixed(2)}
+                                </TableCell>
+                                <TableCell className={`text-xs py-2 ${r.accountId ? '' : 'text-yellow-500'}`}>
+                                  <TrucCell text={r.accountName} maxW="max-w-[80px]" />
+                                </TableCell>
+                                <TableCell className="text-xs py-2 text-muted-foreground">
+                                  <TrucCell text={r.toAccountName} maxW="max-w-[80px]" />
+                                </TableCell>
+                                <TableCell className="text-xs py-2 text-muted-foreground">
+                                  <TrucCell text={r.payer} maxW="max-w-[80px]" />
+                                </TableCell>
+                                <TableCell className={`text-xs py-2 ${r.categoryCode ? 'text-yellow-500' : 'text-muted-foreground'}`}>
+                                  <TrucCell text={r.categoryCode} maxW="max-w-[80px]" />
+                                </TableCell>
+                                <TableCell className={`text-xs py-2 ${r.mappedCategoryCode ? 'text-green-500' : 'text-muted-foreground'}`}>
+                                  <TrucCell text={r.mappedCategoryCode} maxW="max-w-[80px]" />
+                                </TableCell>
+                                <TableCell className="text-xs py-2 text-muted-foreground">
+                                  <TrucCell text={r.remark} maxW="max-w-[150px]" />
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </div>
+                  </TooltipProvider>
                   {previewRecords.length > 20 && (
                     <button
                       className="text-xs text-primary mt-2 hover:underline"
