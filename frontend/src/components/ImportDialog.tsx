@@ -115,8 +115,7 @@ function CategoryCommandGroup({ heading, groupKey, items, selectedCode, onSelect
       {groupItems.map(d => (
         <CommandItem key={d.code} value={d.code} onSelect={() => onSelect(d.code)} className="text-xs">
           <CheckCircle size={12} className={selectedCode === d.code ? 'opacity-100 text-[#22c55e]' : 'opacity-0'} />
-          <span>{d.code}</span>
-          <span className="text-muted-foreground ml-1">{d.label}</span>
+          <span>{d.label}</span>
         </CommandItem>
       ))}
     </CommandGroup>
@@ -645,7 +644,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                                 <PopoverTrigger asChild>
                                   <Button variant="outline" size="sm" className="h-8 text-xs flex-1 min-w-[140px] justify-between bg-background font-normal">
                                     {selectedItem ? (
-                                      <span>{selectedItem.code} <span className="text-muted-foreground ml-1">{selectedItem.label}</span></span>
+                                      <span>{selectedItem.label}</span>
                                     ) : (
                                       <span className="text-muted-foreground">选择系统分类…</span>
                                     )}
@@ -748,7 +747,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                             <SelectContent className="bg-card border-border max-h-48">
                               {filteredCategories.map(d => (
                                 <SelectItem key={d.code} value={d.code} className="text-xs">
-                                  {d.code} {d.label}
+                                  {d.label}
                                 </SelectItem>
                               ))}
                             </SelectContent>
