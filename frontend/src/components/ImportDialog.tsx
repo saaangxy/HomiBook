@@ -397,8 +397,8 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
             <div className="flex flex-col gap-3 py-4">
               <p className="text-sm text-muted-foreground">选择导入来源</p>
               {[
-                { key: 'alipay', label: '支付宝', desc: '支持支付宝交易明细导出CSV', disabled: false },
-                { key: 'wechat', label: '微信', desc: '即将支持', disabled: true },
+                { key: 'alipay', label: '支付宝', desc: '支持支付宝交易明细导出CSV (.csv)', disabled: false },
+                { key: 'wechat', label: '微信', desc: '支持微信支付账单导出Excel (.xlsx)', disabled: false },
                 { key: 'csv', label: '其他CSV', desc: '即将支持', disabled: true },
               ].map(item => (
                 <button
@@ -453,7 +453,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".csv"
+                accept={source === 'wechat' ? '.xlsx' : '.csv'}
                 onChange={handleFileChange}
                 className="hidden"
               />
@@ -480,8 +480,8 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                 ) : (
                   <div className="flex flex-col items-center gap-2">
                     <Upload size={32} className="text-muted-foreground" />
-                    <p className="text-sm font-medium">点击选择 CSV 文件</p>
-                    <p className="text-xs text-muted-foreground">支持 .csv 格式，最大 10MB</p>
+                    <p className="text-sm font-medium">点击选择 {source === 'wechat' ? 'Excel' : 'CSV'} 文件</p>
+                    <p className="text-xs text-muted-foreground">支持 {source === 'wechat' ? '.xlsx' : '.csv'} 格式，最大 10MB</p>
                   </div>
                 )}
               </div>
@@ -748,20 +748,16 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                                 onClick={() => {
                                   const newId = nextExtraId
                                   setNextExtraId(newId + 1)
-                                  setExtraUnmatched([...extraUnmatched, { id: newId, sourceCategory: uc.sourceCategory, types: [...uc.types] }])
-                                  const newRes: typeof categoryResolutions = {}
-                                  for (const t of uc.types) {
-                                    const key = `${uc.sourceCategory}::${t}::e${newId}`
-                                    const orig = categoryResolutions[compositeKey]
-                                    newRes[key] = { targetCode: '', save: true, payerContains: orig?.payerContains || '', descriptionContains: orig?.descriptionContains || '' }
-                                  }
-                                  setCategoryResolutions({ ...categoryResolutions, ...newRes })
+                                  setExtraUnmatched([...extraUnmatched, { id: newId, sourceCategory: uc.sourceCategory, types: [type] }])
+                                  const key = `${uc.sourceCategory}::${type}::e${newId}`
+                                  const orig = categoryResolutions[compositeKey]
+                                  setCategoryResolutions({ ...categoryResolutions, [key]: { targetCode: '', save: true, payerContains: orig?.payerContains || '', descriptionContains: orig?.descriptionContains || '' } })
                                 }}
                                 title="复制"
                               >
                                 复制
                               </Button>
-                              {!unmatchedCategories.some(orig => orig.sourceCategory === uc.sourceCategory) && (
+                              {extraId !== undefined && (
                                 <Button
                                   variant="ghost"
                                   size="sm"

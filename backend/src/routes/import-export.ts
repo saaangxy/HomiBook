@@ -6,12 +6,21 @@ import { prisma } from '../app.js'
 import { authenticate } from '../middleware/auth.js'
 import { zSchema } from '../lib/schema-helpers.js'
 import { refreshAccountBalance } from './account.js'
+import * as XLSX from 'xlsx'
 
 // 支付宝体系内账户关键词 — 统一映射到"支付宝"账户，其余（银行卡等）保持原名
 const ALIPAY_INTERNAL_PATTERN = /花呗|余额宝|余额|账户余额|集分宝|红包|淘金币|支付宝|他人代付/
 function resolveAlipayAccountName(name: string) {
   if (!name) return '支付宝'
   if (ALIPAY_INTERNAL_PATTERN.test(name)) return '支付宝'
+  return name
+}
+
+// 微信体系内账户关键词 — 零钱/零钱通统一映射到"微信"账户
+const WECHAT_INTERNAL_PATTERN = /零钱|零钱通/
+function resolveWechatAccountName(name: string) {
+  if (!name || name === '/' || name === '\\') return '微信'
+  if (WECHAT_INTERNAL_PATTERN.test(name)) return '微信'
   return name
 }
 
@@ -276,6 +285,151 @@ function parseAlipayCSV(buffer: Buffer): { rows: ParsedRow[]; errors: string[] }
   return { rows, errors }
 }
 
+// ======================== WeChat XLSX 解析 ========================
+
+/** Excel 序列号转 ISO 日期字符串 */
+function excelSerialToISO(serial: number): string {
+  // Excel epoch: 1899-12-30 (考虑 Lotus 1-2-3 闰年 bug)
+  const excelEpoch = Date.UTC(1899, 11, 30)
+  return new Date(excelEpoch + serial * 86400000).toISOString()
+}
+
+function parseWechatXlsx(buffer: Buffer): { rows: ParsedRow[]; errors: string[] } {
+  const workbook = XLSX.read(buffer, { type: 'buffer' })
+  const sheetName = workbook.SheetNames[0]
+  const sheet = workbook.Sheets[sheetName]
+
+  // 转为二维数组
+  const data: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' })
+
+  // 查找表头行（包含"交易时间"）
+  let headerIndex = -1
+  for (let i = 0; i < data.length; i++) {
+    const row = data[i]
+    if (row.some(cell => String(cell).includes('交易时间'))) {
+      headerIndex = i
+      break
+    }
+  }
+  if (headerIndex === -1) {
+    return { rows: [], errors: ['无法找到表头行，请确认是微信导出的账单文件'] }
+  }
+
+  const headerRow = data[headerIndex].map(h => String(h).trim())
+
+  // 列索引映射
+  const colIndex: Record<string, number> = {}
+  for (let i = 0; i < headerRow.length; i++) {
+    colIndex[headerRow[i]] = i
+  }
+
+  const getCell = (row: unknown[], colName: string): string =>
+    String(row[colIndex[colName]] ?? '').trim()
+
+  const rows: ParsedRow[] = []
+  const errors: string[] = []
+
+  for (let i = headerIndex + 1; i < data.length; i++) {
+    const row = data[i]
+    const rowIndex = i + 1
+    try {
+      // 跳过空行和分隔行
+      const firstCell = String(row[0] ?? '').trim()
+      if (!firstCell || firstCell.startsWith('---')) continue
+
+      const tradeTimeRaw = row[colIndex['交易时间']]
+      const tradeType = getCell(row, '交易类型')
+      const counterparty = getCell(row, '交易对方')
+      const product = getCell(row, '商品')
+      const direction = getCell(row, '收/支')
+      const amountStr = getCell(row, '金额(元)')
+      const paymentMethod = getCell(row, '支付方式')
+      const status = getCell(row, '当前状态')
+      const orderNo = getCell(row, '交易单号')
+      const merchantNo = getCell(row, '商户单号')
+      const remark = getCell(row, '备注')
+
+      // 解析日期
+      let date: string
+      if (typeof tradeTimeRaw === 'number') {
+        date = excelSerialToISO(tradeTimeRaw)
+      } else {
+        const parsed = new Date(String(tradeTimeRaw) + '+08:00')
+        if (!isNaN(parsed.getTime())) {
+          date = parsed.toISOString()
+        } else {
+          errors.push(`第${rowIndex}行: 日期格式无法解析`)
+          continue
+        }
+      }
+      if (isNaN(new Date(date).getTime())) {
+        errors.push(`第${rowIndex}行: 日期格式无法解析`)
+        continue
+      }
+
+      // 解析金额
+      const amount = parseFloat(amountStr)
+      if (isNaN(amount) || amount === 0) continue
+
+      // 确定记录类型
+      let recordType: 'INCOME' | 'EXPENSE' | 'TRANSFER' | 'UNKNOWN' = 'EXPENSE'
+      let toAccountName: string | null = null
+
+      if (status.includes('退款') || status.includes('已退款')) {
+        recordType = 'INCOME'
+      } else if (tradeType === '零钱充值') {
+        recordType = 'TRANSFER'
+        toAccountName = '微信'
+      } else if (tradeType === '零钱提现') {
+        recordType = 'TRANSFER'
+        toAccountName = paymentMethod || null
+      } else if (direction === '收入') {
+        recordType = 'INCOME'
+      } else {
+        recordType = 'EXPENSE'
+      }
+
+      // 统一账户名
+      const resolvedAccountName = resolveWechatAccountName(paymentMethod)
+      const resolvedToAccountName = toAccountName ? resolveWechatAccountName(toAccountName) : null
+
+      // 微信内部转账忽略（微信↔微信）
+      if (recordType === 'TRANSFER' && resolvedAccountName === '微信' && resolvedToAccountName === '微信') {
+        continue
+      }
+
+      // 构建备注
+      const remarkParts: string[] = []
+      if (product && product !== '/') remarkParts.push(product)
+      if (status && status !== '支付成功') remarkParts.push(`状态:${status}`)
+      if (orderNo && orderNo !== '/') remarkParts.push(`订单:${orderNo}`)
+      if (merchantNo && merchantNo !== '/') remarkParts.push(`商户单:${merchantNo}`)
+      if (remark && remark !== '/') remarkParts.push(remark)
+      const combinedRemark = remarkParts.join(' | ')
+
+      rows.push({
+        date,
+        type: recordType,
+        amount,
+        accountName: resolvedAccountName,
+        accountId: null,
+        toAccountName: resolvedToAccountName,
+        toAccountId: null,
+        categoryCode: tradeType || null,
+        mappedCategoryCode: null,
+        payer: counterparty || null,
+        remark: combinedRemark,
+        tags: ['导入', '微信'],
+        rowIndex,
+      })
+    } catch (e: any) {
+      errors.push(`第${rowIndex}行: ${e.message}`)
+    }
+  }
+
+  return { rows, errors }
+}
+
 // ======================== 账户匹配 & 分类映射 ========================
 
 async function resolveAccounts(bookId: string, rows: ParsedRow[]) {
@@ -498,7 +652,7 @@ export async function importExportRoutes(app: FastifyInstance) {
     if (source === 'alipay') {
       parseResult = parseAlipayCSV(buffer)
     } else if (source === 'wechat') {
-      return reply.status(400).send({ message: '微信导入暂未支持' })
+      parseResult = parseWechatXlsx(buffer)
     } else {
       return reply.status(400).send({ message: '通用CSV导入暂未支持' })
     }
