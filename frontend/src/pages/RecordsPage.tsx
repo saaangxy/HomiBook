@@ -190,6 +190,7 @@ export function RecordsPage() {
 
   // 批量更新弹窗
   const [batchOpen, setBatchOpen] = useState(false)
+  const [batchDeleteOpen, setBatchDeleteOpen] = useState(false)
   const [batchDate, setBatchDate] = useState('')
   const [batchType, setBatchType] = useState('')
   const [batchAccountId, setBatchAccountId] = useState('')
@@ -458,6 +459,18 @@ export function RecordsPage() {
     try {
       await recordApi.delete(deleteTarget.id)
       setDeleteTarget(null)
+      loadRecords()
+      loadSummary()
+      loadAccounts()
+    } catch (e: any) { setError(e.message) }
+  }
+
+  const handleBatchDelete = async () => {
+    if (selectedIds.size === 0) return
+    try {
+      await recordApi.batchDelete(Array.from(selectedIds))
+      setBatchDeleteOpen(false)
+      setSelectedIds(new Set())
       loadRecords()
       loadSummary()
       loadAccounts()
@@ -824,6 +837,9 @@ export function RecordsPage() {
             <span className="text-sm">已选择 {selectedIds.size} 条</span>
             <Button size="sm" variant="outline" onClick={() => setBatchOpen(true)} className="text-xs h-7">
               批量更新
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setBatchDeleteOpen(true)} className="text-xs h-7 text-red-600 hover:text-red-700 border-red-200 hover:border-red-300">
+              批量删除
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())} className="text-xs h-7">
               取消选择
@@ -1579,6 +1595,24 @@ export function RecordsPage() {
           <AlertDialogFooter>
             <AlertDialogCancel>取消</AlertDialogCancel>
             <AlertDialogAction className="bg-[#ef4444] hover:bg-[#dc2626]" onClick={handleDelete}>
+              确认删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* 批量删除确认 */}
+      <AlertDialog open={batchDeleteOpen} onOpenChange={setBatchDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>批量删除流水</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要删除选中的 {selectedIds.size} 条流水记录吗？相关账户余额将相应调整。此操作不可撤销。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction className="bg-[#ef4444] hover:bg-[#dc2626]" onClick={handleBatchDelete}>
               确认删除
             </AlertDialogAction>
           </AlertDialogFooter>

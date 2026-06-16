@@ -18,14 +18,6 @@ import {
 } from '@/components/ui/select'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import {
-  Command,
-  CommandInput,
-  CommandList,
-  CommandEmpty,
-  CommandGroup,
-  CommandItem,
-} from '@/components/ui/command'
-import {
   Table,
   TableHeader,
   TableBody,
@@ -101,27 +93,6 @@ function TrucCell({ text, maxW = 'max-w-[100px]', className = '' }: { text: stri
   )
 }
 
-function CategoryCommandGroup({ heading, groupKey, items, selectedCode, onSelect }: {
-  heading: string
-  groupKey: string
-  items: DictEntry[]
-  selectedCode?: string
-  onSelect: (code: string) => void
-}) {
-  const groupItems = items.filter(d => d.group === groupKey)
-  if (groupItems.length === 0) return null
-  return (
-    <CommandGroup heading={heading} className="text-xs">
-      {groupItems.map(d => (
-        <CommandItem key={d.code} value={d.code} onSelect={() => onSelect(d.code)} className="text-xs">
-          <CheckCircle size={12} className={selectedCode === d.code ? 'opacity-100 text-[#22c55e]' : 'opacity-0'} />
-          <span>{d.label}</span>
-        </CommandItem>
-      ))}
-    </CommandGroup>
-  )
-}
-
 export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, onImportComplete }: ImportDialogProps) {
   const [step, setStep] = useState<Step>('source')
   const [source, setSource] = useState<string>('alipay')
@@ -140,7 +111,16 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
   const [accountResolutions, setAccountResolutions] = useState<Record<string, { action: 'create'; name: string; type: string } | { action: 'existing'; accountId: string }>>({})
   const [categoryResolutions, setCategoryResolutions] = useState<Record<string, { targetCode: string; save: boolean; payerContains: string; descriptionContains: string }>>({})
   const [showAllRecords, setShowAllRecords] = useState(false)
+  const [filterCategory, setFilterCategory] = useState('')
+  const [filterType, setFilterType] = useState('')
+  const [filterAccount, setFilterAccount] = useState('')
   const [comboOpen, setComboOpen] = useState<string | null>(null) // 当前打开的 combobox 对应的 sourceCategory
+  const [categorySearch, setCategorySearch] = useState('')
+
+  // 手动管理未映射分类：复制/删除
+  const [extraUnmatched, setExtraUnmatched] = useState<Array<{ id: number; sourceCategory: string; types: string[] }>>([])
+  const [nextExtraId, setNextExtraId] = useState(1)
+  const [removedKeys, setRemovedKeys] = useState<Record<string, boolean>>({})
 
   // 无法自动识别的记录（不计收支未知类型）
   const [unrecognizedRecords, setUnrecognizedRecords] = useState<ParsedImportRow[]>([])
@@ -164,7 +144,15 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
     setStats(null)
     setAccountResolutions({})
     setCategoryResolutions({})
+    setComboOpen(null)
+    setCategorySearch('')
     setShowAllRecords(false)
+    setFilterCategory('')
+    setFilterType('')
+    setFilterAccount('')
+    setExtraUnmatched([])
+    setNextExtraId(1)
+    setRemovedKeys({})
     setUnrecognizedRecords([])
     setUnrecognizedResolutions({})
     setImportResult(null)
@@ -199,10 +187,13 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
       }
       setAccountResolutions(acctRes)
 
-      // 初始化分类映射
+      // 初始化分类映射（按 sourceCategory::type 复合键，不同类型独立映射）
       const catRes: typeof categoryResolutions = {}
       for (const uc of result.unmatchedCategories) {
-        catRes[uc.sourceCategory] = { targetCode: uc.suggestedCode || '', save: true, payerContains: '', descriptionContains: '' }
+        for (const t of uc.types) {
+          const key = `${uc.sourceCategory}::${t}`
+          catRes[key] = { targetCode: uc.suggestedCode || '', save: true, payerContains: '', descriptionContains: '' }
+        }
       }
       setCategoryResolutions(catRes)
 
@@ -244,18 +235,21 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
           }
         })
 
-      // 构建分类映射保存列表
-      const newMappings = unmatchedCategories
-        .filter(uc => categoryResolutions[uc.sourceCategory]?.save && categoryResolutions[uc.sourceCategory]?.targetCode)
-        .map(uc => {
-          const res = categoryResolutions[uc.sourceCategory]
-          return {
-            sourceCategory: uc.sourceCategory,
-            targetCategoryCode: res.targetCode,
-            payerContains: res.payerContains || undefined,
-            descriptionContains: res.descriptionContains || undefined,
-          }
+      // 构建分类映射保存列表（从复合键中提取，去重，跳过已删除的）
+      const mappingSet = new Map<string, { sourceCategory: string; targetCategoryCode: string; payerContains?: string; descriptionContains?: string }>()
+      for (const [key, res] of Object.entries(categoryResolutions)) {
+        if (!res.save || !res.targetCode) continue
+        const sourceCategory = key.split('::')[0]
+        if (removedKeys[sourceCategory]) continue
+        const dedupeKey = `${sourceCategory}||${res.payerContains || ''}||${res.descriptionContains || ''}`
+        mappingSet.set(dedupeKey, {
+          sourceCategory,
+          targetCategoryCode: res.targetCode,
+          payerContains: res.payerContains || undefined,
+          descriptionContains: res.descriptionContains || undefined,
         })
+      }
+      const newMappings = Array.from(mappingSet.values())
 
       // 构建记录列表（映射账户ID和分类）
       const records = previewRecords.map(r => {
@@ -286,9 +280,9 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
           }
         }
 
-        // 优先后端映射 → 前端手动映射 → 原始分类
+        // 优先后端映射 → 前端手动映射（用复合键查找） → 原始分类
         const categoryCode = r.mappedCategoryCode
-          || (r.categoryCode ? categoryResolutions[r.categoryCode]?.targetCode : null)
+          || (r.categoryCode ? categoryResolutions[`${r.categoryCode}::${r.type}`]?.targetCode : null)
           || r.categoryCode
           || null
 
@@ -350,7 +344,17 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
     onImportComplete()
   }
 
-  const displayRecords = showAllRecords ? previewRecords : previewRecords.slice(0, 20)
+  const filteredRecords = previewRecords.filter(r => {
+    if (filterCategory && r.categoryCode !== filterCategory) return false
+    if (filterType && r.type !== filterType) return false
+    if (filterAccount && r.accountName !== filterAccount) return false
+    return true
+  })
+  const displayRecords = showAllRecords ? filteredRecords : filteredRecords.slice(0, 20)
+
+  const uniqueCategories = [...new Set(previewRecords.map(r => r.categoryCode).filter(Boolean))] as string[]
+  const uniqueTypes = [...new Set(previewRecords.map(r => r.type))]
+  const uniqueAccounts = [...new Set(previewRecords.map(r => r.accountName).filter(Boolean))] as string[]
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -515,9 +519,12 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
               {/* 未匹配账户 */}
               {unmatchedAccounts.length > 0 && (
                 <div>
-                  <p className="text-sm font-medium mb-2">
+                  <p className="text-sm font-medium mb-1">
                     <AlertCircle size={14} className="inline text-yellow-500 mr-1" />
                     未匹配的账户 ({unmatchedAccounts.length})
+                  </p>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    同一银行账户可能有多个名称变体（如"农业银行储蓄卡"和"中国农业银行"），设为相同名称即可合并为一个账户
                   </p>
                   <div className="space-y-2">
                     {unmatchedAccounts.map(ua => {
@@ -587,10 +594,16 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
               )}
 
               {/* 未映射分类 */}
-              {unmatchedCategories.length > 0 && (() => {
+              {(unmatchedCategories.length > 0 || extraUnmatched.length > 0) && (() => {
+                // 合并并过滤
+                const allUnmatched = [
+                  ...unmatchedCategories.filter(uc => !removedKeys[uc.sourceCategory]),
+                  ...extraUnmatched.filter(eu => !removedKeys[`e${eu.id}`]),
+                ]
+                if (allUnmatched.length === 0) return null
                 // 按类型分组
-                const grouped = new Map<string, typeof unmatchedCategories>()
-                for (const uc of unmatchedCategories) {
+                const grouped = new Map<string, typeof allUnmatched>()
+                for (const uc of allUnmatched) {
                   for (const t of uc.types) {
                     const list = grouped.get(t) || []
                     list.push(uc)
@@ -601,7 +614,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                 <div>
                   <p className="text-sm font-medium mb-2">
                     <AlertCircle size={14} className="inline text-yellow-500 mr-1" />
-                    未映射的分类 ({unmatchedCategories.length})
+                    未映射的分类 ({allUnmatched.length})
                   </p>
                   <div className="space-y-3">
                     {(['EXPENSE', 'INCOME', 'TRANSFER'] as const).map(type => {
@@ -614,18 +627,18 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                         </Badge>
                         <div className="space-y-2">
                           {items.map(uc => {
-                            const cr = categoryResolutions[uc.sourceCategory]
+                            const extraId = (uc as any).id as number | undefined
+                            const compositeKey = extraId ? `${uc.sourceCategory}::${type}::e${extraId}` : `${uc.sourceCategory}::${type}`
+                            const cr = categoryResolutions[compositeKey]
                             const selectedItem = allDictItems.find(d => d.code === cr?.targetCode)
-                            const allowedGroups = (uc.types || []).map(t => TYPE_TO_GROUP[t]).filter(Boolean)
-                            const filteredItems = allowedGroups.length > 0
-                              ? allDictItems.filter(d => allowedGroups.includes(d.group))
-                              : allDictItems
+                            const allowedGroups = [TYPE_TO_GROUP[type]].filter(Boolean)
+                            const filteredItems = allDictItems.filter(d => allowedGroups.includes(d.group))
                             const updateCr = (patch: Partial<typeof cr>) => setCategoryResolutions({
                               ...categoryResolutions,
-                              [uc.sourceCategory]: { ...cr, targetCode: cr?.targetCode ?? '', save: cr?.save ?? true, payerContains: cr?.payerContains ?? '', descriptionContains: cr?.descriptionContains ?? '', ...patch },
+                              [compositeKey]: { ...cr, targetCode: cr?.targetCode ?? '', save: cr?.save ?? true, payerContains: cr?.payerContains ?? '', descriptionContains: cr?.descriptionContains ?? '', ...patch },
                             })
                             return (
-                            <div key={uc.sourceCategory} className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 flex-wrap">
+                            <div key={compositeKey} className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 flex-wrap">
                               <span className="text-sm min-w-[72px]">{uc.sourceCategory}</span>
                               <Input
                                 placeholder="交易方包含"
@@ -640,7 +653,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                                 className="h-8 text-xs w-[110px] bg-background"
                               />
                               <span className="text-xs text-muted-foreground">→</span>
-                              <Popover open={comboOpen === uc.sourceCategory} onOpenChange={(o) => setComboOpen(o ? uc.sourceCategory : null)}>
+                              <Popover open={comboOpen === compositeKey} onOpenChange={(o) => { setComboOpen(o ? compositeKey : null); setCategorySearch('') }} modal={true}>
                                 <PopoverTrigger asChild>
                                   <Button variant="outline" size="sm" className="h-8 text-xs flex-1 min-w-[140px] justify-between bg-background font-normal">
                                     {selectedItem ? (
@@ -651,24 +664,44 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                                     <ChevronDown size={12} className="ml-1 shrink-0 opacity-50" />
                                   </Button>
                                 </PopoverTrigger>
-                                <PopoverContent className="w-[260px] p-0" align="start">
-                                  <Command>
-                                    <CommandInput placeholder="搜索分类..." className="h-8 text-xs" />
-                                    <CommandList className="max-h-56">
-                                      <CommandEmpty className="text-xs py-4 text-center text-muted-foreground">无匹配分类</CommandEmpty>
-                                      {allowedGroups.length > 0 ? (
-                                        allowedGroups.map(g => (
-                                          <CategoryCommandGroup key={g} heading={GROUP_HEADING[g]} groupKey={g} items={filteredItems} selectedCode={cr?.targetCode} onSelect={(code) => { updateCr({ targetCode: code }); setComboOpen(null) }} />
-                                        ))
-                                      ) : (
-                                        <>
-                                          <CategoryCommandGroup heading="支出分类" groupKey="transaction_category_expense" items={allDictItems} selectedCode={cr?.targetCode} onSelect={(code) => { updateCr({ targetCode: code }); setComboOpen(null) }} />
-                                          <CategoryCommandGroup heading="收入分类" groupKey="transaction_category_income" items={allDictItems} selectedCode={cr?.targetCode} onSelect={(code) => { updateCr({ targetCode: code }); setComboOpen(null) }} />
-                                          <CategoryCommandGroup heading="转账分类" groupKey="transaction_category_transfer" items={allDictItems} selectedCode={cr?.targetCode} onSelect={(code) => { updateCr({ targetCode: code }); setComboOpen(null) }} />
-                                        </>
-                                      )}
-                                    </CommandList>
-                                  </Command>
+                                <PopoverContent className="w-[260px] p-2" align="start" onOpenAutoFocus={(e) => e.preventDefault()}>
+                                  <Input
+                                    placeholder="搜索分类..."
+                                    value={categorySearch}
+                                    onChange={(e) => setCategorySearch(e.target.value)}
+                                    className="h-8 text-xs mb-2"
+                                  />
+                                  <div className="max-h-56 overflow-y-auto">
+                                    {(() => {
+                                      const groups = allowedGroups.length > 0 ? allowedGroups : ['transaction_category_expense', 'transaction_category_income', 'transaction_category_transfer']
+                                      const baseItems = allowedGroups.length > 0 ? filteredItems : allDictItems
+                                      const searchResults = baseItems.filter(d =>
+                                        !categorySearch || d.label.includes(categorySearch) || d.code.includes(categorySearch)
+                                      )
+                                      if (searchResults.length === 0) {
+                                        return <div className="text-xs py-4 text-center text-muted-foreground">无匹配分类</div>
+                                      }
+                                      return groups.map(g => {
+                                        const items = searchResults.filter(d => d.group === g)
+                                        if (items.length === 0) return null
+                                        return (
+                                          <div key={g} className="mb-1">
+                                            <div className="text-[11px] text-muted-foreground px-2 py-0.5 font-medium">{GROUP_HEADING[g]}</div>
+                                            {items.map(d => (
+                                              <button
+                                                key={d.code}
+                                                className={`flex items-center gap-1.5 w-full text-left px-2 py-1.5 text-xs rounded hover:bg-accent ${cr?.targetCode === d.code ? 'bg-accent' : ''}`}
+                                                onClick={() => { updateCr({ targetCode: d.code }); setComboOpen(null); setCategorySearch('') }}
+                                              >
+                                                <CheckCircle size={12} className={cr?.targetCode === d.code ? 'text-[#22c55e]' : 'text-transparent'} />
+                                                {d.label}
+                                              </button>
+                                            ))}
+                                          </div>
+                                        )
+                                      })
+                                    })()}
+                                  </div>
                                 </PopoverContent>
                               </Popover>
                               <label className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer whitespace-nowrap">
@@ -680,6 +713,37 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                                 />
                                 保存
                               </label>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 text-xs text-muted-foreground hover:text-foreground"
+                                onClick={() => {
+                                  const newId = nextExtraId
+                                  setNextExtraId(newId + 1)
+                                  setExtraUnmatched([...extraUnmatched, { id: newId, sourceCategory: uc.sourceCategory, types: [...uc.types] }])
+                                  const newRes: typeof categoryResolutions = {}
+                                  for (const t of uc.types) {
+                                    const key = `${uc.sourceCategory}::${t}::e${newId}`
+                                    const orig = categoryResolutions[compositeKey]
+                                    newRes[key] = { targetCode: '', save: true, payerContains: orig?.payerContains || '', descriptionContains: orig?.descriptionContains || '' }
+                                  }
+                                  setCategoryResolutions({ ...categoryResolutions, ...newRes })
+                                }}
+                                title="复制"
+                              >
+                                复制
+                              </Button>
+                              {!unmatchedCategories.some(orig => orig.sourceCategory === uc.sourceCategory) && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 w-7 p-0 text-xs text-muted-foreground hover:text-red-500"
+                                  onClick={() => setRemovedKeys({ ...removedKeys, [`e${extraId}`]: true })}
+                                  title="删除"
+                                >
+                                  ×
+                                </Button>
+                              )}
                             </div>
                           )})}
                         </div>
@@ -767,7 +831,44 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
               {/* 预览记录表 */}
               {previewRecords.length > 0 && (
                 <div>
-                  <p className="text-sm font-medium mb-2">记录预览（{previewRecords.length}条）</p>
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
+                    <p className="text-sm font-medium">记录预览（{filteredRecords.length}条{filteredRecords.length !== previewRecords.length ? ` / 共${previewRecords.length}条` : ''}）</p>
+                    <div className="flex items-center gap-1.5 ml-auto">
+                      <Select value={filterType || 'all'} onValueChange={(v) => setFilterType(v === 'all' ? '' : v)}>
+                        <SelectTrigger className="h-7 text-xs w-20 bg-background">
+                          <SelectValue placeholder="类型" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-card border-border">
+                          <SelectItem value="all" className="text-xs">全部类型</SelectItem>
+                          {uniqueTypes.map(t => (
+                            <SelectItem key={t} value={t} className="text-xs">{TYPE_LABELS[t] || t}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Select value={filterCategory || 'all'} onValueChange={(v) => setFilterCategory(v === 'all' ? '' : v)}>
+                        <SelectTrigger className="h-7 text-xs w-28 bg-background">
+                          <SelectValue placeholder="原始分类" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-card border-border max-h-48">
+                          <SelectItem value="all" className="text-xs">全部分类</SelectItem>
+                          {uniqueCategories.map(c => (
+                            <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Select value={filterAccount || 'all'} onValueChange={(v) => setFilterAccount(v === 'all' ? '' : v)}>
+                        <SelectTrigger className="h-7 text-xs w-28 bg-background">
+                          <SelectValue placeholder="账户" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-card border-border max-h-48">
+                          <SelectItem value="all" className="text-xs">全部账户</SelectItem>
+                          {uniqueAccounts.map(a => (
+                            <SelectItem key={a} value={a} className="text-xs">{a}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
                   <TooltipProvider>
                     <div className="border rounded-lg overflow-hidden max-h-64 overflow-y-auto">
                       <div className="overflow-x-auto">
@@ -822,12 +923,12 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                       </div>
                     </div>
                   </TooltipProvider>
-                  {previewRecords.length > 20 && (
+                  {filteredRecords.length > 20 && (
                     <button
                       className="text-xs text-primary mt-2 hover:underline"
                       onClick={() => setShowAllRecords(!showAllRecords)}
                     >
-                      {showAllRecords ? '收起' : `查看全部 ${previewRecords.length} 条`}
+                      {showAllRecords ? '收起' : `查看全部 ${filteredRecords.length} 条`}
                     </button>
                   )}
                 </div>

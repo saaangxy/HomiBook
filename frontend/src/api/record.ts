@@ -132,6 +132,9 @@ export const recordApi = {
   delete: (id: string) =>
     api.delete<{ success: boolean }>(`/api/records/${id}`),
 
+  batchDelete: (ids: string[]) =>
+    api.post<{ success: boolean; deleted: number }>('/api/records/batch-delete', { ids }),
+
   clone: (id: string) =>
     api.post<RecordItem>(`/api/records/${id}/clone`, {}),
 

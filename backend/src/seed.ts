@@ -33,7 +33,8 @@ const DEFAULT_DICTIONARIES: Array<{ group: string; code: string; label: string; 
   { group: 'transaction_category_income', code: '兼职', label: '兼职', order: 3 },
   { group: 'transaction_category_income', code: '红包', label: '红包', order: 4 },
   { group: 'transaction_category_income', code: '退款', label: '退款', order: 5 },
-  { group: 'transaction_category_income', code: '其他收入', label: '其他收入', order: 6 },
+  { group: 'transaction_category_income', code: '分红', label: '分红', order: 6 },
+  { group: 'transaction_category_income', code: '其他收入', label: '其他收入', order: 99 },
   // 交易分类 - 支出
   { group: 'transaction_category_expense', code: '餐饮', label: '餐饮', order: 0 },
   { group: 'transaction_category_expense', code: '交通', label: '交通', order: 1 },
@@ -43,15 +44,19 @@ const DEFAULT_DICTIONARIES: Array<{ group: string; code: string; label: string; 
   { group: 'transaction_category_expense', code: '医疗', label: '医疗', order: 5 },
   { group: 'transaction_category_expense', code: '教育', label: '教育', order: 6 },
   { group: 'transaction_category_expense', code: '通讯', label: '通讯', order: 7 },
-  { group: 'transaction_category_expense', code: '水电', label: '水电', order: 8 },
-  { group: 'transaction_category_expense', code: '服饰', label: '服饰', order: 9 },
-  { group: 'transaction_category_expense', code: '日用品', label: '日用品', order: 10 },
-  { group: 'transaction_category_expense', code: '人情往来', label: '人情往来', order: 11 },
-  { group: 'transaction_category_expense', code: '其他支出', label: '其他支出', order: 12 },
+  { group: 'transaction_category_expense', code: '水电燃', label: '水电燃', order: 8 },
+  { group: 'transaction_category_expense', code: '育儿', label: '育儿', order: 9 },
+  { group: 'transaction_category_expense', code: '服饰', label: '服饰', order: 10 },
+  { group: 'transaction_category_expense', code: '保险', label: '保险', order: 11 },
+  { group: 'transaction_category_expense', code: '宠物', label: '宠物', order: 12 },
+  { group: 'transaction_category_expense', code: '日用百货', label: '日用百货', order: 13 },
+  { group: 'transaction_category_expense', code: '人情往来', label: '人情往来', order: 14 },
+  { group: 'transaction_category_expense', code: '其他支出', label: '其他支出', order: 99 },
   // 交易分类 - 不计收支（转账）
   { group: 'transaction_category_transfer', code: '转账', label: '转账', order: 0 },
   { group: 'transaction_category_transfer', code: '投资理财', label: '投资理财', order: 1 },
   { group: 'transaction_category_transfer', code: '信用借还', label: '信用借还', order: 2 },
+  { group: 'transaction_category_transfer', code: '定投', label: '定投', order: 3 },
 ]
 
 export async function seedDefaults() {

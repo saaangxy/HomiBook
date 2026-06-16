@@ -132,7 +132,7 @@ export async function recordRoutes(app: FastifyInstance) {
           account: { select: { id: true, name: true, type: true } },
           fromAccount: { select: { id: true, name: true } },
           toAccount: { select: { id: true, name: true } },
-          owner: { select: { id: true, nickname: true, email: true } },
+          owner: { select: { id: true, nickname: true, username: true, email: true } },
           recordAttachments: { select: { id: true, path: true, originalFilename: true } },
         },
         orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
@@ -147,7 +147,7 @@ export async function recordRoutes(app: FastifyInstance) {
         ...r,
         tags: JSON.parse(r.tags),
         attachments: r.recordAttachments.map((a) => ({ id: a.id, url: a.path, originalFilename: a.originalFilename })),
-        ownerName: r.owner.nickname || r.owner.email,
+        ownerName: r.owner.nickname || r.owner.username || r.owner.email,
       })),
       total,
       page,
@@ -792,7 +792,7 @@ export async function recordRoutes(app: FastifyInstance) {
         account: { select: { id: true, name: true, type: true } },
         fromAccount: { select: { id: true, name: true } },
         toAccount: { select: { id: true, name: true } },
-        owner: { select: { id: true, nickname: true, email: true } },
+        owner: { select: { id: true, nickname: true, username: true, email: true } },
         recordAttachments: { select: { id: true, path: true, originalFilename: true } },
       },
     })
@@ -807,7 +807,7 @@ export async function recordRoutes(app: FastifyInstance) {
       ...record,
       tags: JSON.parse(record.tags),
       attachments: record.recordAttachments.map((a) => ({ id: a.id, url: a.path, originalFilename: a.originalFilename })),
-      ownerName: record.owner.name || record.owner.email,
+      ownerName: record.owner.nickname || record.owner.username || record.owner.email,
     }
   })
 
@@ -843,6 +843,61 @@ export async function recordRoutes(app: FastifyInstance) {
     })
 
     return { success: true, updated: ids.length }
+  })
+
+  // 批量删除
+  app.post('/batch-delete', {
+    schema: {
+      description: '批量删除记录',
+      tags: ['记录'],
+      body: zSchema(z.object({ ids: z.array(z.string()).min(1) })),
+    },
+  }, async (req, reply) => {
+    const { ids } = req.body as { ids: string[] }
+    if (!ids?.length) return reply.status(400).send({ message: '请选择要删除的记录' })
+
+    const userId = (req as any).user.id as string
+
+    // 查出所有记录，校验权限
+    const records = await prisma.record.findMany({
+      where: { id: { in: ids } },
+      include: { recordAttachments: true },
+    })
+
+    if (records.length === 0) return reply.status(404).send({ message: '记录不存在' })
+
+    const bookIds = new Set(records.map(r => r.accountBookId))
+    for (const bookId of bookIds) {
+      try {
+        await assertIsMember(bookId, userId)
+      } catch (e: any) {
+        return reply.status(e.statusCode || 403).send({ message: e.message })
+      }
+    }
+
+    // 删除附件文件
+    const uploadsDir = path.join(process.cwd(), 'uploads')
+    for (const r of records) {
+      for (const att of r.recordAttachments) {
+        const filePath = path.join(uploadsDir, path.basename(att.path))
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+      }
+    }
+
+    await prisma.record.deleteMany({ where: { id: { in: ids } } })
+
+    // 刷新所有受影响的账户余额
+    const affectedAccounts = new Set<string>()
+    for (const r of records) {
+      affectedAccounts.add(r.accountId)
+      if (r.fromAccountId) affectedAccounts.add(r.fromAccountId)
+      if (r.toAccountId) affectedAccounts.add(r.toAccountId)
+    }
+    for (const accId of affectedAccounts) {
+      await refreshAccountBalance(accId)
+    }
+
+    return { success: true, deleted: records.length }
   })
 
   // 更新单条
@@ -909,7 +964,7 @@ export async function recordRoutes(app: FastifyInstance) {
         account: { select: { id: true, name: true, type: true } },
         fromAccount: { select: { id: true, name: true } },
         toAccount: { select: { id: true, name: true } },
-        owner: { select: { id: true, nickname: true, email: true } },
+        owner: { select: { id: true, nickname: true, username: true, email: true } },
         recordAttachments: { select: { id: true, path: true, originalFilename: true } },
       },
     })
@@ -927,7 +982,7 @@ export async function recordRoutes(app: FastifyInstance) {
       ...record,
       tags: JSON.parse(record.tags),
       attachments: record.recordAttachments.map((a) => ({ id: a.id, url: a.path, originalFilename: a.originalFilename })),
-      ownerName: record.owner.name || record.owner.email,
+      ownerName: record.owner.nickname || record.owner.username || record.owner.email,
     }
   })
 
@@ -1010,7 +1065,7 @@ export async function recordRoutes(app: FastifyInstance) {
         account: { select: { id: true, name: true, type: true } },
         fromAccount: { select: { id: true, name: true } },
         toAccount: { select: { id: true, name: true } },
-        owner: { select: { id: true, nickname: true, email: true } },
+        owner: { select: { id: true, nickname: true, username: true, email: true } },
         recordAttachments: { select: { id: true, path: true, originalFilename: true } },
       },
     })
@@ -1024,7 +1079,7 @@ export async function recordRoutes(app: FastifyInstance) {
       ...cloned,
       tags: JSON.parse(cloned.tags),
       attachments: cloned.recordAttachments.map((a) => ({ id: a.id, url: a.path, originalFilename: a.originalFilename })),
-      ownerName: cloned.owner.name || cloned.owner.email,
+      ownerName: cloned.owner.nickname || cloned.owner.username || cloned.owner.email,
     }
   })
 
