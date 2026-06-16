@@ -279,7 +279,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
         if (res?.action === 'existing') {
           accountId = res.accountId
         } else if (res?.action === 'create') {
-          accountId = r.accountName
+          accountId = res.name
         } else {
           const existing = accounts.find(a => a.name === r.accountName)
           accountId = existing?.id || r.accountName
@@ -292,7 +292,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
         if (res?.action === 'existing') {
           toAccountId = res.accountId
         } else if (res?.action === 'create') {
-          toAccountId = r.toAccountName
+          toAccountId = res.name
         } else {
           const existing = accounts.find(a => a.name === r.toAccountName!)
           toAccountId = existing?.id || r.toAccountName!

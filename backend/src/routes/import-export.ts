@@ -567,91 +567,114 @@ export async function importExportRoutes(app: FastifyInstance) {
 
     await assertIsMember(accountBookId, payload.id)
 
-    // 创建新账户
     const accountMap = new Map<string, string>()
     let accountsCreated = 0
-    for (const acct of accountCreations) {
-      const existing = await prisma.account.findFirst({
-        where: { accountBookId, name: acct.name },
-      })
-      if (existing) {
-        accountMap.set(acct.csvName, existing.id)
-        continue
-      }
-      accountsCreated++
-      const created = await prisma.account.create({
-        data: {
-          accountBookId,
-          ownerId: payload.id,
-          name: acct.name,
-          type: acct.type,
-          bankName: acct.bankName || null,
-          accountNo: acct.accountNo || null,
-          balance: 0,
-        },
-      })
-      accountMap.set(acct.csvName, created.id)
-    }
+    const affectedAccounts = new Set<string>()
 
-    // 保存分类映射
-    for (const m of newMappings) {
-      await prisma.importCategoryMapping.upsert({
-        where: {
-          source_sourceCategory_payerContains_descriptionContains: {
+    // 所有写操作在一个事务中完成，任一步骤失败则整体回滚
+    await prisma.$transaction(async (tx) => {
+      // 创建新账户
+      for (const acct of accountCreations) {
+        const existing = await tx.account.findFirst({
+          where: { accountBookId, name: acct.name },
+        })
+        if (existing) {
+          accountMap.set(acct.csvName, existing.id)
+          accountMap.set(acct.name, existing.id)
+          continue
+        }
+        accountsCreated++
+        const created = await tx.account.create({
+          data: {
+            accountBookId,
+            ownerId: payload.id,
+            name: acct.name,
+            type: acct.type,
+            bankName: acct.bankName || null,
+            accountNo: acct.accountNo || null,
+            balance: 0,
+          },
+        })
+        accountMap.set(acct.csvName, created.id)
+        accountMap.set(acct.name, created.id)
+      }
+
+      // 保存分类映射
+      for (const m of newMappings) {
+        await tx.importCategoryMapping.upsert({
+          where: {
+            source_sourceCategory_payerContains_descriptionContains: {
+              source,
+              sourceCategory: m.sourceCategory,
+              payerContains: m.payerContains || '',
+              descriptionContains: m.descriptionContains || '',
+            },
+          },
+          create: {
             source,
             sourceCategory: m.sourceCategory,
             payerContains: m.payerContains || '',
             descriptionContains: m.descriptionContains || '',
+            targetCategoryCode: m.targetCategoryCode,
           },
-        },
-        create: {
-          source,
-          sourceCategory: m.sourceCategory,
-          payerContains: m.payerContains || '',
-          descriptionContains: m.descriptionContains || '',
-          targetCategoryCode: m.targetCategoryCode,
-        },
-        update: { targetCategoryCode: m.targetCategoryCode },
-      })
-    }
+          update: { targetCategoryCode: m.targetCategoryCode },
+        })
+      }
 
-    // 收集需要刷新余额的账户
-    const affectedAccounts = new Set<string>()
-
-    // 批量创建记录
-    const batchSize = 100
-    for (let i = 0; i < records.length; i += batchSize) {
-      const batch = records.slice(i, i + batchSize)
-      const createData = batch.map(r => {
-        const accountId = accountMap.get(r.accountId) || r.accountId
-        const toAccountId = r.toAccountId ? (accountMap.get(r.toAccountId) || r.toAccountId) : null
-        affectedAccounts.add(accountId)
-        if (toAccountId) affectedAccounts.add(toAccountId)
-
-        return {
-          accountBookId,
-          type: r.type,
-          amount: r.amount,
-          date: new Date(r.date),
-          remark: r.remark || null,
-          tags: JSON.stringify(r.tags ?? []),
-          accountId,
-          fromAccountId: r.type === 'TRANSFER' ? accountId : null,
-          toAccountId: r.type === 'TRANSFER' ? toAccountId : null,
-          categoryCode: r.categoryCode || null,
-          payer: r.payer || null,
-          ownerId: payload.id,
+      // 解析所有记录的账户 ID
+      const nameCache = new Map<string, string>()
+      const resolveAccountId = async (idOrName: string): Promise<string> => {
+        if (accountMap.has(idOrName)) return accountMap.get(idOrName)!
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrName)) return idOrName
+        if (nameCache.has(idOrName)) return nameCache.get(idOrName)!
+        const acc = await tx.account.findFirst({ where: { accountBookId, name: idOrName } })
+        if (acc) {
+          nameCache.set(idOrName, acc.id)
+          return acc.id
         }
-      })
+        throw Object.assign(new Error(`账户不存在: ${idOrName}`), { statusCode: 400 })
+      }
 
-      await prisma.$transaction(
-        createData.map(d =>
-          prisma.record.create({ data: d })
+      // 批量创建记录
+      const batchSize = 100
+      for (let i = 0; i < records.length; i += batchSize) {
+        const batch = records.slice(i, i + batchSize)
+        const resolvedAccounts = await Promise.all(batch.map(async r => ({
+          accountId: await resolveAccountId(r.accountId),
+          toAccountId: r.toAccountId ? await resolveAccountId(r.toAccountId) : null,
+        })))
+
+        const createData = batch.map((r, idx) => {
+          const accountId = resolvedAccounts[idx].accountId
+          const toAccountId = resolvedAccounts[idx].toAccountId
+          affectedAccounts.add(accountId)
+          if (toAccountId) affectedAccounts.add(toAccountId)
+
+          return {
+            accountBookId,
+            type: r.type,
+            amount: r.amount,
+            date: new Date(r.date),
+            remark: r.remark || null,
+            tags: JSON.stringify(r.tags ?? []),
+            accountId,
+            fromAccountId: r.type === 'TRANSFER' ? accountId : null,
+            toAccountId: r.type === 'TRANSFER' ? toAccountId : null,
+            categoryCode: r.categoryCode || null,
+            payer: r.payer || null,
+            ownerId: payload.id,
+          }
+        })
+
+        await Promise.all(
+          createData.map(d =>
+            tx.record.create({ data: d })
+          )
         )
-      )
-    }
+      }
+    })
 
-    // 刷新所有受影响账户的余额
+    // 刷新所有受影响账户的余额（事务外，刷新失败不影响导入结果）
     for (const accId of affectedAccounts) {
       try {
         await refreshAccountBalance(accId)
