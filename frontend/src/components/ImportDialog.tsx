@@ -42,7 +42,7 @@ interface ImportDialogProps {
   onImportComplete: () => void
 }
 
-type Step = 'source' | 'upload' | 'preview' | 'result'
+type Step = 'source' | 'upload' | 'preview' | 'confirm' | 'result'
 
 const SOURCE_LABELS: Record<string, string> = {
   alipay: '支付宝',
@@ -114,6 +114,8 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
   const [filterCategory, setFilterCategory] = useState('')
   const [filterType, setFilterType] = useState('')
   const [filterAccount, setFilterAccount] = useState('')
+  const [filterCategoryOpen, setFilterCategoryOpen] = useState(false)
+  const [filterCategorySearch, setFilterCategorySearch] = useState('')
   const [comboOpen, setComboOpen] = useState<string | null>(null) // 当前打开的 combobox 对应的 sourceCategory
   const [categorySearch, setCategorySearch] = useState('')
 
@@ -150,6 +152,8 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
     setFilterCategory('')
     setFilterType('')
     setFilterAccount('')
+    setFilterCategoryOpen(false)
+    setFilterCategorySearch('')
     setExtraUnmatched([])
     setNextExtraId(1)
     setRemovedKeys({})
@@ -217,110 +221,115 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
     }
   }
 
-  const handleImport = async () => {
-    setLoading(true)
-    setError('')
-    try {
-      // 构建账户创建列表
-      const accountCreations = unmatchedAccounts
-        .filter(ua => accountResolutions[ua.csvName]?.action === 'create')
-        .map(ua => {
-          const res = accountResolutions[ua.csvName] as { action: 'create'; name: string; type: string }
-          return {
-            csvName: ua.csvName,
-            name: res.name,
-            type: res.type,
-            bankName: ua.bankName,
-            accountNo: ua.accountNo,
-          }
-        })
+  const buildImportData = () => {
+    // 构建账户创建列表
+    const accountCreations = unmatchedAccounts
+      .filter(ua => accountResolutions[ua.csvName]?.action === 'create')
+      .map(ua => {
+        const res = accountResolutions[ua.csvName] as { action: 'create'; name: string; type: string }
+        return {
+          csvName: ua.csvName,
+          name: res.name,
+          type: res.type,
+          bankName: ua.bankName,
+          accountNo: ua.accountNo,
+        }
+      })
 
-      // 构建分类映射保存列表（从复合键中提取，去重，跳过已删除的）
-      const mappingSet = new Map<string, { sourceCategory: string; targetCategoryCode: string; payerContains?: string; descriptionContains?: string }>()
-      for (const [key, res] of Object.entries(categoryResolutions)) {
-        if (!res.save || !res.targetCode) continue
-        const sourceCategory = key.split('::')[0]
-        if (removedKeys[sourceCategory]) continue
-        const dedupeKey = `${sourceCategory}||${res.payerContains || ''}||${res.descriptionContains || ''}`
-        mappingSet.set(dedupeKey, {
-          sourceCategory,
-          targetCategoryCode: res.targetCode,
-          payerContains: res.payerContains || undefined,
-          descriptionContains: res.descriptionContains || undefined,
-        })
+    // 构建分类映射保存列表
+    const mappingSet = new Map<string, { sourceCategory: string; targetCategoryCode: string; payerContains?: string; descriptionContains?: string }>()
+    for (const [key, res] of Object.entries(categoryResolutions)) {
+      if (!res.save || !res.targetCode) continue
+      const sourceCategory = key.split('::')[0]
+      if (removedKeys[sourceCategory]) continue
+      const dedupeKey = `${sourceCategory}||${res.payerContains || ''}||${res.descriptionContains || ''}`
+      mappingSet.set(dedupeKey, {
+        sourceCategory,
+        targetCategoryCode: res.targetCode,
+        payerContains: res.payerContains || undefined,
+        descriptionContains: res.descriptionContains || undefined,
+      })
+    }
+    const newMappings = Array.from(mappingSet.values())
+
+    // 构建记录列表
+    const records = previewRecords.map(r => {
+      let accountId = r.accountId || ''
+      if (!accountId && r.accountName) {
+        const res = accountResolutions[r.accountName]
+        if (res?.action === 'existing') {
+          accountId = res.accountId
+        } else if (res?.action === 'create') {
+          accountId = r.accountName
+        } else {
+          const existing = accounts.find(a => a.name === r.accountName)
+          accountId = existing?.id || r.accountName
+        }
       }
-      const newMappings = Array.from(mappingSet.values())
 
-      // 构建记录列表（映射账户ID和分类）
-      const records = previewRecords.map(r => {
-        let accountId = r.accountId || ''
-        if (!accountId && r.accountName) {
-          const res = accountResolutions[r.accountName]
-          if (res?.action === 'existing') {
-            accountId = res.accountId
-          } else if (res?.action === 'create') {
-            accountId = r.accountName // 临时用名称，后端会映射
-          } else {
-            // 查找已有账户
-            const existing = accounts.find(a => a.name === r.accountName)
-            accountId = existing?.id || r.accountName
-          }
+      let toAccountId = r.toAccountId || undefined
+      if (!toAccountId && r.toAccountName) {
+        const res = accountResolutions[r.toAccountName]
+        if (res?.action === 'existing') {
+          toAccountId = res.accountId
+        } else if (res?.action === 'create') {
+          toAccountId = r.toAccountName
+        } else {
+          const existing = accounts.find(a => a.name === r.toAccountName!)
+          toAccountId = existing?.id || r.toAccountName!
         }
+      }
 
-        let toAccountId = r.toAccountId || undefined
-        if (!toAccountId && r.toAccountName) {
-          const res = accountResolutions[r.toAccountName]
-          if (res?.action === 'existing') {
-            toAccountId = res.accountId
-          } else if (res?.action === 'create') {
-            toAccountId = r.toAccountName
-          } else {
-            const existing = accounts.find(a => a.name === r.toAccountName!)
-            toAccountId = existing?.id || r.toAccountName!
-          }
-        }
+      const categoryCode = r.mappedCategoryCode
+        || (r.categoryCode ? categoryResolutions[`${r.categoryCode}::${r.type}`]?.targetCode : null)
+        || r.categoryCode
+        || null
 
-        // 优先后端映射 → 前端手动映射（用复合键查找） → 原始分类
-        const categoryCode = r.mappedCategoryCode
-          || (r.categoryCode ? categoryResolutions[`${r.categoryCode}::${r.type}`]?.targetCode : null)
-          || r.categoryCode
-          || null
+      return {
+        date: r.date,
+        type: r.type,
+        amount: r.amount,
+        accountId,
+        toAccountId,
+        categoryCode,
+        payer: r.payer,
+        remark: r.remark,
+        tags: r.tags,
+        // 保留原始信息供确认页展示
+        _accountName: r.accountName,
+        _toAccountName: r.toAccountName,
+      }
+    })
 
+    const resolvedUnrecognized = unrecognizedRecords
+      .filter(r => {
+        const res = unrecognizedResolutions[r.rowIndex]
+        return res?.type && res?.accountId
+      })
+      .map(r => {
+        const res = unrecognizedResolutions[r.rowIndex]
         return {
           date: r.date,
-          type: r.type,
+          type: res.type,
           amount: r.amount,
-          accountId,
-          toAccountId,
-          categoryCode,
+          accountId: res.accountId,
+          toAccountId: undefined as string | undefined,
+          categoryCode: res.categoryCode || r.mappedCategoryCode || r.categoryCode || null,
           payer: r.payer,
           remark: r.remark,
           tags: r.tags,
         }
       })
 
-      // 合并已手动处理的无法识别记录
-      const resolvedUnrecognized = unrecognizedRecords
-        .filter(r => {
-          const res = unrecognizedResolutions[r.rowIndex]
-          return res?.type && res?.accountId
-        })
-        .map(r => {
-          const res = unrecognizedResolutions[r.rowIndex]
-          return {
-            date: r.date,
-            type: res.type,
-            amount: r.amount,
-            accountId: res.accountId,
-            toAccountId: undefined as string | undefined,
-            categoryCode: res.categoryCode || r.mappedCategoryCode || r.categoryCode || null,
-            payer: r.payer,
-            remark: r.remark,
-            tags: r.tags,
-          }
-        })
+    return { accountCreations, newMappings, records, resolvedUnrecognized }
+  }
 
-      const allRecords = [...records, ...resolvedUnrecognized]
+  const handleImport = async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const { accountCreations, newMappings, records, resolvedUnrecognized } = buildImportData()
+      const allRecords = [...records.map(({ _accountName, _toAccountName, ...r }) => r), ...resolvedUnrecognized]
 
       const result = await importExportApi.import({
         accountBookId: bookId,
@@ -845,17 +854,52 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                           ))}
                         </SelectContent>
                       </Select>
-                      <Select value={filterCategory || 'all'} onValueChange={(v) => setFilterCategory(v === 'all' ? '' : v)}>
-                        <SelectTrigger className="h-7 text-xs w-28 bg-background">
-                          <SelectValue placeholder="原始分类" />
-                        </SelectTrigger>
-                        <SelectContent className="bg-card border-border max-h-48">
-                          <SelectItem value="all" className="text-xs">全部分类</SelectItem>
-                          {uniqueCategories.map(c => (
-                            <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <Popover open={filterCategoryOpen} onOpenChange={(o) => { setFilterCategoryOpen(o); if (!o) setFilterCategorySearch('') }} modal={true}>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" size="sm" className="h-7 text-xs w-28 justify-between bg-background font-normal">
+                            <span className={filterCategory ? '' : 'text-muted-foreground'}>
+                              {filterCategory || '原始分类'}
+                            </span>
+                            <ChevronDown size={12} className="opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-52 p-2" align="start" onOpenAutoFocus={(e) => e.preventDefault()}>
+                          <Input
+                            placeholder="搜索分类..."
+                            value={filterCategorySearch}
+                            onChange={(e) => setFilterCategorySearch(e.target.value)}
+                            className="h-8 text-xs mb-2"
+                          />
+                          <div className="max-h-48 overflow-y-auto">
+                            {(() => {
+                              const filtered = filterCategorySearch
+                                ? uniqueCategories.filter(c => c.toLowerCase().includes(filterCategorySearch.toLowerCase()))
+                                : uniqueCategories
+                              return (
+                                <>
+                                  <button
+                                    className={`flex items-center gap-1.5 w-full text-left px-2 py-1.5 text-xs rounded hover:bg-accent ${!filterCategory ? 'bg-accent' : ''}`}
+                                    onClick={() => { setFilterCategory(''); setFilterCategoryOpen(false) }}
+                                  >
+                                    <CheckCircle size={12} className={!filterCategory ? 'text-[#22c55e]' : 'text-transparent'} />
+                                    全部分类
+                                  </button>
+                                  {filtered.map(c => (
+                                    <button
+                                      key={c}
+                                      className={`flex items-center gap-1.5 w-full text-left px-2 py-1.5 text-xs rounded hover:bg-accent ${filterCategory === c ? 'bg-accent' : ''}`}
+                                      onClick={() => { setFilterCategory(c); setFilterCategoryOpen(false) }}
+                                    >
+                                      <CheckCircle size={12} className={filterCategory === c ? 'text-[#22c55e]' : 'text-transparent'} />
+                                      {c}
+                                    </button>
+                                  ))}
+                                </>
+                              )
+                            })()}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
                       <Select value={filterAccount || 'all'} onValueChange={(v) => setFilterAccount(v === 'all' ? '' : v)}>
                         <SelectTrigger className="h-7 text-xs w-28 bg-background">
                           <SelectValue placeholder="账户" />
@@ -940,20 +984,136 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
               </Button>
               <Button
                 className="bg-primary hover:bg-primary/90 text-primary-foreground"
-                onClick={handleImport}
-                disabled={loading || (previewRecords.length === 0 && unrecognizedRecords.filter(r => unrecognizedResolutions[r.rowIndex]?.type && unrecognizedResolutions[r.rowIndex]?.accountId).length === 0)}
+                onClick={() => setStep('confirm')}
+                disabled={previewRecords.length === 0 && unrecognizedRecords.filter(r => unrecognizedResolutions[r.rowIndex]?.type && unrecognizedResolutions[r.rowIndex]?.accountId).length === 0}
               >
-                {(() => {
-                  const resolvedCount = unrecognizedRecords.filter(r => unrecognizedResolutions[r.rowIndex]?.type && unrecognizedResolutions[r.rowIndex]?.accountId).length
-                  const total = previewRecords.length + resolvedCount
-                  return loading ? <Spinner /> : `导入 ${total} 条记录`
-                })()}
+                下一步：确认导入
+                <ArrowRight size={16} />
               </Button>
             </DialogFooter>
           </>
         )}
 
-        {/* Step 4: 结果 */}
+        {/* Step 4: 确认导入 */}
+        {step === 'confirm' && (() => {
+          const { accountCreations, records, resolvedUnrecognized } = buildImportData()
+          const allRecordCount = records.length + resolvedUnrecognized.length
+          const incomeCount = records.filter(r => r.type === 'INCOME').length + resolvedUnrecognized.filter(r => r.type === 'INCOME').length
+          const expenseCount = records.filter(r => r.type === 'EXPENSE').length + resolvedUnrecognized.filter(r => r.type === 'EXPENSE').length
+          const transferCount = records.filter(r => r.type === 'TRANSFER').length + resolvedUnrecognized.filter(r => r.type === 'TRANSFER').length
+          const incomeSum = records.filter(r => r.type === 'INCOME').reduce((s, r) => s + r.amount, 0) + resolvedUnrecognized.filter(r => r.type === 'INCOME').reduce((s, r) => s + r.amount, 0)
+          const expenseSum = records.filter(r => r.type === 'EXPENSE').reduce((s, r) => s + r.amount, 0) + resolvedUnrecognized.filter(r => r.type === 'EXPENSE').reduce((s, r) => s + r.amount, 0)
+          const transferSum = records.filter(r => r.type === 'TRANSFER').reduce((s, r) => s + r.amount, 0) + resolvedUnrecognized.filter(r => r.type === 'TRANSFER').reduce((s, r) => s + r.amount, 0)
+          return (
+            <>
+              <DialogHeader>
+                <DialogTitle>确认导入</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                {error && (
+                  <Alert variant="destructive">
+                    <AlertDescription>{error}</AlertDescription>
+                  </Alert>
+                )}
+
+                {/* 账户创建概览 */}
+                {accountCreations.length > 0 && (
+                  <div>
+                    <p className="text-sm font-medium mb-2">将创建 {accountCreations.length} 个新账户：</p>
+                    <div className="border rounded-lg overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-muted/50 hover:bg-muted/50">
+                            <TableHead className="text-xs">账户名称</TableHead>
+                            <TableHead className="text-xs">类型</TableHead>
+                            <TableHead className="text-xs">CSV 原始名</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {accountCreations.map((ac, i) => (
+                            <TableRow key={i}>
+                              <TableCell className="text-sm py-2">{ac.name}</TableCell>
+                              <TableCell className="text-xs py-2">{ACCOUNT_TYPE_LABELS[ac.type as AccountType] || ac.type}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground py-2">{ac.csvName}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                )}
+
+                {/* 流水概览 */}
+                <div>
+                  <p className="text-sm font-medium mb-2">将导入 {allRecordCount} 条流水记录：</p>
+                  <div className="grid grid-cols-3 gap-3 mb-3">
+                    <div className="border rounded-lg p-3 text-center">
+                      <p className="text-xs text-muted-foreground">收入</p>
+                      <p className="text-sm font-semibold text-[#22c55e]">{incomeCount} 条</p>
+                      <p className="text-xs text-[#22c55e]">¥{incomeSum.toFixed(2)}</p>
+                    </div>
+                    <div className="border rounded-lg p-3 text-center">
+                      <p className="text-xs text-muted-foreground">支出</p>
+                      <p className="text-sm font-semibold text-[#ef4444]">{expenseCount} 条</p>
+                      <p className="text-xs text-[#ef4444]">¥{expenseSum.toFixed(2)}</p>
+                    </div>
+                    <div className="border rounded-lg p-3 text-center">
+                      <p className="text-xs text-muted-foreground">转账</p>
+                      <p className="text-sm font-semibold text-[#3b82f6]">{transferCount} 条</p>
+                      <p className="text-xs text-[#3b82f6]">¥{transferSum.toFixed(2)}</p>
+                    </div>
+                  </div>
+
+                  {/* 全部记录预览 */}
+                  <div className="border rounded-lg overflow-hidden max-h-80 overflow-y-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-muted/50 hover:bg-muted/50">
+                          <TableHead className="text-xs">日期</TableHead>
+                          <TableHead className="text-xs">类型</TableHead>
+                          <TableHead className="text-xs">金额</TableHead>
+                          <TableHead className="text-xs">账户</TableHead>
+                          <TableHead className="text-xs">分类</TableHead>
+                          <TableHead className="text-xs">备注</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {[...records, ...resolvedUnrecognized].map((r: any, i: number) => (
+                          <TableRow key={i}>
+                            <TableCell className="text-xs py-1.5">{r.date}</TableCell>
+                            <TableCell className={`text-xs py-1.5 ${TYPE_COLORS[r.type] || ''}`}>
+                              {TYPE_LABELS[r.type] || r.type}
+                            </TableCell>
+                            <TableCell className="text-xs py-1.5 font-mono">
+                              {r.amount.toFixed(2)}
+                            </TableCell>
+                            <TableCell className="text-xs py-1.5">{r._accountName || '-'}</TableCell>
+                            <TableCell className="text-xs py-1.5 text-muted-foreground">{r.categoryCode || '-'}</TableCell>
+                            <TableCell className="text-xs py-1.5 text-muted-foreground max-w-[120px] truncate">{r.remark || '-'}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setStep('preview')} disabled={loading}>
+                  <ArrowLeft size={16} /> 返回修改
+                </Button>
+                <Button
+                  className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                  onClick={handleImport}
+                  disabled={loading}
+                >
+                  {loading ? <Spinner /> : `确认导入 ${allRecordCount} 条记录`}
+                </Button>
+              </DialogFooter>
+            </>
+          )
+        })()}
+
+        {/* Step 5: 结果 */}
         {step === 'result' && (
           <>
             <DialogHeader>

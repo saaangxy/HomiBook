@@ -389,15 +389,27 @@ async function resolveCategories(source: string, rows: ParsedRow[]) {
     categoryTypes.set(r.categoryCode, types)
   }
 
-  // 未映射的分类
+  // 先填充 mappedCategoryCode，再判断哪些分类真正未匹配
+  for (const r of rows) {
+    if (r.categoryCode) {
+      r.mappedCategoryCode = findBestMapping(r)
+    }
+  }
+
+  // 收集仍有未匹配记录的分类
+  const categoriesWithUnmatched = new Set<string>()
+  for (const r of rows) {
+    if (r.categoryCode && r.mappedCategoryCode === null) {
+      categoriesWithUnmatched.add(r.categoryCode)
+    }
+  }
+
+  // 未映射的分类：只有至少有一条记录没匹配上的分类才算
   const unmatched: { sourceCategory: string; suggestedCode: string | null; types: string[] }[] = []
   const seen = new Set<string>()
 
   for (const cat of sourceCategories) {
-    if (mappingsByCat.has(cat) && mappingsByCat.get(cat)!.some(m => !m.payerContains && !m.descriptionContains)) {
-      // 有无条件映射，非条件映射在填充时处理
-      continue
-    }
+    if (!categoriesWithUnmatched.has(cat)) continue
     if (seen.has(cat)) continue
     seen.add(cat)
 
@@ -410,13 +422,6 @@ async function resolveCategories(source: string, rows: ParsedRow[]) {
       }
     }
     unmatched.push({ sourceCategory: cat, suggestedCode: matched, types: [...(categoryTypes.get(cat) || [])] })
-  }
-
-  // 填充 mappedCategoryCode
-  for (const r of rows) {
-    if (r.categoryCode) {
-      r.mappedCategoryCode = findBestMapping(r)
-    }
   }
 
   return { unmatched, allDictItems: allDictItems.map(d => ({ code: d.code, label: d.label, group: d.group })) }
@@ -564,6 +569,7 @@ export async function importExportRoutes(app: FastifyInstance) {
 
     // 创建新账户
     const accountMap = new Map<string, string>()
+    let accountsCreated = 0
     for (const acct of accountCreations) {
       const existing = await prisma.account.findFirst({
         where: { accountBookId, name: acct.name },
@@ -572,6 +578,7 @@ export async function importExportRoutes(app: FastifyInstance) {
         accountMap.set(acct.csvName, existing.id)
         continue
       }
+      accountsCreated++
       const created = await prisma.account.create({
         data: {
           accountBookId,
@@ -653,7 +660,7 @@ export async function importExportRoutes(app: FastifyInstance) {
 
     return {
       imported: records.length,
-      accountsCreated: accountCreations.length,
+      accountsCreated,
       newAccountIds: Object.fromEntries(accountMap),
     }
   })

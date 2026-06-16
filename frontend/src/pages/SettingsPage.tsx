@@ -123,6 +123,7 @@ export function SettingsPage() {
   const [mappingsLoading, setMappingsLoading] = useState(false)
   const [mappingsError, setMappingsError] = useState('')
   const [mappingAddOpen, setMappingAddOpen] = useState(false)
+  const [mappingEditTarget, setMappingEditTarget] = useState<CategoryMapping | null>(null)
   const [mappingNewSourceCategory, setMappingNewSourceCategory] = useState('')
   const [mappingNewPayerContains, setMappingNewPayerContains] = useState('')
   const [mappingNewDescriptionContains, setMappingNewDescriptionContains] = useState('')
@@ -386,13 +387,17 @@ export function SettingsPage() {
     } catch { /* ignore */ }
   }, [])
 
-  // 新增映射
-  const handleAddMapping = async () => {
+  // 新增/编辑映射
+  const handleSaveMapping = async () => {
     if (!mappingNewSourceCategory.trim()) { setMappingFormError('请输入CSV分类名'); return }
     if (!mappingNewTargetCode) { setMappingFormError('请选择目标系统分类'); return }
     setMappingSubmitting(true)
     setMappingFormError('')
     try {
+      if (mappingEditTarget) {
+        // 编辑：先删旧，再存新
+        await importExportApi.deleteMapping(mappingEditTarget.id)
+      }
       await importExportApi.saveMappings([{
         source: mappingSource,
         sourceCategory: mappingNewSourceCategory.trim(),
@@ -401,6 +406,7 @@ export function SettingsPage() {
         targetCategoryCode: mappingNewTargetCode,
       }])
       setMappingAddOpen(false)
+      setMappingEditTarget(null)
       setMappingNewSourceCategory('')
       setMappingNewPayerContains('')
       setMappingNewDescriptionContains('')
@@ -953,7 +959,7 @@ export function SettingsPage() {
               </Select>
               <Button
                 size="sm"
-                onClick={() => { setMappingNewSourceCategory(''); setMappingNewPayerContains(''); setMappingNewDescriptionContains(''); setMappingNewTargetCode(''); setMappingFormError(''); setMappingAddOpen(true) }}
+                onClick={() => { setMappingEditTarget(null); setMappingNewSourceCategory(''); setMappingNewPayerContains(''); setMappingNewDescriptionContains(''); setMappingNewTargetCode(''); setMappingFormError(''); setMappingAddOpen(true) }}
                 className="bg-primary hover:bg-primary/90 text-primary-foreground h-8 text-xs"
               >
                 <Plus size={14} /> 新增映射
@@ -993,14 +999,32 @@ export function SettingsPage() {
                           {m.targetCategoryCode}
                         </TableCell>
                         <TableCell className="text-right py-2.5">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-muted-foreground hover:text-[#ef4444]"
-                            onClick={() => setMappingDeleteTarget(m)}
-                          >
-                            <Trash2 size={13} />
-                          </Button>
+                          <div className="flex items-center justify-end gap-0.5">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-muted-foreground hover:text-primary"
+                              onClick={() => {
+                                setMappingEditTarget(m)
+                                setMappingNewSourceCategory(m.sourceCategory)
+                                setMappingNewPayerContains(m.payerContains || '')
+                                setMappingNewDescriptionContains(m.descriptionContains || '')
+                                setMappingNewTargetCode(m.targetCategoryCode)
+                                setMappingFormError('')
+                                setMappingAddOpen(true)
+                              }}
+                            >
+                              <Pencil size={13} />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-muted-foreground hover:text-[#ef4444]"
+                              onClick={() => setMappingDeleteTarget(m)}
+                            >
+                              <Trash2 size={13} />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -1232,11 +1256,11 @@ export function SettingsPage() {
       </AlertDialog>
 
       {/* 新增分类映射弹窗 */}
-      <Dialog open={mappingAddOpen} onOpenChange={setMappingAddOpen}>
+      <Dialog open={mappingAddOpen} onOpenChange={(open) => { setMappingAddOpen(open); if (!open) setMappingEditTarget(null) }}>
         <DialogTrigger />
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>新增分类映射</DialogTitle>
+            <DialogTitle>{mappingEditTarget ? '编辑分类映射' : '新增分类映射'}</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-3">
             {mappingFormError && (
@@ -1290,7 +1314,7 @@ export function SettingsPage() {
             <Button variant="outline" onClick={() => setMappingAddOpen(false)}>取消</Button>
             <Button
               className="bg-primary hover:bg-primary/90 text-primary-foreground"
-              onClick={handleAddMapping}
+              onClick={handleSaveMapping}
               disabled={mappingSubmitting}
             >
               {mappingSubmitting ? '添加中...' : '添加'}
