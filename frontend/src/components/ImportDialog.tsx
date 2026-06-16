@@ -32,6 +32,7 @@ import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/comp
 import { importExportApi, type UnmatchedAccount, type UnmatchedCategory, type ParsedImportRow, type DictEntry } from '@/api/import-export'
 import { ACCOUNT_TYPE_LABELS, type AccountItem, type AccountType } from '@/api/account'
 import { Upload, FileText, CheckCircle, AlertCircle, ArrowLeft, ArrowRight, ChevronDown } from 'lucide-react'
+import dayjs from 'dayjs'
 
 interface ImportDialogProps {
   open: boolean
@@ -504,7 +505,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
         {step === 'preview' && (
           <>
             <DialogHeader>
-              <DialogTitle>预览导入数据</DialogTitle>
+              <DialogTitle>预览数据</DialogTitle>
             </DialogHeader>
             <div className="flex flex-col gap-4 py-4 flex-1 overflow-y-auto">
               {error && (
@@ -942,7 +943,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                               <TableHead className="text-xs whitespace-nowrap py-2">金额</TableHead>
                               <TableHead className="text-xs whitespace-nowrap py-2">账户</TableHead>
                               <TableHead className="text-xs whitespace-nowrap py-2">目标账户</TableHead>
-                              <TableHead className="text-xs whitespace-nowrap py-2">交易对方</TableHead>
+                              <TableHead className="text-xs whitespace-nowrap py-2">交易方</TableHead>
                               <TableHead className="text-xs whitespace-nowrap py-2">原始分类</TableHead>
                               <TableHead className="text-xs whitespace-nowrap py-2">映射分类</TableHead>
                               <TableHead className="text-xs whitespace-nowrap py-2">说明</TableHead>
@@ -955,7 +956,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                                   {TYPE_LABELS[r.type]}
                                 </TableCell>
                                 <TableCell className="text-xs py-2 whitespace-nowrap">
-                                  {new Date(r.date).toLocaleDateString('zh-CN')}
+                                  {dayjs(r.date).format('YYYY-MM-DD HH:mm:ss')}
                                 </TableCell>
                                 <TableCell className="text-xs py-2 font-mono whitespace-nowrap">
                                   {r.amount.toFixed(2)}
@@ -1083,36 +1084,122 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                   </div>
 
                   {/* 全部记录预览 */}
-                  <div className="border rounded-lg overflow-hidden max-h-80 overflow-y-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="bg-muted/50 hover:bg-muted/50">
-                          <TableHead className="text-xs">日期</TableHead>
-                          <TableHead className="text-xs">类型</TableHead>
-                          <TableHead className="text-xs">金额</TableHead>
-                          <TableHead className="text-xs">账户</TableHead>
-                          <TableHead className="text-xs">分类</TableHead>
-                          <TableHead className="text-xs">备注</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {[...records, ...resolvedUnrecognized].map((r: any, i: number) => (
-                          <TableRow key={i}>
-                            <TableCell className="text-xs py-1.5">{r.date}</TableCell>
-                            <TableCell className={`text-xs py-1.5 ${TYPE_COLORS[r.type] || ''}`}>
-                              {TYPE_LABELS[r.type] || r.type}
-                            </TableCell>
-                            <TableCell className="text-xs py-1.5 font-mono">
-                              {r.amount.toFixed(2)}
-                            </TableCell>
-                            <TableCell className="text-xs py-1.5">{r._accountName || '-'}</TableCell>
-                            <TableCell className="text-xs py-1.5 text-muted-foreground">{r.categoryCode || '-'}</TableCell>
-                            <TableCell className="text-xs py-1.5 text-muted-foreground max-w-[120px] truncate">{r.remark || '-'}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
+                  {(() => {
+                    const allRecords = [...records, ...resolvedUnrecognized] as any[]
+                    const cfTypes = [...new Set(allRecords.map(r => r.type))]
+                    const cfCategories = [...new Set(allRecords.map(r => r.categoryCode).filter(Boolean))] as string[]
+                    const cfAccounts = [...new Set(allRecords.map(r => r._accountName).filter(Boolean))] as string[]
+                    const filteredConfirm = allRecords.filter(r => {
+                      if (filterType && r.type !== filterType) return false
+                      if (filterCategory && r.categoryCode !== filterCategory) return false
+                      if (filterAccount && r._accountName !== filterAccount) return false
+                      return true
+                    })
+                    return (
+                      <>
+                        <div className="flex items-center gap-2 mb-2 flex-wrap">
+                          <p className="text-sm font-medium">记录列表（{filteredConfirm.length}条{filteredConfirm.length !== allRecords.length ? ` / 共${allRecords.length}条` : ''}）</p>
+                          <div className="flex items-center gap-1.5 ml-auto">
+                            <Select value={filterType || 'all'} onValueChange={(v) => setFilterType(v === 'all' ? '' : v)}>
+                              <SelectTrigger className="h-7 text-xs w-20 bg-background">
+                                <SelectValue placeholder="类型" />
+                              </SelectTrigger>
+                              <SelectContent className="bg-card border-border">
+                                <SelectItem value="all" className="text-xs">全部类型</SelectItem>
+                                {cfTypes.map(t => (
+                                  <SelectItem key={t} value={t} className="text-xs">{TYPE_LABELS[t] || t}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Popover open={filterCategoryOpen} onOpenChange={(o) => { setFilterCategoryOpen(o); if (!o) setFilterCategorySearch('') }} modal={true}>
+                              <PopoverTrigger asChild>
+                                <Button variant="outline" size="sm" className="h-7 text-xs w-28 justify-between bg-background font-normal">
+                                  <span className={filterCategory ? '' : 'text-muted-foreground'}>
+                                    {filterCategory || '分类'}
+                                  </span>
+                                  <ChevronDown size={12} className="opacity-50" />
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-52 p-2" align="start" onOpenAutoFocus={(e) => e.preventDefault()}>
+                                <Input
+                                  placeholder="搜索分类..."
+                                  value={filterCategorySearch}
+                                  onChange={(e) => setFilterCategorySearch(e.target.value)}
+                                  className="h-8 text-xs mb-2"
+                                />
+                                <div className="max-h-48 overflow-y-auto">
+                                  <button
+                                    className={`flex items-center gap-1.5 w-full text-left px-2 py-1.5 text-xs rounded hover:bg-accent ${!filterCategory ? 'bg-accent' : ''}`}
+                                    onClick={() => { setFilterCategory(''); setFilterCategoryOpen(false) }}
+                                  >
+                                    <CheckCircle size={12} className={!filterCategory ? 'text-[#22c55e]' : 'text-transparent'} />
+                                    全部分类
+                                  </button>
+                                  {cfCategories
+                                    .filter(c => !filterCategorySearch || c.toLowerCase().includes(filterCategorySearch.toLowerCase()))
+                                    .map(c => (
+                                      <button
+                                        key={c}
+                                        className={`flex items-center gap-1.5 w-full text-left px-2 py-1.5 text-xs rounded hover:bg-accent ${filterCategory === c ? 'bg-accent' : ''}`}
+                                        onClick={() => { setFilterCategory(c); setFilterCategoryOpen(false) }}
+                                      >
+                                        <CheckCircle size={12} className={filterCategory === c ? 'text-[#22c55e]' : 'text-transparent'} />
+                                        {c}
+                                      </button>
+                                    ))}
+                                </div>
+                              </PopoverContent>
+                            </Popover>
+                            <Select value={filterAccount || 'all'} onValueChange={(v) => setFilterAccount(v === 'all' ? '' : v)}>
+                              <SelectTrigger className="h-7 text-xs w-24 bg-background">
+                                <SelectValue placeholder="账户" />
+                              </SelectTrigger>
+                              <SelectContent className="bg-card border-border max-h-48">
+                                <SelectItem value="all" className="text-xs">全部账户</SelectItem>
+                                {cfAccounts.map(a => (
+                                  <SelectItem key={a} value={a} className="text-xs">{a}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        <div className="border rounded-lg overflow-hidden max-h-80 overflow-y-auto">
+                          <Table>
+                            <TableHeader>
+                              <TableRow className="bg-muted/50 hover:bg-muted/50">
+                                <TableHead className="text-xs">日期</TableHead>
+                                <TableHead className="text-xs">类型</TableHead>
+                                <TableHead className="text-xs">金额</TableHead>
+                                <TableHead className="text-xs">账户</TableHead>
+                                <TableHead className="text-xs">目标账户</TableHead>
+                                <TableHead className="text-xs">交易方</TableHead>
+                                <TableHead className="text-xs">分类</TableHead>
+                                <TableHead className="text-xs">备注</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {filteredConfirm.map((r: any, i: number) => (
+                                <TableRow key={i}>
+                                  <TableCell className="text-xs py-1.5">{dayjs(r.date).format('YYYY-MM-DD HH:mm:ss')}</TableCell>
+                                  <TableCell className={`text-xs py-1.5 ${TYPE_COLORS[r.type] || ''}`}>
+                                    {TYPE_LABELS[r.type] || r.type}
+                                  </TableCell>
+                                  <TableCell className="text-xs py-1.5 font-mono">
+                                    {r.amount.toFixed(2)}
+                                  </TableCell>
+                                  <TableCell className="text-xs py-1.5">{r._accountName || '-'}</TableCell>
+                                  <TableCell className="text-xs py-1.5 text-muted-foreground">{r._toAccountName || '-'}</TableCell>
+                                  <TableCell className="text-xs py-1.5 text-muted-foreground">{r.payer || '-'}</TableCell>
+                                  <TableCell className="text-xs py-1.5 text-muted-foreground">{r.categoryCode || '-'}</TableCell>
+                                  <TableCell className="text-xs py-1.5 text-muted-foreground max-w-[120px] truncate">{r.remark || '-'}</TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </>
+                    )
+                  })()}
                 </div>
               </div>
               <DialogFooter>

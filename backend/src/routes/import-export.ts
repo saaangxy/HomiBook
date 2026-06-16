@@ -768,7 +768,7 @@ export async function importExportRoutes(app: FastifyInstance) {
 
     // 构建 CSV
     const typeLabels: Record<string, string> = { INCOME: '收入', EXPENSE: '支出', TRANSFER: '转账' }
-    const header = '日期,类型,金额,账户,转账来源,转账目标,分类,交易对方,备注,归属人,标签'
+    const header = '日期,类型,金额,账户,转账来源,转账目标,分类,交易方,备注,归属人,标签'
     const csvRows = records.map(r => {
       const tags = JSON.parse(r.tags || '[]') as string[]
       const owner = r.owner.nickname || r.owner.email
