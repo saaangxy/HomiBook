@@ -222,19 +222,37 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
   }
 
   const buildImportData = () => {
-    // 构建账户创建列表
-    const accountCreations = unmatchedAccounts
+    // 构建账户创建列表（合并同名账户）
+    const rawCreations = unmatchedAccounts
       .filter(ua => accountResolutions[ua.csvName]?.action === 'create')
       .map(ua => {
         const res = accountResolutions[ua.csvName] as { action: 'create'; name: string; type: string }
         return {
-          csvName: ua.csvName,
+          csvNames: [ua.csvName],
           name: res.name,
           type: res.type,
           bankName: ua.bankName,
           accountNo: ua.accountNo,
         }
       })
+
+    // 按 name 合并
+    const mergedByName = new Map<string, typeof rawCreations[0]>()
+    for (const c of rawCreations) {
+      const existing = mergedByName.get(c.name)
+      if (existing) {
+        existing.csvNames.push(...c.csvNames)
+      } else {
+        mergedByName.set(c.name, { ...c, csvNames: [...c.csvNames] })
+      }
+    }
+    const accountCreations = Array.from(mergedByName.values()).map(c => ({
+      csvName: c.csvNames.join(', '),
+      name: c.name,
+      type: c.type,
+      bankName: c.bankName,
+      accountNo: c.accountNo,
+    }))
 
     // 构建分类映射保存列表
     const mappingSet = new Map<string, { sourceCategory: string; targetCategoryCode: string; payerContains?: string; descriptionContains?: string }>()
