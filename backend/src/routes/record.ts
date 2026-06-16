@@ -845,6 +845,87 @@ export async function recordRoutes(app: FastifyInstance) {
     return { success: true, updated: ids.length }
   })
 
+  // 检测重复记录
+  app.post('/detect-duplicates', {
+    schema: {
+      description: '检测重复流水记录，按可配置字段分组',
+      tags: ['记录'],
+      body: zSchema(z.object({
+        bookId: z.string().min(1),
+        matchFields: z.object({
+          date: z.enum(['exact', 'date']).nullable(),
+          type: z.boolean(),
+          accountId: z.boolean(),
+          payer: z.boolean(),
+          amount: z.boolean(),
+        }),
+      })),
+    },
+  }, async (req, reply) => {
+    const { bookId, matchFields } = req.body as {
+      bookId: string
+      matchFields: { date: 'exact' | 'date' | null; type: boolean; accountId: boolean; payer: boolean; amount: boolean }
+    }
+    const userId = (req as any).user.id as string
+
+    try {
+      await assertIsMember(bookId, userId)
+    } catch (e: any) {
+      return reply.status(e.statusCode || 403).send({ message: e.message })
+    }
+
+    const records = await prisma.record.findMany({
+      where: { accountBookId: bookId },
+      include: {
+        account: { select: { id: true, name: true, type: true } },
+        fromAccount: { select: { id: true, name: true } },
+        toAccount: { select: { id: true, name: true } },
+        owner: { select: { id: true, nickname: true, username: true, email: true } },
+        recordAttachments: { select: { id: true, path: true, originalFilename: true } },
+      },
+      orderBy: { date: 'asc' },
+    })
+
+    const groups = new Map<string, typeof records>()
+
+    for (const r of records) {
+      const parts: string[] = []
+
+      if (matchFields.date === 'exact') {
+        parts.push(r.date.toISOString())
+      } else if (matchFields.date === 'date') {
+        parts.push(r.date.toISOString().slice(0, 10))
+      }
+
+      if (matchFields.type) parts.push(r.type)
+      if (matchFields.accountId) parts.push(r.accountId)
+      if (matchFields.payer) parts.push(r.payer || '__empty__')
+      if (matchFields.amount) parts.push(r.amount.toFixed(2))
+
+      const key = parts.join('||')
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key)!.push(r)
+    }
+
+    const duplicateGroups = Array.from(groups.entries())
+      .filter(([, recs]) => recs.length > 1)
+      .map(([key, recs]) => ({
+        key,
+        count: recs.length,
+        records: recs.map(r => ({
+          ...r,
+          tags: JSON.parse(r.tags),
+          attachments: r.recordAttachments.map((a: any) => ({ id: a.id, url: a.path, originalFilename: a.originalFilename })),
+          ownerName: r.owner.nickname || r.owner.username || r.owner.email,
+        })),
+      }))
+      .sort((a, b) => b.count - a.count)
+
+    const totalDuplicates = duplicateGroups.reduce((sum, g) => sum + g.count - 1, 0)
+
+    return { groups: duplicateGroups, totalDuplicates }
+  })
+
   // 批量删除
   app.post('/batch-delete', {
     schema: {

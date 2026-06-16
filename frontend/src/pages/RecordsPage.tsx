@@ -56,11 +56,12 @@ import { adminApi, type AdminUser } from '@/api/admin'
 import { settingsApi, type DictItem } from '@/api/settings'
 import { useBookStore } from '../stores/book'
 import { ImportDialog } from '@/components/ImportDialog'
+import { DedupDialog } from '@/components/DedupDialog'
 import { importExportApi } from '@/api/import-export'
 import {
   Plus, ArrowUpRight, ArrowDownRight, ArrowLeftRight,
   Pencil, Trash2, Copy, Filter, X, ChevronLeft, ChevronRight,
-  Upload, Download, Paperclip, Save,
+  Upload, Download, Paperclip, Save, CopyMinus,
 } from 'lucide-react'
 
 const TYPE_COLORS: Record<RecordType, string> = {
@@ -182,6 +183,8 @@ export function RecordsPage() {
 
   // 导入弹窗
   const [importOpen, setImportOpen] = useState(false)
+  // 去重弹窗
+  const [dedupOpen, setDedupOpen] = useState(false)
 
   // 弹窗状态
   const [createOpen, setCreateOpen] = useState(false)
@@ -801,6 +804,15 @@ export function RecordsPage() {
                 <Pencil size={14} /> 自由编辑
               </Button>
             )}
+            <Button variant="outline" onClick={() => setImportOpen(true)} className="h-8 text-xs rounded-lg">
+              <Upload size={14} /> 导入
+            </Button>
+            <Button variant="outline" onClick={handleExport} className="h-8 text-xs rounded-lg">
+              <Download size={14} /> 导出
+            </Button>
+            <Button variant="outline" onClick={() => setDedupOpen(true)} className="h-8 text-xs rounded-lg">
+              <CopyMinus size={14} /> 去重
+            </Button>
             <Button
               variant="outline"
               onClick={openDrawer}
@@ -822,12 +834,6 @@ export function RecordsPage() {
                 重置
               </Button>
             )}
-            <Button variant="outline" onClick={() => setImportOpen(true)} className="h-8 text-xs rounded-lg">
-              <Upload size={14} /> 导入
-            </Button>
-            <Button variant="outline" onClick={handleExport} className="h-8 text-xs rounded-lg">
-              <Download size={14} /> 导出
-            </Button>
           </div>
         </div>
 
@@ -1803,6 +1809,14 @@ export function RecordsPage() {
         accounts={accounts}
         dictCodes={allCategories.map(c => ({ code: c.code, label: c.label, group: c.group }))}
         onImportComplete={() => { loadRecords(); loadSummary(); loadAccounts(); loadCategories(); loadTags() }}
+      />
+
+      {/* 去重弹窗 */}
+      <DedupDialog
+        open={dedupOpen}
+        onOpenChange={setDedupOpen}
+        bookId={currentBookId || ''}
+        onComplete={() => { loadRecords(); loadSummary(); loadAccounts() }}
       />
     </div>
   )

@@ -135,6 +135,9 @@ export const recordApi = {
   batchDelete: (ids: string[]) =>
     api.post<{ success: boolean; deleted: number }>('/api/records/batch-delete', { ids }),
 
+  detectDuplicates: (bookId: string, matchFields: { date: 'exact' | 'date' | null; type: boolean; accountId: boolean; payer: boolean; amount: boolean }) =>
+    api.post<{ groups: Array<{ key: string; count: number; records: RecordItem[] }>; totalDuplicates: number }>('/api/records/detect-duplicates', { bookId, matchFields }),
+
   clone: (id: string) =>
     api.post<RecordItem>(`/api/records/${id}/clone`, {}),
 
