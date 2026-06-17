@@ -483,10 +483,18 @@ async function resolveAccounts(bookId: string, rows: ParsedRow[]) {
 
 async function resolveCategories(source: string, rows: ParsedRow[]) {
   const sourceCategories = [...new Set(rows.map(r => r.categoryCode).filter(Boolean))] as string[]
+  const allTypes = [...new Set(rows.map(r => r.type))]
 
-  // 查询所有相关映射
+  // 查询所有相关映射（匹配空 recordType 或当前导入数据的类型）
   const allMappings = await prisma.importCategoryMapping.findMany({
-    where: { source, sourceCategory: { in: sourceCategories } },
+    where: {
+      source,
+      sourceCategory: { in: sourceCategories },
+      OR: [
+        { recordType: '' },
+        { recordType: { in: allTypes } },
+      ],
+    },
     orderBy: [{ sourceCategory: 'asc' }, { payerContains: 'desc' }, { descriptionContains: 'desc' }],
   })
 
@@ -515,7 +523,11 @@ async function resolveCategories(source: string, rows: ParsedRow[]) {
     let bestScore = -1
 
     for (const m of candidates) {
+      // recordType 不匹配则跳过（空表示通用映射，适用于所有类型）
+      if (m.recordType && m.recordType !== row.type) continue
       let score = 0
+      // 精确类型匹配加分
+      if (m.recordType === row.type) score += 1
       if (m.payerContains) {
         if (row.payer && row.payer.includes(m.payerContains)) score += 2
         else continue // payerContains 不匹配，跳过此映射
@@ -524,7 +536,6 @@ async function resolveCategories(source: string, rows: ParsedRow[]) {
         if (row.remark && row.remark.includes(m.descriptionContains)) score += 1
         else continue // descriptionContains 不匹配，跳过此映射
       }
-      // 无条件映射，score=0
       if (score > bestScore) {
         bestScore = score
         best = m.targetCategoryCode
@@ -614,6 +625,7 @@ const importConfirmSchema = z.object({
     targetCategoryCode: z.string(),
     payerContains: z.string().optional(),
     descriptionContains: z.string().optional(),
+    recordType: z.string().optional(),
   })).optional(),
 })
 
@@ -755,13 +767,15 @@ export async function importExportRoutes(app: FastifyInstance) {
 
       // 保存分类映射
       for (const m of newMappings) {
+        const recordType = m.recordType || ''
         await tx.importCategoryMapping.upsert({
           where: {
-            source_sourceCategory_payerContains_descriptionContains: {
+            source_sourceCategory_payerContains_descriptionContains_recordType: {
               source,
               sourceCategory: m.sourceCategory,
               payerContains: m.payerContains || '',
               descriptionContains: m.descriptionContains || '',
+              recordType,
             },
           },
           create: {
@@ -769,6 +783,7 @@ export async function importExportRoutes(app: FastifyInstance) {
             sourceCategory: m.sourceCategory,
             payerContains: m.payerContains || '',
             descriptionContains: m.descriptionContains || '',
+            recordType,
             targetCategoryCode: m.targetCategoryCode,
           },
           update: { targetCategoryCode: m.targetCategoryCode },
@@ -864,7 +879,7 @@ export async function importExportRoutes(app: FastifyInstance) {
       tags: ['导入导出'],
     },
   }, async (req, reply) => {
-    const body = req.body as { mappings: { source: string; sourceCategory: string; payerContains?: string; descriptionContains?: string; targetCategoryCode: string }[] }
+    const body = req.body as { mappings: { source: string; sourceCategory: string; payerContains?: string; descriptionContains?: string; recordType?: string; targetCategoryCode: string }[] }
     if (!body.mappings || !Array.isArray(body.mappings)) {
       return reply.status(400).send({ message: '参数无效' })
     }
@@ -874,14 +889,15 @@ export async function importExportRoutes(app: FastifyInstance) {
       const descriptionContains = m.descriptionContains || ''
       await prisma.importCategoryMapping.upsert({
         where: {
-          source_sourceCategory_payerContains_descriptionContains: {
+          source_sourceCategory_payerContains_descriptionContains_recordType: {
             source: m.source,
             sourceCategory: m.sourceCategory,
             payerContains,
             descriptionContains,
+            recordType: m.recordType || '',
           },
         },
-        create: { source: m.source, sourceCategory: m.sourceCategory, payerContains, descriptionContains, targetCategoryCode: m.targetCategoryCode },
+        create: { source: m.source, sourceCategory: m.sourceCategory, payerContains, descriptionContains, recordType: m.recordType || '', targetCategoryCode: m.targetCategoryCode },
         update: { targetCategoryCode: m.targetCategoryCode },
       })
     }

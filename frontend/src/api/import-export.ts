@@ -69,6 +69,7 @@ export interface CategoryMapping {
   sourceCategory: string
   payerContains: string
   descriptionContains: string
+  recordType: string
   targetCategoryCode: string
 }
 
@@ -91,7 +92,7 @@ export const importExportApi = {
       tags?: string[]
     }[]
     accountCreations?: { csvName: string; name: string; type: string; bankName?: string; accountNo?: string }[]
-    newMappings?: { sourceCategory: string; payerContains?: string; descriptionContains?: string; targetCategoryCode: string }[]
+    newMappings?: { sourceCategory: string; payerContains?: string; descriptionContains?: string; recordType?: string; targetCategoryCode: string }[]
   }): Promise<ImportConfirmResult> =>
     api.post('/api/records/import', data),
 
@@ -100,7 +101,7 @@ export const importExportApi = {
     return api.get(`/api/records/import/mappings${query}`)
   },
 
-  saveMappings: (mappings: { source: string; sourceCategory: string; payerContains?: string; descriptionContains?: string; targetCategoryCode: string }[]): Promise<{ success: boolean }> =>
+  saveMappings: (mappings: { source: string; sourceCategory: string; payerContains?: string; descriptionContains?: string; recordType?: string; targetCategoryCode: string }[]): Promise<{ success: boolean }> =>
     api.post('/api/records/import/mappings', { mappings }),
 
   deleteMapping: (id: string): Promise<{ success: boolean }> =>

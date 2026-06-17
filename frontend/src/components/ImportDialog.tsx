@@ -256,20 +256,49 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
     }))
 
     // 构建分类映射保存列表
-    const mappingSet = new Map<string, { sourceCategory: string; targetCategoryCode: string; payerContains?: string; descriptionContains?: string }>()
+    const mappingSet = new Map<string, { sourceCategory: string; targetCategoryCode: string; recordType?: string; payerContains?: string; descriptionContains?: string }>()
     for (const [key, res] of Object.entries(categoryResolutions)) {
       if (!res.save || !res.targetCode) continue
-      const sourceCategory = key.split('::')[0]
+      const parts = key.split('::')
+      const sourceCategory = parts[0]
+      const recordType = parts[1] // INCOME | EXPENSE | TRANSFER
       if (removedKeys[sourceCategory]) continue
-      const dedupeKey = `${sourceCategory}||${res.payerContains || ''}||${res.descriptionContains || ''}`
+      const dedupeKey = `${sourceCategory}||${res.payerContains || ''}||${res.descriptionContains || ''}||${recordType}`
       mappingSet.set(dedupeKey, {
         sourceCategory,
         targetCategoryCode: res.targetCode,
+        recordType,
         payerContains: res.payerContains || undefined,
         descriptionContains: res.descriptionContains || undefined,
       })
     }
     const newMappings = Array.from(mappingSet.values())
+
+    // 按匹配分数从 categoryResolutions 中找最佳映射（类似后端 findBestMapping）
+    const findBestResolution = (sourceCategory: string, recordType: string, payer: string | null, remark: string): string | null => {
+      let best: string | null = null
+      let bestScore = -1
+      for (const [key, cr] of Object.entries(categoryResolutions)) {
+        if (!cr.targetCode) continue
+        // key 格式: sourceCategory::type 或 sourceCategory::type::eN
+        const parts = key.split('::')
+        if (parts[0] !== sourceCategory || parts[1] !== recordType) continue
+        let score = 0
+        if (cr.payerContains) {
+          if (payer && payer.includes(cr.payerContains)) score += 2
+          else continue
+        }
+        if (cr.descriptionContains) {
+          if (remark && remark.includes(cr.descriptionContains)) score += 1
+          else continue
+        }
+        if (score > bestScore) {
+          bestScore = score
+          best = cr.targetCode
+        }
+      }
+      return best
+    }
 
     // 构建记录列表
     const records = previewRecords.map(r => {
@@ -299,8 +328,10 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
         }
       }
 
-      const categoryCode = r.mappedCategoryCode
-        || (r.categoryCode ? categoryResolutions[`${r.categoryCode}::${r.type}`]?.targetCode : null)
+      // 用户前端配置的条件化映射优先于后端通用映射
+      const userResolution = r.categoryCode ? findBestResolution(r.categoryCode, r.type, r.payer, r.remark) : null
+      const categoryCode = userResolution
+        || r.mappedCategoryCode
         || r.categoryCode
         || null
 
@@ -999,7 +1030,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
               </Button>
               <Button
                 className="bg-primary hover:bg-primary/90 text-primary-foreground"
-                onClick={() => setStep('confirm')}
+                onClick={() => { setFilterType(''); setFilterCategory(''); setFilterAccount(''); setStep('confirm') }}
                 disabled={previewRecords.length === 0 && unrecognizedRecords.filter(r => unrecognizedResolutions[r.rowIndex]?.type && unrecognizedResolutions[r.rowIndex]?.accountId).length === 0}
               >
                 下一步：确认导入
@@ -1160,38 +1191,52 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                           </div>
                         </div>
                         <div className="border rounded-lg overflow-hidden max-h-80 overflow-y-auto">
+                          <div className="overflow-x-auto">
                           <Table>
                             <TableHeader>
                               <TableRow className="bg-muted/50 hover:bg-muted/50">
-                                <TableHead className="text-xs">日期</TableHead>
-                                <TableHead className="text-xs">类型</TableHead>
-                                <TableHead className="text-xs">金额</TableHead>
-                                <TableHead className="text-xs">账户</TableHead>
-                                <TableHead className="text-xs">目标账户</TableHead>
-                                <TableHead className="text-xs">交易方</TableHead>
-                                <TableHead className="text-xs">分类</TableHead>
-                                <TableHead className="text-xs">备注</TableHead>
+                                <TableHead className="text-xs whitespace-nowrap py-2">日期</TableHead>
+                                <TableHead className="text-xs whitespace-nowrap py-2">类型</TableHead>
+                                <TableHead className="text-xs whitespace-nowrap py-2">金额</TableHead>
+                                <TableHead className="text-xs whitespace-nowrap py-2">账户</TableHead>
+                                <TableHead className="text-xs whitespace-nowrap py-2">目标账户</TableHead>
+                                <TableHead className="text-xs whitespace-nowrap py-2">交易方</TableHead>
+                                <TableHead className="text-xs whitespace-nowrap py-2">分类</TableHead>
+                                <TableHead className="text-xs whitespace-nowrap py-2">备注</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
                               {filteredConfirm.map((r: any, i: number) => (
-                                <TableRow key={i}>
-                                  <TableCell className="text-xs py-1.5">{dayjs(r.date).format('YYYY-MM-DD HH:mm:ss')}</TableCell>
-                                  <TableCell className={`text-xs py-1.5 ${TYPE_COLORS[r.type] || ''}`}>
+                                <TableRow key={i} className="hover:bg-accent/50">
+                                  <TableCell className="text-xs py-2 whitespace-nowrap">
+                                    {dayjs(r.date).format('YYYY-MM-DD HH:mm:ss')}
+                                  </TableCell>
+                                  <TableCell className={`text-xs font-medium py-2 whitespace-nowrap ${TYPE_COLORS[r.type] || ''}`}>
                                     {TYPE_LABELS[r.type] || r.type}
                                   </TableCell>
-                                  <TableCell className="text-xs py-1.5 font-mono">
+                                  <TableCell className="text-xs py-2 font-mono whitespace-nowrap">
                                     {r.amount.toFixed(2)}
                                   </TableCell>
-                                  <TableCell className="text-xs py-1.5">{r._accountName || '-'}</TableCell>
-                                  <TableCell className="text-xs py-1.5 text-muted-foreground">{r._toAccountName || '-'}</TableCell>
-                                  <TableCell className="text-xs py-1.5 text-muted-foreground">{r.payer || '-'}</TableCell>
-                                  <TableCell className="text-xs py-1.5 text-muted-foreground">{r.categoryCode || '-'}</TableCell>
-                                  <TableCell className="text-xs py-1.5 text-muted-foreground max-w-[120px] truncate">{r.remark || '-'}</TableCell>
+                                  <TableCell className="text-xs py-2">
+                                    <TrucCell text={r._accountName} maxW="max-w-[80px]" />
+                                  </TableCell>
+                                  <TableCell className="text-xs py-2 text-muted-foreground">
+                                    <TrucCell text={r._toAccountName} maxW="max-w-[80px]" />
+                                  </TableCell>
+                                  <TableCell className="text-xs py-2 text-muted-foreground">
+                                    <TrucCell text={r.payer} maxW="max-w-[80px]" />
+                                  </TableCell>
+                                  <TableCell className="text-xs py-2 text-muted-foreground">
+                                    <TrucCell text={r.categoryCode} maxW="max-w-[80px]" />
+                                  </TableCell>
+                                  <TableCell className="text-xs py-2 text-muted-foreground">
+                                    <TrucCell text={r.remark} maxW="max-w-[150px]" />
+                                  </TableCell>
                                 </TableRow>
                               ))}
                             </TableBody>
                           </Table>
+                          </div>
                         </div>
                       </>
                     )

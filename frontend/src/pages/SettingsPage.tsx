@@ -128,6 +128,7 @@ export function SettingsPage() {
   const [mappingNewPayerContains, setMappingNewPayerContains] = useState('')
   const [mappingNewDescriptionContains, setMappingNewDescriptionContains] = useState('')
   const [mappingNewTargetCode, setMappingNewTargetCode] = useState('')
+  const [mappingNewRecordType, setMappingNewRecordType] = useState('__all__')
   const [mappingFormError, setMappingFormError] = useState('')
   const [mappingSubmitting, setMappingSubmitting] = useState(false)
   const [mappingDeleteTarget, setMappingDeleteTarget] = useState<CategoryMapping | null>(null)
@@ -403,6 +404,7 @@ export function SettingsPage() {
         sourceCategory: mappingNewSourceCategory.trim(),
         payerContains: mappingNewPayerContains.trim() || undefined,
         descriptionContains: mappingNewDescriptionContains.trim() || undefined,
+        recordType: mappingNewRecordType === '__all__' ? undefined : mappingNewRecordType || undefined,
         targetCategoryCode: mappingNewTargetCode,
       }])
       setMappingAddOpen(false)
@@ -410,6 +412,7 @@ export function SettingsPage() {
       setMappingNewSourceCategory('')
       setMappingNewPayerContains('')
       setMappingNewDescriptionContains('')
+      setMappingNewRecordType('__all__')
       setMappingNewTargetCode('')
       loadMappings(mappingSource)
     } catch (e: any) {
@@ -959,7 +962,7 @@ export function SettingsPage() {
               </Select>
               <Button
                 size="sm"
-                onClick={() => { setMappingEditTarget(null); setMappingNewSourceCategory(''); setMappingNewPayerContains(''); setMappingNewDescriptionContains(''); setMappingNewTargetCode(''); setMappingFormError(''); setMappingAddOpen(true) }}
+                onClick={() => { setMappingEditTarget(null); setMappingNewSourceCategory(''); setMappingNewPayerContains(''); setMappingNewDescriptionContains(''); setMappingNewRecordType('__all__'); setMappingNewTargetCode(''); setMappingFormError(''); setMappingAddOpen(true) }}
                 className="bg-primary hover:bg-primary/90 text-primary-foreground h-8 text-xs"
               >
                 <Plus size={14} /> 新增映射
@@ -981,6 +984,7 @@ export function SettingsPage() {
                       <TableHead className="text-xs">CSV 原始分类</TableHead>
                       <TableHead className="text-xs">交易方包含</TableHead>
                       <TableHead className="text-xs">说明包含</TableHead>
+                      <TableHead className="text-xs">类型</TableHead>
                       <TableHead className="text-xs">系统分类编码</TableHead>
                       <TableHead className="text-xs w-16 text-right">操作</TableHead>
                     </TableRow>
@@ -994,6 +998,9 @@ export function SettingsPage() {
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground py-2.5">
                           {m.descriptionContains || '—'}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground py-2.5">
+                          {m.recordType === 'INCOME' ? '收入' : m.recordType === 'EXPENSE' ? '支出' : m.recordType === 'TRANSFER' ? '转账' : '通用'}
                         </TableCell>
                         <TableCell className="text-xs font-mono text-muted-foreground py-2.5">
                           {m.targetCategoryCode}
@@ -1009,6 +1016,7 @@ export function SettingsPage() {
                                 setMappingNewSourceCategory(m.sourceCategory)
                                 setMappingNewPayerContains(m.payerContains || '')
                                 setMappingNewDescriptionContains(m.descriptionContains || '')
+                                setMappingNewRecordType(m.recordType || '__all__')
                                 setMappingNewTargetCode(m.targetCategoryCode)
                                 setMappingFormError('')
                                 setMappingAddOpen(true)
@@ -1295,6 +1303,20 @@ export function SettingsPage() {
                 onChange={(e) => setMappingNewDescriptionContains(e.target.value)}
                 className="bg-background border-border"
               />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">记录类型 (可选)</Label>
+              <Select value={mappingNewRecordType} onValueChange={setMappingNewRecordType}>
+                <SelectTrigger className="bg-background border-border">
+                  <SelectValue placeholder="不限类型..." />
+                </SelectTrigger>
+                <SelectContent className="bg-card border-border">
+                  <SelectItem value="__all__" className="text-xs">通用（不限）</SelectItem>
+                  <SelectItem value="INCOME" className="text-xs">收入</SelectItem>
+                  <SelectItem value="EXPENSE" className="text-xs">支出</SelectItem>
+                  <SelectItem value="TRANSFER" className="text-xs">转账</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">目标系统分类编码</Label>

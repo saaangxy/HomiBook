@@ -298,10 +298,11 @@ model ImportCategoryMapping {
   sourceCategory      String   // CSV中的分类名，如"餐饮美食"
   payerContains       String   @default("") // 可选：交易方名称包含过滤
   descriptionContains String   @default("") // 可选：商品说明包含过滤
+  recordType          String   @default("") // INCOME | EXPENSE | TRANSFER，空表示不限类型
   targetCategoryCode  String   // Dictionary.code，如"餐饮"
   createdAt           DateTime @default(now())
 
-  @@unique([source, sourceCategory, payerContains, descriptionContains])
+  @@unique([source, sourceCategory, payerContains, descriptionContains, recordType])
 }
 
 // API Key
