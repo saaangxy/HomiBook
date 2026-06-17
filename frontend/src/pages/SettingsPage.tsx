@@ -48,6 +48,7 @@ import { settingsApi, type DictItem } from '@/api/settings'
 import { holidayApi } from '@/api/holiday'
 import { ThemeSelector } from '@/components/ThemeSelector'
 import { importExportApi, type CategoryMapping } from '@/api/import-export'
+import { DictCombobox } from '@/components/DictCombobox'
 import { Plus, Pencil, Trash2, Settings, BookOpen, Check, FolderOpen, FileSearch, RefreshCw, Key, Copy, EyeOff, Link2 } from 'lucide-react'
 import { apikeyApi, type ApiKeyItem, type ApiKeyCreated } from '@/api/apikey'
 
@@ -132,7 +133,6 @@ export function SettingsPage() {
   const [mappingFormError, setMappingFormError] = useState('')
   const [mappingSubmitting, setMappingSubmitting] = useState(false)
   const [mappingDeleteTarget, setMappingDeleteTarget] = useState<CategoryMapping | null>(null)
-  const [allCategoryCodes, setAllCategoryCodes] = useState<string[]>([])
 
   // 加载通用配置
   useEffect(() => {
@@ -319,7 +319,6 @@ export function SettingsPage() {
     }
     if (value.includes('import-mappings')) {
       loadMappings(mappingSource)
-      loadAllCategoryCodes()
     }
   }
 
@@ -370,22 +369,6 @@ export function SettingsPage() {
     } finally {
       setMappingsLoading(false)
     }
-  }, [])
-
-  // 加载全部分类编码（用于映射目标选择）
-  const loadAllCategoryCodes = useCallback(async () => {
-    try {
-      const groups = ['transaction_category_income', 'transaction_category_expense', 'transaction_category_transfer']
-      const results = await Promise.all(groups.map((g) => settingsApi.getDictionary(g)))
-      const codes: string[] = []
-      const seen = new Set<string>()
-      for (const arr of results) {
-        for (const item of arr) {
-          if (!seen.has(item.code)) { seen.add(item.code); codes.push(item.code) }
-        }
-      }
-      setAllCategoryCodes(codes)
-    } catch { /* ignore */ }
   }, [])
 
   // 新增/编辑映射
@@ -1321,16 +1304,21 @@ export function SettingsPage() {
             </div>
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">目标系统分类编码</Label>
-              <Select value={mappingNewTargetCode} onValueChange={setMappingNewTargetCode}>
-                <SelectTrigger className="bg-background border-border">
-                  <SelectValue placeholder="选择系统分类..." />
-                </SelectTrigger>
-                <SelectContent className="bg-card border-border max-h-48">
-                  {allCategoryCodes.map(code => (
-                    <SelectItem key={code} value={code} className="text-xs">{code}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <DictCombobox
+                groups={
+                  mappingNewRecordType === '__all__'
+                    ? ['transaction_category_income', 'transaction_category_expense', 'transaction_category_transfer']
+                    : mappingNewRecordType === 'INCOME'
+                      ? ['transaction_category_income']
+                      : mappingNewRecordType === 'EXPENSE'
+                        ? ['transaction_category_expense']
+                        : ['transaction_category_transfer']
+                }
+                value={mappingNewTargetCode}
+                onChange={setMappingNewTargetCode}
+                placeholder="选择系统分类..."
+                valueKey="code"
+              />
             </div>
           </div>
           <DialogFooter>
