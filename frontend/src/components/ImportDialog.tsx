@@ -108,6 +108,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
   const [unmatchedCategories, setUnmatchedCategories] = useState<UnmatchedCategory[]>([])
   const [allDictItems, setAllDictItems] = useState<DictEntry[]>(dictCodes)
   const [stats, setStats] = useState<{ totalRows: number; parsedRows: number; skippedRows: number; errors: string[] } | null>(null)
+  const [accountMappings, setAccountMappings] = useState<Record<string, string>>({})
 
   // 用户的选择
   const [accountResolutions, setAccountResolutions] = useState<Record<string, { action: 'create'; name: string; type: string } | { action: 'existing'; accountId: string }>>({})
@@ -176,6 +177,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
     setColumnMapping({})
     setTypeMapping({})
     setCsvTypeValues([])
+    setAccountMappings({})
   }
 
   const handleClose = () => {
@@ -275,18 +277,30 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
       setAllDictItems(result.allDictItems)
       setStats(result.stats)
       setUnrecognizedRecords(result.unrecognizedRecords)
+      setAccountMappings(result.accountMappings || {})
 
       // 初始化账户处理（复用 handleParse 的同名逻辑）
       const initAccountResolutions: Record<string, { action: 'create' | 'existing'; targetId?: string; csvName: string; suggestedType: string; suggestedName: string; displayName: string; bankName?: string; accountNo?: string }> = {}
       for (const ua of result.unmatchedAccounts) {
-        initAccountResolutions[ua.csvName] = {
-          action: 'create',
-          csvName: ua.csvName,
-          suggestedType: ua.suggestedType,
-          suggestedName: ua.suggestedName,
-          displayName: ua.suggestedName,
-          bankName: ua.bankName,
-          accountNo: ua.accountNo,
+        if (ua.candidates?.length) {
+          initAccountResolutions[ua.csvName] = {
+            action: 'existing',
+            csvName: ua.csvName,
+            suggestedType: '',
+            suggestedName: '',
+            displayName: ua.candidates[0].name,
+            targetId: ua.candidates[0].id,
+          }
+        } else {
+          initAccountResolutions[ua.csvName] = {
+            action: 'create',
+            csvName: ua.csvName,
+            suggestedType: ua.suggestedType,
+            suggestedName: ua.suggestedName,
+            displayName: ua.suggestedName,
+            bankName: ua.bankName,
+            accountNo: ua.accountNo,
+          }
         }
       }
       setAccountResolutions(initAccountResolutions)
@@ -342,11 +356,16 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
       setUnmatchedCategories(result.unmatchedCategories)
       setAllDictItems(result.allDictItems)
       setStats(result.stats)
+      setAccountMappings(result.accountMappings || {})
 
       // 初始化账户选择
       const acctRes: typeof accountResolutions = {}
       for (const ua of result.unmatchedAccounts) {
-        acctRes[ua.csvName] = { action: 'create', name: ua.suggestedName, type: ua.suggestedType }
+        if (ua.candidates?.length) {
+          acctRes[ua.csvName] = { action: 'existing', accountId: ua.candidates[0].id }
+        } else {
+          acctRes[ua.csvName] = { action: 'create', name: ua.suggestedName, type: ua.suggestedType }
+        }
       }
       setAccountResolutions(acctRes)
 
@@ -529,14 +548,32 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
         }
       })
 
-    return { accountCreations, newMappings, records, resolvedUnrecognized }
+    // 构建账户映射保存列表
+    const accountIdToName = new Map(accounts.map(a => [a.id, a.name]))
+    for (const c of accountCreations) {
+      accountIdToName.set(c.name, c.name)
+    }
+    const accountMappingSet = new Map<string, { sourceAccountName: string; targetAccountName: string }>()
+    for (const r of records) {
+      const csvName = r._accountName
+      if (!csvName) continue
+      const targetName = accountIdToName.get(r.accountId) || r.accountId
+      if (targetName === csvName) continue
+      const key = `${csvName}||${targetName}`
+      if (!accountMappingSet.has(key)) {
+        accountMappingSet.set(key, { sourceAccountName: csvName, targetAccountName: targetName })
+      }
+    }
+    const newAccountMappings = Array.from(accountMappingSet.values())
+
+    return { accountCreations, newMappings, newAccountMappings, records, resolvedUnrecognized }
   }
 
   const handleImport = async () => {
     setLoading(true)
     setError('')
     try {
-      const { accountCreations, newMappings, records, resolvedUnrecognized } = buildImportData()
+      const { accountCreations, newMappings, newAccountMappings, records, resolvedUnrecognized } = buildImportData()
       const allRecords = [...records.map(({ _accountName, _toAccountName, ...r }) => r), ...resolvedUnrecognized]
 
       const result = await importExportApi.import({
@@ -545,6 +582,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
         records: allRecords,
         accountCreations,
         newMappings,
+        newAccountMappings,
       })
 
       setImportResult({ imported: result.imported, accountsCreated: result.accountsCreated })
@@ -904,6 +942,26 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                 </details>
               )}
 
+              {/* 已匹配账户（通过导入账户映射规则自动匹配） */}
+              {Object.keys(accountMappings).length > 0 && (
+                <div>
+                  <p className="text-sm font-medium mb-1">
+                    <CheckCircle size={14} className="inline text-green-500 mr-1" />
+                    已匹配的账户 ({Object.keys(accountMappings).length})
+                  </p>
+                  <div className="space-y-1 mb-3">
+                    {Object.entries(accountMappings).map(([csvName, targetName]) => (
+                      <div key={csvName} className="flex items-center gap-2 p-2 rounded-lg bg-green-50 dark:bg-green-950/20 text-xs">
+                        <span className="font-medium">{csvName}</span>
+                        <span className="text-muted-foreground">→</span>
+                        <span className="text-green-600 dark:text-green-400">{targetName}</span>
+                        <CheckCircle size={12} className="text-green-500 ml-auto" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* 未匹配账户 */}
               {unmatchedAccounts.length > 0 && (
                 <div>
@@ -952,7 +1010,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                                   <SelectValue placeholder="选择已有账户..." />
                                 </SelectTrigger>
                                 <SelectContent className="bg-card border-border">
-                                  {accounts.map(a => (
+                                  {(ua.candidates || accounts).map(a => (
                                     <SelectItem key={a.id} value={a.id} className="text-xs">{a.name}</SelectItem>
                                   ))}
                                 </SelectContent>

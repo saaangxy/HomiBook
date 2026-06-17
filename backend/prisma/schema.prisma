@@ -291,6 +291,19 @@ model RepaymentPlan {
   @@index([recurringTransactionId])
 }
 
+// 导入账户映射 — 支持按交易方/商品说明细化条件
+model ImportAccountMapping {
+  id                  String   @id @default(uuid())
+  source              String   // "alipay" | "wechat" | "csv" | "jd"
+  sourceAccountName   String   // CSV中的原始账户名，如"花呗"
+  payerContains       String   @default("") // 可选：交易方名称包含过滤
+  descriptionContains String   @default("") // 可选：商品说明包含过滤
+  targetAccountName   String   // 目标账户名称，如"支付宝"
+  createdAt           DateTime @default(now())
+
+  @@unique([source, sourceAccountName, payerContains, descriptionContains])
+}
+
 // 导入分类映射 — 支持按交易方/商品说明细化条件
 model ImportCategoryMapping {
   id                  String   @id @default(uuid())

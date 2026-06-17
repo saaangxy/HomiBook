@@ -24,6 +24,7 @@ export interface UnmatchedAccount {
   suggestedName: string
   bankName?: string
   accountNo?: string
+  candidates?: { id: string; name: string }[]  // 多个候选匹配时提供
 }
 
 // 未映射的分类
@@ -46,6 +47,7 @@ export interface ImportPreviewResult {
   unmatchedAccounts: UnmatchedAccount[]
   unmatchedCategories: UnmatchedCategory[]
   allDictItems: DictEntry[]
+  accountMappings: Record<string, string>  // csvName → targetAccountName
   stats: {
     totalRows: number
     parsedRows: number
@@ -79,6 +81,16 @@ export interface CategoryMapping {
   descriptionContains: string
   recordType: string
   targetCategoryCode: string
+}
+
+// 账户映射
+export interface AccountMapping {
+  id: string
+  source: string
+  sourceAccountName: string
+  payerContains: string
+  descriptionContains: string
+  targetAccountName: string
 }
 
 export const importExportApi = {
@@ -118,6 +130,7 @@ export const importExportApi = {
     }[]
     accountCreations?: { csvName: string; name: string; type: string; bankName?: string; accountNo?: string }[]
     newMappings?: { sourceCategory: string; payerContains?: string; descriptionContains?: string; recordType?: string; targetCategoryCode: string }[]
+    newAccountMappings?: { sourceAccountName: string; targetAccountName: string; payerContains?: string; descriptionContains?: string }[]
   }): Promise<ImportConfirmResult> =>
     api.post('/api/records/import', data),
 
@@ -131,6 +144,17 @@ export const importExportApi = {
 
   deleteMapping: (id: string): Promise<{ success: boolean }> =>
     api.delete(`/api/records/import/mappings/${id}`),
+
+  getAccountMappings: (source?: string): Promise<{ mappings: AccountMapping[] }> => {
+    const query = source ? `?source=${encodeURIComponent(source)}` : ''
+    return api.get(`/api/records/import/account-mappings${query}`)
+  },
+
+  saveAccountMappings: (mappings: { source: string; sourceAccountName: string; payerContains?: string; descriptionContains?: string; targetAccountName: string }[]): Promise<{ success: boolean }> =>
+    api.post('/api/records/import/account-mappings', { mappings }),
+
+  deleteAccountMapping: (id: string): Promise<{ success: boolean }> =>
+    api.delete(`/api/records/import/account-mappings/${id}`),
 
   exportCsv: async (params: Record<string, string | number>) => {
     const queryParts: string[] = []

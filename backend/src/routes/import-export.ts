@@ -709,7 +709,114 @@ function parseCsvWithMapping(
 
 // ======================== 账户匹配 & 分类映射 ========================
 
-async function resolveAccounts(bookId: string, rows: ParsedRow[]) {
+// 账户匹配结果：唯一匹配 / 多个候选 / 无匹配
+type AccountMatchResult =
+  | { matched: true; id: string; name: string }
+  | { matched: false; ambiguous: true; candidates: { id: string; name: string }[] }
+  | { matched: false; ambiguous: false }
+
+// 按名称包含匹配已有账户（优先级：精确 → 账户名包含目标名 → 目标名包含账户名）
+// 同一优先级有多条匹配时返回 ambiguous，交由用户手动选择
+function matchAccountByName(name: string, allAccounts: { id: string; name: string }[]): AccountMatchResult {
+  if (!name || allAccounts.length === 0) return { matched: false, ambiguous: false }
+
+  // 1. 精确匹配
+  const exact = allAccounts.filter(acc => acc.name === name)
+  if (exact.length === 1) return { matched: true, id: exact[0].id, name: exact[0].name }
+  if (exact.length > 1) return { matched: false, ambiguous: true, candidates: exact }
+
+  // 2. 账户名包含目标名
+  const contains = allAccounts.filter(acc => acc.name.includes(name))
+  if (contains.length === 1) return { matched: true, id: contains[0].id, name: contains[0].name }
+  if (contains.length > 1) return { matched: false, ambiguous: true, candidates: contains }
+
+  // 3. 目标名包含账户名
+  const containedBy = allAccounts.filter(acc => name.includes(acc.name))
+  if (containedBy.length === 1) return { matched: true, id: containedBy[0].id, name: containedBy[0].name }
+  if (containedBy.length > 1) return { matched: false, ambiguous: true, candidates: containedBy }
+
+  return { matched: false, ambiguous: false }
+}
+
+// 加载导入账户映射并按评分匹配，返回 csvAccountName → targetAccountId 的映射及展示用名称记录
+async function applyAccountMappings(source: string, rows: ParsedRow[], bookId: string) {
+  const sourceNames = [...new Set(rows.map(r => r.accountName).filter(Boolean))]
+  if (sourceNames.length === 0) return { idMap: new Map<string, string | null>(), nameRecord: {} as Record<string, string> }
+
+  const allMappings = await prisma.importAccountMapping.findMany({
+    where: {
+      source,
+      sourceAccountName: { in: sourceNames },
+    },
+    orderBy: [{ sourceAccountName: 'asc' }, { payerContains: 'desc' }, { descriptionContains: 'desc' }],
+  })
+
+  if (allMappings.length === 0) return { idMap: new Map<string, string | null>(), nameRecord: {} as Record<string, string> }
+
+  // 按 sourceAccountName 分组
+  const mappingsByName = new Map<string, typeof allMappings>()
+  for (const m of allMappings) {
+    const list = mappingsByName.get(m.sourceAccountName) || []
+    list.push(m)
+    mappingsByName.set(m.sourceAccountName, list)
+  }
+
+  // 加载账本全部活跃账户，用包含匹配查找
+  const allAccounts = await prisma.account.findMany({
+    where: { accountBookId: bookId, status: 'ACTIVE' },
+    select: { id: true, name: true },
+  })
+
+  const idMap = new Map<string, string | null>()
+  const nameRecord: Record<string, string> = {}
+
+  for (const r of rows) {
+    const key = r.accountName
+    if (idMap.has(key)) continue
+
+    const candidates = mappingsByName.get(key)
+    if (!candidates || candidates.length === 0) {
+      idMap.set(key, null)
+      continue
+    }
+
+    // 评分匹配（与分类映射 findBestMapping 逻辑一致）
+    let best: string | null = null
+    let bestScore = -1
+    for (const m of candidates) {
+      let score = 0
+      if (m.payerContains) {
+        if (r.payer && r.payer.includes(m.payerContains)) score += 2
+        else continue
+      }
+      if (m.descriptionContains) {
+        if (r.remark && r.remark.includes(m.descriptionContains)) score += 1
+        else continue
+      }
+      if (score > bestScore) {
+        bestScore = score
+        best = m.targetAccountName
+      }
+    }
+
+    // 将 targetAccountName 转为 ID（通过包含匹配查找已有账户）
+    if (best) {
+      const result = matchAccountByName(best, allAccounts)
+      if (result.matched) {
+        idMap.set(key, result.id)
+        nameRecord[key] = result.name
+      } else {
+        idMap.set(key, null)
+      }
+    } else {
+      idMap.set(key, null)
+    }
+  }
+
+  return { idMap, nameRecord }
+}
+
+async function resolveAccounts(bookId: string, rows: ParsedRow[], idMap?: Map<string, string | null>) {
   // 收集所有唯一账户名
   const accountNames = new Set<string>()
   for (const r of rows) {
@@ -717,45 +824,67 @@ async function resolveAccounts(bookId: string, rows: ParsedRow[]) {
     if (r.toAccountName) accountNames.add(r.toAccountName)
   }
 
-  // 查询已有账户
-  const existingAccounts = await prisma.account.findMany({
-    where: {
-      accountBookId: bookId,
-      name: { in: Array.from(accountNames) },
-    },
+  // 从映射中收集已预解析的 ID
+  const mappedCsvNameToId = new Map<string, string>()
+  if (idMap) {
+    for (const [csvName, id] of idMap) {
+      if (id) mappedCsvNameToId.set(csvName, id)
+    }
+  }
+
+  // 加载账本全部活跃账户
+  const namesToLookup = Array.from(accountNames).filter(n => !mappedCsvNameToId.has(n))
+  const allAccounts = await prisma.account.findMany({
+    where: { accountBookId: bookId, status: 'ACTIVE' },
     select: { id: true, name: true },
   })
-  const nameToId = new Map(existingAccounts.map(a => [a.name, a.id]))
 
-  // 未匹配的账户
-  const unmatched: { csvName: string; suggestedType: string; suggestedName: string; bankName?: string; accountNo?: string }[] = []
+  // 用包含匹配查找，记录多候选的账户
+  const nameToId = new Map<string, string>()
+  const nameMatched: Record<string, string> = {}
+  const candidatesMap = new Map<string, { id: string; name: string }[]>()
+  for (const name of namesToLookup) {
+    const result = matchAccountByName(name, allAccounts)
+    if (result.matched) {
+      nameToId.set(name, result.id)
+      nameMatched[name] = result.name
+    } else if (result.ambiguous) {
+      candidatesMap.set(name, result.candidates)
+    }
+  }
+
+  // 未匹配的账户（含多候选的）
+  const unmatched: { csvName: string; suggestedType: string; suggestedName: string; bankName?: string; accountNo?: string; candidates?: { id: string; name: string }[] }[] = []
   const seen = new Set<string>()
 
   for (const name of accountNames) {
+    if (mappedCsvNameToId.has(name)) continue
     if (nameToId.has(name)) continue
     if (seen.has(name)) continue
     seen.add(name)
+    const ambCandidates = candidatesMap.get(name)
     const inferred = inferAccount(name)
-    if (inferred) {
+    if (inferred || ambCandidates) {
       unmatched.push({
         csvName: name,
-        suggestedType: inferred.type,
-        suggestedName: inferred.defaultName,
-        bankName: inferred.bankName,
-        accountNo: inferred.accountNo,
+        suggestedType: inferred?.type || '',
+        suggestedName: inferred?.defaultName || name,
+        bankName: inferred?.bankName,
+        accountNo: inferred?.accountNo,
+        ...(ambCandidates ? { candidates: ambCandidates } : {}),
       })
     }
   }
 
   // 填充 accountId / toAccountId
   for (const r of rows) {
-    r.accountId = nameToId.get(r.accountName) || null
+    r.accountId = mappedCsvNameToId.get(r.accountName) || nameToId.get(r.accountName) || null
     if (r.toAccountName) {
-      r.toAccountId = nameToId.get(r.toAccountName) || null
+      r.toAccountId = mappedCsvNameToId.get(r.toAccountName) || nameToId.get(r.toAccountName) || null
     }
   }
 
-  return unmatched
+  return { unmatched, nameMatched }
 }
 
 async function resolveCategories(source: string, rows: ParsedRow[]) {
@@ -904,6 +1033,12 @@ const importConfirmSchema = z.object({
     descriptionContains: z.string().optional(),
     recordType: z.string().optional(),
   })).optional(),
+  newAccountMappings: z.array(z.object({
+    sourceAccountName: z.string(),
+    targetAccountName: z.string(),
+    payerContains: z.string().optional(),
+    descriptionContains: z.string().optional(),
+  })).optional(),
 })
 
 export async function importExportRoutes(app: FastifyInstance) {
@@ -1032,8 +1167,11 @@ export async function importExportRoutes(app: FastifyInstance) {
       return reply.status(400).send({ message: parseResult.errors[0] })
     }
 
-    // 匹配账户
-    const unmatchedAccounts = await resolveAccounts(accountBookId, parseResult.rows)
+    // 应用账户映射规则
+    const { idMap: accountMappings, nameRecord: accountMappingNames } = await applyAccountMappings(source, parseResult.rows, accountBookId)
+
+    // 匹配账户（传入映射结果）
+    const { unmatched: unmatchedAccounts, nameMatched: nameMatchedByContains } = await resolveAccounts(accountBookId, parseResult.rows, accountMappings)
 
     // 匹配分类
     const { unmatched: unmatchedCategories, allDictItems } = await resolveCategories(source, parseResult.rows)
@@ -1064,6 +1202,7 @@ export async function importExportRoutes(app: FastifyInstance) {
       unmatchedAccounts,
       unmatchedCategories,
       allDictItems,
+      accountMappings: { ...nameMatchedByContains, ...accountMappingNames },
       stats: {
         totalRows: parseResult.rows.length + parseResult.errors.length,
         parsedRows: normalRecords.length,
@@ -1088,7 +1227,7 @@ export async function importExportRoutes(app: FastifyInstance) {
       return reply.status(400).send({ message: '请求参数无效' })
     }
 
-    const { accountBookId, source, records, accountCreations = [], newMappings = [] } = parsed.data
+    const { accountBookId, source, records, accountCreations = [], newMappings = [], newAccountMappings = [] } = parsed.data
 
     await assertIsMember(accountBookId, payload.id)
 
@@ -1146,6 +1285,28 @@ export async function importExportRoutes(app: FastifyInstance) {
             targetCategoryCode: m.targetCategoryCode,
           },
           update: { targetCategoryCode: m.targetCategoryCode },
+        })
+      }
+
+      // 保存账户映射
+      for (const m of newAccountMappings) {
+        await tx.importAccountMapping.upsert({
+          where: {
+            source_sourceAccountName_payerContains_descriptionContains: {
+              source,
+              sourceAccountName: m.sourceAccountName,
+              payerContains: m.payerContains || '',
+              descriptionContains: m.descriptionContains || '',
+            },
+          },
+          create: {
+            source,
+            sourceAccountName: m.sourceAccountName,
+            payerContains: m.payerContains || '',
+            descriptionContains: m.descriptionContains || '',
+            targetAccountName: m.targetAccountName,
+          },
+          update: { targetAccountName: m.targetAccountName },
         })
       }
 
@@ -1272,6 +1433,64 @@ export async function importExportRoutes(app: FastifyInstance) {
   }, async (req) => {
     const { id } = req.params as { id: string }
     await prisma.importCategoryMapping.delete({ where: { id } })
+    return { success: true }
+  })
+
+  // ===== 账户映射 CRUD =====
+  app.get('/import/account-mappings', {
+    schema: {
+      description: '获取导入账户映射列表',
+      tags: ['导入导出'],
+    },
+  }, async (req) => {
+    const { source } = req.query as { source?: string }
+    const where = source ? { source } : {}
+    const mappings = await prisma.importAccountMapping.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+    })
+    return { mappings }
+  })
+
+  app.post('/import/account-mappings', {
+    schema: {
+      description: '批量保存导入账户映射',
+      tags: ['导入导出'],
+    },
+  }, async (req, reply) => {
+    const body = req.body as { mappings: { source: string; sourceAccountName: string; payerContains?: string; descriptionContains?: string; targetAccountName: string }[] }
+    if (!body.mappings || !Array.isArray(body.mappings)) {
+      return reply.status(400).send({ message: '参数无效' })
+    }
+
+    for (const m of body.mappings) {
+      const payerContains = m.payerContains || ''
+      const descriptionContains = m.descriptionContains || ''
+      await prisma.importAccountMapping.upsert({
+        where: {
+          source_sourceAccountName_payerContains_descriptionContains: {
+            source: m.source,
+            sourceAccountName: m.sourceAccountName,
+            payerContains,
+            descriptionContains,
+          },
+        },
+        create: { source: m.source, sourceAccountName: m.sourceAccountName, payerContains, descriptionContains, targetAccountName: m.targetAccountName },
+        update: { targetAccountName: m.targetAccountName },
+      })
+    }
+
+    return { success: true }
+  })
+
+  app.delete('/import/account-mappings/:id', {
+    schema: {
+      description: '删除导入账户映射',
+      tags: ['导入导出'],
+    },
+  }, async (req) => {
+    const { id } = req.params as { id: string }
+    await prisma.importAccountMapping.delete({ where: { id } })
     return { success: true }
   })
 
