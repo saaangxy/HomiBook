@@ -564,6 +564,149 @@ function parseJdCSV(buffer: Buffer): { rows: ParsedRow[]; errors: string[] } {
   return { rows, errors }
 }
 
+// ======================== 通用 CSV 解析 ========================
+
+function parseCsvWithMapping(
+  buffer: Buffer,
+  columnMapping: Record<string, string>,
+  typeMapping: Record<string, string>,
+): { rows: ParsedRow[]; errors: string[] } {
+  const encoding = detectEncoding(buffer)
+  const text = encoding === 'utf8' ? buffer.toString('utf8') : iconv.decode(buffer, 'gbk')
+
+  // 查找表头行（查找 columnMapping 中任一列名出现的行）
+  const lines = text.split(/\r?\n/)
+  let headerIndex = -1
+  const colNames = Object.values(columnMapping)
+  for (let i = 0; i < lines.length; i++) {
+    const matchCount = colNames.filter(c => lines[i].includes(c)).length
+    if (matchCount >= 2) {
+      headerIndex = i
+      break
+    }
+  }
+  if (headerIndex === -1) {
+    return { rows: [], errors: ['无法定位CSV表头行，请检查列名是否正确'] }
+  }
+
+  const csvContent = lines.slice(headerIndex).join('\n')
+  let records: string[][]
+  try {
+    records = parse(csvContent, {
+      columns: true,
+      skip_empty_lines: true,
+      trim: true,
+      relax_column_count: true,
+    })
+  } catch (e: any) {
+    return { rows: [], errors: [`CSV解析失败: ${e.message}`] }
+  }
+
+  const rows: ParsedRow[] = []
+  const errors: string[] = []
+
+  // 构建反向映射: CSV列名 → 系统字段
+  const reversedMapping: Record<string, string> = {}
+  for (const [field, col] of Object.entries(columnMapping)) {
+    if (col) reversedMapping[col] = field
+  }
+
+  for (let i = 0; i < records.length; i++) {
+    const r = records[i] as unknown as Record<string, string>
+    const rowIndex = i + 2
+
+    // 跳过空行
+    const values = Object.values(r).filter(v => v)
+    if (values.length === 0) continue
+
+    try {
+      // 获取各字段值
+      const getField = (field: string): string => {
+        const col = columnMapping[field]
+        if (!col) return ''
+        return (r[col] || '').trim()
+      }
+
+      const dateStr = getField('date')
+      const amountStr = getField('amount')
+      const typeStr = getField('type')
+      const account = getField('account')
+      const toAccount = getField('toAccount')
+      const payer = getField('payer')
+      const category = getField('category')
+      const description = getField('description')
+      const remark = getField('remark')
+
+      // 日期解析 — 支持多种格式
+      let date: string
+      let normalized = dateStr.replace(/\//g, '-')
+      // 纯日期格式补上时间，确保 +08:00 能正确解析
+      if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+        normalized += 'T00:00:00'
+      }
+      const d = new Date(normalized.replace(' ', 'T') + '+08:00')
+      if (!isNaN(d.getTime())) {
+        date = d.toISOString()
+      } else {
+        // 尝试 YYYY年MM月DD日
+        const cnMatch = dateStr.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/)
+        if (cnMatch) {
+          date = new Date(`${cnMatch[1]}-${cnMatch[2].padStart(2, '0')}-${cnMatch[3].padStart(2, '0')}T00:00:00+08:00`).toISOString()
+        } else {
+          errors.push(`第${rowIndex}行: 日期格式无法解析 "${dateStr}"`)
+          continue
+        }
+      }
+
+      // 金额解析 — 去掉货币符号
+      const amount = parseFloat(amountStr.replace(/[¥¥$，,\s元€£]/g, ''))
+      if (isNaN(amount) || amount === 0) continue
+
+      // 类型确定
+      let recordType: 'INCOME' | 'EXPENSE' | 'TRANSFER' | 'UNKNOWN'
+      if (typeStr && typeMapping[typeStr]) {
+        recordType = typeMapping[typeStr] as 'INCOME' | 'EXPENSE' | 'TRANSFER'
+      } else if (typeStr) {
+        // 尝试直接匹配
+        if (/^收入|^入账|^收款|income/i.test(typeStr)) recordType = 'INCOME'
+        else if (/^不计收支|^不计|^转账|^transfer/i.test(typeStr)) recordType = 'TRANSFER'
+        else if (/^支出|^出账|^付款|^expense/i.test(typeStr)) recordType = 'EXPENSE'
+        else recordType = 'UNKNOWN'
+      } else {
+        recordType = 'UNKNOWN'
+      }
+
+      const accountName = account || '导入账户'
+
+      // 构建备注
+      const remarkParts: string[] = []
+      if (description) remarkParts.push(description)
+      if (remark) remarkParts.push(remark)
+      const combinedRemark = remarkParts.join(' | ')
+
+      rows.push({
+        date,
+        type: recordType,
+        amount,
+        accountName,
+        accountId: null,
+        toAccountName: toAccount || null,
+        toAccountId: null,
+        categoryCode: category || null,
+        mappedCategoryCode: null,
+        payer: payer || null,
+        remark: combinedRemark,
+        tags: ['导入', 'CSV'],
+        rowIndex,
+      })
+    } catch (e: any) {
+      errors.push(`第${rowIndex}行: ${e.message}`)
+    }
+  }
+
+  return { rows, errors }
+}
+
 // ======================== 账户匹配 & 分类映射 ========================
 
 async function resolveAccounts(bookId: string, rows: ParsedRow[]) {
@@ -766,6 +909,62 @@ const importConfirmSchema = z.object({
 export async function importExportRoutes(app: FastifyInstance) {
   app.addHook('onRequest', authenticate)
 
+  // ===== CSV 文件分析 =====
+  app.post('/import/csv/analyze', {
+    schema: {
+      description: '分析CSV文件，返回表头列名和样本数据',
+      tags: ['导入导出'],
+      consumes: ['multipart/form-data'],
+    },
+  }, async (req, reply) => {
+    const data = await req.file()
+    if (!data) return reply.status(400).send({ message: '缺少文件' })
+    const buffer = await data.toBuffer()
+    if (buffer.length === 0) return reply.status(400).send({ message: '文件为空' })
+
+    const encoding = detectEncoding(buffer)
+    const text = encoding === 'utf8' ? buffer.toString('utf8') : iconv.decode(buffer, 'gbk')
+
+    // 查找表头行 — 取第一个非空且包含中文或常见列名的行
+    const lines = text.split(/\r?\n/).filter(l => l.trim())
+    if (lines.length === 0) return reply.status(400).send({ message: '文件无数据' })
+
+    let headerIndex = 0
+    const keywords = ['日期', '金额', 'time', 'amount', '日期', '收支', '类型']
+    for (let i = 0; i < Math.min(lines.length, 20); i++) {
+      const hitCount = keywords.filter(k => lines[i].includes(k)).length
+      if (hitCount >= 2) {
+        headerIndex = i
+        break
+      }
+    }
+
+    const csvContent = lines.slice(headerIndex).join('\n')
+    let records: string[][]
+    try {
+      records = parse(csvContent, {
+        columns: true,
+        skip_empty_lines: true,
+        trim: true,
+        relax_column_count: true,
+      })
+    } catch (e: any) {
+      return reply.status(400).send({ message: `CSV解析失败: ${e.message}` })
+    }
+
+    if (records.length === 0) return reply.status(400).send({ message: '文件无数据' })
+
+    const headers = Object.keys(records[0] as unknown as Record<string, string>)
+    const sampleRows = records.slice(0, 5).map(r =>
+      Object.fromEntries(
+        Object.entries(r as unknown as Record<string, string>)
+          .map(([k, v]) => [k, v || ('' as string)])
+      )
+    )
+
+    return { encoding, headers, sampleRows, totalRows: records.length }
+  })
+
   // ===== 预览导入 =====
   app.post('/import/preview', {
     schema: {
@@ -801,8 +1000,32 @@ export async function importExportRoutes(app: FastifyInstance) {
       parseResult = parseWechatXlsx(buffer)
     } else if (source === 'jd') {
       parseResult = parseJdCSV(buffer)
+    } else if (source === 'csv') {
+      const columnMappingRaw = fields.columnMapping?.value
+      const typeMappingRaw = fields.typeMapping?.value
+      if (!columnMappingRaw || !typeMappingRaw) {
+        return reply.status(400).send({ message: '缺少 columnMapping 或 typeMapping 参数' })
+      }
+      let columnMapping: Record<string, string>
+      let typeMapping: Record<string, string>
+      try {
+        columnMapping = JSON.parse(columnMappingRaw)
+        typeMapping = JSON.parse(typeMappingRaw)
+      } catch {
+        return reply.status(400).send({ message: 'columnMapping 或 typeMapping JSON 格式错误' })
+      }
+      if (!columnMapping.date || !columnMapping.amount || !columnMapping.type) {
+        return reply.status(400).send({ message: 'columnMapping 必须包含 date, amount, type' })
+      }
+      const validTypes = ['INCOME', 'EXPENSE', 'TRANSFER']
+      for (const v of Object.values(typeMapping)) {
+        if (!validTypes.includes(v)) {
+          return reply.status(400).send({ message: `typeMapping 包含无效类型: ${v}` })
+        }
+      }
+      parseResult = parseCsvWithMapping(buffer, columnMapping, typeMapping)
     } else {
-      return reply.status(400).send({ message: '通用CSV导入暂未支持' })
+      return reply.status(400).send({ message: '不支持的来源' })
     }
 
     if (parseResult.rows.length === 0 && parseResult.errors.length > 0) {

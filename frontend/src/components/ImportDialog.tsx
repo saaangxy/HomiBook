@@ -43,7 +43,7 @@ interface ImportDialogProps {
   onImportComplete: () => void
 }
 
-type Step = 'source' | 'upload' | 'preview' | 'confirm' | 'result'
+type Step = 'source' | 'upload' | 'columnMapping' | 'preview' | 'confirm' | 'result'
 
 const SOURCE_LABELS: Record<string, string> = {
   alipay: '支付宝',
@@ -133,6 +133,14 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
   // 结果
   const [importResult, setImportResult] = useState<{ imported: number; accountsCreated: number } | null>(null)
 
+  // 通用CSV列映射
+  const [csvHeaders, setCsvHeaders] = useState<string[]>([])
+  const [csvSampleData, setCsvSampleData] = useState<Record<string, string>[]>([])
+  const [csvTotalRows, setCsvTotalRows] = useState(0)
+  const [columnMapping, setColumnMapping] = useState<Record<string, string>>({})
+  const [typeMapping, setTypeMapping] = useState<Record<string, string>>({})
+  const [csvTypeValues, setCsvTypeValues] = useState<string[]>([])
+
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const reset = () => {
@@ -162,6 +170,12 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
     setUnrecognizedRecords([])
     setUnrecognizedResolutions({})
     setImportResult(null)
+    setCsvHeaders([])
+    setCsvSampleData([])
+    setCsvTotalRows(0)
+    setColumnMapping({})
+    setTypeMapping({})
+    setCsvTypeValues([])
   }
 
   const handleClose = () => {
@@ -172,6 +186,149 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
     if (f) setFile(f)
+  }
+
+  // 列名自动检测
+  const autoDetectColumns = (headers: string[]): Record<string, string> => {
+    const mapping: Record<string, string> = {}
+    const rules: Record<string, RegExp[]> = {
+      date: [/日期/, /时间/, /date/i, /time/i],
+      amount: [/金额/, /金额/, /amount/i],
+      type: [/收.?支/, /方向/, /类型/, /type/i, /出入/],
+      account: [/支付方式/, /账户/, /付款方式/, /收款方式/, /account/i],
+      toAccount: [/目标账户/, /对方账户/, /收款账户/, /toAccount/i, /to_account/i],
+      payer: [/对方/, /交易方/, /商户/, /商家/, /payer/i, /merchant/i],
+      category: [/分类/, /category/i],
+      description: [/说明/, /商品/, /描述/, /description/i, /desc/i],
+      remark: [/备注/, /remark/i, /note/i, /附言/],
+    }
+    for (const [field, patterns] of Object.entries(rules)) {
+      for (const header of headers) {
+        for (const pattern of patterns) {
+          if (pattern.test(header)) {
+            mapping[field] = header
+            break
+          }
+        }
+        if (mapping[field]) break
+      }
+    }
+    return mapping
+  }
+
+  // 提取类型列的唯一值
+  const detectTypeValues = (columnName: string, sampleRows: Record<string, string>[]): string[] => {
+    const values = new Set<string>()
+    for (const row of sampleRows) {
+      const v = (row[columnName] || '').trim()
+      if (v) values.add(v)
+    }
+    return Array.from(values)
+  }
+
+  // 自动推断类型映射（同后端正则逻辑）
+  const autoDetectTypeMapping = (values: string[]): Record<string, string> => {
+    const mapping: Record<string, string> = {}
+    for (const v of values) {
+      if (/^收入|^入账|^收款|income/i.test(v)) mapping[v] = 'INCOME'
+      else if (/^不计收支|^不计|^转账|^transfer/i.test(v)) mapping[v] = 'TRANSFER'
+      else if (/^支出|^出账|^付款|^expense/i.test(v)) mapping[v] = 'EXPENSE'
+    }
+    return mapping
+  }
+
+  // CSV 文件分析（第一步上传）
+  const handleAnalyze = async () => {
+    if (!file || !bookId) return
+    setLoading(true)
+    setError('')
+    try {
+      const result = await importExportApi.analyzeCsv(file)
+      setCsvHeaders(result.headers)
+      setCsvSampleData(result.sampleRows)
+      setCsvTotalRows(result.totalRows)
+      const detected = autoDetectColumns(result.headers)
+      setColumnMapping(detected)
+      if (detected.type) {
+        const typeVals = detectTypeValues(detected.type, result.sampleRows)
+        setCsvTypeValues(typeVals)
+        setTypeMapping(autoDetectTypeMapping(typeVals))
+      }
+      setStep('columnMapping')
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // CSV 带映射解析（第二步）
+  const handleParseWithMapping = async () => {
+    if (!file || !bookId) return
+    setLoading(true)
+    setError('')
+    try {
+      const result = await importExportApi.preview(file, source, bookId, columnMapping, typeMapping)
+      setPreviewRecords(result.records)
+      setUnmatchedAccounts(result.unmatchedAccounts)
+      setUnmatchedCategories(result.unmatchedCategories)
+      setAllDictItems(result.allDictItems)
+      setStats(result.stats)
+      setUnrecognizedRecords(result.unrecognizedRecords)
+
+      // 初始化账户处理（复用 handleParse 的同名逻辑）
+      const initAccountResolutions: Record<string, { action: 'create' | 'existing'; targetId?: string; csvName: string; suggestedType: string; suggestedName: string; displayName: string; bankName?: string; accountNo?: string }> = {}
+      for (const ua of result.unmatchedAccounts) {
+        initAccountResolutions[ua.csvName] = {
+          action: 'create',
+          csvName: ua.csvName,
+          suggestedType: ua.suggestedType,
+          suggestedName: ua.suggestedName,
+          displayName: ua.suggestedName,
+          bankName: ua.bankName,
+          accountNo: ua.accountNo,
+        }
+      }
+      setAccountResolutions(initAccountResolutions)
+
+      // 初始化分类映射
+      const initCategoryResolutions: Record<string, { targetCode: string; save: boolean; payerContains: string; descriptionContains: string }> = {}
+      for (const uc of result.unmatchedCategories) {
+        for (const type of uc.types) {
+          const key = `${uc.sourceCategory}::${type}`
+          initCategoryResolutions[key] = {
+            targetCode: uc.suggestedCode || '',
+            save: false,
+            payerContains: '',
+            descriptionContains: '',
+          }
+        }
+      }
+      setCategoryResolutions(initCategoryResolutions)
+
+      // 初始化无法识别记录的处理
+      const initUnrecognizedResolutions: Record<number, { type: string; accountId: string; categoryCode: string }> = {}
+      for (const r of result.unrecognizedRecords) {
+        initUnrecognizedResolutions[r.rowIndex] = { type: '', accountId: '', categoryCode: '' }
+      }
+      setUnrecognizedResolutions(initUnrecognizedResolutions)
+
+      setComboOpen(null)
+      setCategorySearch('')
+      setShowAllRecords(false)
+      setFilterCategory('')
+      setFilterType('')
+      setFilterAccount('')
+      setExtraUnmatched([])
+      setNextExtraId(1)
+      setRemovedKeys({})
+
+      setStep('preview')
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const handleParse = async () => {
@@ -432,7 +589,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                 { key: 'alipay', label: '支付宝', desc: '支持支付宝交易明细导出CSV (.csv)', disabled: false },
                 { key: 'wechat', label: '微信', desc: '支持微信支付账单导出Excel (.xlsx)', disabled: false },
                 { key: 'jd', label: '京东', desc: '支持京东交易流水导出CSV (.csv)', disabled: false },
-                { key: 'csv', label: '其他CSV', desc: '即将支持', disabled: true },
+                { key: 'csv', label: '其他CSV', desc: '支持任意CSV文件，需手动配置列映射', disabled: false },
               ].map(item => (
                 <button
                   key={item.key}
@@ -525,8 +682,178 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
               </Button>
               <Button
                 className="bg-primary hover:bg-primary/90 text-primary-foreground"
-                onClick={handleParse}
+                onClick={source === 'csv' ? handleAnalyze : handleParse}
                 disabled={!file || loading}
+              >
+                {loading ? <Spinner /> : '开始解析'}
+              </Button>
+            </DialogFooter>
+          </>
+        )}
+
+        {/* Step 2.5: 列映射 (仅CSV) */}
+        {step === 'columnMapping' && (
+          <>
+            <DialogHeader>
+              <DialogTitle>配置列映射 - 其他CSV</DialogTitle>
+            </DialogHeader>
+            <div className="flex flex-col gap-4 py-4 flex-1 overflow-y-auto">
+              {error && (
+                <Alert variant="destructive">
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <FileText size={14} />
+                <span>{file?.name}</span>
+                <span>·</span>
+                <span>{csvTotalRows} 行数据</span>
+                <span>·</span>
+                <span>{csvHeaders.length} 列</span>
+              </div>
+
+              {/* 列映射表 */}
+              <div>
+                <p className="text-sm font-medium mb-2">系统字段映射（<span className="text-red-400">*</span> 必填）</p>
+                <div className="border rounded-lg overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/50 hover:bg-muted/50">
+                        <TableHead className="text-xs py-2 w-28">系统字段</TableHead>
+                        <TableHead className="text-xs py-2">CSV 列名</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {([
+                        { key: 'date', label: '日期', required: true },
+                        { key: 'amount', label: '金额', required: true },
+                        { key: 'type', label: '收支类型', required: true },
+                        { key: 'account', label: '账户' },
+                        { key: 'toAccount', label: '目标账户' },
+                        { key: 'payer', label: '交易方' },
+                        { key: 'category', label: '分类' },
+                        { key: 'description', label: '说明' },
+                        { key: 'remark', label: '备注' },
+                      ] as { key: string; label: string; required?: boolean }[]).map(field => (
+                        <TableRow key={field.key}>
+                          <TableCell className="text-xs py-2 font-medium">
+                            {field.label}
+                            {field.required && <span className="text-red-400 ml-0.5">*</span>}
+                          </TableCell>
+                          <TableCell className="text-xs py-2">
+                            <Select
+                              value={columnMapping[field.key] || ''}
+                              onValueChange={(v) => {
+                                const newMapping = { ...columnMapping }
+                                if (v === '') {
+                                  delete newMapping[field.key]
+                                } else {
+                                  newMapping[field.key] = v
+                                }
+                                setColumnMapping(newMapping)
+                                if (field.key === 'type' && v) {
+                                  const typeVals = detectTypeValues(v, csvSampleData)
+                                  setCsvTypeValues(typeVals)
+                                  setTypeMapping(autoDetectTypeMapping(typeVals))
+                                }
+                              }}
+                            >
+                              <SelectTrigger className="h-8 text-xs w-full bg-background">
+                                <SelectValue placeholder="选择 CSV 列..." />
+                              </SelectTrigger>
+                              <SelectContent className="bg-card border-border max-h-56">
+                                {csvHeaders.map(h => (
+                                  <SelectItem key={h} value={h} className="text-xs">{h}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+
+              {/* 类型值映射 */}
+              {csvTypeValues.length > 0 && columnMapping.type && (
+                <div>
+                  <p className="text-sm font-medium mb-2">收支类型值映射</p>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    将CSV中"{columnMapping.type}"列的值映射到系统收支类型
+                  </p>
+                  <div className="space-y-2">
+                    {csvTypeValues.map(csvVal => (
+                      <div key={csvVal} className="flex items-center gap-3 p-2 rounded-lg bg-muted/50">
+                        <span className="text-sm font-medium min-w-[80px]">{csvVal}</span>
+                        <span className="text-xs text-muted-foreground">→</span>
+                        <Select
+                          value={typeMapping[csvVal] || ''}
+                          onValueChange={(v) => setTypeMapping({ ...typeMapping, [csvVal]: v })}
+                        >
+                          <SelectTrigger className="h-8 text-xs w-24 bg-background">
+                            <SelectValue placeholder="选择" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-card border-border">
+                            <SelectItem value="EXPENSE" className="text-xs text-[#ef4444]">支出</SelectItem>
+                            <SelectItem value="INCOME" className="text-xs text-[#22c55e]">收入</SelectItem>
+                            <SelectItem value="TRANSFER" className="text-xs text-[#3b82f6]">转账</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {!typeMapping[csvVal] && (
+                          <span className="text-xs text-orange-500">未映射</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 数据预览 */}
+              {csvSampleData.length > 0 && (
+                <div>
+                  <p className="text-sm font-medium mb-2">数据预览（前 {csvSampleData.length} 行）</p>
+                  <div className="border rounded-lg overflow-hidden max-h-48 overflow-auto">
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-muted/50 hover:bg-muted/50">
+                            {csvHeaders.map(h => (
+                              <TableHead key={h} className="text-xs whitespace-nowrap py-2 px-3">
+                                {h}
+                              </TableHead>
+                            ))}
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {csvSampleData.map((row, i) => (
+                            <TableRow key={i} className="hover:bg-accent/50">
+                              {csvHeaders.map(h => (
+                                <TableCell key={h} className="text-xs py-2 px-3 whitespace-nowrap">
+                                  {row[h] || '-'}
+                                </TableCell>
+                              ))}
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setStep('upload')} disabled={loading}>
+                <ArrowLeft size={16} /> 上一步
+              </Button>
+              <Button
+                className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                onClick={handleParseWithMapping}
+                disabled={
+                  !columnMapping.date || !columnMapping.amount || !columnMapping.type ||
+                  loading
+                }
               >
                 {loading ? <Spinner /> : '开始解析'}
               </Button>
@@ -1027,7 +1354,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
               )}
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setStep('upload')} disabled={loading}>
+              <Button variant="outline" onClick={() => setStep(source === 'csv' ? 'columnMapping' : 'upload')} disabled={loading}>
                 <ArrowLeft size={16} /> 上一步
               </Button>
               <Button

@@ -55,6 +55,14 @@ export interface ImportPreviewResult {
   }
 }
 
+// CSV 文件分析结果
+export interface CsvAnalyzeResult {
+  encoding: string
+  headers: string[]
+  sampleRows: Record<string, string>[]
+  totalRows: number
+}
+
 // 导入确认结果
 export interface ImportConfirmResult {
   imported: number
@@ -74,8 +82,25 @@ export interface CategoryMapping {
 }
 
 export const importExportApi = {
-  preview: (file: File, source: string, accountBookId: string): Promise<ImportPreviewResult> =>
-    api.uploadForm('/api/records/import/preview', file, { source, accountBookId }),
+  preview: (
+    file: File,
+    source: string,
+    accountBookId: string,
+    columnMapping?: Record<string, string>,
+    typeMapping?: Record<string, string>,
+  ): Promise<ImportPreviewResult> => {
+    const extraFields: Record<string, string> = { source, accountBookId }
+    if (columnMapping) {
+      extraFields.columnMapping = JSON.stringify(columnMapping)
+    }
+    if (typeMapping) {
+      extraFields.typeMapping = JSON.stringify(typeMapping)
+    }
+    return api.uploadForm('/api/records/import/preview', file, extraFields)
+  },
+
+  analyzeCsv: (file: File): Promise<CsvAnalyzeResult> =>
+    api.uploadForm('/api/records/import/csv/analyze', file, {}),
 
   import: (data: {
     accountBookId: string

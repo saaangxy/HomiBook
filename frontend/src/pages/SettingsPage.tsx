@@ -311,7 +311,7 @@ export function SettingsPage() {
   }, [])
 
   // 展开 API Key 面板时加载数据
-  const [accordionValue, setAccordionValue] = useState<string[]>(['general', 'dictionary'])
+  const [accordionValue, setAccordionValue] = useState<string[]>([])
   const handleAccordionChange = (value: string[]) => {
     setAccordionValue(value)
     if (value.includes('apikeys')) {
