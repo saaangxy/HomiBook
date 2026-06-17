@@ -430,6 +430,140 @@ function parseWechatXlsx(buffer: Buffer): { rows: ParsedRow[]; errors: string[] 
   return { rows, errors }
 }
 
+// ======================== 京东 CSV 解析 ========================
+
+// 京东体系内账户关键词 — 白条统一映射到"京东"账户
+const JD_INTERNAL_PATTERN = /京东白条/
+function resolveJdAccountName(name: string) {
+  if (!name) return '京东'
+  if (JD_INTERNAL_PATTERN.test(name)) return '京东'
+  return name
+}
+
+function parseJdCSV(buffer: Buffer): { rows: ParsedRow[]; errors: string[] } {
+  const encoding = detectEncoding(buffer)
+  const text = encoding === 'utf8' ? buffer.toString('utf8') : iconv.decode(buffer, 'gbk')
+
+  // 查找表头行
+  const lines = text.split(/\r?\n/)
+  let headerIndex = -1
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].startsWith('交易时间,')) {
+      headerIndex = i
+      break
+    }
+  }
+  if (headerIndex === -1) {
+    return { rows: [], errors: ['无法找到CSV表头行，请确认是京东导出的交易明细文件'] }
+  }
+
+  // 截取表头+数据行重新组合
+  const csvContent = lines.slice(headerIndex).join('\n')
+  let records: string[][]
+  try {
+    records = parse(csvContent, {
+      columns: true,
+      skip_empty_lines: true,
+      trim: true,
+      relax_column_count: true,
+    })
+  } catch (e: any) {
+    return { rows: [], errors: [`CSV解析失败: ${e.message}`] }
+  }
+
+  const rows: ParsedRow[] = []
+  const errors: string[] = []
+
+  for (let i = 0; i < records.length; i++) {
+    const r = records[i] as unknown as Record<string, string>
+    const rowIndex = i + 2
+    try {
+      const tradeTime = r['交易时间'] || ''
+      const merchantName = r['商户名称'] || ''
+      const description = r['交易说明'] || ''
+      const direction = r['收/支'] || ''
+      const amountStr = r['金额'] || ''
+      const paymentMethod = r['收/付款方式'] || ''
+      const status = r['交易状态'] || ''
+      const category = r['交易分类'] || ''
+      const orderNo = (r['交易订单号'] || '').trim()
+      const merchantOrderNo = (r['商家订单号'] || '').trim()
+      const remark = r['备注'] || ''
+
+      // 解析金额
+      const amount = parseFloat(amountStr)
+      if (isNaN(amount) || amount === 0) continue
+
+      // 解析日期: YYYY-MM-DD HH:mm:ss → ISO
+      const date = new Date(tradeTime.replace(' ', 'T') + '+08:00').toISOString()
+      if (isNaN(new Date(date).getTime())) {
+        errors.push(`第${rowIndex}行: 日期格式无法解析`)
+        continue
+      }
+
+      // 确定记录类型
+      let recordType: 'INCOME' | 'EXPENSE' | 'TRANSFER' | 'UNKNOWN' = 'EXPENSE'
+      let toAccountName: string | null = null
+
+      if (direction === '支出') {
+        recordType = 'EXPENSE'
+      } else if (direction === '收入') {
+        recordType = 'INCOME'
+      } else if (direction === '不计收支') {
+        // 白条主动还款 → 转账（银行卡→京东白条）
+        if (/白条主动还款|白条还款/.test(description)) {
+          recordType = 'TRANSFER'
+          toAccountName = '京东'
+        } else if (/退款/.test(status) || /退款/.test(description)) {
+          // 全额退款 → 收入
+          recordType = 'INCOME'
+        } else {
+          recordType = 'UNKNOWN'
+        }
+      }
+
+      // 统一京东子账户
+      const resolvedAccountName = resolveJdAccountName(paymentMethod)
+      const resolvedToAccountName = toAccountName ? resolveJdAccountName(toAccountName) : null
+
+      // 京东内部转账忽略（京东白条↔京东内部账户互转）
+      if (recordType === 'TRANSFER' && resolvedAccountName === '京东' && resolvedToAccountName === '京东') {
+        continue
+      }
+
+      // 构建备注：说明 | 商户名称 | 状态(非成功) | 订单号 | 商家订单号 | 备注
+      const remarkParts: string[] = []
+      if (description) remarkParts.push(description)
+      if (merchantName) remarkParts.push(`商户:${merchantName}`)
+      if (status && status !== '交易成功') remarkParts.push(`状态:${status}`)
+      if (orderNo) remarkParts.push(`订单:${orderNo}`)
+      if (merchantOrderNo) remarkParts.push(`商户单:${merchantOrderNo}`)
+      if (remark) remarkParts.push(remark)
+      const combinedRemark = remarkParts.join(' | ')
+
+      rows.push({
+        date,
+        type: recordType,
+        amount,
+        accountName: resolvedAccountName,
+        accountId: null,
+        toAccountName: resolvedToAccountName,
+        toAccountId: null,
+        categoryCode: category || null,
+        mappedCategoryCode: null,
+        payer: merchantName || null,
+        remark: combinedRemark,
+        tags: ['导入', '京东'],
+        rowIndex: i + 2,
+      })
+    } catch (e: any) {
+      errors.push(`第${rowIndex}行: ${e.message}`)
+    }
+  }
+
+  return { rows, errors }
+}
+
 // ======================== 账户匹配 & 分类映射 ========================
 
 async function resolveAccounts(bookId: string, rows: ParsedRow[]) {
@@ -595,13 +729,13 @@ async function resolveCategories(source: string, rows: ParsedRow[]) {
 // ======================== 路由 ========================
 
 const previewSchema = z.object({
-  source: z.enum(['alipay', 'wechat', 'csv']),
+  source: z.enum(['alipay', 'wechat', 'csv', 'jd']),
   accountBookId: z.string().min(1),
 })
 
 const importConfirmSchema = z.object({
   accountBookId: z.string().min(1),
-  source: z.enum(['alipay', 'wechat', 'csv']),
+  source: z.enum(['alipay', 'wechat', 'csv', 'jd']),
   records: z.array(z.object({
     date: z.string(),
     type: z.enum(['INCOME', 'EXPENSE', 'TRANSFER']),
@@ -665,6 +799,8 @@ export async function importExportRoutes(app: FastifyInstance) {
       parseResult = parseAlipayCSV(buffer)
     } else if (source === 'wechat') {
       parseResult = parseWechatXlsx(buffer)
+    } else if (source === 'jd') {
+      parseResult = parseJdCSV(buffer)
     } else {
       return reply.status(400).send({ message: '通用CSV导入暂未支持' })
     }

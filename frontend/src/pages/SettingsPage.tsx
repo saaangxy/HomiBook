@@ -957,6 +957,7 @@ export function SettingsPage() {
                 <SelectContent className="bg-card border-border">
                   <SelectItem value="alipay" className="text-xs">支付宝</SelectItem>
                   <SelectItem value="wechat" className="text-xs">微信</SelectItem>
+                  <SelectItem value="jd" className="text-xs">京东</SelectItem>
                   <SelectItem value="csv" className="text-xs">其他CSV</SelectItem>
                 </SelectContent>
               </Select>

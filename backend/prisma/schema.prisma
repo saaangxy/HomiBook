@@ -294,7 +294,7 @@ model RepaymentPlan {
 // 导入分类映射 — 支持按交易方/商品说明细化条件
 model ImportCategoryMapping {
   id                  String   @id @default(uuid())
-  source              String   // "alipay" | "wechat" | "csv"
+  source              String   // "alipay" | "wechat" | "csv" | "jd"
   sourceCategory      String   // CSV中的分类名，如"餐饮美食"
   payerContains       String   @default("") // 可选：交易方名称包含过滤
   descriptionContains String   @default("") // 可选：商品说明包含过滤

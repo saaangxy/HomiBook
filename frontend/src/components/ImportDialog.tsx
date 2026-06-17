@@ -48,6 +48,7 @@ type Step = 'source' | 'upload' | 'preview' | 'confirm' | 'result'
 const SOURCE_LABELS: Record<string, string> = {
   alipay: '支付宝',
   wechat: '微信',
+  jd: '京东',
   csv: '其他CSV',
 }
 
@@ -430,6 +431,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
               {[
                 { key: 'alipay', label: '支付宝', desc: '支持支付宝交易明细导出CSV (.csv)', disabled: false },
                 { key: 'wechat', label: '微信', desc: '支持微信支付账单导出Excel (.xlsx)', disabled: false },
+                { key: 'jd', label: '京东', desc: '支持京东交易流水导出CSV (.csv)', disabled: false },
                 { key: 'csv', label: '其他CSV', desc: '即将支持', disabled: true },
               ].map(item => (
                 <button
