@@ -169,9 +169,9 @@ function parseAlipayCSV(buffer: Buffer): { rows: ParsedRow[]; errors: string[] }
       if (isNaN(amount) || amount === 0) continue
 
       // 解析日期: YYYY-MM-DD HH:mm:ss → ISO
-      const date = new Date(tradeTime.replace(' ', 'T') + '+08:00').toISOString()
-      if (isNaN(new Date(date).getTime())) {
-        errors.push(`第${rowIndex}行: 日期格式无法解析`)
+      const date = parseDateStr(tradeTime)
+      if (!date) {
+        errors.push(`第${rowIndex}行: 日期格式无法解析 "${tradeTime}"`)
         continue
       }
 
@@ -495,9 +495,9 @@ function parseJdCSV(buffer: Buffer): { rows: ParsedRow[]; errors: string[] } {
       if (isNaN(amount) || amount === 0) continue
 
       // 解析日期: YYYY-MM-DD HH:mm:ss → ISO
-      const date = new Date(tradeTime.replace(' ', 'T') + '+08:00').toISOString()
-      if (isNaN(new Date(date).getTime())) {
-        errors.push(`第${rowIndex}行: 日期格式无法解析`)
+      const date = parseDateStr(tradeTime)
+      if (!date) {
+        errors.push(`第${rowIndex}行: 日期格式无法解析 "${tradeTime}"`)
         continue
       }
 
@@ -566,27 +566,118 @@ function parseJdCSV(buffer: Buffer): { rows: ParsedRow[]; errors: string[] } {
 
 // ======================== 通用 CSV 解析 ========================
 
+// 自动检测 CSV 表头行：逐行按逗号分列，按表头特征评分，返回最高分行的索引
+function detectHeaderIndex(lines: string[], maxScan = 60): number {
+  const headerPatterns: { pattern: RegExp; score: number }[] = [
+    { pattern: /日期|时间|date|time/i, score: 3 },
+    { pattern: /金额|amount/i, score: 3 },
+    { pattern: /收支|方向|类型|type/i, score: 2 },
+    { pattern: /账户|账号|支付方式|付款方式|收款方式|account/i, score: 2 },
+    { pattern: /分类|category/i, score: 1 },
+    { pattern: /说明|备注|remark|note|desc|附言/i, score: 1 },
+    { pattern: /交易方|商户|对方|payer|merchant|counterparty/i, score: 1 },
+    { pattern: /商品|描述|description/i, score: 1 },
+    { pattern: /状态|status/i, score: 1 },
+    { pattern: /订单|order|单号/i, score: 1 },
+  ]
+
+  let bestIndex = 0
+  let bestScore = -Infinity
+
+  for (let i = 0; i < Math.min(lines.length, maxScan); i++) {
+    const line = lines[i]
+    if (!line.trim()) continue
+
+    const cols = line.split(',')
+    if (cols.length < 3) continue // 列太少，不大可能是表头
+
+    let score = 0
+    let numericCols = 0
+    let emptyCols = 0
+
+    for (const col of cols) {
+      const c = col.trim().replace(/^["']|["']$/g, '')
+      if (!c) { emptyCols++; continue }
+
+      // 检测纯数字/日期格式（数据行特征）
+      if (/^\d+(\.\d+)?$/.test(c)) numericCols++
+      if (/^\d{4}[-\/]\d{1,2}[-\/]\d{1,2}/.test(c)) numericCols++
+      if (/^\d{4}年\d{1,2}月\d{1,2}日/.test(c)) numericCols++
+
+      // 表头关键词加分
+      for (const { pattern, score: s } of headerPatterns) {
+        if (pattern.test(c)) {
+          score += s
+          break // 每列只计一次最高匹配
+        }
+      }
+    }
+
+    // 数据行惩罚：数字列占比高 → 减分
+    const validCols = cols.length - emptyCols
+    if (validCols > 0) {
+      const numericRatio = numericCols / validCols
+      if (numericRatio > 0.5) score -= 4
+      else if (numericRatio > 0.3) score -= 2
+    }
+
+    // 列数加分（列越多越像表头）
+    score += Math.min(validCols, 12) * 0.3
+
+    if (score > bestScore) {
+      bestScore = score
+      bestIndex = i
+    }
+  }
+
+  return bestScore >= 2 ? bestIndex : 0
+}
+
+// 从日期字符串中提取数字，支持:
+// 2026/2/28 19:12:16 | 2026-02-28 19:12:16 | 2026/02/28 | 2026-2-28
+// 2026年2月28日 19:12:16 | 2026年02月28日 | 2026年2月28日
+function parseDateStr(raw: string): string | null {
+  if (!raw) return null
+  const nums = raw.match(/\d+/g)
+  if (!nums || nums.length < 3) return null
+  const [y, m, d, h = '0', min = '0', s = '0'] = nums
+  const pad = (n: string, len = 2) => n.padStart(len, '0')
+  const date = new Date(`${pad(y, 4)}-${pad(m)}-${pad(d)}T${pad(h)}:${pad(min)}:${pad(s)}+08:00`)
+  if (isNaN(date.getTime())) return null
+  return date.toISOString()
+}
+
 function parseCsvWithMapping(
   buffer: Buffer,
   columnMapping: Record<string, string>,
   typeMapping: Record<string, string>,
+  headerRow?: number,
 ): { rows: ParsedRow[]; errors: string[] } {
   const encoding = detectEncoding(buffer)
   const text = encoding === 'utf8' ? buffer.toString('utf8') : iconv.decode(buffer, 'gbk')
 
-  // 查找表头行（查找 columnMapping 中任一列名出现的行）
+  // 查找表头行
   const lines = text.split(/\r?\n/)
   let headerIndex = -1
-  const colNames = Object.values(columnMapping)
-  for (let i = 0; i < lines.length; i++) {
-    const matchCount = colNames.filter(c => lines[i].includes(c)).length
-    if (matchCount >= 2) {
-      headerIndex = i
-      break
+  if (headerRow !== undefined && headerRow > 0) {
+    // 用户指定表头行号（1-based → 0-based）
+    headerIndex = headerRow - 1
+    if (headerIndex >= lines.length) {
+      return { rows: [], errors: [`表头行号 ${headerRow} 超出文件总行数 ${lines.length}`] }
     }
-  }
-  if (headerIndex === -1) {
-    return { rows: [], errors: ['无法定位CSV表头行，请检查列名是否正确'] }
+  } else {
+    // 自动检测：查找 columnMapping 中任一列名出现的行
+    const colNames = Object.values(columnMapping)
+    for (let i = 0; i < lines.length; i++) {
+      const matchCount = colNames.filter(c => lines[i].includes(c)).length
+      if (matchCount >= 2) {
+        headerIndex = i
+        break
+      }
+    }
+    if (headerIndex === -1) {
+      return { rows: [], errors: ['无法定位CSV表头行，请检查列名是否正确或手动指定表头行号'] }
+    }
   }
 
   const csvContent = lines.slice(headerIndex).join('\n')
@@ -613,7 +704,7 @@ function parseCsvWithMapping(
 
   for (let i = 0; i < records.length; i++) {
     const r = records[i] as unknown as Record<string, string>
-    const rowIndex = i + 2
+    const rowIndex = headerIndex + i + 2  // headerIndex(0-based表头) + 1(转1-based) + i(数据行偏移) + 1(跳过表头)
 
     // 跳过空行
     const values = Object.values(r).filter(v => v)
@@ -637,25 +728,11 @@ function parseCsvWithMapping(
       const description = getField('description')
       const remark = getField('remark')
 
-      // 日期解析 — 支持多种格式
-      let date: string
-      let normalized = dateStr.replace(/\//g, '-')
-      // 纯日期格式补上时间，确保 +08:00 能正确解析
-      if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
-        normalized += 'T00:00:00'
-      }
-      const d = new Date(normalized.replace(' ', 'T') + '+08:00')
-      if (!isNaN(d.getTime())) {
-        date = d.toISOString()
-      } else {
-        // 尝试 YYYY年MM月DD日
-        const cnMatch = dateStr.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/)
-        if (cnMatch) {
-          date = new Date(`${cnMatch[1]}-${cnMatch[2].padStart(2, '0')}-${cnMatch[3].padStart(2, '0')}T00:00:00+08:00`).toISOString()
-        } else {
-          errors.push(`第${rowIndex}行: 日期格式无法解析 "${dateStr}"`)
-          continue
-        }
+      // 日期解析 — 从字符串中提取数字，支持多种格式
+      const date = parseDateStr(dateStr)
+      if (!date) {
+        errors.push(`第${rowIndex}行: 日期格式无法解析 "${dateStr}"`)
+        continue
       }
 
       // 金额解析 — 去掉货币符号
@@ -1060,18 +1137,25 @@ export async function importExportRoutes(app: FastifyInstance) {
     const encoding = detectEncoding(buffer)
     const text = encoding === 'utf8' ? buffer.toString('utf8') : iconv.decode(buffer, 'gbk')
 
-    // 查找表头行 — 取第一个非空且包含中文或常见列名的行
-    const lines = text.split(/\r?\n/).filter(l => l.trim())
-    if (lines.length === 0) return reply.status(400).send({ message: '文件无数据' })
+    const fields = data.fields as unknown as Record<string, { value: string }>
+    const headerRowRaw = (fields.headerRow?.value || '').trim()
 
+    const rawLines = text.split(/\r?\n/)
     let headerIndex = 0
-    const keywords = ['日期', '金额', 'time', 'amount', '日期', '收支', '类型']
-    for (let i = 0; i < Math.min(lines.length, 20); i++) {
-      const hitCount = keywords.filter(k => lines[i].includes(k)).length
-      if (hitCount >= 2) {
-        headerIndex = i
-        break
-      }
+    let lines: string[]
+
+    if (headerRowRaw) {
+      // 用户指定表头行号 — 使用未过滤的原始行号（与 parseCsvWithMapping 一致）
+      const hr = parseInt(headerRowRaw, 10)
+      if (isNaN(hr) || hr < 1) return reply.status(400).send({ message: '表头行号必须为正整数' })
+      if (hr > rawLines.length) return reply.status(400).send({ message: `表头行号 ${hr} 超出文件总行数 ${rawLines.length}` })
+      headerIndex = hr - 1
+      lines = rawLines
+    } else {
+      // 自动检测 — 过滤空行后按表头特征评分
+      lines = rawLines.filter(l => l.trim())
+      if (lines.length === 0) return reply.status(400).send({ message: '文件无数据' })
+      headerIndex = detectHeaderIndex(lines)
     }
 
     const csvContent = lines.slice(headerIndex).join('\n')
@@ -1089,7 +1173,7 @@ export async function importExportRoutes(app: FastifyInstance) {
 
     if (records.length === 0) return reply.status(400).send({ message: '文件无数据' })
 
-    const headers = Object.keys(records[0] as unknown as Record<string, string>)
+    const headers = Object.keys(records[0] as unknown as Record<string, string>).filter(h => h !== '')
     const sampleRows = records.slice(0, 5).map(r =>
       Object.fromEntries(
         Object.entries(r as unknown as Record<string, string>)
@@ -1117,12 +1201,12 @@ export async function importExportRoutes(app: FastifyInstance) {
     const buffer = await data.toBuffer()
     const fields = data.fields as unknown as Record<string, { value: string }>
 
-    const source = fields.source?.value || ''
-    const accountBookId = fields.accountBookId?.value || ''
+    const source = (fields.source?.value || '').trim()
+    const accountBookId = (fields.accountBookId?.value || '').trim()
 
     const parsedQuery = previewSchema.safeParse({ source, accountBookId })
     if (!parsedQuery.success) {
-      return reply.status(400).send({ message: '参数无效' })
+      return reply.status(400).send({ message: '参数无效', details: parsedQuery.error.issues.map(i => `${i.path.join('.')}: ${i.message}`) })
     }
 
     await assertIsMember(accountBookId, payload.id)
@@ -1158,7 +1242,12 @@ export async function importExportRoutes(app: FastifyInstance) {
           return reply.status(400).send({ message: `typeMapping 包含无效类型: ${v}` })
         }
       }
-      parseResult = parseCsvWithMapping(buffer, columnMapping, typeMapping)
+      const headerRowRaw = (fields.headerRow?.value || '').trim()
+      const headerRow = headerRowRaw ? parseInt(headerRowRaw, 10) : undefined
+      if (headerRow !== undefined && (isNaN(headerRow) || headerRow < 1)) {
+        return reply.status(400).send({ message: '表头行号必须为正整数' })
+      }
+      parseResult = parseCsvWithMapping(buffer, columnMapping, typeMapping, headerRow)
     } else {
       return reply.status(400).send({ message: '不支持的来源' })
     }

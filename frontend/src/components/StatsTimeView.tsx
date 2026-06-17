@@ -455,7 +455,7 @@ export function StatsTimeView({ bookId, mode }: Props) {
             <div className="min-w-36">
               <Label className="text-xs text-muted-foreground mb-1 block">成员</Label>
               <MultiSelect
-                items={users.map((u) => ({ value: u.id, label: u.name || u.email || u.id }))}
+                items={users.map((u) => ({ value: u.id, label: u.nickname || u.username || u.email || u.id }))}
                 selected={freeOwnerIds}
                 onChange={setFreeOwnerIds}
                 placeholder="全部"
@@ -639,7 +639,7 @@ export function StatsTimeView({ bookId, mode }: Props) {
               <SelectContent>
                 <SelectItem value="all">全部成员</SelectItem>
                 {users.map((u) => (
-                  <SelectItem key={u.id} value={u.id}>{u.name || u.email || u.id}</SelectItem>
+                  <SelectItem key={u.id} value={u.id}>{u.nickname || u.username || u.email || u.id}</SelectItem>
                 ))}
               </SelectContent>
             </Select>

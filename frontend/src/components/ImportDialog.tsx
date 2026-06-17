@@ -141,6 +141,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
   const [columnMapping, setColumnMapping] = useState<Record<string, string>>({})
   const [typeMapping, setTypeMapping] = useState<Record<string, string>>({})
   const [csvTypeValues, setCsvTypeValues] = useState<string[]>([])
+  const [headerRow, setHeaderRow] = useState<number | undefined>(undefined)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -178,6 +179,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
     setTypeMapping({})
     setCsvTypeValues([])
     setAccountMappings({})
+    setHeaderRow(undefined)
   }
 
   const handleClose = () => {
@@ -246,7 +248,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
     setError('')
     try {
       const result = await importExportApi.analyzeCsv(file)
-      setCsvHeaders(result.headers)
+      setCsvHeaders(result.headers.filter(h => h !== ''))
       setCsvSampleData(result.sampleRows)
       setCsvTotalRows(result.totalRows)
       const detected = autoDetectColumns(result.headers)
@@ -270,7 +272,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
     setLoading(true)
     setError('')
     try {
-      const result = await importExportApi.preview(file, source, bookId, columnMapping, typeMapping)
+      const result = await importExportApi.preview(file, source, bookId, columnMapping, typeMapping, headerRow)
       setPreviewRecords(result.records)
       setUnmatchedAccounts(result.unmatchedAccounts)
       setUnmatchedCategories(result.unmatchedCategories)
@@ -279,31 +281,16 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
       setUnrecognizedRecords(result.unrecognizedRecords)
       setAccountMappings(result.accountMappings || {})
 
-      // 初始化账户处理（复用 handleParse 的同名逻辑）
-      const initAccountResolutions: Record<string, { action: 'create' | 'existing'; targetId?: string; csvName: string; suggestedType: string; suggestedName: string; displayName: string; bankName?: string; accountNo?: string }> = {}
+      // 初始化账户选择
+      const acctRes: typeof accountResolutions = {}
       for (const ua of result.unmatchedAccounts) {
         if (ua.candidates?.length) {
-          initAccountResolutions[ua.csvName] = {
-            action: 'existing',
-            csvName: ua.csvName,
-            suggestedType: '',
-            suggestedName: '',
-            displayName: ua.candidates[0].name,
-            targetId: ua.candidates[0].id,
-          }
+          acctRes[ua.csvName] = { action: 'existing', accountId: ua.candidates[0].id }
         } else {
-          initAccountResolutions[ua.csvName] = {
-            action: 'create',
-            csvName: ua.csvName,
-            suggestedType: ua.suggestedType,
-            suggestedName: ua.suggestedName,
-            displayName: ua.suggestedName,
-            bankName: ua.bankName,
-            accountNo: ua.accountNo,
-          }
+          acctRes[ua.csvName] = { action: 'create', name: ua.suggestedName, type: ua.suggestedType }
         }
       }
-      setAccountResolutions(initAccountResolutions)
+      setAccountResolutions(acctRes)
 
       // 初始化分类映射
       const initCategoryResolutions: Record<string, { targetCode: string; save: boolean; payerContains: string; descriptionContains: string }> = {}
@@ -749,6 +736,52 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                 <span>{csvTotalRows} 行数据</span>
                 <span>·</span>
                 <span>{csvHeaders.length} 列</span>
+              </div>
+
+              {/* 表头行号调整 */}
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-muted-foreground whitespace-nowrap">表头行号</label>
+                <Input
+                  type="number"
+                  min={1}
+                  placeholder="自动检测"
+                  value={headerRow ?? ''}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    setHeaderRow(v ? Math.max(1, parseInt(v) || 1) : undefined)
+                  }}
+                  className="h-8 text-xs w-24"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs"
+                  disabled={loading}
+                  onClick={async () => {
+                    if (!file || !bookId) return
+                    setLoading(true)
+                    setError('')
+                    try {
+                      const result = await importExportApi.analyzeCsv(file, headerRow)
+                      setCsvHeaders(result.headers.filter(h => h !== ''))
+                      setCsvSampleData(result.sampleRows)
+                      setCsvTotalRows(result.totalRows)
+                      const detected = autoDetectColumns(result.headers)
+                      setColumnMapping(detected)
+                      if (detected.type) {
+                        const typeVals = detectTypeValues(detected.type, result.sampleRows)
+                        setCsvTypeValues(typeVals)
+                        setTypeMapping(autoDetectTypeMapping(typeVals))
+                      }
+                    } catch (e: any) {
+                      setError(e.message)
+                    } finally {
+                      setLoading(false)
+                    }
+                  }}
+                >
+                  {loading ? <Spinner /> : '重新分析'}
+                </Button>
               </div>
 
               {/* 列映射表 */}

@@ -33,7 +33,6 @@ export function ThemeSelector({ showSystem = true, compact = false, value, onCha
         {allOptions.map((opt) => {
           const isActive = themeId === opt.id || (opt.id === 'system' && themeId === 'system')
           const t = themes[opt.id]
-          const isBase = opt.type === 'system' || opt.type === 'light' || opt.type === 'dark'
           return (
             <button
               key={opt.id}

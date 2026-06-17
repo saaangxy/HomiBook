@@ -332,7 +332,7 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
                 <SelectContent>
                   <SelectItem value="all">全部成员</SelectItem>
                   {detailUsers.map((u) => (
-                    <SelectItem key={u.id} value={u.id}>{u.name || u.email || u.id}</SelectItem>
+                    <SelectItem key={u.id} value={u.id}>{u.nickname || u.username || u.email || u.id}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

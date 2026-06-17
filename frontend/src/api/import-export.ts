@@ -100,6 +100,7 @@ export const importExportApi = {
     accountBookId: string,
     columnMapping?: Record<string, string>,
     typeMapping?: Record<string, string>,
+    headerRow?: number,
   ): Promise<ImportPreviewResult> => {
     const extraFields: Record<string, string> = { source, accountBookId }
     if (columnMapping) {
@@ -108,11 +109,19 @@ export const importExportApi = {
     if (typeMapping) {
       extraFields.typeMapping = JSON.stringify(typeMapping)
     }
+    if (headerRow !== undefined && headerRow > 0) {
+      extraFields.headerRow = String(headerRow)
+    }
     return api.uploadForm('/api/records/import/preview', file, extraFields)
   },
 
-  analyzeCsv: (file: File): Promise<CsvAnalyzeResult> =>
-    api.uploadForm('/api/records/import/csv/analyze', file, {}),
+  analyzeCsv: (file: File, headerRow?: number): Promise<CsvAnalyzeResult> => {
+    const fields: Record<string, string> = {}
+    if (headerRow !== undefined && headerRow > 0) {
+      fields.headerRow = String(headerRow)
+    }
+    return api.uploadForm('/api/records/import/csv/analyze', file, fields)
+  },
 
   import: (data: {
     accountBookId: string
