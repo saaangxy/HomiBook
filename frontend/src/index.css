@@ -2161,6 +2161,178 @@
   border: 2px solid hsl(160 38% 75% / 0.25) !important;
 }
 
+/* ===== 糖果纹理条纹（侧边栏底部） ===== */
+[data-theme="candy"] [data-sidebar="sidebar"]::before {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: repeating-linear-gradient(
+    90deg,
+    hsl(0 77% 74%) 0px,
+    hsl(0 77% 74%) 20px,
+    hsl(45 86% 72%) 20px,
+    hsl(45 86% 72%) 40px,
+    hsl(160 38% 75%) 40px,
+    hsl(160 38% 75%) 60px,
+    hsl(280 50% 78%) 60px,
+    hsl(280 50% 78%) 80px,
+    hsl(30 80% 75%) 80px,
+    hsl(30 80% 75%) 100px
+  );
+  opacity: 0.5;
+  pointer-events: none;
+  z-index: 5;
+}
+/* ===== 漂浮糖果装饰 ===== */
+[data-theme="candy"] body::before,
+[data-theme="candy"] body::after {
+	position: fixed;
+	pointer-events: none;
+	z-index: 0;
+	opacity: 0.15;
+	font-size: 120px;
+	animation: candy-float 8s ease-in-out infinite;
+}
+
+[data-theme="candy"] body::before {
+	content: '🍬';
+	bottom: 12%;
+	right: 8%;
+	animation-delay: 0s;
+}
+
+[data-theme="candy"] body::after {
+	content: '🍭';
+	top: 15%;
+	left: 5%;
+	animation-delay: -4s;
+	font-size: 100px;
+}
+
+/* ===== 棒棒糖螺旋装饰 ===== */
+[data-theme="candy"] main {
+	position: relative;
+}
+
+[data-theme="candy"] main::before,
+[data-theme="candy"] main::after {
+	content: '';
+	position: fixed;
+	border-radius: 50%;
+	pointer-events: none;
+	z-index: 0;
+	opacity: 0.08;
+}
+
+[data-theme="candy"] main::before {
+	width: 160px;
+	height: 160px;
+	top: 18%;
+	right: -40px;
+	background: conic-gradient(
+		from 0deg,
+		hsl(0 77% 74%) 0deg,
+		hsl(45 86% 72%) 45deg,
+		hsl(0 77% 74%) 90deg,
+		hsl(280 50% 78%) 135deg,
+		hsl(0 77% 74%) 180deg,
+		hsl(160 38% 75%) 225deg,
+		hsl(0 77% 74%) 270deg,
+		hsl(30 80% 75%) 315deg,
+		hsl(0 77% 74%) 360deg
+	);
+	animation: lollipop-spin 24s linear infinite;
+}
+
+[data-theme="candy"] main::after {
+	width: 100px;
+	height: 100px;
+	bottom: 10%;
+	left: -30px;
+	background: conic-gradient(
+		from 180deg,
+		hsl(160 38% 75%) 0deg,
+		hsl(280 50% 78%) 45deg,
+		hsl(160 38% 75%) 90deg,
+		hsl(30 80% 75%) 135deg,
+		hsl(160 38% 75%) 180deg,
+		hsl(45 86% 72%) 225deg,
+		hsl(160 38% 75%) 270deg,
+		hsl(0 77% 74%) 315deg,
+		hsl(160 38% 75%) 360deg
+	);
+	animation: lollipop-spin 30s linear infinite reverse;
+}
+
+@keyframes lollipop-spin {
+	to { transform: rotate(360deg); }
+}
+
+/* ===== 卡片糖果纸质感增强 ===== */
+[data-theme="candy"] .card::before {
+	content: '';
+	position: absolute;
+	inset: 0;
+	border-radius: inherit;
+	pointer-events: none;
+	z-index: 0;
+	background:
+		radial-gradient(circle at 15% 20%, hsl(0 77% 74% / 0.06) 0px, transparent 30%),
+		radial-gradient(circle at 85% 75%, hsl(160 38% 75% / 0.06) 0px, transparent 30%),
+		radial-gradient(circle at 40% 60%, hsl(280 50% 78% / 0.05) 0px, transparent 25%),
+		radial-gradient(circle at 70% 15%, hsl(45 86% 72% / 0.06) 0px, transparent 30%);
+}
+
+[data-theme="candy"] .card {
+	position: relative;
+	transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+[data-theme="candy"] .card:hover {
+	transform: translateY(-2px);
+	animation: gummy-wobble 0.6s ease;
+}
+
+@keyframes gummy-wobble {
+	0%, 100% { transform: translateY(-2px); }
+	25% { transform: translateY(-2px) scale(1.015); }
+	75% { transform: translateY(1px) scale(0.99); }
+}
+
+/* ===== 表格行悬停糖果色 ===== */
+[data-theme="candy"] tbody tr:hover {
+	background: linear-gradient(
+		90deg,
+		hsl(0 77% 74% / 0.06),
+		hsl(45 86% 72% / 0.06),
+		hsl(160 38% 75% / 0.06)
+	) !important;
+}
+
+/* ===== Dialog/Sheet 糖果包裹光泽 ===== */
+[data-theme="candy"] [role="dialog"]::before {
+	content: '';
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	height: 200px;
+	background: linear-gradient(
+		180deg,
+		hsl(0 0% 100% / 0.25) 0%,
+		transparent 100%
+	);
+	border-radius: inherit;
+	border-bottom-left-radius: 0;
+	border-bottom-right-radius: 0;
+	pointer-events: none;
+	z-index: 1;
+	animation: candy-shine 3s ease-in-out infinite;
+}
+
 /* ================================================================
    主题过渡动画
    ================================================================ */

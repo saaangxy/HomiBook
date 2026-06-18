@@ -24,8 +24,9 @@ const THEME_COLORS: Record<string, string[]> = {
     '#9c8b6e', '#5a7a4a', '#c4b89a', '#7a6a4a', '#5a6a3a',
   ],
   candy: [
-    '#e891a8', '#5cc4a0', '#f0c040', '#a890d0', '#f08060',
-    '#60b8d0', '#e8a0c0', '#80d0b0', '#f0d060', '#c0a0e0',
+    '#f4a0b8', '#7dd8c5', '#f5d060', '#c4a0e8', '#f09878',
+    '#68c8e8', '#f0b0c8', '#8ad8b8', '#f8d878', '#b8a0e0',
+    '#f0c090', '#78d0f0', '#e8a8d0', '#a0e0d0', '#f0c870',
   ],
   mondrian: [
     '#e63946', '#0077b6', '#ffd60a', '#1a1a1a', '#c1121f',
