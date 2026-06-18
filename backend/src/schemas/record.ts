@@ -31,7 +31,7 @@ export const updateRecordSchema = z.object({
   toAccountId: z.string().optional(),
   categoryCode: z.string().nullable().optional(),
   payer: z.string().nullable().optional(),
-  ownerId: z.string().optional(),
+  ownerId: z.string().nullable().optional(),
 })
 
 export const listRecordsSchema = z.object({

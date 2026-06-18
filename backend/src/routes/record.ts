@@ -816,7 +816,7 @@ export async function recordRoutes(app: FastifyInstance) {
     schema: {
       description: '批量更新记录',
       tags: ['记录'],
-      body: zSchema(z.object({ ids: z.array(z.string()).min(1), data: z.object({}) })),
+      body: zSchema(z.object({ ids: z.array(z.string()).min(1), data: z.object({}).passthrough() })),
     },
   }, async (req, reply) => {
     const { ids, data } = req.body as {
