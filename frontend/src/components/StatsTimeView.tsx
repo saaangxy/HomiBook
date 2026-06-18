@@ -29,8 +29,13 @@ function formatMoney(amount: number): string {
   return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(amount)
 }
 
-function buildStackedBar(periods: string[], categories: { name: string; data: number[] }[], t: ChartTheme): EChartsOption {
-  return {
+function buildStackedBar(periods: string[], categories: { name: string; data: number[] }[], t: ChartTheme): { option: EChartsOption; chartHeight: number } {
+  // 图例换行时才增加空间，每额外行约16px（fontSize 13）
+  const legendLines = Math.ceil(categories.length / 7)
+  const extraBottom = Math.max(0, legendLines - 1) * 16
+  const extraHeight = Math.max(0, legendLines - 1) * 16
+
+  const option: EChartsOption = {
     tooltip: {
       trigger: 'axis' as const,
       axisPointer: { type: 'shadow' as const },
@@ -45,8 +50,8 @@ function buildStackedBar(periods: string[], categories: { name: string; data: nu
         return html
       },
     },
-    legend: { type: 'plain' as const, top: 0, textStyle: { color: t.mutedForeground } },
-    grid: { top: 60, right: 20, bottom: 40, left: 60 },
+    legend: { type: 'plain' as const, bottom: 0, textStyle: { color: t.mutedForeground } },
+    grid: { top: 20, right: 20, bottom: 40 + extraBottom, left: 60 },
     xAxis: { type: 'category' as const, data: periods, axisLabel: { color: t.mutedForeground, rotate: 45, fontSize: 11, formatter: (v: string) => v.length > 7 ? v.slice(5) : v }, axisLine: { lineStyle: { color: t.border } } },
     yAxis: { type: 'value' as const, axisLabel: { color: t.mutedForeground, formatter: (v: number) => v >= 10000 ? `${(v / 10000).toFixed(1)}万` : String(v) }, splitLine: { lineStyle: { color: t.border } } },
     color: t.COLORS,
@@ -61,6 +66,8 @@ function buildStackedBar(periods: string[], categories: { name: string; data: nu
       },
     })),
   }
+
+  return { option, chartHeight: 400 + extraHeight }
 }
 
 const RADAR_TIPS: Record<string, string> = {
@@ -247,10 +254,11 @@ export function StatsTimeView({ bookId, mode }: Props) {
 
   const t = useChartTheme()
 
-  const stackedBarOption = useMemo(
-    () => (periods.length > 0 ? buildStackedBar(periods, categories, t) : null),
-    [periods, categories, t],
-  )
+  const { stackedBarOption, stackedBarHeight } = useMemo(() => {
+    if (periods.length === 0) return { stackedBarOption: null, stackedBarHeight: 400 } // 原始高度
+    const result = buildStackedBar(periods, categories, t)
+    return { stackedBarOption: result.option, stackedBarHeight: result.chartHeight }
+  }, [periods, categories, t])
   const radarOption = useMemo(
     () => (radarMetrics.length > 0 ? buildRadarOption(radarMetrics, t) : null),
     [radarMetrics, t],
@@ -557,7 +565,7 @@ export function StatsTimeView({ bookId, mode }: Props) {
                     {mode === 'yearly' ? '各月分类支出构成' : '每日分类支出构成'}
                   </h3>
                 </div>
-                <div style={{ height: 400, cursor: 'pointer' }}>
+                <div style={{ height: stackedBarHeight, cursor: 'pointer' }}>
                   {periods.length === 0 ? (
                     <div className="flex items-center justify-center h-full text-xs text-muted-foreground">暂无数据</div>
                   ) : (

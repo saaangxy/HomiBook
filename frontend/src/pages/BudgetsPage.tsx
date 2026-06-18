@@ -42,10 +42,11 @@ import {
 import { Spinner } from '@/components/ui/spinner'
 import { DictCombobox } from '@/components/DictCombobox'
 import { TagCombobox } from '@/components/TagCombobox'
+import { BudgetDetailSheet } from '@/components/BudgetDetailSheet'
 import { DatePicker } from '@/components/ui/date-picker'
 import { useBookStore } from '../stores/book'
 import { budgetApi, type BudgetItem, type BudgetType } from '@/api/budget'
-import { Plus, Copy, Trash2, Pencil, Search, Check, Target, PiggyBank, TrendingUp } from 'lucide-react'
+import { Plus, Copy, Trash2, Pencil, Search, Check, Target, PiggyBank, TrendingUp, Info } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1)
@@ -97,6 +98,7 @@ export function BudgetsPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingBudget, setEditingBudget] = useState<BudgetItem | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<BudgetItem | null>(null)
+  const [detailBudget, setDetailBudget] = useState<BudgetItem | null>(null)
   const [batchOpen, setBatchOpen] = useState(false)
   const [copyOpen, setCopyOpen] = useState(false)
 
@@ -481,6 +483,9 @@ export function BudgetsPage() {
               </TableCell>
               <TableCell className="text-right">
                 <div className="flex items-center justify-end gap-1">
+                  <button className="p-1 hover:bg-muted rounded" onClick={() => setDetailBudget(b)} title="查看明细">
+                    <Info size={14} />
+                  </button>
                   <button className="p-1 hover:bg-muted rounded" onClick={() => openEdit(b)}>
                     <Pencil size={14} />
                   </button>
@@ -1051,6 +1056,13 @@ export function BudgetsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* 预算明细 */}
+      <BudgetDetailSheet
+        budget={detailBudget}
+        bookId={currentBookId || ''}
+        onClose={() => setDetailBudget(null)}
+      />
     </div>
   )
 }

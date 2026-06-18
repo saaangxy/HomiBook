@@ -42,8 +42,13 @@ const GROUP_ICONS: Record<string, React.ReactNode> = {
   accountId: <Wallet size={14} />,
 }
 
-function buildPie(data: { name: string; value: number }[], t: ChartTheme): EChartsOption {
-  return {
+function buildPie(data: { name: string; value: number }[], t: ChartTheme): { option: EChartsOption; chartHeight: number } {
+  // 图例换行时才增加空间，每额外行约16px（fontSize 12）
+  const legendLines = Math.ceil(data.length / 4)
+  const extraBottom = Math.max(0, legendLines - 1) * 16
+  const extraHeight = Math.max(0, legendLines - 1) * 16
+
+  const option: EChartsOption = {
     tooltip: {
       trigger: 'item' as const,
       backgroundColor: t.cardBg,
@@ -61,15 +66,17 @@ function buildPie(data: { name: string; value: number }[], t: ChartTheme): EChar
     series: [{
       type: 'pie',
       radius: ['45%', '75%'],
-      center: ['50%', '50%'],
+      center: ['50%', '45%'],
       top: 0,
-      bottom: 50,
+      bottom: 50 + extraBottom,
       itemStyle: { borderRadius: 3, borderColor: t.bg, borderWidth: 2 },
       label: { show: false },
       emphasis: { label: { show: true, fontSize: 14, fontWeight: 'bold' }, scaleSize: 8 },
       data,
     }],
   }
+
+  return { option, chartHeight: 260 + extraHeight }
 }
 
 interface Props {
@@ -93,14 +100,21 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
   const [selected, setSelected] = useState<SelectedInfo>(null)
   const t = useChartTheme()
 
-  const pieOptions = useMemo(() => {
-    const options: Record<string, EChartsOption | null> = {}
+  const { pieOptions, pieMaxHeight } = useMemo(() => {
+    const options: Record<string, { option: EChartsOption; chartHeight: number } | null> = {}
+    let maxH = 260 // 原始高度
     for (const groupBy of ['category', 'ownerId', 'accountId'] as const) {
       const rawData = groupData[groupBy] || []
       const data = rawData.map((d) => ({ name: d.label, value: d.amount })).sort((a, b) => b.value - a.value)
-      options[groupBy] = data.length > 0 ? buildPie(data, t) : null
+      if (data.length > 0) {
+        const result = buildPie(data, t)
+        options[groupBy] = result
+        if (result.chartHeight > maxH) maxH = result.chartHeight
+      } else {
+        options[groupBy] = null
+      }
     }
-    return options
+    return { pieOptions: options, pieMaxHeight: maxH }
   }, [groupData, t])
 
   // 详情弹窗
@@ -251,12 +265,12 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
                     {GROUP_ICONS[groupBy]}
                     <span>{GROUP_LABELS[groupBy]}</span>
                   </div>
-                  <div style={{ width: '100%', height: 260, cursor: 'pointer' }}>
+                  <div style={{ width: '100%', height: pieMaxHeight, cursor: 'pointer' }}>
                     {data.length === 0 ? (
                       <div className="flex items-center justify-center h-full text-xs text-muted-foreground">暂无数据</div>
                     ) : (
                       <ReactECharts
-                        option={pieOptions[groupBy]}
+                        option={pieOptions[groupBy]?.option}
                         notMerge={true}
                         style={{ width: '100%', height: '100%' }}
                         onEvents={{ click: handlePieClick(groupBy, rawData) }}

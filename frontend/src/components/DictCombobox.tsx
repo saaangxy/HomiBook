@@ -26,9 +26,10 @@ interface Props {
   placeholder?: string
   disabled?: boolean
   valueKey?: 'code' | 'label'
+  className?: string
 }
 
-export function DictCombobox({ group, groups, value, onChange, placeholder = '选择或输入...', disabled, valueKey = 'code' }: Props) {
+export function DictCombobox({ group, groups, value, onChange, placeholder = '选择或输入...', disabled, valueKey = 'code', className }: Props) {
   const [open, setOpen] = useState(false)
   const [items, setItems] = useState<DictItem[]>([])
   const [loading, setLoading] = useState(false)
@@ -105,6 +106,7 @@ export function DictCombobox({ group, groups, value, onChange, placeholder = '�
           className={cn(
             'w-full justify-between bg-background border-border',
             !value && 'text-muted-foreground',
+            className,
           )}
         >
           {value ? (selectedLabel ?? placeholder) : placeholder}
