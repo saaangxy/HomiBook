@@ -202,6 +202,7 @@ export function RecordsPage() {
   const [batchCategory, setBatchCategory] = useState('')
   const [batchTags, setBatchTags] = useState<string[]>([])
   const [batchPayer, setBatchPayer] = useState('')
+  const [batchOwnerId, setBatchOwnerId] = useState('')
   const [batchAmount, setBatchAmount] = useState('')
   const [batchRemark, setBatchRemark] = useState('')
   const [batchError, setBatchError] = useState('')
@@ -217,7 +218,7 @@ export function RecordsPage() {
   const [formPayer, setFormPayer] = useState('')
   const [formRemark, setFormRemark] = useState('')
   const [formTags, setFormTags] = useState<string[]>([])
-  const [formOwnerId, setFormOwnerId] = useState('')
+  const [formOwnerId, setFormOwnerId] = useState('__self__')
   const [formAttachments, setFormAttachments] = useState<{ id: string; url: string; fullUrl: string; originalFilename: string }[]>([])
   const [uploadingAttachment, setUploadingAttachment] = useState(false)
   const [previewImage, setPreviewImage] = useState<string | null>(null)
@@ -366,7 +367,7 @@ export function RecordsPage() {
     setFormCategoryCode('')
     setFormPayer('')
     setFormRemark('')
-    setFormOwnerId('')
+    setFormOwnerId('__self__')
     setFormAttachments([])
     setFormTags([])
     setFormError('')
@@ -385,7 +386,7 @@ export function RecordsPage() {
     setFormPayer(record.payer || '')
     setFormRemark(record.remark || '')
     setFormTags(record.tags || [])
-    setFormOwnerId(record.ownerId)
+    setFormOwnerId(record.ownerId || '__self__')
     // 附件数据已包含 id + url + originalFilename，补 fullUrl
     const origin = window.location.origin
     setFormAttachments(record.attachments.map((a) => {
@@ -421,7 +422,7 @@ export function RecordsPage() {
         payer: formPayer || undefined,
         remark: formRemark || undefined,
         tags: formTags.length > 0 ? formTags : undefined,
-        ownerId: formOwnerId || undefined,
+        ownerId: formOwnerId === '__self__' ? undefined : (formOwnerId || undefined),
         attachmentIds: formAttachments.map((a) => a.id),
       })
       setCreateOpen(false)
@@ -447,7 +448,7 @@ export function RecordsPage() {
         payer: formPayer || undefined,
         remark: formRemark || undefined,
         tags: formTags.length > 0 ? formTags : undefined,
-        ownerId: formOwnerId || undefined,
+        ownerId: formOwnerId === '__self__' ? undefined : (formOwnerId || undefined),
         attachmentIds: formAttachments.map((a) => a.id),
       })
       setEditRecord(null)
@@ -541,6 +542,7 @@ export function RecordsPage() {
     if (batchCategory) data.categoryCode = batchCategory === '__clear__' ? null : batchCategory
     if (batchTags.length > 0) data.tags = batchTags
     if (batchPayer) data.payer = batchPayer === '__clear__' ? null : batchPayer
+    if (batchOwnerId) data.ownerId = batchOwnerId === '__self__' ? null : batchOwnerId
     if (batchAmount) {
       const amt = parseFloat(batchAmount)
       if (isNaN(amt) || amt <= 0) { setBatchError('金额必须大于0'); return }
@@ -573,6 +575,7 @@ export function RecordsPage() {
     setBatchCategory('')
     setBatchTags([])
     setBatchPayer('')
+    setBatchOwnerId('')
     setBatchAmount('')
     setBatchRemark('')
     setBatchError('')
@@ -659,6 +662,7 @@ export function RecordsPage() {
           if ('accountId' in changes) data.accountId = changes.accountId
           if ('fromAccountId' in changes) data.fromAccountId = changes.fromAccountId
           if ('toAccountId' in changes) data.toAccountId = changes.toAccountId
+          if ('ownerId' in changes) data.ownerId = changes.ownerId === '__self__' ? null : (changes.ownerId || null)
           if ('tags' in changes) data.tags = JSON.parse(changes.tags)
           return recordApi.update(id, data)
         })
@@ -883,6 +887,7 @@ export function RecordsPage() {
                   <TableHead className="text-xs min-w-[150px]">账户</TableHead>
                   <TableHead className="text-xs min-w-[90px]">分类</TableHead>
                   <TableHead className="text-xs min-w-[70px]">标签</TableHead>
+                  <TableHead className="text-xs min-w-[70px]">归属人</TableHead>
                   <TableHead className="text-xs min-w-[90px]">交易方</TableHead>
                   <TableHead className="text-xs w-[108px] text-right">金额</TableHead>
                   <TableHead className="text-xs min-w-[110px]">备注</TableHead>
@@ -1015,6 +1020,7 @@ export function RecordsPage() {
                           onChange={(tags) => handleEditChange(record.id, 'tags', JSON.stringify(tags))}
                           bookId={currentBookId || ''}
                           placeholder="标签..."
+                          compact
                         />
                       ) : (
                         record.tags?.length > 0 ? (
@@ -1024,6 +1030,26 @@ export function RecordsPage() {
                             ))}
                           </div>
                         ) : <span className="text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                    {/* 归属人 */}
+                    <TableCell className="text-xs py-2.5">
+                      {editMode ? (
+                        <Select value={getEditValue(record, 'ownerId')} onValueChange={(v) => handleEditChange(record.id, 'ownerId', v)}>
+                          <SelectTrigger className="h-7 text-xs w-full">
+                            <SelectValue placeholder="本人" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__self__">本人（默认）</SelectItem>
+                            {bookMembers.map(m => (
+                              <SelectItem key={m.userId} value={m.userId}>
+                                {m.user.nickname || m.user.email || m.userId}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span className="text-muted-foreground">{record.ownerName || '-'}</span>
                       )}
                     </TableCell>
                     {/* 交易方 */}
@@ -1492,6 +1518,23 @@ export function RecordsPage() {
             </div>
 
             <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">归属人</Label>
+              <Select value={formOwnerId} onValueChange={setFormOwnerId}>
+                <SelectTrigger className="h-9 text-sm w-full">
+                  <SelectValue placeholder="本人（默认）" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__self__" className="text-sm">本人（默认）</SelectItem>
+                  {bookMembers.map(m => (
+                    <SelectItem key={m.userId} value={m.userId} className="text-sm">
+                      {m.user.nickname || m.user.email || m.userId}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
               <Label className="text-xs text-muted-foreground mb-1 block">备注</Label>
               <Textarea
                 placeholder="备注信息（可选）"
@@ -1742,6 +1785,24 @@ export function RecordsPage() {
                 bookId={currentBookId || ''}
                 placeholder="留空则不更新标签"
               />
+            </div>
+
+            {/* 归属人 */}
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">归属人</Label>
+              <Select value={batchOwnerId} onValueChange={setBatchOwnerId}>
+                <SelectTrigger className="h-9 text-sm w-full">
+                  <SelectValue placeholder="留空则不更新归属人" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__self__" className="text-sm">本人（默认）</SelectItem>
+                  {bookMembers.map(m => (
+                    <SelectItem key={m.userId} value={m.userId} className="text-sm">
+                      {m.user.nickname || m.user.email || m.userId}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* 交易方 */}

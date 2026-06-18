@@ -27,9 +27,10 @@ interface Props {
   placeholder?: string
   disabled?: boolean
   protectedTags?: string[]
+  compact?: boolean
 }
 
-export function TagCombobox({ value, onChange, bookId, placeholder = '选择或输入标签...', disabled, protectedTags = [] }: Props) {
+export function TagCombobox({ value, onChange, bookId, placeholder = '选择或输入标签...', disabled, protectedTags = [], compact }: Props) {
   const [open, setOpen] = useState(false)
   const [budgetTags, setBudgetTags] = useState<string[]>([])
   const [recordTags, setRecordTags] = useState<string[]>([])
@@ -78,7 +79,7 @@ export function TagCombobox({ value, onChange, bookId, placeholder = '选择或�
   }
 
   return (
-    <div className="space-y-2">
+    <div className={compact ? 'space-y-0.5' : 'space-y-2'}>
       {/* 已选标签 */}
       {value.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
@@ -113,7 +114,7 @@ export function TagCombobox({ value, onChange, bookId, placeholder = '选择或�
             variant="outline"
             role="combobox"
             disabled={disabled}
-            className={cn('w-full justify-between bg-background border-border h-auto min-h-9')}
+            className={cn('w-full justify-between bg-background border-border', compact ? 'h-7 text-xs' : 'h-auto min-h-9')}
           >
             <span className="text-muted-foreground">{placeholder}</span>
             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />

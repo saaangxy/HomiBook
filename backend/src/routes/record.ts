@@ -833,7 +833,6 @@ export async function recordRoutes(app: FastifyInstance) {
 
     const updateData: any = { ...parsed.data }
     delete updateData.attachmentIds
-    delete updateData.ownerId
     if (updateData.tags) updateData.tags = JSON.stringify(updateData.tags)
     if (updateData.date) updateData.date = new Date(updateData.date)
 

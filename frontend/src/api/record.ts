@@ -126,6 +126,7 @@ export const recordApi = {
     toAccountId?: string
     categoryCode?: string | null
     payer?: string | null
+    ownerId?: string | null
   }) =>
     api.patch<{ success: boolean; updated: number }>('/api/records/batch', { ids, data }),
 
