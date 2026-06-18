@@ -52,7 +52,7 @@ import { TagCombobox } from '@/components/TagCombobox'
 import { AttachmentViewer } from '@/components/AttachmentViewer'
 import { recordApi, type RecordItem, type RecordType, type RecordSummary } from '@/api/record'
 import { accountApi, type AccountItem } from '@/api/account'
-import { adminApi, type AdminUser } from '@/api/admin'
+import { bookApi, type BookMember } from '@/api/book'
 import { settingsApi, type DictItem } from '@/api/settings'
 import { useBookStore } from '../stores/book'
 import { ImportDialog } from '@/components/ImportDialog'
@@ -93,7 +93,7 @@ interface FilterState {
   tags: string[]          // 多选标签
 }
 
-function filterValueLabel(key: keyof FilterState, value: string[] | string, accounts: AccountItem[], users: AdminUser[]): string {
+function filterValueLabel(key: keyof FilterState, value: string[] | string, accounts: AccountItem[], members: BookMember[]): string {
   if (!value || (Array.isArray(value) && value.length === 0)) return ''
   const v = Array.isArray(value) ? value.join(',') : value
   switch (key) {
@@ -118,8 +118,8 @@ function filterValueLabel(key: keyof FilterState, value: string[] | string, acco
     case 'ownerIds': {
       const ids = value as string[]
       const labels = ids.map((id) => {
-        const u = users.find((u) => u.id === id)
-        return u?.nickname || u?.username || u?.email || id
+        const m = members.find((m) => m.userId === id)
+        return m?.user.nickname || m?.user.email || id
       })
       return `归属人: ${labels.join(', ')}`
     }
@@ -172,7 +172,7 @@ export function RecordsPage() {
   // 账户列表
   const [accounts, setAccounts] = useState<AccountItem[]>([])
   // 用户列表
-  const [users, setUsers] = useState<AdminUser[]>([])
+  const [bookMembers, setBookMembers] = useState<BookMember[]>([])
   // 全部分类（用于筛选多选）
   const [allCategories, setAllCategories] = useState<DictItem[]>([])
   // 全部标签（用于筛选多选）
@@ -238,13 +238,14 @@ export function RecordsPage() {
     } catch { /* ignore */ }
   }, [currentBookId])
 
-  // 加载用户
-  const loadUsers = useCallback(async () => {
+  // 加载账本成员
+  const loadBookMembers = useCallback(async () => {
+    if (!currentBookId) return
     try {
-      const list = await adminApi.listUsers()
-      setUsers(list)
+      const list = await bookApi.listMembers(currentBookId)
+      setBookMembers(list)
     } catch { /* ignore */ }
-  }, [])
+  }, [currentBookId])
 
     const loadCategories = useCallback(async () => {
     try {
@@ -268,7 +269,7 @@ export function RecordsPage() {
     } catch { /* ignore */ }
   }, [currentBookId])
 
-  useEffect(() => { loadAccounts(); loadUsers(); loadCategories(); loadTags() }, [loadAccounts, loadUsers, loadCategories, loadTags])
+  useEffect(() => { loadAccounts(); loadBookMembers(); loadCategories(); loadTags() }, [loadAccounts, loadBookMembers, loadCategories, loadTags])
 
   // 加载汇总
   const loadSummary = useCallback(async () => {
@@ -755,7 +756,7 @@ export function RecordsPage() {
             ) : (
               activeFilterKeys.map((key) => (
                 <Badge key={key} variant="secondary" className="pl-2 pr-1 py-1 gap-1 text-xs font-normal">
-                  {filterValueLabel(key, filters[key], accounts, users)}
+                  {filterValueLabel(key, filters[key], accounts, bookMembers)}
                   <button
                     onClick={() => removeFilter(key)}
                     className="ml-1 rounded hover:bg-muted p-0.5"
@@ -1256,7 +1257,7 @@ export function RecordsPage() {
             <div>
               <Label className="text-xs text-muted-foreground mb-1.5 block">归属人</Label>
               <MultiSelect
-                items={users.map((u) => ({ value: u.id, label: u.nickname || u.username || u.email || u.id }))}
+                items={bookMembers.map((m) => ({ value: m.userId, label: m.user.nickname || m.user.email || m.userId }))}
                 selected={draftFilters.ownerIds}
                 onChange={(v) => setDraftFilters((p) => ({ ...p, ownerIds: v }))}
                 placeholder="全部成员"

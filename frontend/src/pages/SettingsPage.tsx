@@ -1001,7 +1001,7 @@ export function SettingsPage() {
           </AccordionTrigger>
           <AccordionContent className="pt-2 pb-5">
             <p className="text-sm text-muted-foreground mb-4">
-              将 CSV 文件中的交易分类映射到系统中的分类编码，导入时自动匹配。
+              将 CSV 文件中的交易分类映射到系统中的分类编码，导入时自动匹配。匹配数据时匹配项目多的规则优先级高
             </p>
 
             {mappingsError && (

@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import {
   Dialog,
   DialogTrigger,
@@ -31,6 +31,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip'
 import { importExportApi, type UnmatchedAccount, type UnmatchedCategory, type ParsedImportRow, type DictEntry } from '@/api/import-export'
 import { ACCOUNT_TYPE_LABELS, type AccountItem, type AccountType } from '@/api/account'
+import { bookApi, type BookMember } from '@/api/book'
 import { Upload, FileText, CheckCircle, AlertCircle, ArrowLeft, ArrowRight, ChevronDown } from 'lucide-react'
 import dayjs from 'dayjs'
 
@@ -134,6 +135,10 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
   // 结果
   const [importResult, setImportResult] = useState<{ imported: number; accountsCreated: number } | null>(null)
 
+  // 导入归属人（空 = 当前用户）
+  const [selectedOwnerId, setSelectedOwnerId] = useState('__self__')
+  const [bookMembers, setBookMembers] = useState<BookMember[]>([])
+
   // 通用CSV列映射
   const [csvHeaders, setCsvHeaders] = useState<string[]>([])
   const [csvSampleData, setCsvSampleData] = useState<Record<string, string>[]>([])
@@ -144,6 +149,13 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
   const [headerRow, setHeaderRow] = useState<number | undefined>(undefined)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // 加载当前账本成员
+  useEffect(() => {
+    if (open && bookId) {
+      bookApi.listMembers(bookId).then(setBookMembers).catch(() => {})
+    }
+  }, [open, bookId])
 
   const reset = () => {
     setStep('source')
@@ -180,6 +192,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
     setCsvTypeValues([])
     setAccountMappings({})
     setHeaderRow(undefined)
+    setSelectedOwnerId('__self__')
   }
 
   const handleClose = () => {
@@ -509,6 +522,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
         payer: r.payer,
         remark: r.remark,
         tags: r.tags,
+        ownerId: selectedOwnerId === '__self__' ? undefined : (selectedOwnerId || undefined),
         // 保留原始信息供确认页展示
         _accountName: r.accountName,
         _toAccountName: r.toAccountName,
@@ -532,6 +546,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
           payer: r.payer,
           remark: r.remark,
           tags: r.tags,
+          ownerId: selectedOwnerId === '__self__' ? undefined : (selectedOwnerId || undefined),
         }
       })
 
@@ -1508,6 +1523,24 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                     </div>
                   </div>
                 )}
+
+                {/* 归属人选择 */}
+                <div className="flex items-center gap-3 mb-4">
+                  <span className="text-sm font-medium whitespace-nowrap">归属人：</span>
+                  <Select value={selectedOwnerId} onValueChange={setSelectedOwnerId}>
+                    <SelectTrigger className="h-8 text-xs w-48">
+                      <SelectValue placeholder="本人（默认）" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__self__" className="text-xs">本人（默认）</SelectItem>
+                      {bookMembers.map(m => (
+                        <SelectItem key={m.userId} value={m.userId} className="text-xs">
+                          {m.user.nickname || m.user.email}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
                 {/* 流水概览 */}
                 <div>

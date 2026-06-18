@@ -1095,6 +1095,7 @@ const importConfirmSchema = z.object({
     payer: z.string().optional().nullable(),
     remark: z.string().optional(),
     tags: z.array(z.string()).optional(),
+    ownerId: z.string().optional(),
   })).min(1),
   accountCreations: z.array(z.object({
     csvName: z.string(),
@@ -1440,7 +1441,7 @@ export async function importExportRoutes(app: FastifyInstance) {
             toAccountId: r.type === 'TRANSFER' ? toAccountId : null,
             categoryCode: r.categoryCode || null,
             payer: r.payer || null,
-            ownerId: payload.id,
+            ownerId: (r as any).ownerId || payload.id,
           }
         })
 

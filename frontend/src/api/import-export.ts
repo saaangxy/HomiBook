@@ -136,6 +136,7 @@ export const importExportApi = {
       payer?: string | null
       remark?: string
       tags?: string[]
+      ownerId?: string
     }[]
     accountCreations?: { csvName: string; name: string; type: string; bankName?: string; accountNo?: string }[]
     newMappings?: { sourceCategory: string; payerContains?: string; descriptionContains?: string; recordType?: string; targetCategoryCode: string }[]
