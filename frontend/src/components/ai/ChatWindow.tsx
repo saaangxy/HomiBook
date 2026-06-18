@@ -38,14 +38,28 @@ export function ChatWindow() {
     setCurrentSession(id)
     try {
       const msgs = await fetchMessages(id)
-      setMessages(msgs.map((m) => ({
-        id: m.id,
-        role: m.role as 'user' | 'assistant',
-        content: m.content,
-      })))
+      const parsed = msgs.map((m) => {
+        const raw = m.content || ''
+        const thinkMatch = raw.match(/<think>([\s\S]*?)<\/think>/)
+        const thinking = thinkMatch ? thinkMatch[1].trim() : ''
+        const content = thinkMatch ? raw.replace(/<think>[\s\S]*?<\/think>\n*/, '') : raw
+        return {
+          id: m.id,
+          role: m.role as 'user' | 'assistant',
+          content,
+          thinking,
+        }
+      })
+      setMessages(parsed.length > 0 ? parsed : [greetingMsg])
     } catch {
       // ignore
     }
+  }
+
+  const greetingMsg = {
+    id: 'greeting',
+    role: 'assistant' as const,
+    content: '你好，我是 AI 记账助手。可以问我：本月花了多少？餐饮超预算了吗？帮我分析一下支出趋势。',
   }
 
   const handleCreateSession = async () => {
@@ -54,7 +68,7 @@ export function ChatWindow() {
       const list = await fetchSessions()
       setSessions(list)
       setCurrentSession(res.session.id)
-      setMessages([])
+      setMessages([greetingMsg])
     } catch {
       // ignore
     }
@@ -123,12 +137,6 @@ export function ChatWindow() {
         {/* 消息列表 */}
         <ScrollArea className="flex-1">
           <div ref={scrollRef} className="p-4 space-y-4">
-            {messages.length === 0 && (
-              <div className="text-center text-muted-foreground py-16">
-                <p className="text-lg font-medium mb-2">AI 记账助手</p>
-                <p className="text-sm">可以问我：本月花了多少？餐饮超预算了吗？帮我分析一下支出趋势。</p>
-              </div>
-            )}
             {messages.map((msg) => (
               <MessageBubble key={msg.id} message={msg} />
             ))}

@@ -80,6 +80,7 @@ export async function chatRoutes(app: FastifyInstance) {
     }
 
     // 构建 AI SDK 工具格式
+    // 从 execute 回调统一发送 tool-call + tool-result，确保 ID 一致
     const aiTools: Record<string, any> = {}
     for (const tool of ALL_TOOLS) {
       aiTools[tool.name] = {
@@ -87,7 +88,8 @@ export async function chatRoutes(app: FastifyInstance) {
         parameters: tool.parameters,
         execute: async (args: any) => {
           const start = Date.now()
-          const toolCallId = `${tool.name}-${start}`
+          const toolCallId = `call_${tool.name}_${start}`
+          sendSSE('tool-call', { toolCallId, toolName: tool.name, args })
           try {
             // 需要确认的敏感操作
             if (tool.requireConfirm) {
@@ -132,8 +134,6 @@ export async function chatRoutes(app: FastifyInstance) {
         if (part.type === 'text-delta') {
           fullText += part.text
           sendSSE('text-delta', { delta: part.text })
-        } else if (part.type === 'tool-call') {
-          sendSSE('tool-call', { toolCallId: part.toolCallId, toolName: part.toolName, args: part.input })
         }
       }
 

@@ -6,6 +6,7 @@ export interface Message {
   id: string
   role: 'user' | 'assistant'
   content: string
+  thinking?: string
   toolCalls?: ToolCallEntry[]
   isStreaming?: boolean
 }
@@ -53,6 +54,14 @@ function nextId() {
   return `msg-${Date.now()}-${++msgIdCounter}`
 }
 
+function parseThinking(content: string): { thinking: string; text: string } {
+  const thinkMatch = content.match(/<think>([\s\S]*?)<\/think>/)
+  if (!thinkMatch) return { thinking: '', text: content }
+  const thinking = thinkMatch[1].trim()
+  const text = content.replace(/<think>[\s\S]*?<\/think>\n*/, '')
+  return { thinking, text }
+}
+
 export const useChatStore = create<ChatState>()((set, get) => ({
   sessions: [],
   currentSessionId: null,
@@ -98,10 +107,11 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         const currentState = get()
         switch (event.type) {
           case 'text-delta':
-            currentState.updateLastAssistant((msg) => ({
-              ...msg,
-              content: msg.content + event.delta,
-            }))
+            currentState.updateLastAssistant((msg) => {
+              const raw = msg.content + event.delta
+              const { thinking, text } = parseThinking(raw)
+              return { ...msg, content: text, thinking }
+            })
             break
 
           case 'tool-call':
