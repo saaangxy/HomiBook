@@ -53,8 +53,8 @@ function buildCategoryPie(
   data: { name: string; value: number }[],
   t: ChartTheme,
 ): { option: EChartsOption; chartHeight: number } {
-  // 图例换行时才增加空间，每额外行约14px
-  const legendLines = Math.ceil(data.length / 5)
+  // 图例换行时才增加空间，每额外行约14px（容器宽约500-700px，每项约90px）
+  const legendLines = Math.ceil(data.length / 6)
   const extraBottom = Math.max(0, legendLines - 1) * 14
   const extraHeight = Math.max(0, legendLines - 1) * 14
 
@@ -106,11 +106,11 @@ function buildTrendChart(
     emphasis: { focus: 'series' as const },
   }))
 
-  // 图例换行时才增加空间，每额外行约14px
-  const legendLines = Math.ceil(categories.length / 5)
+  // 图例换行时才增加空间，每额外行约14px（容器宽约500-700px，每项约90px）
+  const legendLines = Math.ceil(categories.length / 3.5)
   const extraBottom = Math.max(0, legendLines - 1) * 14
   const extraHeight = Math.max(0, legendLines - 1) * 14
-  const gridBottom = (isDaily ? 35 : 25) + extraBottom
+  const gridBottom = (isDaily ? 60 : 45) + extraBottom
 
   const option: EChartsOption = {
     tooltip: {
@@ -139,7 +139,7 @@ function buildTrendChart(
       type: 'plain',
       textStyle: { color: t.mutedForeground, fontSize: 11 },
     },
-    grid: { left: 10, right: 10, top: 10, bottom: gridBottom },
+    grid: { left: 45, right: 10, top: 10, bottom: gridBottom },
     xAxis: {
       type: 'category',
       data: periods,
@@ -349,7 +349,7 @@ export function BudgetDetailSheet({ budget, bookId, onClose }: Props) {
 
   return (
     <Sheet open={open} onOpenChange={(o) => { if (!o) onClose() }}>
-      <SheetContent side="right" className="w-full sm:max-w-lg lg:max-w-xl flex flex-col">
+      <SheetContent side="right" className="w-full sm:max-w-xl lg:max-w-3xl flex flex-col">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             {budget?.name}
