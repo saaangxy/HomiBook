@@ -46,6 +46,22 @@ const DEFAULT_COLORS = [
   '#eab308', '#ec4899', '#14b8a6', '#8b5cf6', '#f43f5e',
 ]
 
+/** 生成 N 个视觉差异最大化的 HSL 颜色，适用于分类较多的图表 */
+export function generateChartColors(count: number, baseColors: string[] = DEFAULT_COLORS): string[] {
+  if (count <= baseColors.length) return baseColors.slice(0, count)
+
+  const colors = [...baseColors]
+  for (let i = baseColors.length; i < count; i++) {
+    // 黄金角 (137.508°) 确保相邻颜色色调差异最大
+    const hue = Math.round((i * 137.508) % 360)
+    // 交替饱和度和亮度产生 15 种变化组合
+    const sat = 45 + ((i * 7) % 5) * 11
+    const light = 40 + ((i * 11) % 5) * 9
+    colors.push(`hsl(${hue}, ${sat}%, ${light}%)`)
+  }
+  return colors
+}
+
 /** 将 CSS 变量中的 "H S% L%" 转为 ECharts canvas 兼容的 "hsl(H, S%, L%)" 逗号分隔格式 */
 function toHsl(spaceSep: string): string {
   const parts = spaceSep.split(' ')

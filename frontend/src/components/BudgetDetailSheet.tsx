@@ -24,7 +24,7 @@ import { recordApi, type RecordItem } from '@/api/record'
 import { accountApi, type AccountItem } from '@/api/account'
 import type { BudgetItem } from '@/api/budget'
 import { useBudgetFilterParams } from '@/hooks/useBudgetFilterParams'
-import { useChartTheme, type ChartTheme } from '@/hooks/useChartTheme'
+import { useChartTheme, type ChartTheme, generateChartColors } from '@/hooks/useChartTheme'
 import { DictCombobox } from '@/components/DictCombobox'
 import { DatePicker } from '@/components/ui/date-picker'
 import { Input } from '@/components/ui/input'
@@ -35,11 +35,6 @@ const TYPE_COLORS: Record<string, string> = {
   INCOME: '#22c55e',
   EXPENSE: '#ef4444',
   TRANSFER: '#3b82f6',
-}
-const TYPE_LABELS: Record<string, string> = {
-  INCOME: '收入',
-  EXPENSE: '支出',
-  TRANSFER: '转账',
 }
 
 function formatMoney(amount: number): string {
@@ -78,7 +73,7 @@ function buildCategoryPie(
       type: 'plain',
       textStyle: { color: t.mutedForeground, fontSize: 11 },
     },
-    color: t.COLORS,
+    color: generateChartColors(data.length, t.COLORS),
     series: [
       {
         type: 'pie',
@@ -105,10 +100,10 @@ function buildTrendChart(
 ): { option: EChartsOption; chartHeight: number } {
   const series = categories.map((cat) => ({
     name: cat.name,
-    type: 'bar',
-    stack: 'total',
+    type: 'bar' as const,
+    stack: 'total' as const,
     data: cat.data,
-    emphasis: { focus: 'series' },
+    emphasis: { focus: 'series' as const },
   }))
 
   // 图例换行时才增加空间，每额外行约14px
@@ -163,7 +158,7 @@ function buildTrendChart(
       axisLabel: { color: t.mutedForeground, fontSize: 10, formatter: (v: number) => `¥${(v / 10000).toFixed(1)}万` },
       splitLine: { lineStyle: { color: t.border } },
     },
-    color: t.COLORS,
+    color: generateChartColors(categories.length, t.COLORS),
     series,
   }
 
@@ -259,7 +254,6 @@ export function BudgetDetailSheet({ budget, bookId, onClose }: Props) {
         dateFrom: filterParams.dateFrom,
         dateTo: filterParams.dateTo,
       })
-      const total = categoryData.reduce((s, d) => s + d.amount, 0)
       setPieData(
         categoryData
           .filter((d) => d.amount > 0)

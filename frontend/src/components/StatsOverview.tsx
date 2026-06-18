@@ -7,7 +7,7 @@ import { recordApi, type RecordSummary } from '@/api/record'
 import { accountApi } from '@/api/account'
 import { budgetApi } from '@/api/budget'
 import { useBookStore } from '@/stores/book'
-import { useChartTheme, type ChartTheme } from '@/hooks/useChartTheme'
+import { useChartTheme, type ChartTheme, generateChartColors } from '@/hooks/useChartTheme'
 import { TrendingUp, BarChart3, Wallet, Target, HelpCircle } from 'lucide-react'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import dayjs from 'dayjs'
@@ -88,7 +88,7 @@ function buildBalanceOption(dates: string[], series: { name: string; data: numbe
     grid: { top: 40, right: 20, bottom: 40, left: 60 },
     xAxis: { type: 'category' as const, data: dates, axisLabel: { color: t.mutedForeground, rotate: 45, fontSize: 11, formatter: (v: string) => v.length > 7 ? v.slice(5) : v } },
     yAxis: { type: 'value' as const, axisLabel: { color: t.mutedForeground, formatter: (v: number) => v >= 10000 ? `${(v / 10000).toFixed(1)}万` : String(v) }, splitLine: { lineStyle: { color: t.border } } },
-    color: t.COLORS,
+    color: generateChartColors(series.length, t.COLORS),
     series: series.map((s) => ({ ...s, type: 'line' as const, smooth: true, symbol: 'none' as const })),
   }
 }

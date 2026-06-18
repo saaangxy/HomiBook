@@ -18,7 +18,7 @@ import { recordApi, type RecordItem } from '@/api/record'
 import { accountApi, type AccountItem } from '@/api/account'
 import { adminApi, type AdminUser } from '@/api/admin'
 import { PieChart, Users, Wallet, X, List, ChevronLeft, ChevronRight } from 'lucide-react'
-import { useChartTheme, type ChartTheme } from '@/hooks/useChartTheme'
+import { useChartTheme, type ChartTheme, generateChartColors } from '@/hooks/useChartTheme'
 
 function formatMoney(amount: number): string {
   return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(amount)
@@ -62,7 +62,7 @@ function buildPie(data: { name: string; value: number }[], t: ChartTheme): { opt
       type: 'plain' as const,
       textStyle: { color: t.mutedForeground, fontSize: 12 },
     },
-    color: t.COLORS,
+    color: generateChartColors(data.length, t.COLORS),
     series: [{
       type: 'pie',
       radius: ['45%', '75%'],

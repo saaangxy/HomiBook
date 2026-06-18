@@ -22,7 +22,7 @@ import { budgetApi } from '@/api/budget'
 import { AnalysisPanel } from './AnalysisPanel'
 import { BarChart3, Search, X, List, ChevronLeft, ChevronRight, HelpCircle } from 'lucide-react'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
-import { useChartTheme, type ChartTheme } from '@/hooks/useChartTheme'
+import { useChartTheme, type ChartTheme, generateChartColors } from '@/hooks/useChartTheme'
 import dayjs from 'dayjs'
 
 function formatMoney(amount: number): string {
@@ -54,7 +54,7 @@ function buildStackedBar(periods: string[], categories: { name: string; data: nu
     grid: { top: 20, right: 20, bottom: 40 + extraBottom, left: 60 },
     xAxis: { type: 'category' as const, data: periods, axisLabel: { color: t.mutedForeground, rotate: 45, fontSize: 11, formatter: (v: string) => v.length > 7 ? v.slice(5) : v }, axisLine: { lineStyle: { color: t.border } } },
     yAxis: { type: 'value' as const, axisLabel: { color: t.mutedForeground, formatter: (v: number) => v >= 10000 ? `${(v / 10000).toFixed(1)}万` : String(v) }, splitLine: { lineStyle: { color: t.border } } },
-    color: t.COLORS,
+    color: generateChartColors(categories.length, t.COLORS),
     series: categories.map((c) => ({
       name: c.name,
       type: 'bar' as const,
