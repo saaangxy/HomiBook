@@ -49,8 +49,10 @@ import { holidayApi } from '@/api/holiday'
 import { ThemeSelector } from '@/components/ThemeSelector'
 import { importExportApi, type CategoryMapping, type AccountMapping } from '@/api/import-export'
 import { DictCombobox } from '@/components/DictCombobox'
-import { Plus, Pencil, Trash2, Settings, BookOpen, Check, FolderOpen, FileSearch, RefreshCw, Key, Copy, EyeOff, Link2, Wallet } from 'lucide-react'
+import { Plus, Pencil, Trash2, Settings, BookOpen, Check, FolderOpen, FileSearch, RefreshCw, Key, Copy, EyeOff, Link2, Wallet, Bot } from 'lucide-react'
 import { apikeyApi, type ApiKeyItem, type ApiKeyCreated } from '@/api/apikey'
+import { useAuthStore } from '@/stores/auth'
+import { AIAssistantSettings } from '@/components/ai/AISettings'
 
 const DICT_GROUPS: { key: string; label: string }[] = [
   { key: 'account_type', label: '账户类型' },
@@ -68,6 +70,9 @@ const HOLIDAY_API_OPTIONS = [
 ]
 
 export function SettingsPage() {
+  const { user } = useAuthStore()
+  const isAdmin = user?.role === 'ADMIN'
+
   // 通用设置
   const [registrationOpen, setRegistrationOpen] = useState(true)
   const [defaultCurrency, setDefaultCurrency] = useState('CNY')
@@ -685,6 +690,21 @@ export function SettingsPage() {
           </AccordionContent>
         </AccordionItem>
 
+        {/* AI 助手 */}
+        <AccordionItem value="ai-assistant" className="border rounded-xl px-5">
+          <AccordionTrigger className="text-base font-semibold hover:no-underline">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                <Bot size={16} className="text-primary" />
+              </div>
+              AI 助手
+            </div>
+          </AccordionTrigger>
+          <AccordionContent className="pb-5 space-y-6">
+            <AIAssistantSettings />
+          </AccordionContent>
+        </AccordionItem>
+
         {/* 字典管理 */}
         <AccordionItem value="dictionary" className="border rounded-xl px-5">
           <AccordionTrigger className="text-base font-semibold hover:no-underline">
@@ -862,6 +882,7 @@ export function SettingsPage() {
           </AccordionContent>
         </AccordionItem>
 
+        {isAdmin && (<>
         {/* API Key 管理 */}
         <AccordionItem value="apikeys" className="border rounded-xl px-5">
           <AccordionTrigger className="text-base font-semibold hover:no-underline">
@@ -1207,6 +1228,7 @@ export function SettingsPage() {
             )}
           </AccordionContent>
         </AccordionItem>
+        </>)}
       </Accordion>
 
       {/* 添加字典弹窗 */}

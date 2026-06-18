@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["linux-musl"]
 }
 
 datasource db {
@@ -26,6 +27,11 @@ model User {
   records              Record[]
   recurringTransactions RecurringTransaction[]
   apiKeys              ApiKey[]
+  chatSessions         ChatSession[]
+  memories             UserMemory[]
+  auditLogs            AgentAuditLog[]
+  aiPreference         UserPreference?
+  providerConfigs      UserProviderConfig[]
 }
 
 // 账本
@@ -44,6 +50,7 @@ model AccountBook {
   shareCodes  ShareCode[]
   budgets     Budget[]
   recurringTransactions RecurringTransaction[]
+  chatSessions         ChatSession[]
 }
 
 // 账本成员
@@ -329,4 +336,122 @@ model ApiKey {
   lastUsedAt DateTime?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
+}
+
+// AI 聊天会话
+model ChatSession {
+  id            String        @id @default(uuid())
+  userId        String
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountBookId String?
+  accountBook   AccountBook?  @relation(fields: [accountBookId], references: [id], onDelete: SetNull)
+  title         String        @default("新对话")
+  modelProvider String        @default("deepseek")
+  modelName     String        @default("deepseek-chat")
+  status        String        @default("active")
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  messages  ChatMessage[]
+  memories  UserMemory[]
+  auditLogs AgentAuditLog[]
+
+  @@index([userId, updatedAt])
+}
+
+// AI 聊天消息
+model ChatMessage {
+  id            String      @id @default(uuid())
+  sessionId     String
+  session       ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  role          String
+  content       String
+  toolCalls     String?
+  tokenCount    Int         @default(0)
+  modelProvider String?
+  modelName     String?
+  createdAt     DateTime    @default(now())
+
+  @@index([sessionId, createdAt])
+}
+
+// AI 长期记忆
+model UserMemory {
+  id             String       @id @default(uuid())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionId      String?
+  session        ChatSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  content        String
+  keywords       String?
+  memoryType     String       @default("extracted")
+  importance     Float        @default(0.5)
+  accessCount    Int          @default(0)
+  lastAccessedAt DateTime?
+  createdAt      DateTime     @default(now())
+
+  @@index([userId, memoryType])
+  @@index([userId, lastAccessedAt])
+}
+
+// AI 审计日志
+model AgentAuditLog {
+  id            String       @id @default(uuid())
+  sessionId     String?
+  session       ChatSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  userId        String
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action        String
+  toolName      String?
+  input         String?
+  output        String?
+  modelProvider String?
+  modelName     String?
+  durationMs    Int?
+  status        String       @default("success")
+  errorMessage  String?
+  ip            String?
+  createdAt     DateTime     @default(now())
+
+  @@index([userId, createdAt])
+  @@index([sessionId, createdAt])
+}
+
+// AI 用户偏好
+model UserPreference {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  simpleProviderConfigId  String?
+  simpleModel             String  @default("deepseek-chat")
+  complexProviderConfigId String?
+  complexModel            String  @default("deepseek-reasoner")
+
+  autoConfirmCreate Boolean @default(false)
+  language          String  @default("zh-CN")
+  temperature       Float   @default(0.7)
+  maxTokens         Int     @default(4096)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// 用户供应商配置
+model UserProviderConfig {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String   @default("")
+  provider    String   // ProviderType
+  apiKey      String   @default("")
+  baseURL     String   @default("")
+  models      String   @default("")
+  temperature Float?
+  maxTokens   Int?
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
 }

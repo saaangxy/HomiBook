@@ -11,6 +11,8 @@
     "db:push": "prisma db push"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.85",
+    "@ai-sdk/openai": "^3.0.73",
     "@fastify/cors": "^8.5.0",
     "@fastify/jwt": "^8.0.1",
     "@fastify/multipart": "^6.0.0",
@@ -18,6 +20,7 @@
     "@prisma/client": "^5.22.0",
     "@radix-ui/react-accordion": "^1.2.12",
     "@scalar/fastify-api-reference": "^1.58.0",
+    "ai": "^6.0.208",
     "bcryptjs": "^3.0.3",
     "cron-parser": "^5.5.0",
     "csv-parse": "^6.2.1",

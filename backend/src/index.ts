@@ -10,6 +10,7 @@ import { budgetRoutes } from './routes/budget.js'
 import { recurringRoutes } from './routes/recurring.js'
 import { apiKeyRoutes } from './routes/apikey.js'
 import { importExportRoutes } from './routes/import-export.js'
+import { chatRoutes } from './routes/chat.js'
 import { seedDefaults } from './seed.js'
 import { startScheduler } from './services/scheduler.js'
 
@@ -31,6 +32,7 @@ async function main() {
   app.register(recurringRoutes, { prefix: '/api/recurring' })
   app.register(apiKeyRoutes, { prefix: '/api/apikeys' })
   app.register(importExportRoutes, { prefix: '/api/records' })
+  app.register(chatRoutes, { prefix: '/api/chat' })
 
   // 启动固定收支调度器
   startScheduler()
