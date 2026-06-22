@@ -39,6 +39,7 @@ export const updatePreferencesSchema = z.object({
   language: z.string().optional(),
   temperature: z.number().min(0).max(2).optional(),
   maxTokens: z.number().min(1).max(1000000).optional(),
+  maxSteps: z.number().min(1).max(100).optional(),
 })
 
 // 供应商配置

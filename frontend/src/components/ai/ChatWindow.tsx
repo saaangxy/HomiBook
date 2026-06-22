@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Send, StopCircle } from 'lucide-react'
+import { parseContentIntoBlocks, type MessageBlock } from '@/stores/chat'
 
 export function ChatWindow() {
   const [input, setInput] = useState('')
@@ -39,15 +40,13 @@ export function ChatWindow() {
     try {
       const msgs = await fetchMessages(id)
       const parsed = msgs.map((m) => {
-        const raw = m.content || ''
-        const thinkMatch = raw.match(/<think>([\s\S]*?)<\/think>/)
-        const thinking = thinkMatch ? thinkMatch[1].trim() : ''
-        const content = thinkMatch ? raw.replace(/<think>[\s\S]*?<\/think>\n*/, '') : raw
+        const blocks: MessageBlock[] = m.role === 'assistant'
+          ? parseContentIntoBlocks(m.content || '')
+          : [{ id: `hist-0`, type: 'text' as const, content: m.content || '' }]
         return {
           id: m.id,
           role: m.role as 'user' | 'assistant',
-          content,
-          thinking,
+          blocks,
         }
       })
       setMessages(parsed.length > 0 ? parsed : [greetingMsg])
@@ -59,7 +58,13 @@ export function ChatWindow() {
   const greetingMsg = {
     id: 'greeting',
     role: 'assistant' as const,
-    content: '你好，我是 AI 记账助手。可以问我：本月花了多少？餐饮超预算了吗？帮我分析一下支出趋势。',
+    blocks: [
+      {
+        id: 'greeting-text',
+        type: 'text' as const,
+        content: '你好，我是 AI 记账助手。可以问我：本月花了多少？餐饮超预算了吗？帮我分析一下支出趋势。',
+      },
+    ],
   }
 
   const handleCreateSession = async () => {

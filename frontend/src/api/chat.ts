@@ -35,6 +35,7 @@ export interface UserPreferences {
   language: string
   temperature: number
   maxTokens: number
+  maxSteps: number
 }
 
 export interface UserProviderConfig {

@@ -2,12 +2,17 @@ import { create } from 'zustand'
 import type { SSEEvent } from '../api/chat'
 import { sendMessageStream } from '../api/chat'
 
+// ---- 消息块类型 ----
+
+export type MessageBlock =
+  | { id: string; type: 'thinking'; content: string }
+  | { id: string; type: 'text'; content: string }
+  | ({ id: string; type: 'tool-call' } & ToolCallEntry)
+
 export interface Message {
   id: string
   role: 'user' | 'assistant'
-  content: string
-  thinking?: string
-  toolCalls?: ToolCallEntry[]
+  blocks: MessageBlock[]
   isStreaming?: boolean
 }
 
@@ -54,13 +59,86 @@ function nextId() {
   return `msg-${Date.now()}-${++msgIdCounter}`
 }
 
-function parseThinking(content: string): { thinking: string; text: string } {
-  const thinkMatch = content.match(/<think>([\s\S]*?)<\/think>/)
-  if (!thinkMatch) return { thinking: '', text: content }
-  const thinking = thinkMatch[1].trim()
-  const text = content.replace(/<think>[\s\S]*?<\/think>\n*/, '')
-  return { thinking, text }
+// ---- 辅助函数 ----
+
+/** 从历史消息原始字符串解析出 blocks */
+export function parseContentIntoBlocks(raw: string): MessageBlock[] {
+  const blocks: MessageBlock[] = []
+  let idCounter = 0
+  const regex = /<think>([\s\S]*?)<\/think>/g
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+
+  while ((match = regex.exec(raw)) !== null) {
+    const textBefore = raw.slice(lastIndex, match.index)
+    if (textBefore) blocks.push({ id: `hist-${idCounter++}`, type: 'text', content: textBefore })
+    const thinkContent = match[1].trim()
+    if (thinkContent) blocks.push({ id: `hist-${idCounter++}`, type: 'thinking', content: thinkContent })
+    lastIndex = match.index + match[0].length
+  }
+
+  const textAfter = raw.slice(lastIndex)
+  if (textAfter) blocks.push({ id: `hist-${idCounter++}`, type: 'text', content: textAfter })
+
+  return blocks
 }
+
+/** 追加文本到最后一个同类型 block，或创建新 block */
+function appendTextToBlocks(
+  blocks: MessageBlock[],
+  type: 'text' | 'thinking',
+  content: string,
+  idCounter: { value: number },
+) {
+  if (!content) return
+  const last = blocks[blocks.length - 1]
+  if (last && last.type === type) {
+    blocks[blocks.length - 1] = {
+      ...last,
+      content: (last as { content: string }).content + content,
+    } as MessageBlock
+  } else {
+    blocks.push({ id: `block-${++idCounter.value}`, type, content } as MessageBlock)
+  }
+}
+
+/** text-delta 状态机：处理 <think>/</think> 边界 */
+function processTextDelta(
+  delta: string,
+  thinkState: 'text' | 'thinking',
+  blocks: MessageBlock[],
+  idCounter: { value: number },
+): 'text' | 'thinking' {
+  let state = thinkState
+  let remaining = delta
+
+  while (remaining.length > 0) {
+    if (state === 'text') {
+      const idx = remaining.indexOf('<think>')
+      if (idx === -1) {
+        appendTextToBlocks(blocks, 'text', remaining, idCounter)
+        remaining = ''
+      } else {
+        if (idx > 0) appendTextToBlocks(blocks, 'text', remaining.slice(0, idx), idCounter)
+        remaining = remaining.slice(idx + 7) // skip <think>
+        state = 'thinking'
+      }
+    } else {
+      const idx = remaining.indexOf('</think>')
+      if (idx === -1) {
+        appendTextToBlocks(blocks, 'thinking', remaining, idCounter)
+        remaining = ''
+      } else {
+        if (idx > 0) appendTextToBlocks(blocks, 'thinking', remaining.slice(0, idx), idCounter)
+        remaining = remaining.slice(idx + 8) // skip </think>
+        state = 'text'
+      }
+    }
+  }
+  return state
+}
+
+// ---- Store ----
 
 export const useChatStore = create<ChatState>()((set, get) => ({
   sessions: [],
@@ -91,11 +169,23 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     const state = get()
     if (state.isStreaming) return
 
-    // 添加用户消息
-    const userMsg: Message = { id: nextId(), role: 'user', content: message }
-    const assistantMsg: Message = { id: nextId(), role: 'assistant', content: '', isStreaming: true, toolCalls: [] }
+    const userMsg: Message = {
+      id: nextId(),
+      role: 'user',
+      blocks: [{ id: nextId(), type: 'text', content: message }],
+    }
+    const assistantMsg: Message = {
+      id: nextId(),
+      role: 'assistant',
+      blocks: [],
+      isStreaming: true,
+    }
 
     set({ messages: [...state.messages, userMsg, assistantMsg], isStreaming: true, error: null })
+
+    // text-delta 状态机状态（在闭包中保持）
+    let thinkState: 'text' | 'thinking' = 'text'
+    const blockIdCounter = { value: 0 }
 
     const controller = sendMessageStream(
       {
@@ -108,18 +198,25 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         switch (event.type) {
           case 'text-delta':
             currentState.updateLastAssistant((msg) => {
-              const raw = msg.content + event.delta
-              const { thinking, text } = parseThinking(raw)
-              return { ...msg, content: text, thinking }
+              const blocks = [...msg.blocks]
+              thinkState = processTextDelta(event.delta, thinkState, blocks, blockIdCounter)
+              return { ...msg, blocks }
             })
             break
 
           case 'tool-call':
             currentState.updateLastAssistant((msg) => ({
               ...msg,
-              toolCalls: [
-                ...(msg.toolCalls || []),
-                { toolCallId: event.toolCallId, toolName: event.toolName, args: event.args, status: 'pending' },
+              blocks: [
+                ...msg.blocks,
+                {
+                  id: `block-${++blockIdCounter.value}`,
+                  type: 'tool-call' as const,
+                  toolCallId: event.toolCallId,
+                  toolName: event.toolName,
+                  args: event.args,
+                  status: 'pending' as const,
+                },
               ],
             }))
             break
@@ -127,26 +224,39 @@ export const useChatStore = create<ChatState>()((set, get) => ({
           case 'tool-result':
             currentState.updateLastAssistant((msg) => ({
               ...msg,
-              toolCalls: (msg.toolCalls || []).map((tc) =>
-                tc.toolCallId === event.toolCallId
-                  ? { ...tc, result: event.result, durationMs: event.durationMs, status: event.status === 'success' ? 'success' : 'error' }
-                  : tc,
+              blocks: msg.blocks.map((b) =>
+                b.type === 'tool-call' && b.toolCallId === event.toolCallId
+                  ? {
+                      ...b,
+                      result: event.result,
+                      durationMs: event.durationMs,
+                      status: (event.status === 'success' ? 'success' : 'error') as 'success' | 'error',
+                    }
+                  : b,
               ),
             }))
             break
 
           case 'tool-confirm-required':
+            // 更新已有的 tool-call block，不创建新的
             currentState.updateLastAssistant((msg) => ({
               ...msg,
-              toolCalls: [
-                ...(msg.toolCalls || []),
-                { toolCallId: event.toolCallId, toolName: event.toolName, preview: event.preview, status: 'confirming' },
-              ],
+              blocks: msg.blocks.map((b) =>
+                b.type === 'tool-call' && b.toolCallId === event.toolCallId
+                  ? { ...b, status: 'confirming' as const, preview: event.preview }
+                  : b,
+              ),
             }))
             break
 
           case 'error':
-            currentState.updateLastAssistant((msg) => ({ ...msg, content: msg.content || `错误: ${event.message}`, isStreaming: false }))
+            currentState.updateLastAssistant((msg) => ({
+              ...msg,
+              isStreaming: false,
+              blocks: msg.blocks.length === 0
+                ? [{ id: `block-${++blockIdCounter.value}`, type: 'text' as const, content: `错误: ${event.message}` }]
+                : msg.blocks,
+            }))
             set({ isStreaming: false, error: event.message })
             break
         }
@@ -155,7 +265,6 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         const finalState = get()
         finalState.updateLastAssistant((msg) => ({ ...msg, isStreaming: false }))
 
-        // If session was just created, update sessions list
         const { currentSessionId } = finalState
         if (currentSessionId) {
           import('../api/chat').then(({ fetchSessions }) => {

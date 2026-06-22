@@ -44,6 +44,7 @@ export function AIAssistantSettings() {
   const [complexModel, setComplexModel] = useState('deepseek-reasoner')
   const [language, setLanguage] = useState('zh-CN')
   const [autoConfirm, setAutoConfirm] = useState(false)
+  const [maxSteps, setMaxSteps] = useState(10)
 
   // ---------- 模型配置列表 ----------
   const [configs, setConfigs] = useState<UserProviderConfig[]>([])
@@ -86,6 +87,7 @@ export function AIAssistantSettings() {
       setComplexModel(prefs.complexModel)
       setLanguage(prefs.language)
       setAutoConfirm(prefs.autoConfirmCreate)
+      setMaxSteps(prefs.maxSteps ?? 10)
       setProviders(providerList)
       setConfigs(configList)
     } catch {
@@ -108,6 +110,7 @@ export function AIAssistantSettings() {
         complexModel,
         language,
         autoConfirmCreate: autoConfirm,
+        maxSteps,
       })
       setSuccess('偏好设置已保存')
     } catch (err: any) {
@@ -352,6 +355,18 @@ export function AIAssistantSettings() {
                 <SelectItem value="true">开启</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+          <div className="space-y-2">
+            <Label className="text-xs">最大迭代次数</Label>
+            <Input
+              type="number"
+              value={maxSteps}
+              onChange={(e) => setMaxSteps(Number(e.target.value))}
+              min={1}
+              max={100}
+              className="text-xs"
+            />
+            <p className="text-xs text-muted-foreground">模型调用工具的最大轮次，默认 10</p>
           </div>
         </div>
       </div>

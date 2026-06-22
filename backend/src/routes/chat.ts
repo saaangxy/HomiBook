@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { streamText } from 'ai'
+import { streamText, stepCountIs } from 'ai'
 import { prisma } from '../app.js'
 import { authenticate } from '../middleware/auth.js'
 import { createModel, ALL_PROVIDERS, DEFAULT_BASE_URLS, type ProviderType } from '../services/ai/providers.js'
@@ -127,6 +127,7 @@ export async function chatRoutes(app: FastifyInstance) {
         tools: aiTools,
         temperature: activeConfig?.temperature ?? prefs.temperature,
         maxOutputTokens: activeConfig?.maxTokens ?? prefs.maxTokens,
+        stopWhen: stepCountIs(prefs.maxSteps), // 允许模型多轮工具调用循环
       })
 
       let fullText = ''
@@ -520,6 +521,7 @@ async function loadPreferences(userId: string) {
     language: prefs?.language || 'zh-CN',
     temperature: prefs?.temperature ?? 0.7,
     maxTokens: prefs?.maxTokens ?? 4096,
+    maxSteps: prefs?.maxSteps ?? 10,
   }
 }
 
