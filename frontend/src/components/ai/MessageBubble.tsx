@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
-import type { Message, ToolCallEntry } from '@/stores/chat'
+import type { Message } from '@/stores/chat'
 import { ToolCallCard } from './ToolCallCard'
 import { Bot, User, Brain, ChevronDown } from 'lucide-react'
 

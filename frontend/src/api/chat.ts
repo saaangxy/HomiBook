@@ -131,7 +131,7 @@ export async function deleteProviderConfig(id: string) {
 }
 
 export async function copyProviderConfig(id: string) {
-  return api.post<UserProviderConfig>(`${BASE}/provider-configs/${id}/copy`)
+  return api.post<UserProviderConfig>(`${BASE}/provider-configs/${id}/copy`, {})
 }
 
 // Provider API key management
@@ -200,6 +200,7 @@ export function sendMessageStream(
         const lines = buffer.split('\n')
         buffer = lines.pop() || ''
 
+        console.log('sendMessageStream buffer', buffer)
         let eventType = ''
         for (const line of lines) {
           if (line.startsWith('event: ')) {

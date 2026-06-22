@@ -51,14 +51,14 @@ export function ToolCallCard({ toolCall }: Props) {
       </div>
 
       {/* Inline result summary for success */}
-      {toolCall.status === 'success' && toolCall.result && (
+      {toolCall.status === 'success' && !!toolCall.result && (
         <div className="mt-1.5 text-muted-foreground line-clamp-3">
-          {typeof toolCall.result === 'string' ? toolCall.result : JSON.stringify(toolCall.result, null, 2)}
+          {String(typeof toolCall.result === 'string' ? toolCall.result : JSON.stringify(toolCall.result, null, 2))}
         </div>
       )}
 
       {/* Error message */}
-      {toolCall.status === 'error' && toolCall.result && (
+      {toolCall.status === 'error' && !!toolCall.result && (
         <div className="mt-1.5 text-red-600">
           {typeof toolCall.result === 'object' && (toolCall.result as any).error ? (toolCall.result as any).error : '执行失败'}
         </div>

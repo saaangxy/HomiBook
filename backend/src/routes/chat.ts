@@ -27,7 +27,7 @@ export async function chatRoutes(app: FastifyInstance) {
     // 获取或创建会话
     const session = await getOrCreateSession(sid, userId, accountBookId)
 
-    // 加载用户偏好
+    // 加载用户配置
     const prefs = await loadPreferences(userId)
 
     // 加载供应商配置
@@ -120,7 +120,7 @@ export async function chatRoutes(app: FastifyInstance) {
       const apiKey = activeConfig?.apiKey || (await loadApiKey(route.provider))
       const baseURL = activeConfig?.baseURL || (await loadBaseURL(route.provider))
       const model = createModel(route.provider, route.model, { apiKey, baseURL })
-      const result = await streamText({
+      const result = streamText({
         model,
         system: systemPrompt,
         messages: history,
@@ -643,5 +643,6 @@ function buildSystemPrompt(prefs: any, bookId: string, memories: any[]): string 
 - 先澄清再执行操作
 - 涉及创建、修改、删除操作需要用户确认
 - 回答简洁准确，金额保留两位小数
-- 使用中文回复${memoryContext}`
+- 使用中文回复
+${memoryContext}`
 }
