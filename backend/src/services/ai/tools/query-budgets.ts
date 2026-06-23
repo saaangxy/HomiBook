@@ -23,8 +23,8 @@ export const queryBudgetsTool: ToolDef = {
 
     return retryable(async () => {
       const now = new Date()
-      const year = args.year ?? now.getFullYear()
-      const month = args.month
+      const year = args.year ? Number(args.year) : now.getFullYear()
+      const month = args.month ? Number(args.month) : undefined
 
       const budgets = await prisma.budget.findMany({
         where: {

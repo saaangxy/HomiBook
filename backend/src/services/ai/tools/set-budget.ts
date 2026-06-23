@@ -28,13 +28,17 @@ export const setBudgetTool: ToolDef = {
 
     return retryable(async () => {
       // upsert: 如果已存在则更新金额
+      const year = Number(args.year)
+      const month = Number(args.month)
+      const amount = Number(args.amount)
+
       const existing = await prisma.budget.findUnique({
         where: {
           accountBookId_type_year_month_name: {
             accountBookId: ctx.accountBookId,
             type: args.type,
-            year: args.year,
-            month: args.month,
+            year,
+            month,
             name: args.name,
           },
         },
@@ -45,7 +49,7 @@ export const setBudgetTool: ToolDef = {
         budget = await prisma.budget.update({
           where: { id: existing.id },
           data: {
-            amount: args.amount,
+            amount,
             categoryCode: args.categoryCode,
             tags: args.tags ? JSON.stringify(args.tags) : undefined,
             startDate: args.startDate ? new Date(args.startDate) : undefined,
@@ -59,9 +63,9 @@ export const setBudgetTool: ToolDef = {
             accountBookId: ctx.accountBookId,
             name: args.name,
             type: args.type,
-            year: args.year,
-            month: args.month,
-            amount: args.amount,
+            year,
+            month,
+            amount,
             categoryCode: args.categoryCode,
             tags: args.tags ? JSON.stringify(args.tags) : '[]',
             startDate: args.startDate ? new Date(args.startDate) : undefined,

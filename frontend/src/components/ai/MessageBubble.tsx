@@ -1,17 +1,31 @@
 import { useState, useEffect } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
 import type { Message, MessageBlock } from '@/stores/chat'
 import { ToolCallCard } from './ToolCallCard'
-import { Bot, User, Brain, ChevronDown } from 'lucide-react'
+import { Bot, User, Brain, ChevronDown, Copy, RefreshCw, Pencil, Check } from 'lucide-react'
 
 interface Props {
   message: Message
+  onRetry?: () => void
+  onEdit?: (text: string) => void
 }
 
-export function MessageBubble({ message }: Props) {
+/** 获取消息的全部文本内容 */
+export function getMessageText(message: Message): string {
+  return message.blocks
+    .filter((b): b is Extract<MessageBlock, { type: 'text' }> => b.type === 'text')
+    .map((b) => b.content)
+    .join('\n')
+}
+
+export function MessageBubble({ message, onRetry, onEdit }: Props) {
   const isUser = message.role === 'user'
   const [openThinkBlocks, setOpenThinkBlocks] = useState<Set<string>>(new Set())
+  const [hover, setHover] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   // 流式时自动展开最后一个 thinking block
   useEffect(() => {
@@ -30,6 +44,7 @@ export function MessageBubble({ message }: Props) {
   }, [message.blocks, message.isStreaming])
 
   const lastTextBlockId = [...message.blocks].reverse().find((b) => b.type === 'text')?.id
+  const isStreaming = message.isStreaming
 
   const toggleThink = (id: string) => {
     setOpenThinkBlocks((prev) => {
@@ -40,8 +55,19 @@ export function MessageBubble({ message }: Props) {
     })
   }
 
+  const handleCopy = async () => {
+    const text = getMessageText(message)
+    await navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
   return (
-    <div className={cn('flex gap-3', isUser ? 'flex-row-reverse' : 'flex-row')}>
+    <div
+      className={cn('flex gap-3 group', isUser ? 'flex-row-reverse' : 'flex-row')}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+    >
       <Avatar className={cn('w-8 h-8 shrink-0 rounded-lg', isUser ? 'bg-primary' : 'bg-muted')}>
         <AvatarFallback className={cn('text-xs', isUser ? 'text-primary-foreground' : 'text-foreground')}>
           {isUser ? <User size={14} /> : <Bot size={14} />}
@@ -87,10 +113,12 @@ export function MessageBubble({ message }: Props) {
                   return (
                     <div
                       key={block.id}
-                      className="bg-muted/60 rounded-2xl rounded-tl-md px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words"
+                      className="bg-muted/60 rounded-2xl rounded-tl-md px-4 py-2.5 text-sm leading-relaxed break-words markdown-body"
                     >
-                      {block.content}
-                      {message.isStreaming && isLast && (
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {block.content}
+                      </ReactMarkdown>
+                      {isStreaming && isLast && (
                         <span className="inline-block w-1.5 h-4 bg-primary animate-pulse ml-0.5 align-middle" />
                       )}
                     </div>
@@ -102,6 +130,48 @@ export function MessageBubble({ message }: Props) {
                   return null
               }
             })}
+
+            {/* 操作按钮 —— 仅非流式时显示 */}
+            {!isStreaming && hover && (
+              <div className="flex items-center gap-1">
+                <button
+                  className="inline-flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors"
+                  onClick={handleCopy}
+                >
+                  {copied ? <Check size={12} /> : <Copy size={12} />}
+                  {copied ? '已复制' : '复制'}
+                </button>
+                {onRetry && (
+                  <button
+                    className="inline-flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors"
+                    onClick={onRetry}
+                  >
+                    <RefreshCw size={12} />
+                    重试
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 用户消息操作按钮 */}
+        {isUser && !isStreaming && hover && onEdit && (
+          <div className="flex items-center gap-1">
+            <button
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors"
+              onClick={handleCopy}
+            >
+              {copied ? <Check size={12} /> : <Copy size={12} />}
+              {copied ? '已复制' : '复制'}
+            </button>
+            <button
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors"
+              onClick={() => onEdit(getMessageText(message))}
+            >
+              <Pencil size={12} />
+              编辑
+            </button>
           </div>
         )}
       </div>

@@ -92,9 +92,9 @@ export function ChatWindow() {
     }
   }
 
-  const handleSend = () => {
-    const text = input.trim()
-    if (!text || !currentBookId || isStreaming) return
+  const handleSend = (text?: string) => {
+    const msg = (text || input).trim()
+    if (!msg || !currentBookId || isStreaming) return
     setInput('')
 
     // 如果没有当前会话，先创建
@@ -102,12 +102,30 @@ export function ChatWindow() {
       createSession({ accountBookId: currentBookId }).then((res) => {
         setSessions([{ id: res.session.id, title: '新对话', modelProvider: '', modelName: '', updatedAt: new Date().toISOString() }, ...sessions])
         setCurrentSession(res.session.id)
-        sendMessage(currentBookId, text)
+        sendMessage(currentBookId, msg)
       })
       return
     }
 
-    sendMessage(currentBookId, text)
+    sendMessage(currentBookId, msg)
+  }
+
+  // 重试：找到该助手消息之前的用户消息，重新发送
+  const handleRetry = (assistantMsgId: string) => {
+    const idx = messages.findIndex((m) => m.id === assistantMsgId)
+    if (idx <= 0) return
+    const prevUserMsg = messages[idx - 1]
+    if (prevUserMsg.role !== 'user') return
+    const text = prevUserMsg.blocks
+      .filter((b) => b.type === 'text')
+      .map((b) => b.content)
+      .join('\n')
+    if (text) handleSend(text)
+  }
+
+  // 编辑：将用户消息内容填入输入框
+  const handleEdit = (text: string) => {
+    setInput(text)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -143,7 +161,16 @@ export function ChatWindow() {
         <ScrollArea className="flex-1">
           <div ref={scrollRef} className="p-4 space-y-4">
             {messages.map((msg) => (
-              <MessageBubble key={msg.id} message={msg} />
+              <MessageBubble
+                key={msg.id}
+                message={msg}
+                onRetry={msg.role === 'assistant' && msg.id !== 'greeting' && !msg.isStreaming
+                  ? () => handleRetry(msg.id)
+                  : undefined}
+                onEdit={msg.role === 'user'
+                  ? handleEdit
+                  : undefined}
+              />
             ))}
             {error && (
               <div className="text-center text-red-500 text-sm py-2">{error}</div>
@@ -168,7 +195,7 @@ export function ChatWindow() {
                 <StopCircle size={18} />
               </Button>
             ) : (
-              <Button size="icon" className="shrink-0" onClick={handleSend} disabled={!input.trim() || !currentBookId}>
+              <Button size="icon" className="shrink-0" onClick={() => handleSend()} disabled={!input.trim() || !currentBookId}>
                 <Send size={18} />
               </Button>
             )}
