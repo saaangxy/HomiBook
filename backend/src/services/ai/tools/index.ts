@@ -8,6 +8,8 @@ import { createRecordTool } from './create-record.js'
 import { updateRecordTool } from './update-record.js'
 import { deleteRecordTool } from './delete-record.js'
 import { setBudgetTool } from './set-budget.js'
+import { batchCreateRecordsTool } from './batch-create-records.js'
+import { batchUpdateRecordsTool } from './batch-update-records.js'
 
 // 所有可用工具注册
 export const ALL_TOOLS: ToolDef[] = [
@@ -20,6 +22,8 @@ export const ALL_TOOLS: ToolDef[] = [
   updateRecordTool,
   deleteRecordTool,
   setBudgetTool,
+  batchCreateRecordsTool,
+  batchUpdateRecordsTool,
 ]
 
 // 确认管理器：内存 Map 存储待确认的工具调用

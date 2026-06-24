@@ -14,6 +14,12 @@ export interface Message {
   role: 'user' | 'assistant'
   blocks: MessageBlock[]
   isStreaming?: boolean
+  usage?: {
+    inputTokens: number
+    outputTokens: number
+    totalTokens: number
+    cachedInputTokens?: number
+  }
 }
 
 export interface ToolCallEntry {
@@ -61,23 +67,25 @@ function nextId() {
 
 // ---- 辅助函数 ----
 
-/** 从历史消息原始字符串解析出 blocks */
+/** 从历史消息原始字符串解析出 blocks，同时过滤 <tool_call> XML 标签 */
 export function parseContentIntoBlocks(raw: string): MessageBlock[] {
+  // 先剥离 <tool_call>...</tool_call> 块
+  const cleaned = raw.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
   const blocks: MessageBlock[] = []
   let idCounter = 0
   const regex = /<think>([\s\S]*?)<\/think>/g
   let lastIndex = 0
   let match: RegExpExecArray | null
 
-  while ((match = regex.exec(raw)) !== null) {
-    const textBefore = raw.slice(lastIndex, match.index)
+  while ((match = regex.exec(cleaned)) !== null) {
+    const textBefore = cleaned.slice(lastIndex, match.index)
     if (textBefore) blocks.push({ id: `hist-${idCounter++}`, type: 'text', content: textBefore })
     const thinkContent = match[1].trim()
     if (thinkContent) blocks.push({ id: `hist-${idCounter++}`, type: 'thinking', content: thinkContent })
     lastIndex = match.index + match[0].length
   }
 
-  const textAfter = raw.slice(lastIndex)
+  const textAfter = cleaned.slice(lastIndex)
   if (textAfter) blocks.push({ id: `hist-${idCounter++}`, type: 'text', content: textAfter })
 
   return blocks
@@ -97,33 +105,56 @@ function appendTextToBlocks(
       ...last,
       content: (last as { content: string }).content + content,
     } as MessageBlock
-  } else {
+  } else if (content.trim()) {
     blocks.push({ id: `block-${++idCounter.value}`, type, content } as MessageBlock)
   }
 }
 
-/** text-delta 状态机：处理 <think>/</think> 边界 */
+/** text-delta 状态机：处理 <think>/</think> 和 <tool_call>/</tool_call> 边界 */
+type DeltaState = 'text' | 'thinking' | 'tool_call'
+
 function processTextDelta(
   delta: string,
-  thinkState: 'text' | 'thinking',
+  thinkState: DeltaState,
   blocks: MessageBlock[],
   idCounter: { value: number },
-): 'text' | 'thinking' {
+): DeltaState {
   let state = thinkState
   let remaining = delta
 
   while (remaining.length > 0) {
-    if (state === 'text') {
-      const idx = remaining.indexOf('<think>')
+    if (state === 'tool_call') {
+      const idx = remaining.indexOf('</tool_call>')
       if (idx === -1) {
+        // 丢弃所有内容直到找到 </tool_call>
+        remaining = ''
+      } else {
+        remaining = remaining.slice(idx + 12) // skip </tool_call>
+        state = 'text'
+      }
+    } else if (state === 'text') {
+      const thinkIdx = remaining.indexOf('<think>')
+      const toolIdx = remaining.indexOf('<tool_call>')
+      const firstIdx =
+        thinkIdx === -1 ? toolIdx
+        : toolIdx === -1 ? thinkIdx
+        : Math.min(thinkIdx, toolIdx)
+
+      if (firstIdx === -1) {
         appendTextToBlocks(blocks, 'text', remaining, idCounter)
         remaining = ''
       } else {
-        if (idx > 0) appendTextToBlocks(blocks, 'text', remaining.slice(0, idx), idCounter)
-        remaining = remaining.slice(idx + 7) // skip <think>
-        state = 'thinking'
+        if (firstIdx > 0) appendTextToBlocks(blocks, 'text', remaining.slice(0, firstIdx), idCounter)
+        if (firstIdx === thinkIdx) {
+          remaining = remaining.slice(firstIdx + 7) // skip <think>
+          state = 'thinking'
+        } else {
+          remaining = remaining.slice(firstIdx + 11) // skip <tool_call>
+          state = 'tool_call'
+        }
       }
     } else {
+      // state === 'thinking'
       const idx = remaining.indexOf('</think>')
       if (idx === -1) {
         appendTextToBlocks(blocks, 'thinking', remaining, idCounter)
@@ -184,7 +215,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     set({ messages: [...state.messages, userMsg, assistantMsg], isStreaming: true, error: null })
 
     // text-delta 状态机状态（在闭包中保持）
-    let thinkState: 'text' | 'thinking' = 'text'
+    let thinkState: DeltaState = 'text'
     const blockIdCounter = { value: 0 }
 
     const controller = sendMessageStream(
@@ -205,6 +236,8 @@ export const useChatStore = create<ChatState>()((set, get) => ({
             break
 
           case 'tool-call':
+            // 模型在文本中使用 <tool_call> 但可能不闭合 — 重置状态，后续文本正常展示
+            thinkState = 'text'
             currentState.updateLastAssistant((msg) => ({
               ...msg,
               blocks: [
@@ -247,6 +280,13 @@ export const useChatStore = create<ChatState>()((set, get) => ({
                   : b,
               ),
             }))
+            break
+
+          case 'finish':
+            currentState.updateLastAssistant((msg) => {
+              const usage = event.usage as Message['usage']
+              return { ...msg, usage }
+            })
             break
 
           case 'error':

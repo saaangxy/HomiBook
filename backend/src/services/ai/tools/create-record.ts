@@ -29,7 +29,8 @@ export const createRecordTool: ToolDef = {
     if (!['INCOME', 'EXPENSE', 'TRANSFER'].includes(args.type)) {
       return { success: false, error: '无效的流水类型，应为 INCOME、EXPENSE 或 TRANSFER', retryable: false }
     }
-    if (typeof args.amount !== 'number' || args.amount <= 0) {
+    const amount = Number(args.amount)
+    if (isNaN(amount) || amount <= 0) {
       return { success: false, error: '金额必须大于0', retryable: false }
     }
 
@@ -45,7 +46,7 @@ export const createRecordTool: ToolDef = {
         data: {
           accountBookId: ctx.accountBookId,
           type: args.type,
-          amount: args.amount,
+          amount,
           date: new Date(args.date),
           remark: args.remark,
           tags: JSON.stringify(args.tags ?? []),

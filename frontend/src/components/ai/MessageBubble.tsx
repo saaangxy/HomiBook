@@ -152,6 +152,16 @@ export function MessageBubble({ message, onRetry, onEdit }: Props) {
                 )}
               </div>
             )}
+
+            {/* Token 消耗展示 */}
+            {!isStreaming && message.usage && (
+              <div className="text-xs text-muted-foreground/60">
+                Token: ↑{message.usage.inputTokens.toLocaleString()} + ↓{message.usage.outputTokens.toLocaleString()} = {message.usage.totalTokens.toLocaleString()}
+                {message.usage.cachedInputTokens != null && message.usage.cachedInputTokens > 0 && (
+                  <> | 缓存 {message.usage.cachedInputTokens.toLocaleString()}</>
+                )}
+              </div>
+            )}
           </div>
         )}
 

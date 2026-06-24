@@ -3,7 +3,7 @@ import { streamText, stepCountIs } from 'ai'
 import { prisma } from '../app.js'
 import { authenticate } from '../middleware/auth.js'
 import { createModel, ALL_PROVIDERS, DEFAULT_BASE_URLS, type ProviderType } from '../services/ai/providers.js'
-import { routeIntent } from '../services/ai/model-router.js'
+import { routeIntent, classifyWithKeywords } from '../services/ai/model-router.js'
 import { assertIsMember } from '../services/ai/security.js'
 import { logToolCall } from '../services/ai/audit.js'
 import { ALL_TOOLS, registerConfirmation, confirmAction, getPendingConfirmations } from '../services/ai/tools/index.js'
@@ -38,8 +38,15 @@ export async function chatRoutes(app: FastifyInstance) {
       ? await prisma.userProviderConfig.findUnique({ where: { id: prefs.complexProviderConfigId } })
       : null
 
-    const simpleProvider = simpleConfig?.provider || 'deepseek'
-    const complexProvider = complexConfig?.provider || 'deepseek'
+    const simpleProvider = simpleConfig?.provider || ''
+    const complexProvider = complexConfig?.provider || ''
+
+    // 校验：必须至少配置一个模型
+    const hasSimple = simpleProvider && prefs.simpleModel
+    const hasComplex = complexProvider && prefs.complexModel
+    if (!hasSimple && !hasComplex) {
+      return reply.status(400).send({ message: '请先在 AI 设置中配置模型后再发送消息' })
+    }
 
     // 检索长期记忆
     const memories = await searchMemories(userId, message, 5)
@@ -55,8 +62,25 @@ export async function chatRoutes(app: FastifyInstance) {
     const systemPrompt = buildSystemPrompt(prefs, accountBookId, memories)
 
     // 模型路由
-    const simpleApiKey = simpleConfig?.apiKey || (await loadApiKey(simpleProvider))
-    const route = await routeIntent(message, simpleProvider as ProviderType, prefs.simpleModel, complexProvider as ProviderType, prefs.complexModel, { apiKey: simpleApiKey })
+    let route
+    if (hasSimple) {
+      const simpleApiKey = simpleConfig?.apiKey || (await loadApiKey(simpleProvider))
+      route = await routeIntent(message, simpleProvider as ProviderType, prefs.simpleModel, complexProvider as ProviderType, prefs.complexModel, { apiKey: simpleApiKey })
+    } else {
+      // 简单模型未配置，直接用关键词判断是否需要复杂模型
+      const intent = classifyWithKeywords(message)
+      route = {
+        intent,
+        provider: intent === 'complex' ? complexProvider : simpleProvider,
+        model: intent === 'complex' ? prefs.complexModel : prefs.simpleModel,
+      } as { intent: 'simple' | 'complex'; provider: string; model: string }
+    }
+
+    // 校验所选路由的模型是否已配置
+    if (!route.model || !route.provider) {
+      const taskType = route.intent === 'complex' ? '复杂任务' : '简单任务'
+      return reply.status(400).send({ message: `未配置${taskType}模型，请在 AI 设置中选择模型后重试` })
+    }
 
     // 保存用户消息
     await prisma.chatMessage.create({
@@ -119,7 +143,7 @@ export async function chatRoutes(app: FastifyInstance) {
       const activeConfig = route.provider === simpleProvider ? simpleConfig : complexConfig
       const apiKey = activeConfig?.apiKey || (await loadApiKey(route.provider))
       const baseURL = activeConfig?.baseURL || (await loadBaseURL(route.provider))
-      const model = createModel(route.provider, route.model, { apiKey, baseURL })
+      const model = createModel(route.provider as ProviderType, route.model, { apiKey, baseURL })
       const result = streamText({
         model,
         system: systemPrompt,
@@ -171,7 +195,7 @@ export async function chatRoutes(app: FastifyInstance) {
     const { title, modelProvider, modelName, accountBookId } = parsed.data
 
     const session = await prisma.chatSession.create({
-      data: { userId, accountBookId, title: title || '新对话', modelProvider: modelProvider || 'deepseek', modelName: modelName || 'deepseek-chat' },
+      data: { userId, accountBookId, title: title || '新对话', modelProvider, modelName },
     })
     return { session }
   })
@@ -514,9 +538,9 @@ async function loadPreferences(userId: string) {
   const prefs = await prisma.userPreference.findUnique({ where: { userId } })
   return {
     simpleProviderConfigId: prefs?.simpleProviderConfigId || null,
-    simpleModel: prefs?.simpleModel || 'deepseek-chat',
+    simpleModel: prefs?.simpleModel || '',
     complexProviderConfigId: prefs?.complexProviderConfigId || null,
-    complexModel: prefs?.complexModel || 'deepseek-reasoner',
+    complexModel: prefs?.complexModel || '',
     autoConfirmCreate: prefs?.autoConfirmCreate ?? false,
     language: prefs?.language || 'zh-CN',
     temperature: prefs?.temperature ?? 0.7,
@@ -632,15 +656,21 @@ function buildSystemPrompt(prefs: any, bookId: string, memories: any[]): string 
 今天是${new Date().toISOString().slice(0, 10)}。
 
 ## 能力
-你可以帮助用户：
-- 查询和筛选流水记录
-- 查看账户余额和变动
-- 查询和设定预算
-- 生成统计分析报表
-- 查看分类字典
-- 记账和修改流水（需要用户确认）
+你可以通过调用函数工具来完成以下操作：
+- 查询和筛选流水记录 → 调用 query_records
+- 查看账户余额和变动 → 调用 query_accounts
+- 查询和设定预算 → 调用 query_budgets / set_budget
+- 生成统计分析报表 → 调用 get_stats
+- 查看分类字典 → 调用 query_categories
+- 记账和修改流水 → 调用 create_record / update_record / delete_record（需要用户确认）
+- 批量记账 → 调用 batch_create_records（多条记录一次确认）
+- 批量修改流水 → 调用 batch_update_records（多条记录一次确认）
 
-## 规则
+## 核心规则（必须遵守）
+- 当用户请求执行上述操作时，你必须直接调用对应的函数工具，而不是在文字中描述"正在调用"或"将要调用"
+- 禁止在回复中使用 <tool_call>、<invoke> 等 XML 标签来描述工具调用——直接使用 Function Calling 机制调用工具
+- 不要在回复中写出工具调用的参数或过程，直接执行工具后用结果回复用户
+- 不要用文字模拟工具的执行结果——必须通过函数调用获取真实数据
 - 当用户意图不明确时，主动追问关键信息（时间范围、分类、金额范围等）
 - 先澄清再执行操作
 - 涉及创建、修改、删除操作需要用户确认

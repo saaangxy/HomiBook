@@ -289,12 +289,11 @@ export async function bookRoutes(app: FastifyInstance) {
     await assertIsOwner(id, payload.id)
 
     // 手动级联删除（SQLite 不支持 onDelete: Cascade）
-    // 顺序：Record → BalanceAdjustment → Account → CategoryMapping → ShareCode → Budget → AccountBookMember → AccountBook
+    // 顺序：Record → BalanceAdjustment → Account → ShareCode → Budget → AccountBookMember → AccountBook
     await prisma.$transaction([
       prisma.record.deleteMany({ where: { accountBookId: id } }),
       prisma.balanceAdjustment.deleteMany({ where: { account: { accountBookId: id } } }),
       prisma.account.deleteMany({ where: { accountBookId: id } }),
-      prisma.categoryMapping.deleteMany({ where: { accountBookId: id } }),
       prisma.shareCode.deleteMany({ where: { accountBookId: id } }),
       prisma.budget.deleteMany({ where: { accountBookId: id } }),
       prisma.accountBookMember.deleteMany({ where: { accountBookId: id } }),

@@ -46,7 +46,6 @@ model AccountBook {
   members     AccountBookMember[]
   accounts    Account[]
   records     Record[]
-  categories  CategoryMapping[]
   shareCodes  ShareCode[]
   budgets     Budget[]
   recurringTransactions RecurringTransaction[]
@@ -150,30 +149,6 @@ model RecordAttachment {
 }
 
 // 系统分类
-model Category {
-  id       String   @id @default(uuid())
-  type     String
-  name     String   @unique
-  icon     String?
-  order    Int      @default(0)
-  createdAt DateTime @default(now())
-
-  mappings CategoryMapping[]
-}
-
-// 分类映射
-model CategoryMapping {
-  id             String      @id @default(uuid())
-  accountBookId  String
-  accountBook    AccountBook @relation(fields: [accountBookId], references: [id])
-  userCategory   String
-  systemCategoryId String
-  systemCategory Category    @relation(fields: [systemCategoryId], references: [id])
-  createdAt     DateTime    @default(now())
-
-  @@unique([accountBookId, userCategory])
-}
-
 // 分享码
 model ShareCode {
   id           String      @id @default(uuid())

@@ -27,12 +27,13 @@ export const getStatsTool: ToolDef = {
 
     return retryable(async () => {
       const now = new Date()
-      const year = args.year ?? now.getFullYear()
+      const year = args.year ? Number(args.year) : now.getFullYear()
+      const month = args.month ? Number(args.month) : undefined
 
       const dateFilter: Record<string, unknown> = {}
-      if (args.month) {
-        dateFilter.gte = new Date(`${year}-${String(args.month).padStart(2, '0')}-01`)
-        dateFilter.lte = new Date(`${year}-${String(args.month).padStart(2, '0')}-${new Date(year, args.month, 0).getDate()}`)
+      if (month) {
+        dateFilter.gte = new Date(`${year}-${String(month).padStart(2, '0')}-01`)
+        dateFilter.lte = new Date(`${year}-${String(month).padStart(2, '0')}-${new Date(year, month, 0).getDate()}`)
       } else {
         dateFilter.gte = new Date(`${year}-01-01`)
         dateFilter.lte = new Date(`${year}-12-31`)
@@ -128,7 +129,7 @@ export const getStatsTool: ToolDef = {
       }
 
       return {
-        period: args.month ? `${year}年${args.month}月` : `${year}年`,
+        period: month ? `${year}年${month}月` : `${year}年`,
         totalIncome: Math.round(totalIncome * 100) / 100,
         totalExpense: Math.round(totalExpense * 100) / 100,
         netBalance: Math.round((totalIncome - totalExpense) * 100) / 100,

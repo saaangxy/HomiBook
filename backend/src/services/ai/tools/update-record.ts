@@ -1,5 +1,5 @@
 import { prisma } from '../../../app.js'
-import { assertIsMember, retryable, type ToolResult } from '../security.js'
+import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 
 export const updateRecordTool: ToolDef = {
@@ -32,7 +32,7 @@ export const updateRecordTool: ToolDef = {
     return retryable(async () => {
       const data: Record<string, unknown> = {}
       if (args.type) data.type = args.type
-      if (args.amount != null) data.amount = args.amount
+      if (args.amount != null) data.amount = Number(args.amount)
       if (args.date) data.date = new Date(args.date)
       if (args.accountId) data.accountId = args.accountId
       if (args.categoryCode !== undefined) data.categoryCode = args.categoryCode
@@ -47,7 +47,7 @@ export const updateRecordTool: ToolDef = {
         include: { account: { select: { name: true } } },
       })
 
-      return {
+      return desensitize({
         id: record.id,
         type: record.type,
         amount: record.amount,
@@ -56,7 +56,7 @@ export const updateRecordTool: ToolDef = {
         categoryCode: record.categoryCode,
         remark: record.remark,
         updated: true,
-      }
+      })
     }, 'update_record')
   },
 }

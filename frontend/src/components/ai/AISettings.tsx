@@ -39,9 +39,9 @@ export function AIAssistantSettings() {
 
   // ---------- 偏好 ----------
   const [simpleConfigId, setSimpleConfigId] = useState<string | null>(null)
-  const [simpleModel, setSimpleModel] = useState('deepseek-chat')
+  const [simpleModel, setSimpleModel] = useState('')
   const [complexConfigId, setComplexConfigId] = useState<string | null>(null)
-  const [complexModel, setComplexModel] = useState('deepseek-reasoner')
+  const [complexModel, setComplexModel] = useState('')
   const [language, setLanguage] = useState('zh-CN')
   const [autoConfirm, setAutoConfirm] = useState(false)
   const [maxSteps, setMaxSteps] = useState(10)
@@ -213,14 +213,14 @@ export function AIAssistantSettings() {
   // 从配置中获取第一个模型名
   const getFirstModel = useCallback(
     (configId: string | null): string => {
-      if (!configId) return 'deepseek-chat'
+      if (!configId) return ''
       const config = configs.find((c) => c.id === configId)
-      if (!config) return 'deepseek-chat'
+      if (!config) return ''
       if (config.models) {
         const list = config.models.split(',').map((m) => m.trim()).filter(Boolean)
         if (list.length > 0) return list[0]
       }
-      return getDefaultModels(config.provider)[0] || 'deepseek-chat'
+      return getDefaultModels(config.provider)[0] || ''
     },
     [configs, getDefaultModels],
   )

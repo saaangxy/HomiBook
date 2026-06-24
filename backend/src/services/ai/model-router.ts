@@ -71,7 +71,7 @@ complex - 复杂分析（对比分析、趋势统计、报表生成、多步骤�
 /**
  * 关键词规则兜底（LLM 调用失败时使用）
  */
-function classifyWithKeywords(message: string): IntentLevel {
+export function classifyWithKeywords(message: string): IntentLevel {
   const complexKeywords = [
     '分析', '报表', '趋势', '统计', '对比', '比较',
     '建议', '优化', '规划', '评估', '汇总', '总结',

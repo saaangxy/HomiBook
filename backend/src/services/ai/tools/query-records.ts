@@ -42,9 +42,11 @@ export const queryRecordsTool: ToolDef = {
       if (args.categoryCode) where.categoryCode = args.categoryCode
       if (args.accountId) where.accountId = args.accountId
       if (args.minAmount !== undefined || args.maxAmount !== undefined) {
+        const gte = args.minAmount !== undefined ? Number(args.minAmount) : undefined
+        const lte = args.maxAmount !== undefined ? Number(args.maxAmount) : undefined
         where.amount = {
-          ...(args.minAmount !== undefined ? { gte: args.minAmount } : {}),
-          ...(args.maxAmount !== undefined ? { lte: args.maxAmount } : {}),
+          ...(gte !== undefined && !isNaN(gte) ? { gte } : {}),
+          ...(lte !== undefined && !isNaN(lte) ? { lte } : {}),
         }
       }
       if (args.startDate || args.endDate) {
