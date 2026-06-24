@@ -41,7 +41,7 @@ export function ChatWindow() {
       const msgs = await fetchMessages(id)
       const parsed = msgs.map((m) => {
         const blocks: MessageBlock[] = m.role === 'assistant'
-          ? parseContentIntoBlocks(m.content || '')
+          ? parseContentIntoBlocks(m.content || '', m.toolCalls)
           : [{ id: `hist-0`, type: 'text' as const, content: m.content || '' }]
         return {
           id: m.id,

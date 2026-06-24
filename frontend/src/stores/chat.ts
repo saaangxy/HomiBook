@@ -68,7 +68,7 @@ function nextId() {
 // ---- 辅助函数 ----
 
 /** 从历史消息原始字符串解析出 blocks，同时过滤 <tool_call> XML 标签 */
-export function parseContentIntoBlocks(raw: string): MessageBlock[] {
+export function parseContentIntoBlocks(raw: string, storedToolCalls?: string): MessageBlock[] {
   // 先剥离 <tool_call>...</tool_call> 块
   const cleaned = raw.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
   const blocks: MessageBlock[] = []
@@ -79,14 +79,24 @@ export function parseContentIntoBlocks(raw: string): MessageBlock[] {
 
   while ((match = regex.exec(cleaned)) !== null) {
     const textBefore = cleaned.slice(lastIndex, match.index)
-    if (textBefore) blocks.push({ id: `hist-${idCounter++}`, type: 'text', content: textBefore })
+    if (textBefore.trim()) blocks.push({ id: `hist-${idCounter++}`, type: 'text', content: textBefore })
     const thinkContent = match[1].trim()
     if (thinkContent) blocks.push({ id: `hist-${idCounter++}`, type: 'thinking', content: thinkContent })
     lastIndex = match.index + match[0].length
   }
 
   const textAfter = cleaned.slice(lastIndex)
-  if (textAfter) blocks.push({ id: `hist-${idCounter++}`, type: 'text', content: textAfter })
+  if (textAfter.trim()) blocks.push({ id: `hist-${idCounter++}`, type: 'text', content: textAfter })
+
+  // 追加存储的工具调用记录
+  if (storedToolCalls) {
+    try {
+      const toolCalls: ToolCallEntry[] = JSON.parse(storedToolCalls)
+      for (const tc of toolCalls) {
+        blocks.push({ id: `hist-${idCounter++}`, type: 'tool-call' as const, ...tc })
+      }
+    } catch { /* JSON 解析失败则忽略 */ }
+  }
 
   return blocks
 }

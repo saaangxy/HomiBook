@@ -14,6 +14,7 @@ export interface ChatMessage {
   id: string
   role: 'user' | 'assistant' | 'system'
   content: string
+  toolCalls?: string
   modelProvider?: string
   modelName?: string
   createdAt: string

@@ -103,6 +103,9 @@ export async function chatRoutes(app: FastifyInstance) {
       reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
     }
 
+    // 收集工具调用记录，用于持久化
+    const toolCallEntries: Array<{ toolCallId: string; toolName: string; args?: unknown; result?: unknown; durationMs?: number; status: string }> = []
+
     // 构建 AI SDK 工具格式
     // 从 execute 回调统一发送 tool-call + tool-result，确保 ID 一致
     const aiTools: Record<string, any> = {}
@@ -114,6 +117,7 @@ export async function chatRoutes(app: FastifyInstance) {
           const start = Date.now()
           const toolCallId = `call_${tool.name}_${start}`
           sendSSE('tool-call', { toolCallId, toolName: tool.name, args })
+          toolCallEntries.push({ toolCallId, toolName: tool.name, args, status: 'pending' })
           try {
             // 需要确认的敏感操作
             if (tool.requireConfirm) {
@@ -121,18 +125,26 @@ export async function chatRoutes(app: FastifyInstance) {
               sendSSE('tool-confirm-required', { toolCallId, toolName: tool.name, preview })
               const approved = await registerConfirmation(toolCallId, tool.name, preview)
               if (!approved) {
+                const entry = toolCallEntries.find((e) => e.toolCallId === toolCallId)
+                if (entry) Object.assign(entry, { status: 'error', result: { error: '用户拒绝了此操作' } })
                 return { success: false, error: '用户拒绝了此操作', retryable: false }
               }
             }
             const result = await tool.execute(args, { userId, accountBookId })
             const durationMs = Date.now() - start
-            sendSSE('tool-result', { toolCallId, toolName: tool.name, result, durationMs, status: result.success ? 'success' : 'error' })
-            logToolCall({ userId, sessionId: session.id, action: 'tool_call', toolName: tool.name, input: args, output: result, durationMs, status: result.success ? 'success' : 'error' })
+            const status = result.success ? 'success' : 'error'
+            sendSSE('tool-result', { toolCallId, toolName: tool.name, result, durationMs, status })
+            logToolCall({ userId, sessionId: session.id, action: 'tool_call', toolName: tool.name, input: args, output: result, durationMs, status })
+            // 更新持久化记录
+            const entry = toolCallEntries.find((e) => e.toolCallId === toolCallId)
+            if (entry) Object.assign(entry, { result, durationMs, status })
             return result
           } catch (err: any) {
             const durationMs = Date.now() - start
             sendSSE('tool-result', { toolCallId, toolName: tool.name, error: err.message, durationMs, status: 'error' })
             logToolCall({ userId, sessionId: session.id, action: 'tool_call', toolName: tool.name, input: args, errorMessage: err.message, durationMs, status: 'error' })
+            const entry = toolCallEntries.find((e) => e.toolCallId === toolCallId)
+            if (entry) Object.assign(entry, { result: { error: err.message }, durationMs, status: 'error' })
             return { success: false, error: err.message, retryable: false }
           }
         },
@@ -162,9 +174,16 @@ export async function chatRoutes(app: FastifyInstance) {
         }
       }
 
-      // 保存 assistant 消息
+      // 保存 assistant 消息（含工具调用记录）
       await prisma.chatMessage.create({
-        data: { sessionId: session.id, role: 'assistant', content: fullText, modelProvider: route.provider, modelName: route.model },
+        data: {
+          sessionId: session.id,
+          role: 'assistant',
+          content: fullText,
+          modelProvider: route.provider,
+          modelName: route.model,
+          toolCalls: toolCallEntries.length > 0 ? JSON.stringify(toolCallEntries) : null,
+        },
       })
 
       sendSSE('finish', { usage: await result.usage })
@@ -237,7 +256,7 @@ export async function chatRoutes(app: FastifyInstance) {
 
     const messages = await prisma.chatMessage.findMany({
       where: { sessionId: id },
-      select: { id: true, role: true, content: true, modelProvider: true, modelName: true, createdAt: true },
+      select: { id: true, role: true, content: true, toolCalls: true, modelProvider: true, modelName: true, createdAt: true },
       orderBy: { createdAt: 'asc' },
     })
     return { messages }
