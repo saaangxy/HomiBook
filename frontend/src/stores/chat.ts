@@ -101,7 +101,7 @@ export function parseContentIntoBlocks(raw: string, storedToolCalls?: string): M
 
   // 解析剩余文本
   const remaining = raw.slice(lastOffset)
-  const { blocks: segBlocks, nextId } = parseTextSegment(remaining, idCounter)
+  const { blocks: segBlocks } = parseTextSegment(remaining, idCounter)
   for (const b of segBlocks) blocks.push(b)
 
   return blocks

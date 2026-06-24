@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { streamText, stepCountIs } from 'ai'
+import { streamText, stepCountIs, jsonSchema } from 'ai'
 import { prisma } from '../app.js'
 import { authenticate } from '../middleware/auth.js'
 import { createModel, ALL_PROVIDERS, DEFAULT_BASE_URLS, type ProviderType } from '../services/ai/providers.js'
@@ -113,7 +113,7 @@ export async function chatRoutes(app: FastifyInstance) {
     for (const tool of ALL_TOOLS) {
       aiTools[tool.name] = {
         description: tool.description,
-        parameters: tool.parameters,
+        inputSchema: jsonSchema(tool.parameters as Record<string, unknown>),
         execute: async (args: any) => {
           const start = Date.now()
           const toolCallId = `call_${tool.name}_${start}`
