@@ -67,12 +67,54 @@ function nextId() {
 
 // ---- 辅助函数 ----
 
-/** 从历史消息原始字符串解析出 blocks，同时过滤 <tool_call> XML 标签 */
+/** 从历史消息原始字符串解析出 blocks，同时过滤 <tool_call> XML 标签。按 textOffset 交错插入工具调用 */
 export function parseContentIntoBlocks(raw: string, storedToolCalls?: string): MessageBlock[] {
-  // 先剥离 <tool_call>...</tool_call> 块
-  const cleaned = raw.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
+  // 解析存储的工具调用
+  interface StoredToolCall extends ToolCallEntry {
+    textOffset: number
+  }
+  let toolCalls: StoredToolCall[] = []
+  if (storedToolCalls) {
+    try {
+      toolCalls = JSON.parse(storedToolCalls)
+      toolCalls.sort((a, b) => a.textOffset - b.textOffset)
+    } catch { /* JSON 解析失败则忽略 */ }
+  }
+
   const blocks: MessageBlock[] = []
   let idCounter = 0
+  let lastOffset = 0
+
+  for (const tc of toolCalls) {
+    // 解析此工具调用之前的文本段
+    const segment = raw.slice(lastOffset, tc.textOffset)
+    const { blocks: segBlocks, nextId } = parseTextSegment(segment, idCounter)
+    idCounter = nextId
+    for (const b of segBlocks) blocks.push(b)
+
+    // 插入工具调用 block（去除 textOffset 字段）
+    const { textOffset: _, ...entry } = tc
+    blocks.push({ id: `hist-${idCounter++}`, type: 'tool-call' as const, ...entry })
+
+    lastOffset = tc.textOffset
+  }
+
+  // 解析剩余文本
+  const remaining = raw.slice(lastOffset)
+  const { blocks: segBlocks, nextId } = parseTextSegment(remaining, idCounter)
+  for (const b of segBlocks) blocks.push(b)
+
+  return blocks
+}
+
+/** 解析一段文本：剥离 <tool_call> 标签、提取 <think> 块 */
+function parseTextSegment(
+  text: string,
+  startId: number,
+): { blocks: MessageBlock[]; nextId: number } {
+  const cleaned = text.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
+  const blocks: MessageBlock[] = []
+  let idCounter = startId
   const regex = /<think>([\s\S]*?)<\/think>/g
   let lastIndex = 0
   let match: RegExpExecArray | null
@@ -88,17 +130,7 @@ export function parseContentIntoBlocks(raw: string, storedToolCalls?: string): M
   const textAfter = cleaned.slice(lastIndex)
   if (textAfter.trim()) blocks.push({ id: `hist-${idCounter++}`, type: 'text', content: textAfter })
 
-  // 追加存储的工具调用记录
-  if (storedToolCalls) {
-    try {
-      const toolCalls: ToolCallEntry[] = JSON.parse(storedToolCalls)
-      for (const tc of toolCalls) {
-        blocks.push({ id: `hist-${idCounter++}`, type: 'tool-call' as const, ...tc })
-      }
-    } catch { /* JSON 解析失败则忽略 */ }
-  }
-
-  return blocks
+  return { blocks, nextId: idCounter }
 }
 
 /** 追加文本到最后一个同类型 block，或创建新 block */

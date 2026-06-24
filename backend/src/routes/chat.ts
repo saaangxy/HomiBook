@@ -104,7 +104,8 @@ export async function chatRoutes(app: FastifyInstance) {
     }
 
     // 收集工具调用记录，用于持久化
-    const toolCallEntries: Array<{ toolCallId: string; toolName: string; args?: unknown; result?: unknown; durationMs?: number; status: string }> = []
+    const toolCallEntries: Array<{ toolCallId: string; toolName: string; args?: unknown; result?: unknown; durationMs?: number; status: string; textOffset: number }> = []
+    let fullText = ''
 
     // 构建 AI SDK 工具格式
     // 从 execute 回调统一发送 tool-call + tool-result，确保 ID 一致
@@ -117,7 +118,7 @@ export async function chatRoutes(app: FastifyInstance) {
           const start = Date.now()
           const toolCallId = `call_${tool.name}_${start}`
           sendSSE('tool-call', { toolCallId, toolName: tool.name, args })
-          toolCallEntries.push({ toolCallId, toolName: tool.name, args, status: 'pending' })
+          toolCallEntries.push({ toolCallId, toolName: tool.name, args, status: 'pending', textOffset: fullText.length })
           try {
             // 需要确认的敏感操作
             if (tool.requireConfirm) {
@@ -166,7 +167,6 @@ export async function chatRoutes(app: FastifyInstance) {
         stopWhen: stepCountIs(prefs.maxSteps), // 允许模型多轮工具调用循环
       })
 
-      let fullText = ''
       for await (const part of result.fullStream) {
         if (part.type === 'text-delta') {
           fullText += part.text
