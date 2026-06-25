@@ -24,7 +24,6 @@ export function getMessageText(message: Message): string {
 export function MessageBubble({ message, onRetry, onEdit }: Props) {
   const isUser = message.role === 'user'
   const [openThinkBlocks, setOpenThinkBlocks] = useState<Set<string>>(new Set())
-  const [hover, setHover] = useState(false)
   const [copied, setCopied] = useState(false)
   const manuallyClosed = useRef<Set<string>>(new Set())
 
@@ -72,8 +71,6 @@ export function MessageBubble({ message, onRetry, onEdit }: Props) {
   return (
     <div
       className={cn('flex gap-3 group', isUser ? 'flex-row-reverse' : 'flex-row')}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
     >
       <Avatar className={cn('w-8 h-8 shrink-0 rounded-lg', isUser ? 'bg-primary' : 'bg-muted')}>
         <AvatarFallback className={cn('text-xs', isUser ? 'text-primary-foreground' : 'text-foreground')}>
@@ -143,7 +140,7 @@ export function MessageBubble({ message, onRetry, onEdit }: Props) {
             })}
 
             {/* 操作按钮 —— 仅非流式时显示 */}
-            {!isStreaming && hover && (
+            {!isStreaming && (
               <div className="flex items-center gap-1">
                 <button
                   className="inline-flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors"
@@ -177,7 +174,7 @@ export function MessageBubble({ message, onRetry, onEdit }: Props) {
         )}
 
         {/* 用户消息操作按钮 */}
-        {isUser && !isStreaming && hover && onEdit && (
+        {isUser && !isStreaming && onEdit && (
           <div className="flex items-center gap-1">
             <button
               className="inline-flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors"
