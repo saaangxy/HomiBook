@@ -15,10 +15,18 @@ export function desensitizeBankCard(card: string): string {
   return cleaned.slice(0, 4) + '****' + cleaned.slice(-4)
 }
 
-// 脱敏：真实姓名 → 姓保留，名脱敏
-export function desensitizeName(name: string): string {
-  if (name.length <= 1) return '*'
-  return name[0] + '*'.repeat(name.length - 1)
+// 脱敏：手机号 → 保留后4位
+function desensitizePhone(phone: string): string {
+  const cleaned = phone.replace(/\s+/g, '')
+  if (cleaned.length < 4) return '****'
+  return '****' + cleaned.slice(-4)
+}
+
+// 脱敏：身份证 → 保留前6位和后4位
+function desensitizeIdCard(idCard: string): string {
+  const cleaned = idCard.replace(/\s+/g, '')
+  if (cleaned.length < 10) return '****'
+  return cleaned.slice(0, 6) + '****' + cleaned.slice(-4)
 }
 
 // 脱敏：数据对象中自动检测并脱敏敏感字段
@@ -28,16 +36,16 @@ export function desensitize(data: unknown): unknown {
 
   const record = data as Record<string, unknown>
   const result: Record<string, unknown> = {}
-  const sensitiveKeys = ['accountNo', 'bankName', 'payer', 'realName', 'idCard', 'phone']
+  const sensitiveKeys = ['accountNo', 'idCard', 'phone']
 
   for (const [key, value] of Object.entries(record)) {
     if (sensitiveKeys.includes(key) && typeof value === 'string' && value) {
       if (key === 'accountNo') {
         result[key] = desensitizeBankCard(value)
-      } else if (key === 'payer' || key === 'realName') {
-        result[key] = desensitizeName(value)
-      } else {
-        result[key] = '****'
+      } else if (key === 'idCard') {
+        result[key] = desensitizeIdCard(value)
+      } else if (key === 'phone') {
+        result[key] = desensitizePhone(value)
       }
     } else if (typeof value === 'object' && value !== null) {
       result[key] = desensitize(value)
