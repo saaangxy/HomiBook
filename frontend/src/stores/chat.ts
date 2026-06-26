@@ -49,6 +49,7 @@ interface ChatState {
   allMessages: Message[]
   branchSelections: Record<string, string>
   isStreaming: boolean
+  streamingMessageId: string | null
   error: string | null
   abortController: AbortController | null
 
@@ -280,6 +281,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   allMessages: [],
   branchSelections: {},
   isStreaming: false,
+  streamingMessageId: null,
   error: null,
   abortController: null,
 
@@ -319,14 +321,14 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     set((s) => {
       const msgs = [...s.messages]
       const allMsgs = [...s.allMessages]
-      const lastIdx = msgs.length - 1
-      if (lastIdx >= 0 && msgs[lastIdx].role === 'assistant') {
-        const updated = updater(msgs[lastIdx])
-        msgs[lastIdx] = updated
-        // 同步到 allMessages
-        const allIdx = allMsgs.findIndex((m) => m.id === updated.id)
-        if (allIdx >= 0) allMsgs[allIdx] = updated
-      }
+      const streamId = s.streamingMessageId
+      if (!streamId) return { messages: msgs, allMessages: allMsgs }
+      // 始终更新 allMessages 中的流式消息
+      const allIdx = allMsgs.findIndex((m) => m.id === streamId)
+      if (allIdx >= 0) allMsgs[allIdx] = updater(allMsgs[allIdx])
+      // 更新 messages 中的（可能不在当前活跃路径中）
+      const msgIdx = msgs.findIndex((m) => m.id === streamId)
+      if (msgIdx >= 0) msgs[msgIdx] = updater(msgs[msgIdx])
       return { messages: msgs, allMessages: allMsgs }
     }),
 
@@ -360,6 +362,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         allMessages: newAllMessages,
         branchSelections: newSelections,
         isStreaming: true,
+        streamingMessageId: assistantMsg.id,
         error: null,
       }
     })
@@ -435,38 +438,37 @@ export const useChatStore = create<ChatState>()((set, get) => ({
             break
 
           case 'finish':
-            // 设置 dbId
+            // 按 streamingMessageId 精确更新（切换版本后消息可能不在活跃路径中）
             set((s) => {
               const allMsgs = [...s.allMessages]
               const msgs = [...s.messages]
               const newSelections = { ...s.branchSelections }
-              let lastUserTempId: string | null = null
-              // 更新最后一条用户消息的 dbId
-              for (let i = msgs.length - 1; i >= 0; i--) {
-                if (msgs[i].role === 'user' && !msgs[i].dbId) {
-                  lastUserTempId = msgs[i].id
-                  msgs[i] = { ...msgs[i], dbId: event.userMessageId }
-                  const allIdx = allMsgs.findIndex((m) => m.id === msgs[i].id)
-                  if (allIdx >= 0) allMsgs[allIdx] = msgs[i]
-                  break
-                }
-              }
-              // 更新最后一条助手消息的 dbId 和 parentMessageId
-              const lastIdx = msgs.length - 1
-              if (lastIdx >= 0 && msgs[lastIdx].role === 'assistant') {
-                msgs[lastIdx] = {
-                  ...msgs[lastIdx],
-                  dbId: event.assistantMessageId,
-                  parentMessageId: event.userMessageId,
-                }
-                const allIdx = allMsgs.findIndex((m) => m.id === msgs[lastIdx].id)
-                if (allIdx >= 0) allMsgs[allIdx] = msgs[lastIdx]
-              }
-              // 将 branchSelections 中的临时 ID 替换为 DB ID
-              if (lastUserTempId) {
-                for (const key of Object.keys(newSelections)) {
-                  if (newSelections[key] === lastUserTempId) {
-                    newSelections[key] = event.userMessageId
+              const streamId = s.streamingMessageId
+
+              const asstAllIdx = allMsgs.findIndex((m) => m.id === streamId)
+              if (asstAllIdx >= 0) {
+                const asst = allMsgs[asstAllIdx]
+                const userTempId = asst.parentMessageId // sendMessage 中设置的临时关联
+
+                // 更新助手消息
+                allMsgs[asstAllIdx] = { ...asst, dbId: event.assistantMessageId, parentMessageId: event.userMessageId }
+                const asstMsgIdx = msgs.findIndex((m) => m.id === streamId)
+                if (asstMsgIdx >= 0) msgs[asstMsgIdx] = { ...msgs[asstMsgIdx], dbId: event.assistantMessageId, parentMessageId: event.userMessageId }
+
+                // 更新用户消息
+                if (userTempId) {
+                  const userAllIdx = allMsgs.findIndex((m) => m.id === userTempId)
+                  if (userAllIdx >= 0 && !allMsgs[userAllIdx].dbId) {
+                    allMsgs[userAllIdx] = { ...allMsgs[userAllIdx], dbId: event.userMessageId }
+                    const userMsgIdx = msgs.findIndex((m) => m.id === userTempId)
+                    if (userMsgIdx >= 0) msgs[userMsgIdx] = { ...msgs[userMsgIdx], dbId: event.userMessageId }
+
+                    // 将 branchSelections 中的临时 ID 替换为 DB ID
+                    for (const key of Object.keys(newSelections)) {
+                      if (newSelections[key] === userTempId) {
+                        newSelections[key] = event.userMessageId
+                      }
+                    }
                   }
                 }
               }
@@ -486,7 +488,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
                 ? [{ id: `block-${++blockIdCounter.value}`, type: 'text' as const, content: `错误: ${event.message}` }]
                 : msg.blocks,
             }))
-            set({ isStreaming: false, error: event.message })
+            set({ isStreaming: false, streamingMessageId: null, error: event.message })
             break
         }
       },
@@ -503,7 +505,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
           })
         }
 
-        set({ isStreaming: false, abortController: null })
+        set({ isStreaming: false, streamingMessageId: null, abortController: null })
       },
     )
 
@@ -563,7 +565,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     const { abortController } = get()
     if (abortController) {
       abortController.abort()
-      set({ isStreaming: false, abortController: null })
+      set({ isStreaming: false, streamingMessageId: null, abortController: null })
     }
   },
 }))
