@@ -5,6 +5,8 @@ export const sendMessageSchema = z.object({
   sessionId: z.string().optional(),
   accountBookId: z.string(),
   message: z.string().min(1).max(5000),
+  parentMessageId: z.string().optional(),
+  replaceAssistantDbId: z.string().optional(),
 })
 
 // 创建会话

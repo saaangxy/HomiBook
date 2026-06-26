@@ -345,7 +345,8 @@ model ChatMessage {
   tokenCount    Int         @default(0)
   modelProvider String?
   modelName     String?
-  createdAt     DateTime    @default(now())
+  parentMessageId String?
+  createdAt       DateTime    @default(now())
 
   @@index([sessionId, createdAt])
 }

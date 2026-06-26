@@ -15,11 +15,12 @@ export function ChatWindow() {
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const {
-    sessions, currentSessionId, messages, isStreaming, error,
-    setSessions, setCurrentSession, setMessages, sendMessage, stopStreaming,
+    sessions, currentSessionId, messages, allMessages, branchSelections, isStreaming, error,
+    setSessions, setCurrentSession, setMessages, sendMessage, retryMessage, selectBranch, stopStreaming,
   } = useChatStore()
 
   const { currentBookId } = useBookStore()
+
 
   // 初始化加载会话列表
   useEffect(() => {
@@ -45,8 +46,10 @@ export function ChatWindow() {
           : [{ id: `hist-0`, type: 'text' as const, content: m.content || '' }]
         return {
           id: m.id,
+          dbId: m.id, // 历史消息的 id 就是数据库 ID
           role: m.role as 'user' | 'assistant',
           blocks,
+          parentMessageId: m.parentMessageId,
         }
       })
       setMessages(parsed.length > 0 ? parsed : [greetingMsg])
@@ -97,21 +100,43 @@ export function ChatWindow() {
     if (!msg || !currentBookId || isStreaming) return
     setInput('')
 
-    // 如果没有当前会话，先创建
+    const parentId = messages.length > 0
+      ? messages[messages.length - 1].dbId || messages[messages.length - 1].id
+      : undefined
+
     if (!currentSessionId) {
       createSession({ accountBookId: currentBookId }).then((res) => {
         setSessions([{ id: res.session.id, title: '新对话', modelProvider: '', modelName: '', updatedAt: new Date().toISOString() }, ...sessions])
         setCurrentSession(res.session.id)
-        sendMessage(currentBookId, msg)
+        sendMessage(currentBookId, msg, parentId)
       })
       return
     }
 
-    sendMessage(currentBookId, msg)
+    sendMessage(currentBookId, msg, parentId)
   }
 
-  // 重试：找到该助手消息之前的用户消息，重新发送
+  // 编辑消息并提交：取被编辑消息的前一条消息作为 parent，创建新分支
+  const handleEditSubmit = (msgId: string, newText: string) => {
+    if (!currentBookId || isStreaming) return
+    const idx = messages.findIndex((m) => m.id === msgId)
+    const parentId = idx > 0 ? messages[idx - 1].dbId || messages[idx - 1].id : undefined
+
+    if (!currentSessionId) {
+      createSession({ accountBookId: currentBookId }).then((res) => {
+        setSessions([{ id: res.session.id, title: '新对话', modelProvider: '', modelName: '', updatedAt: new Date().toISOString() }, ...sessions])
+        setCurrentSession(res.session.id)
+        sendMessage(currentBookId, newText, parentId)
+      })
+      return
+    }
+
+    sendMessage(currentBookId, newText, parentId)
+  }
+
+  // 重试：清理本地状态后重新生成
   const handleRetry = (assistantMsgId: string) => {
+    if (!currentBookId) return
     const idx = messages.findIndex((m) => m.id === assistantMsgId)
     if (idx <= 0) return
     const prevUserMsg = messages[idx - 1]
@@ -120,12 +145,15 @@ export function ChatWindow() {
       .filter((b) => b.type === 'text')
       .map((b) => b.content)
       .join('\n')
-    if (text) handleSend(text)
-  }
+    if (!text) return
 
-  // 编辑：将用户消息内容填入输入框
-  const handleEdit = (text: string) => {
-    setInput(text)
+    const assistantDbId = messages[idx].dbId || messages[idx].id
+    const parentId = idx > 1 ? messages[idx - 2]?.dbId || messages[idx - 2]?.id : undefined
+
+    // 先清理本地状态
+    retryMessage(assistantMsgId)
+    // 再发送新消息（replaceAssistantDbId 告诉后端删除旧消息）
+    sendMessage(currentBookId, text, parentId, assistantDbId)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -160,18 +188,35 @@ export function ChatWindow() {
         {/* 消息列表 */}
         <ScrollArea className="flex-1">
           <div ref={scrollRef} className="p-4 space-y-4">
-            {messages.map((msg) => (
-              <MessageBubble
-                key={msg.id}
-                message={msg}
-                onRetry={msg.role === 'assistant' && msg.id !== 'greeting' && !msg.isStreaming
-                  ? () => handleRetry(msg.id)
-                  : undefined}
-                onEdit={msg.role === 'user'
-                  ? handleEdit
-                  : undefined}
-              />
-            ))}
+            {messages.map((msg) => {
+              // 检查当前消息所在位置的所有版本（同一 parentMessageId 的消息）
+              const allVersions = msg.parentMessageId
+                ? allMessages
+                    .filter((m) => m.parentMessageId === msg.parentMessageId)
+                    .map((m, i) => ({
+                      id: m.dbId || m.id,
+                      label: `v${i + 1}`,
+                      isActive: (m.dbId || m.id) === (msg.dbId || msg.id),
+                    }))
+                : []
+              return (
+                <div key={msg.id}>
+                  <MessageBubble
+                    message={msg}
+                    onRetry={msg.role === 'assistant' && msg.id !== 'greeting' && !msg.isStreaming
+                      ? () => handleRetry(msg.id)
+                      : undefined}
+                    onEditSubmit={msg.role === 'user'
+                      ? handleEditSubmit
+                      : undefined}
+                    versions={allVersions.length > 1 ? allVersions : undefined}
+                    onSwitchVersion={(versionId) => {
+                      if (msg.parentMessageId) selectBranch(msg.parentMessageId, versionId)
+                    }}
+                  />
+                </div>
+              )
+            })}
             {error && (
               <div className="text-center text-red-500 text-sm py-2">{error}</div>
             )}

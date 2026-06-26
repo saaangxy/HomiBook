@@ -5,12 +5,16 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
 import type { Message, MessageBlock } from '@/stores/chat'
 import { ToolCallCard } from './ToolCallCard'
-import { Bot, User, Brain, ChevronDown, Copy, RefreshCw, Pencil, Check, Loader2 } from 'lucide-react'
+import { Bot, User, Brain, ChevronDown, ChevronLeft, ChevronRight, Copy, RefreshCw, Pencil, Check, Loader2 } from 'lucide-react'
+import { Textarea } from '@/components/ui/textarea'
+import { Button } from '@/components/ui/button'
 
 interface Props {
   message: Message
   onRetry?: () => void
-  onEdit?: (text: string) => void
+  onEditSubmit?: (msgId: string, newText: string) => void
+  versions?: { id: string; label: string; isActive: boolean }[]
+  onSwitchVersion?: (versionId: string) => void
 }
 
 /** 获取消息的全部文本内容 */
@@ -21,11 +25,13 @@ export function getMessageText(message: Message): string {
     .join('\n')
 }
 
-export function MessageBubble({ message, onRetry, onEdit }: Props) {
+export function MessageBubble({ message, onRetry, onEditSubmit, versions, onSwitchVersion }: Props) {
   const isUser = message.role === 'user'
   const [openThinkBlocks, setOpenThinkBlocks] = useState<Set<string>>(new Set())
   const [copied, setCopied] = useState(false)
   const manuallyClosed = useRef<Set<string>>(new Set())
+  const [isEditing, setIsEditing] = useState(false)
+  const [editText, setEditText] = useState('')
 
   // 流式时自动展开最后一个 thinking block（用户手动关闭过的除外）
   useEffect(() => {
@@ -61,6 +67,25 @@ export function MessageBubble({ message, onRetry, onEdit }: Props) {
     })
   }
 
+  const handleStartEdit = () => {
+    setEditText(getMessageText(message))
+    setIsEditing(true)
+  }
+
+  const handleCancelEdit = () => {
+    setIsEditing(false)
+    setEditText('')
+  }
+
+  const handleSubmitEdit = () => {
+    const trimmed = editText.trim()
+    if (trimmed && onEditSubmit) {
+      onEditSubmit(message.id, trimmed)
+    }
+    setIsEditing(false)
+    setEditText('')
+  }
+
   const handleCopy = async () => {
     const text = getMessageText(message)
     await navigator.clipboard.writeText(text)
@@ -78,16 +103,83 @@ export function MessageBubble({ message, onRetry, onEdit }: Props) {
         </AvatarFallback>
       </Avatar>
 
-      <div className={cn('flex flex-col gap-2 max-w-[75%] min-w-0', isUser ? 'items-end' : 'items-start')}>
+      <div className={cn('flex flex-col gap-2 min-w-0', isUser ? 'items-end' : 'items-start', isEditing ? 'w-[60%]' : 'max-w-[75%]')}>
         {isUser ? (
-          message.blocks.map((block) => (
-            <div
-              key={block.id}
-              className="bg-primary text-primary-foreground rounded-2xl rounded-tr-md px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words max-w-full"
-            >
-              {block.type === 'text' ? block.content : ''}
-            </div>
-          ))
+          <>
+            {/* 版本切换 */}
+            {versions && versions.length > 1 && onSwitchVersion && (() => {
+              const curIdx = versions.findIndex((v) => v.isActive)
+              const total = versions.length
+              return (
+                <div className="flex items-center gap-1 mb-1">
+                  <button
+                    className="p-0.5 text-muted-foreground hover:text-foreground rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                    disabled={curIdx <= 0}
+                    onClick={() => onSwitchVersion(versions[curIdx - 1].id)}
+                  >
+                    <ChevronLeft size={14} />
+                  </button>
+                  <span className="text-xs text-muted-foreground font-medium min-w-[36px] text-center select-none">
+                    {curIdx + 1}/{total}
+                  </span>
+                  <button
+                    className="p-0.5 text-muted-foreground hover:text-foreground rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                    disabled={curIdx >= total - 1}
+                    onClick={() => onSwitchVersion(versions[curIdx + 1].id)}
+                  >
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
+              )
+            })()}
+            {isEditing ? (
+              <>
+                <Textarea
+                  value={editText}
+                  onChange={(e) => setEditText(e.target.value)}
+                  className="bg-white border rounded-2xl rounded-tr-md px-4 py-2.5 text-sm w-full resize-none min-h-[60px] leading-relaxed text-foreground placeholder:text-muted-foreground focus-visible:ring-1"
+                  placeholder="输入消息..."
+                  rows={3}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      handleSubmitEdit()
+                    } else if (e.key === 'Escape') {
+                      handleCancelEdit()
+                    }
+                  }}
+                  autoFocus
+                />
+                <div className="flex items-center justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-3 text-xs"
+                    onClick={handleCancelEdit}
+                  >
+                    取消
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="h-7 px-3 text-xs"
+                    onClick={handleSubmitEdit}
+                    disabled={!editText.trim()}
+                  >
+                    发送
+                  </Button>
+                </div>
+              </>
+            ) : (
+              message.blocks.map((block) => (
+                <div
+                  key={block.id}
+                  className="bg-primary text-primary-foreground rounded-2xl rounded-tr-md px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words max-w-full"
+                >
+                  {block.type === 'text' ? block.content : ''}
+                </div>
+              ))
+            )}
+          </>
         ) : (
           <div className="space-y-2 min-w-0 w-full">
             {/* 加载状态：流式但还没有任何 block */}
@@ -174,7 +266,7 @@ export function MessageBubble({ message, onRetry, onEdit }: Props) {
         )}
 
         {/* 用户消息操作按钮 */}
-        {isUser && !isStreaming && onEdit && (
+        {isUser && !isStreaming && !isEditing && onEditSubmit && (
           <div className="flex items-center gap-1">
             <button
               className="inline-flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors"
@@ -185,7 +277,7 @@ export function MessageBubble({ message, onRetry, onEdit }: Props) {
             </button>
             <button
               className="inline-flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors"
-              onClick={() => onEdit(getMessageText(message))}
+              onClick={handleStartEdit}
             >
               <Pencil size={12} />
               编辑

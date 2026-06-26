@@ -11,6 +11,8 @@ export type MessageBlock =
 
 export interface Message {
   id: string
+  dbId?: string
+  parentMessageId?: string
   role: 'user' | 'assistant'
   blocks: MessageBlock[]
   isStreaming?: boolean
@@ -44,6 +46,8 @@ interface ChatState {
   sessions: ChatSession[]
   currentSessionId: string | null
   messages: Message[]
+  allMessages: Message[]
+  branchSelections: Record<string, string>
   isStreaming: boolean
   error: string | null
   abortController: AbortController | null
@@ -53,7 +57,9 @@ interface ChatState {
   setMessages: (messages: Message[]) => void
   setError: (error: string | null) => void
 
-  sendMessage: (accountBookId: string, message: string) => void
+  sendMessage: (accountBookId: string, message: string, parentMessageId?: string, replaceAssistantDbId?: string) => void
+  retryMessage: (assistantMsgId: string) => void
+  selectBranch: (parentMessageId: string, childMessageId: string) => void
   stopStreaming: () => void
 
   addMessage: (msg: Message) => void
@@ -211,34 +217,120 @@ function processTextDelta(
   return state
 }
 
+// ---- 分支管理 ----
+
+/** 从 allMessages + branchSelections 构建当前活跃路径 */
+function buildActivePath(allMessages: Message[], branchSelections: Record<string, string>): Message[] {
+  const path: Message[] = []
+  if (allMessages.length === 0) return path
+
+  // id → message 映射（同时支持 dbId 和临时 id）
+  const byId = new Map<string, Message>()
+  for (const m of allMessages) {
+    byId.set(m.id, m)
+    if (m.dbId) byId.set(m.dbId, m)
+  }
+
+  // 找根消息（parentMessageId 为 null 或父节点不在集合中）
+  let current = allMessages.find((m) => !m.parentMessageId || !byId.has(m.parentMessageId))
+  while (current) {
+    path.push(current)
+    const currentId = current.dbId || current.id
+
+    // 查找子消息
+    const children = allMessages.filter((m) => m.parentMessageId === currentId)
+    if (children.length === 0) break
+
+    // 按分支选择或默认选最后一个（最新）
+    const selectedId = branchSelections[currentId]
+    current = selectedId
+      ? children.find((c) => (c.dbId || c.id) === selectedId) || children[children.length - 1]
+      : children[children.length - 1]
+  }
+
+  return path
+}
+
+/** 递归获取某消息的所有子孙 ID */
+function collectDescendantIds(allMessages: Message[], startDbId: string): Set<string> {
+  const ids = new Set<string>()
+  let frontier = [startDbId]
+  while (frontier.length > 0) {
+    const next: string[] = []
+    for (const id of frontier) {
+      ids.add(id)
+      for (const m of allMessages) {
+        const childId = m.dbId || m.id
+        if (m.parentMessageId === id && !ids.has(childId)) {
+          next.push(childId)
+        }
+      }
+    }
+    frontier = next
+  }
+  return ids
+}
+
 // ---- Store ----
 
 export const useChatStore = create<ChatState>()((set, get) => ({
   sessions: [],
   currentSessionId: null,
   messages: [],
+  allMessages: [],
+  branchSelections: {},
   isStreaming: false,
   error: null,
   abortController: null,
 
   setSessions: (sessions) => set({ sessions }),
   setCurrentSession: (sessionId) => set({ currentSessionId: sessionId }),
-  setMessages: (messages) => set({ messages }),
+  setMessages: (allMsgs) => {
+    // 首次加载历史消息时，自动选择每个分支点的最新版本
+    const selections: Record<string, string> = {}
+    const childrenMap = new Map<string, Message[]>()
+    for (const m of allMsgs) {
+      const pid = m.parentMessageId
+      if (pid) {
+        if (!childrenMap.has(pid)) childrenMap.set(pid, [])
+        childrenMap.get(pid)!.push(m)
+      }
+    }
+    for (const [pid, children] of childrenMap) {
+      if (children.length > 1) {
+        selections[pid] = children[children.length - 1].dbId || children[children.length - 1].id
+      }
+    }
+    set({
+      allMessages: allMsgs,
+      branchSelections: selections,
+      messages: buildActivePath(allMsgs, selections),
+    })
+  },
   setError: (error) => set({ error }),
 
-  addMessage: (msg) => set((s) => ({ messages: [...s.messages, msg] })),
+  addMessage: (msg) =>
+    set((s) => ({
+      allMessages: [...s.allMessages, msg],
+      messages: [...s.messages, msg],
+    })),
 
   updateLastAssistant: (updater) =>
     set((s) => {
       const msgs = [...s.messages]
+      const allMsgs = [...s.allMessages]
       const lastIdx = msgs.length - 1
       if (lastIdx >= 0 && msgs[lastIdx].role === 'assistant') {
-        msgs[lastIdx] = updater(msgs[lastIdx])
+        const updated = updater(msgs[lastIdx])
+        msgs[lastIdx] = updated
+        // 同步到 allMessages
+        const allIdx = allMsgs.findIndex((m) => m.id === updated.id)
+        if (allIdx >= 0) allMsgs[allIdx] = updated
       }
-      return { messages: msgs }
+      return { messages: msgs, allMessages: allMsgs }
     }),
 
-  sendMessage: (accountBookId, message) => {
+  sendMessage: (accountBookId, message, parentMessageId, replaceAssistantDbId) => {
     const state = get()
     if (state.isStreaming) return
 
@@ -246,15 +338,31 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       id: nextId(),
       role: 'user',
       blocks: [{ id: nextId(), type: 'text', content: message }],
+      parentMessageId,
     }
     const assistantMsg: Message = {
       id: nextId(),
       role: 'assistant',
       blocks: [],
       isStreaming: true,
+      parentMessageId: userMsg.id, // 临时关联，finish 时替换为 DB ID
     }
 
-    set({ messages: [...state.messages, userMsg, assistantMsg], isStreaming: true, error: null })
+    set((s) => {
+      const newAllMessages = [...s.allMessages, userMsg, assistantMsg]
+      const newSelections = { ...s.branchSelections }
+      // 编辑时自动切换到新版本分支
+      if (parentMessageId) {
+        newSelections[parentMessageId] = userMsg.id
+      }
+      return {
+        messages: buildActivePath(newAllMessages, newSelections),
+        allMessages: newAllMessages,
+        branchSelections: newSelections,
+        isStreaming: true,
+        error: null,
+      }
+    })
 
     // text-delta 状态机状态（在闭包中保持）
     let thinkState: DeltaState = 'text'
@@ -265,6 +373,8 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         sessionId: state.currentSessionId || undefined,
         accountBookId,
         message,
+        parentMessageId,
+        replaceAssistantDbId,
       },
       (event: SSEEvent) => {
         const currentState = get()
@@ -325,6 +435,43 @@ export const useChatStore = create<ChatState>()((set, get) => ({
             break
 
           case 'finish':
+            // 设置 dbId
+            set((s) => {
+              const allMsgs = [...s.allMessages]
+              const msgs = [...s.messages]
+              const newSelections = { ...s.branchSelections }
+              let lastUserTempId: string | null = null
+              // 更新最后一条用户消息的 dbId
+              for (let i = msgs.length - 1; i >= 0; i--) {
+                if (msgs[i].role === 'user' && !msgs[i].dbId) {
+                  lastUserTempId = msgs[i].id
+                  msgs[i] = { ...msgs[i], dbId: event.userMessageId }
+                  const allIdx = allMsgs.findIndex((m) => m.id === msgs[i].id)
+                  if (allIdx >= 0) allMsgs[allIdx] = msgs[i]
+                  break
+                }
+              }
+              // 更新最后一条助手消息的 dbId 和 parentMessageId
+              const lastIdx = msgs.length - 1
+              if (lastIdx >= 0 && msgs[lastIdx].role === 'assistant') {
+                msgs[lastIdx] = {
+                  ...msgs[lastIdx],
+                  dbId: event.assistantMessageId,
+                  parentMessageId: event.userMessageId,
+                }
+                const allIdx = allMsgs.findIndex((m) => m.id === msgs[lastIdx].id)
+                if (allIdx >= 0) allMsgs[allIdx] = msgs[lastIdx]
+              }
+              // 将 branchSelections 中的临时 ID 替换为 DB ID
+              if (lastUserTempId) {
+                for (const key of Object.keys(newSelections)) {
+                  if (newSelections[key] === lastUserTempId) {
+                    newSelections[key] = event.userMessageId
+                  }
+                }
+              }
+              return { messages: msgs, allMessages: allMsgs, branchSelections: newSelections }
+            })
             currentState.updateLastAssistant((msg) => {
               const usage = event.usage as Message['usage']
               return { ...msg, usage }
@@ -361,6 +508,55 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     )
 
     set({ abortController: controller })
+  },
+
+  // 清理被重试的消息及其后代（本地状态），返回 { text, parentId, assistantDbId } 供 ChatWindow 调用 sendMessage
+  retryMessage: (assistantMsgId) => {
+    const state = get()
+    if (state.isStreaming) return
+
+    const idx = state.messages.findIndex((m) => m.id === assistantMsgId)
+    if (idx <= 0) return
+    const prevUserMsg = state.messages[idx - 1]
+    if (prevUserMsg.role !== 'user') return
+
+    const text = prevUserMsg.blocks
+      .filter((b) => b.type === 'text')
+      .map((b) => b.content)
+      .join('\n')
+    if (!text) return
+
+    const assistantDbId = state.messages[idx].dbId || state.messages[idx].id
+    const parentId = idx > 1 ? state.messages[idx - 2]?.dbId || state.messages[idx - 2]?.id : undefined
+
+    // 从 allMessages 中删除被替换的助手消息及其所有后代
+    const descendantIds = collectDescendantIds(state.allMessages, assistantDbId)
+    const newAllMessages = state.allMessages.filter(
+      (m) => !descendantIds.has(m.dbId || m.id) && (m.dbId || m.id) !== assistantDbId,
+    )
+    // 也删除原用户消息
+    const userMsgId = prevUserMsg.dbId || prevUserMsg.id
+    const filteredAllMessages = newAllMessages.filter((m) => (m.dbId || m.id) !== userMsgId)
+
+    // 截断活跃路径
+    const newMessages = state.messages.slice(0, idx - 1)
+
+    set({
+      messages: newMessages,
+      allMessages: filteredAllMessages,
+    })
+
+    // 注意：实际发送由 ChatWindow.handleRetry 调用 sendMessage 完成
+  },
+
+  selectBranch: (parentId, childId) => {
+    set((s) => {
+      const newSelections = { ...s.branchSelections, [parentId]: childId }
+      return {
+        branchSelections: newSelections,
+        messages: buildActivePath(s.allMessages, newSelections),
+      }
+    })
   },
 
   stopStreaming: () => {

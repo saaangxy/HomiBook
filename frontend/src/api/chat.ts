@@ -17,6 +17,7 @@ export interface ChatMessage {
   toolCalls?: string
   modelProvider?: string
   modelName?: string
+  parentMessageId?: string | null
   createdAt: string
 }
 
@@ -60,7 +61,7 @@ export type SSEEvent =
   | { type: 'tool-call'; toolCallId: string; toolName: string; args: unknown }
   | { type: 'tool-result'; toolCallId: string; toolName: string; result: unknown; durationMs: number; status: string }
   | { type: 'tool-confirm-required'; toolCallId: string; toolName: string; preview: string }
-  | { type: 'finish'; usage: unknown }
+  | { type: 'finish'; usage: unknown; userMessageId: string; assistantMessageId: string }
   | { type: 'error'; message: string }
 
 // GET APIs
@@ -160,7 +161,7 @@ export async function saveProviderBaseURL(provider: string, baseURL: string) {
 
 // SSE 流式发送消息
 export function sendMessageStream(
-  params: { sessionId?: string; accountBookId: string; message: string },
+  params: { sessionId?: string; accountBookId: string; message: string; parentMessageId?: string; replaceAssistantDbId?: string },
   onEvent: (event: SSEEvent) => void,
   onDone: () => void,
 ): AbortController {

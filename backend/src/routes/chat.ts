@@ -51,11 +51,48 @@ export async function chatRoutes(app: FastifyInstance) {
     // 检索长期记忆
     const memories = await searchMemories(userId, message, 5)
 
-    // 加载短期记忆（最近 20 条消息）
-    const recentMessages = await prisma.chatMessage.findMany({
+    // 加载会话所有消息（用于构建历史链）
+    const allMessages = await prisma.chatMessage.findMany({
       where: { sessionId: session.id },
       orderBy: { createdAt: 'asc' },
-      take: 40,
+      select: { id: true, role: true, content: true, parentMessageId: true },
+      take: 100,
+    })
+
+    // 重试：删除被替换的助手消息及其所有后继（按 parentMessageId 链向下删除）
+    if (parsed.data.replaceAssistantDbId) {
+      let idsToDelete = [parsed.data.replaceAssistantDbId]
+      while (idsToDelete.length > 0) {
+        await prisma.chatMessage.deleteMany({ where: { id: { in: idsToDelete } } })
+        const children = await prisma.chatMessage.findMany({
+          where: { parentMessageId: { in: idsToDelete } },
+          select: { id: true },
+        })
+        idsToDelete = children.map((c) => c.id)
+      }
+    }
+
+    // 构建消息历史：从 parentMessageId 沿链回溯到根
+    const history: { role: 'user' | 'assistant'; content: string }[] = []
+    const parentId = parsed.data.parentMessageId || null
+    if (parentId) {
+      const chain: { role: 'user' | 'assistant'; content: string }[] = []
+      let currentId: string | null = parentId
+      while (currentId) {
+        const msg = allMessages.find((m) => m.id === currentId)
+        if (!msg) break
+        if (msg.role === 'user' || msg.role === 'assistant') {
+          chain.unshift({ role: msg.role, content: msg.content })
+        }
+        currentId = msg.parentMessageId
+      }
+      history.push(...chain)
+    }
+    history.push({ role: 'user', content: message })
+
+    // 保存用户消息
+    const userMsgDb = await prisma.chatMessage.create({
+      data: { sessionId: session.id, role: 'user', content: message, parentMessageId: parentId },
     })
 
     // 构建 system prompt
@@ -81,15 +118,6 @@ export async function chatRoutes(app: FastifyInstance) {
       const taskType = route.intent === 'complex' ? '复杂任务' : '简单任务'
       return reply.status(400).send({ message: `未配置${taskType}模型，请在 AI 设置中选择模型后重试` })
     }
-
-    // 保存用户消息
-    await prisma.chatMessage.create({
-      data: { sessionId: session.id, role: 'user', content: message },
-    })
-
-    // 构建消息历史
-    const history = recentMessages.map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
-    history.push({ role: 'user', content: message })
 
     // SSE headers
     reply.raw.writeHead(200, {
@@ -175,7 +203,7 @@ export async function chatRoutes(app: FastifyInstance) {
       }
 
       // 保存 assistant 消息（含工具调用记录）
-      await prisma.chatMessage.create({
+      const assistantMsgDb = await prisma.chatMessage.create({
         data: {
           sessionId: session.id,
           role: 'assistant',
@@ -183,10 +211,11 @@ export async function chatRoutes(app: FastifyInstance) {
           modelProvider: route.provider,
           modelName: route.model,
           toolCalls: toolCallEntries.length > 0 ? JSON.stringify(toolCallEntries) : null,
+          parentMessageId: userMsgDb.id,
         },
       })
 
-      sendSSE('finish', { usage: await result.usage })
+      sendSSE('finish', { usage: await result.usage, userMessageId: userMsgDb.id, assistantMessageId: assistantMsgDb.id })
     } catch (err: any) {
       sendSSE('error', { message: err.message || 'AI 服务异常' })
     } finally {
@@ -256,7 +285,7 @@ export async function chatRoutes(app: FastifyInstance) {
 
     const messages = await prisma.chatMessage.findMany({
       where: { sessionId: id },
-      select: { id: true, role: true, content: true, toolCalls: true, modelProvider: true, modelName: true, createdAt: true },
+      select: { id: true, role: true, content: true, toolCalls: true, modelProvider: true, modelName: true, parentMessageId: true, createdAt: true },
       orderBy: { createdAt: 'asc' },
     })
     return { messages }
