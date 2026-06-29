@@ -203,7 +203,6 @@ export function sendMessageStream(
         const lines = buffer.split('\n')
         buffer = lines.pop() || ''
 
-        console.log('sendMessageStream buffer', buffer)
         let eventType = ''
         for (const line of lines) {
           if (line.startsWith('event: ')) {

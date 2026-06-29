@@ -7,6 +7,7 @@ import { routeIntent, classifyWithKeywords } from '../services/ai/model-router.j
 import { assertIsMember } from '../services/ai/security.js'
 import { logToolCall } from '../services/ai/audit.js'
 import { ALL_TOOLS, registerConfirmation, confirmAction, getPendingConfirmations } from '../services/ai/tools/index.js'
+import { buildConfirmPreview } from '../services/ai/confirm-preview.js'
 import { sendMessageSchema, createSessionSchema, updateSessionSchema, confirmActionSchema, updatePreferencesSchema, createProviderConfigSchema, updateProviderConfigSchema } from '../schemas/chat.js'
 
 export async function chatRoutes(app: FastifyInstance) {
@@ -150,7 +151,7 @@ export async function chatRoutes(app: FastifyInstance) {
           try {
             // 需要确认的敏感操作
             if (tool.requireConfirm) {
-              const preview = JSON.stringify({ tool: tool.name, args }, null, 2)
+              const preview = await buildConfirmPreview(tool.name, args, accountBookId)
               sendSSE('tool-confirm-required', { toolCallId, toolName: tool.name, preview })
               const approved = await registerConfirmation(toolCallId, tool.name, preview)
               if (!approved) {

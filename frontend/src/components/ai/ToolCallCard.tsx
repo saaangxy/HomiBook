@@ -2,6 +2,7 @@ import { cn } from '@/lib/utils'
 import type { ToolCallEntry } from '@/stores/chat'
 import { confirmAction } from '@/api/chat'
 import { Button } from '@/components/ui/button'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Wrench, CheckCircle2, XCircle, Loader2, HelpCircle, ChevronDown } from 'lucide-react'
 import { useState } from 'react'
 
@@ -15,6 +16,46 @@ const toolLabels: Record<string, string> = {
   query_accounts: '查询账户',
   get_stats: '统计分析',
   query_categories: '查询分类',
+}
+
+// ---- ConfirmPreview 类型 ----
+
+type ConfirmPreviewType = 'records-table' | 'record-changes' | 'budget-card' | 'generic'
+
+interface PreviewCell {
+  text: string
+  highlight?: boolean
+  color?: 'green' | 'red'
+}
+
+interface ConfirmPreview {
+  type: ConfirmPreviewType
+  title: string
+  description?: string
+  columns?: string[]
+  rows?: PreviewCell[][]
+  changes?: {
+    id: string
+    date: string
+    fields: { label: string; before: string; after: string }[]
+  }[]
+  budgetFields?: { label: string; value: string }[]
+  text?: string
+}
+
+function parsePreview(preview?: string): ConfirmPreview | null {
+  if (!preview) return null
+  try {
+    return JSON.parse(preview) as ConfirmPreview
+  } catch {
+    return null
+  }
+}
+
+function cellColorClass(color?: 'green' | 'red') {
+  if (color === 'green') return 'text-green-600'
+  if (color === 'red') return 'text-red-600'
+  return ''
 }
 
 export function ToolCallCard({ toolCall }: Props) {
@@ -102,19 +143,108 @@ export function ToolCallCard({ toolCall }: Props) {
 
       {/* 确认按钮 —— 始终可见 */}
       {toolCall.status === 'confirming' && (
-        <div className="mt-2 space-y-2">
-          <p className="text-muted-foreground">需要确认此操作：</p>
-          <pre className="text-xs bg-background rounded p-1.5 max-h-24 overflow-auto">{toolCall.preview}</pre>
-          <div className="flex gap-2">
-            <Button size="sm" variant="default" disabled={confirming} onClick={() => handleConfirm(true)}>
-              确认
-            </Button>
-            <Button size="sm" variant="outline" disabled={confirming} onClick={() => handleConfirm(false)}>
-              拒绝
-            </Button>
-          </div>
+        <ConfirmPreviewView preview={toolCall.preview} onConfirm={handleConfirm} confirming={confirming} />
+      )}
+    </div>
+  )
+}
+
+// ---- 确认预览渲染 ----
+
+function ConfirmPreviewView({
+  preview: rawPreview,
+  onConfirm,
+  confirming,
+}: {
+  preview?: string
+  onConfirm: (approved: boolean) => void
+  confirming: boolean
+}) {
+  const preview = parsePreview(rawPreview)
+
+  return (
+    <div className="mt-2 space-y-2">
+      <p className="font-medium text-sm">{preview?.title || '需要确认此操作'}</p>
+      {preview?.description && (
+        <p className="text-muted-foreground">{preview.description}</p>
+      )}
+
+      {/* records-table 类型 */}
+      {preview?.type === 'records-table' && preview.columns && preview.rows && (
+        <div className="rounded border overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                {preview.columns.map((col) => (
+                  <TableHead key={col} className="text-[11px] px-1.5 py-1">{col}</TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {preview.rows.map((row, ri) => (
+                <TableRow key={ri}>
+                  {row.map((cell, ci) => (
+                    <TableCell key={ci} className={cn('px-1.5 py-1 text-[11px]', cellColorClass(cell.color), cell.highlight && 'font-bold')}>
+                      {cell.text}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </div>
       )}
+
+      {/* record-changes 类型 */}
+      {preview?.type === 'record-changes' && preview.changes && (
+        <div className="space-y-2">
+          {preview.changes.map((ch) => (
+            <div key={ch.id} className="rounded border overflow-hidden">
+              <div className="bg-muted/30 px-2 py-1 text-[11px] text-muted-foreground">
+                ID: {ch.id} | 日期: {ch.date}
+              </div>
+              <table className="w-full text-[11px]">
+                <tbody>
+                  {ch.fields.map((f) => (
+                    <tr key={f.label} className="border-t">
+                      <td className="px-2 py-1 text-muted-foreground w-16">{f.label}</td>
+                      <td className="px-2 py-1 text-red-500 line-through">{f.before}</td>
+                      <td className="px-1 py-1 text-muted-foreground">→</td>
+                      <td className="px-2 py-1 text-green-600 font-medium">{f.after}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* budget-card 类型 */}
+      {preview?.type === 'budget-card' && preview.budgetFields && (
+        <div className="rounded border p-2 space-y-1">
+          {preview.budgetFields.map((f) => (
+            <div key={f.label} className="flex gap-2 text-[11px]">
+              <span className="text-muted-foreground w-16 shrink-0">{f.label}</span>
+              <span className="font-medium">{f.value}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* generic 或解析失败回退 */}
+      {(!preview || preview.type === 'generic') && (
+        <pre className="text-xs bg-background rounded p-1.5 max-h-24 overflow-auto">{rawPreview || ''}</pre>
+      )}
+
+      <div className="flex gap-2">
+        <Button size="sm" variant="default" disabled={confirming} onClick={() => onConfirm(true)}>
+          确认
+        </Button>
+        <Button size="sm" variant="outline" disabled={confirming} onClick={() => onConfirm(false)}>
+          拒绝
+        </Button>
+      </div>
     </div>
   )
 }

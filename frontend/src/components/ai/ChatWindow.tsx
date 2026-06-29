@@ -15,7 +15,7 @@ export function ChatWindow() {
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const {
-    sessions, currentSessionId, messages, allMessages, branchSelections, isStreaming, error,
+    sessions, currentSessionId, messages, allMessages, isStreaming, error,
     setSessions, setCurrentSession, setMessages, sendMessage, retryMessage, selectBranch, stopStreaming,
   } = useChatStore()
 
@@ -49,7 +49,7 @@ export function ChatWindow() {
           dbId: m.id, // 历史消息的 id 就是数据库 ID
           role: m.role as 'user' | 'assistant',
           blocks,
-          parentMessageId: m.parentMessageId,
+          parentMessageId: m.parentMessageId ?? undefined,
         }
       })
       setMessages(parsed.length > 0 ? parsed : [greetingMsg])
