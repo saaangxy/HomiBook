@@ -659,12 +659,20 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   },
 
   saveCurrentToCache: () => {
-    const { currentSessionId, messages, allMessages, branchSelections, isStreaming, streamingMessageId } = get()
+    const { currentSessionId, messages, allMessages, branchSelections, isStreaming, streamingMessageId, streamSessionId } = get()
     if (!currentSessionId) return
+    // 只有流属于当前会话时，才保存流状态；否则标记为非流式
+    const ownsStream = streamSessionId === currentSessionId
     set((s) => ({
       sessionCache: {
         ...s.sessionCache,
-        [currentSessionId]: { messages: [...messages], allMessages: [...allMessages], branchSelections: { ...branchSelections }, isStreaming, streamingMessageId },
+        [currentSessionId]: {
+          messages: [...messages],
+          allMessages: [...allMessages],
+          branchSelections: { ...branchSelections },
+          isStreaming: ownsStream ? isStreaming : false,
+          streamingMessageId: ownsStream ? streamingMessageId : null,
+        },
       },
     }))
   },
@@ -672,12 +680,15 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   restoreFromCache: (sessionId: string) => {
     const cache = get().sessionCache[sessionId]
     if (!cache) return false
+    const { streamSessionId, isStreaming, streamingMessageId } = get()
+    // 如果有另一个会话的流正在后台运行，保留其流状态不被缓存覆盖
+    const otherSessionStreaming = streamSessionId && streamSessionId !== sessionId
     set({
       messages: cache.messages,
       allMessages: cache.allMessages,
       branchSelections: cache.branchSelections,
-      isStreaming: cache.isStreaming,
-      streamingMessageId: cache.streamingMessageId,
+      isStreaming: otherSessionStreaming ? isStreaming : cache.isStreaming,
+      streamingMessageId: otherSessionStreaming ? streamingMessageId : cache.streamingMessageId,
     })
     return true
   },
