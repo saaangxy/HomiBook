@@ -96,8 +96,15 @@ export async function chatRoutes(app: FastifyInstance) {
       data: { sessionId: session.id, role: 'user', content: message, parentMessageId: parentId },
     })
 
+    // 查询账本名称用于提示词
+    const book = await prisma.accountBook.findUnique({
+      where: { id: accountBookId },
+      select: { name: true },
+    })
+    const bookName = book?.name || accountBookId
+
     // 构建 system prompt
-    const systemPrompt = buildSystemPrompt(prefs, accountBookId, memories)
+    const systemPrompt = buildSystemPrompt(prefs, accountBookId, bookName, memories)
 
     // 模型路由
     let route
@@ -189,7 +196,10 @@ export async function chatRoutes(app: FastifyInstance) {
               if (!approved) {
                 const entry = toolCallEntries.find((e) => e.toolCallId === toolCallId)
                 if (entry) Object.assign(entry, { status: 'error', result: { error: '用户拒绝了此操作' } })
-                return { success: false, error: '用户拒绝了此操作', retryable: false }
+                const result = { success: false, error: '用户拒绝了此操作', retryable: false }
+                const durationMs = Date.now() - start
+                sendSSE('tool-result', { toolCallId, toolName: tool.name, result, durationMs, status: 'error' })
+                return result
               }
             }
             const result = await tool.execute(args, { userId, accountBookId })
@@ -764,12 +774,12 @@ function extractKeywords(text: string): string[] {
   return [...new Set(keywords)].slice(0, 20)
 }
 
-function buildSystemPrompt(prefs: any, bookId: string, memories: any[]): string {
+function buildSystemPrompt(prefs: any, bookId: string, bookName: string, memories: any[]): string {
   const memoryContext = memories.length > 0
     ? `\n\n## 用户长期记忆（供参考）\n${memories.map((m: any, i: number) => `${i + 1}. ${m.content}`).join('\n')}\n`
     : ''
 
-  return `你是 Homibook 家庭记账本的 AI 助手。当前账本 ID 为 ${bookId}。
+  return `你是 Homibook 家庭记账本的 AI 助手。当前账本为「${bookName}」(ID: ${bookId})。
 
 ## 时间
 今天是${new Date().toISOString().slice(0, 10)}。
