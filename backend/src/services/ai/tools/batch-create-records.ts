@@ -1,6 +1,7 @@
 import { prisma } from '../../../app.js'
 import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
+import { resolveAccountId } from './helpers.js'
 
 interface RecordInput {
   type: string
@@ -72,9 +73,40 @@ export const batchCreateRecordsTool: ToolDef = {
       return { success: false, error: errors.join('; '), retryable: false }
     }
 
+    // 解析所有账户标识符（支持 accountNo 或 UUID）
+    const resolved: { accountId: string; fromAccountId?: string; toAccountId?: string }[] = []
+    for (let i = 0; i < args.records.length; i++) {
+      const r = args.records[i]
+      const resolvedAccountId = await resolveAccountId(r.accountId, ctx.accountBookId)
+      if (!resolvedAccountId) {
+        errors.push(`第${i + 1}条: 账户不存在 ${r.accountId}`)
+        continue
+      }
+      let resolvedFromId: string | undefined
+      if (r.fromAccountId) {
+        resolvedFromId = (await resolveAccountId(r.fromAccountId, ctx.accountBookId)) || undefined
+        if (!resolvedFromId) {
+          errors.push(`第${i + 1}条: 转出账户不存在 ${r.fromAccountId}`)
+          continue
+        }
+      }
+      let resolvedToId: string | undefined
+      if (r.toAccountId) {
+        resolvedToId = (await resolveAccountId(r.toAccountId, ctx.accountBookId)) || undefined
+        if (!resolvedToId) {
+          errors.push(`第${i + 1}条: 转入账户不存在 ${r.toAccountId}`)
+          continue
+        }
+      }
+      resolved.push({ accountId: resolvedAccountId, fromAccountId: resolvedFromId, toAccountId: resolvedToId })
+    }
+    if (errors.length > 0) {
+      return { success: false, error: errors.join('; '), retryable: false }
+    }
+
     return retryable(async () => {
       const created = await prisma.$transaction(
-        args.records.map((r) =>
+        args.records.map((r, i) =>
           prisma.record.create({
             data: {
               accountBookId: ctx.accountBookId,
@@ -83,9 +115,9 @@ export const batchCreateRecordsTool: ToolDef = {
               date: new Date(r.date),
               remark: r.remark,
               tags: JSON.stringify(r.tags ?? []),
-              accountId: r.accountId,
-              fromAccountId: r.fromAccountId,
-              toAccountId: r.toAccountId,
+              accountId: resolved[i].accountId,
+              fromAccountId: resolved[i].fromAccountId,
+              toAccountId: resolved[i].toAccountId,
               categoryCode: r.categoryCode,
               payer: r.payer,
               ownerId: ctx.userId,

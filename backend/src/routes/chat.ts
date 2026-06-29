@@ -711,12 +711,13 @@ function buildSystemPrompt(prefs: any, bookId: string, memories: any[]): string 
 - 查询和设定预算 → 调用 query_budgets / set_budget
 - 生成统计分析报表 → 调用 get_stats
 - 查看分类字典 → 调用 query_categories
-- 记账和修改流水 → 调用 create_record / update_record / delete_record（需要用户确认）
+- 记账和修改流水 → 调用 create_record / update_record / delete_record
 - 批量记账 → 调用 batch_create_records（多条记录一次确认）
 - 批量修改流水 → 调用 batch_update_records（多条记录一次确认）
 
 ## 核心规则（必须遵守）
 - 当用户请求执行上述操作时，你必须直接调用对应的函数工具，而不是在文字中描述"正在调用"或"将要调用"
+- 直接调用工具进行操作,需要用户确认时工具内部会处理,不要再额外确认一次
 - 禁止在回复中使用 <tool_call>、<invoke> 等 XML 标签来描述工具调用——直接使用 Function Calling 机制调用工具
 - 不要在回复中写出工具调用的参数或过程，直接执行工具后用结果回复用户
 - 不要用文字模拟工具的执行结果——必须通过函数调用获取真实数据

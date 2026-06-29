@@ -1,6 +1,7 @@
 import { prisma } from '../../../app.js'
 import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
+import { resolveAccountId } from './helpers.js'
 
 interface UpdateInput {
   recordId: string
@@ -65,6 +66,21 @@ export const batchUpdateRecordsTool: ToolDef = {
       return { success: false, error: `记录不存在: ${missing.join(', ')}`, retryable: false }
     }
 
+    // 解析所有账户标识符（支持 accountNo 或 UUID）
+    const resolvedIds: Record<string, string> = {}
+    for (const u of args.updates) {
+      for (const key of ['accountId', 'fromAccountId', 'toAccountId'] as const) {
+        const val = u[key]
+        if (!val) continue
+        if (resolvedIds[val] !== undefined) continue // 已解析过，跳过
+        const resolved = await resolveAccountId(val, ctx.accountBookId)
+        if (!resolved) {
+          return { success: false, error: `账户不存在: ${val}`, retryable: false }
+        }
+        resolvedIds[val] = resolved
+      }
+    }
+
     return retryable(async () => {
       const updated = await prisma.$transaction(
         args.updates.map((u) => {
@@ -72,12 +88,12 @@ export const batchUpdateRecordsTool: ToolDef = {
           if (u.type) data.type = u.type
           if (u.amount != null) data.amount = Number(u.amount)
           if (u.date) data.date = new Date(u.date)
-          if (u.accountId) data.accountId = u.accountId
+          if (u.accountId) data.accountId = resolvedIds[u.accountId]
           if (u.categoryCode !== undefined) data.categoryCode = u.categoryCode
           if (u.remark !== undefined) data.remark = u.remark
           if (u.payer !== undefined) data.payer = u.payer
-          if (u.fromAccountId !== undefined) data.fromAccountId = u.fromAccountId
-          if (u.toAccountId !== undefined) data.toAccountId = u.toAccountId
+          if (u.fromAccountId !== undefined) data.fromAccountId = resolvedIds[u.fromAccountId]
+          if (u.toAccountId !== undefined) data.toAccountId = resolvedIds[u.toAccountId]
           return prisma.record.update({
             where: { id: u.recordId },
             data,

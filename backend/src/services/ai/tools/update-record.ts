@@ -1,6 +1,7 @@
 import { prisma } from '../../../app.js'
 import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
+import { resolveAccountId } from './helpers.js'
 
 export const updateRecordTool: ToolDef = {
   name: 'update_record',
@@ -29,17 +30,40 @@ export const updateRecordTool: ToolDef = {
 
     await assertIsMember(existing.accountBookId, ctx.userId)
 
+    // 解析账户标识符（支持 accountNo 或 UUID）
+    let resolvedAccountId: string | null | undefined
+    if (args.accountId) {
+      resolvedAccountId = await resolveAccountId(args.accountId, ctx.accountBookId)
+      if (!resolvedAccountId) {
+        return { success: false, error: `账户不存在: ${args.accountId}`, retryable: false }
+      }
+    }
+    let resolvedFromId: string | null | undefined
+    if (args.fromAccountId) {
+      resolvedFromId = await resolveAccountId(args.fromAccountId, ctx.accountBookId)
+      if (!resolvedFromId) {
+        return { success: false, error: `转出账户不存在: ${args.fromAccountId}`, retryable: false }
+      }
+    }
+    let resolvedToId: string | null | undefined
+    if (args.toAccountId) {
+      resolvedToId = await resolveAccountId(args.toAccountId, ctx.accountBookId)
+      if (!resolvedToId) {
+        return { success: false, error: `转入账户不存在: ${args.toAccountId}`, retryable: false }
+      }
+    }
+
     return retryable(async () => {
       const data: Record<string, unknown> = {}
       if (args.type) data.type = args.type
       if (args.amount != null) data.amount = Number(args.amount)
       if (args.date) data.date = new Date(args.date)
-      if (args.accountId) data.accountId = args.accountId
+      if (resolvedAccountId) data.accountId = resolvedAccountId
       if (args.categoryCode !== undefined) data.categoryCode = args.categoryCode
       if (args.remark !== undefined) data.remark = args.remark
       if (args.payer !== undefined) data.payer = args.payer
-      if (args.fromAccountId !== undefined) data.fromAccountId = args.fromAccountId
-      if (args.toAccountId !== undefined) data.toAccountId = args.toAccountId
+      if (resolvedFromId !== undefined) data.fromAccountId = resolvedFromId
+      if (resolvedToId !== undefined) data.toAccountId = resolvedToId
 
       const record = await prisma.record.update({
         where: { id: args.recordId },

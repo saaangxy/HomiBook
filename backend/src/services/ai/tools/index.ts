@@ -32,32 +32,22 @@ interface PendingConfirmation {
   toolCallId: string
   toolName: string
   preview: string
-  timer: ReturnType<typeof setTimeout>
 }
 
 const pendingConfirmations = new Map<string, PendingConfirmation>()
 
-// 60s 超时自动拒绝
-const CONFIRM_TIMEOUT_MS = 60_000
-
-// 注册一个等待确认的工具调用
+// 注册一个等待确认的工具调用（无限等待，直到用户确认或手动拒绝）
 export function registerConfirmation(
   toolCallId: string,
   toolName: string,
   preview: string,
 ): Promise<boolean> {
   return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      pendingConfirmations.delete(toolCallId)
-      resolve(false)
-    }, CONFIRM_TIMEOUT_MS)
-
     pendingConfirmations.set(toolCallId, {
       resolve,
       toolCallId,
       toolName,
       preview,
-      timer,
     })
   })
 }
@@ -67,7 +57,6 @@ export function confirmAction(toolCallId: string, approved: boolean): boolean {
   const pending = pendingConfirmations.get(toolCallId)
   if (!pending) return false
 
-  clearTimeout(pending.timer)
   pendingConfirmations.delete(toolCallId)
   pending.resolve(approved)
   return true

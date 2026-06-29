@@ -1,6 +1,7 @@
 import { prisma } from '../../../app.js'
 import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
+import { resolveAccountId } from './helpers.js'
 
 export const createRecordTool: ToolDef = {
   name: 'create_record',
@@ -41,6 +42,24 @@ export const createRecordTool: ToolDef = {
       }
     }
 
+    // 解析账户标识符（支持 accountNo 或 UUID）
+    const resolvedAccountId = await resolveAccountId(args.accountId, ctx.accountBookId)
+    if (!resolvedAccountId) {
+      return { success: false, error: `账户不存在: ${args.accountId}`, retryable: false }
+    }
+    const resolvedFromId = args.fromAccountId
+      ? await resolveAccountId(args.fromAccountId, ctx.accountBookId)
+      : null
+    if (args.fromAccountId && !resolvedFromId) {
+      return { success: false, error: `转出账户不存在: ${args.fromAccountId}`, retryable: false }
+    }
+    const resolvedToId = args.toAccountId
+      ? await resolveAccountId(args.toAccountId, ctx.accountBookId)
+      : null
+    if (args.toAccountId && !resolvedToId) {
+      return { success: false, error: `转入账户不存在: ${args.toAccountId}`, retryable: false }
+    }
+
     return retryable(async () => {
       const record = await prisma.record.create({
         data: {
@@ -50,9 +69,9 @@ export const createRecordTool: ToolDef = {
           date: new Date(args.date),
           remark: args.remark,
           tags: JSON.stringify(args.tags ?? []),
-          accountId: args.accountId,
-          fromAccountId: args.fromAccountId,
-          toAccountId: args.toAccountId,
+          accountId: resolvedAccountId,
+          fromAccountId: resolvedFromId,
+          toAccountId: resolvedToId,
           categoryCode: args.categoryCode,
           payer: args.payer,
           ownerId: ctx.userId,
