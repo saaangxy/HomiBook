@@ -1,9 +1,9 @@
 import { cn } from '@/lib/utils'
 import type { ToolCallEntry } from '@/stores/chat'
-import { confirmAction } from '@/api/chat'
+import { confirmAction, respondSuggestion } from '@/api/chat'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Wrench, CheckCircle2, XCircle, Loader2, HelpCircle, ChevronDown } from 'lucide-react'
+import { Wrench, CheckCircle2, XCircle, Loader2, HelpCircle, ChevronDown, MessageSquareMore } from 'lucide-react'
 import { useState } from 'react'
 
 interface Props {
@@ -16,6 +16,7 @@ const toolLabels: Record<string, string> = {
   query_accounts: '查询账户',
   get_stats: '统计分析',
   query_categories: '查询分类',
+  suggest_options: '补充信息',
 }
 
 // ---- ConfirmPreview 类型 ----
@@ -83,6 +84,7 @@ export function ToolCallCard({ toolCall }: Props) {
       toolCall.status === 'success' && 'border-green-200 bg-green-50/50',
       toolCall.status === 'error' && 'border-red-200 bg-red-50/50',
       toolCall.status === 'confirming' && 'border-amber-200 bg-amber-50/50',
+      toolCall.status === 'suggesting' && 'border-violet-200 bg-violet-50/50',
     )}>
       {/* 可点击头部 */}
       <button
@@ -93,6 +95,7 @@ export function ToolCallCard({ toolCall }: Props) {
         {toolCall.status === 'success' && <CheckCircle2 size={14} className="text-green-500" />}
         {toolCall.status === 'error' && <XCircle size={14} className="text-red-500" />}
         {toolCall.status === 'confirming' && <HelpCircle size={14} className="text-amber-500" />}
+        {toolCall.status === 'suggesting' && <MessageSquareMore size={14} className="text-violet-500" />}
         <Wrench size={14} className="text-muted-foreground" />
         <span className="font-medium">{toolLabels[toolCall.toolName] || toolCall.toolName}</span>
         {toolCall.durationMs != null && (
@@ -144,6 +147,14 @@ export function ToolCallCard({ toolCall }: Props) {
       {/* 确认按钮 —— 始终可见 */}
       {toolCall.status === 'confirming' && (
         <ConfirmPreviewView preview={toolCall.preview} onConfirm={handleConfirm} confirming={confirming} />
+      )}
+
+      {/* 建议选择 UI */}
+      {toolCall.status === 'suggesting' && toolCall.suggestion && (
+        <SuggestionView
+          suggestion={toolCall.suggestion}
+          toolCallId={toolCall.toolCallId}
+        />
       )}
     </div>
   )
@@ -243,6 +254,135 @@ function ConfirmPreviewView({
         </Button>
         <Button size="sm" variant="outline" disabled={confirming} onClick={() => onConfirm(false)}>
           拒绝
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+// ---- 建议选择组件 ----
+
+type QuestionDef = { question: string; field: string; options: string[]; allowCustom: boolean }
+
+function SuggestionView({
+  suggestion,
+  toolCallId,
+}: {
+  suggestion: { questions: QuestionDef[] }
+  toolCallId: string
+}) {
+  const { questions } = suggestion
+  // selectedOption: field → selected option (or '__custom__')
+  const [selectedOption, setSelectedOption] = useState<Record<string, string>>({})
+  // customInputs: field → custom text
+  const [customInputs, setCustomInputs] = useState<Record<string, string>>({})
+  const [submitting, setSubmitting] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
+
+  // 每个 field 的当前值：选项值或自定义输入
+  const getValue = (field: string) => {
+    const sel = selectedOption[field]
+    if (!sel) return ''
+    return sel === '__custom__' ? (customInputs[field] || '').trim() : sel
+  }
+
+  const allFilled = questions.every((q) => !!getValue(q.field))
+
+  const handleSubmit = async () => {
+    if (!allFilled || submitting) return
+    const values: Record<string, string> = {}
+    for (const q of questions) {
+      values[q.field] = getValue(q.field)
+    }
+    setSubmitting(true)
+    try {
+      await respondSuggestion(toolCallId, values)
+      setSubmitted(true)
+    } catch {
+      setSubmitting(false)
+    }
+  }
+
+  if (submitted) {
+    return (
+      <div className="mt-2 space-y-1">
+        {questions.map((q) => (
+          <div key={q.field} className="flex items-center gap-2 text-green-600 text-xs">
+            <CheckCircle2 size={12} />
+            <span className="text-muted-foreground">{q.question}</span>
+            <span className="font-medium">{getValue(q.field)}</span>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  return (
+    <div className="mt-2 space-y-3">
+      {questions.map((q, qi) => {
+        const sel = selectedOption[q.field] || ''
+        const customVal = customInputs[q.field] || ''
+
+        return (
+          <div key={q.field}>
+            <p className="font-medium text-sm mb-1">
+              {questions.length > 1 && <span className="text-muted-foreground">{qi + 1}. </span>}
+              {q.question}
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {q.options.map((opt) => (
+                <Button
+                  key={opt}
+                  size="sm"
+                  variant={sel === opt ? 'default' : 'outline'}
+                  className="text-xs h-7"
+                  onClick={() => setSelectedOption((prev) => ({ ...prev, [q.field]: opt }))}
+                >
+                  {opt}
+                </Button>
+              ))}
+            </div>
+            {q.allowCustom && (
+              <div className="flex items-center gap-2 mt-1">
+                <Button
+                  size="sm"
+                  variant={sel === '__custom__' ? 'default' : 'outline'}
+                  className="text-xs h-7"
+                  onClick={() => setSelectedOption((prev) => ({ ...prev, [q.field]: '__custom__' }))}
+                >
+                  自定义
+                </Button>
+                {sel === '__custom__' && (
+                  <input
+                    className="flex-1 border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-violet-400"
+                    placeholder="输入自定义内容..."
+                    value={customVal}
+                    onChange={(e) => setCustomInputs((prev) => ({ ...prev, [q.field]: e.target.value }))}
+                    autoFocus
+                  />
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })}
+      <div className="flex gap-2">
+        <Button
+          size="sm"
+          variant="default"
+          disabled={!allFilled || submitting}
+          onClick={handleSubmit}
+        >
+          {submitting ? <Loader2 size={12} className="animate-spin mr-1" /> : null}
+          提交
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={submitting}
+          onClick={() => respondSuggestion(toolCallId, null)}
+        >
+          取消
         </Button>
       </div>
     </div>

@@ -6,9 +6,9 @@ import { createModel, ALL_PROVIDERS, DEFAULT_BASE_URLS, type ProviderType } from
 import { routeIntent, classifyWithKeywords } from '../services/ai/model-router.js'
 import { assertIsMember } from '../services/ai/security.js'
 import { logToolCall } from '../services/ai/audit.js'
-import { ALL_TOOLS, registerConfirmation, confirmAction, getPendingConfirmations } from '../services/ai/tools/index.js'
+import { ALL_TOOLS, registerConfirmation, confirmAction, getPendingConfirmations, registerSuggestion, respondSuggestion, getPendingSuggestions } from '../services/ai/tools/index.js'
 import { buildConfirmPreview } from '../services/ai/confirm-preview.js'
-import { sendMessageSchema, createSessionSchema, updateSessionSchema, confirmActionSchema, updatePreferencesSchema, createProviderConfigSchema, updateProviderConfigSchema } from '../schemas/chat.js'
+import { sendMessageSchema, createSessionSchema, updateSessionSchema, confirmActionSchema, respondSuggestionSchema, updatePreferencesSchema, createProviderConfigSchema, updateProviderConfigSchema } from '../schemas/chat.js'
 
 export async function chatRoutes(app: FastifyInstance) {
   app.addHook('onRequest', authenticate)
@@ -129,7 +129,11 @@ export async function chatRoutes(app: FastifyInstance) {
     })
 
     const sendSSE = (event: string, data: unknown) => {
-      reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+      try {
+        reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+      } catch {
+        // 客户端断开连接时忽略写入错误，让流处理继续完成
+      }
     }
 
     // 收集工具调用记录，用于持久化
@@ -149,6 +153,34 @@ export async function chatRoutes(app: FastifyInstance) {
           sendSSE('tool-call', { toolCallId, toolName: tool.name, args })
           toolCallEntries.push({ toolCallId, toolName: tool.name, args, status: 'pending', textOffset: fullText.length })
           try {
+            // 建议工具：向用户展示多问题选项，等待选择
+            if (tool.name === 'suggest_options') {
+              const questions: { question: string; field: string; options: string[]; allowCustom: boolean }[] = (args.questions || []).map((q: any) => ({
+                question: q.question,
+                field: q.field,
+                options: q.options,
+                allowCustom: q.allowCustom ?? true,
+              }))
+              sendSSE('tool-suggest-required', { toolCallId, toolName: tool.name, questions })
+              const values = await registerSuggestion(toolCallId, questions)
+              if (values === null) {
+                const entry = toolCallEntries.find((e) => e.toolCallId === toolCallId)
+                if (entry) Object.assign(entry, { status: 'error', result: { error: '用户取消了选择' } })
+                const result = { success: false, error: '用户取消了选择' }
+                const durationMs = Date.now() - start
+                sendSSE('tool-result', { toolCallId, toolName: tool.name, result, durationMs, status: 'error' })
+                logToolCall({ userId, sessionId: session.id, action: 'tool_call', toolName: tool.name, input: args, output: result, durationMs, status: 'error' })
+                return result
+              }
+              const result = { success: true, values }
+              const durationMs = Date.now() - start
+              sendSSE('tool-result', { toolCallId, toolName: tool.name, result, durationMs, status: 'success' })
+              logToolCall({ userId, sessionId: session.id, action: 'tool_call', toolName: tool.name, input: args, output: result, durationMs, status: 'success' })
+              const entry = toolCallEntries.find((e) => e.toolCallId === toolCallId)
+              if (entry) Object.assign(entry, { result, durationMs, status: 'success' })
+              return result
+            }
+
             // 需要确认的敏感操作
             if (tool.requireConfirm) {
               const preview = await buildConfirmPreview(tool.name, args, accountBookId)
@@ -181,6 +213,8 @@ export async function chatRoutes(app: FastifyInstance) {
       }
     }
 
+    let assistantMsgDb: { id: string } | null = null
+
     try {
       const activeConfig = route.provider === simpleProvider ? simpleConfig : complexConfig
       const apiKey = activeConfig?.apiKey || (await loadApiKey(route.provider))
@@ -204,7 +238,7 @@ export async function chatRoutes(app: FastifyInstance) {
       }
 
       // 保存 assistant 消息（含工具调用记录）
-      const assistantMsgDb = await prisma.chatMessage.create({
+      assistantMsgDb = await prisma.chatMessage.create({
         data: {
           sessionId: session.id,
           role: 'assistant',
@@ -218,6 +252,24 @@ export async function chatRoutes(app: FastifyInstance) {
 
       sendSSE('finish', { usage: await result.usage, userMessageId: userMsgDb.id, assistantMessageId: assistantMsgDb.id })
     } catch (err: any) {
+      // 流中断或 AI 异常时，保存已生成的部分内容
+      if (!assistantMsgDb && (fullText || toolCallEntries.length > 0)) {
+        try {
+          assistantMsgDb = await prisma.chatMessage.create({
+            data: {
+              sessionId: session.id,
+              role: 'assistant',
+              content: fullText || '(响应中断)',
+              modelProvider: route.provider,
+              modelName: route.model,
+              toolCalls: toolCallEntries.length > 0 ? JSON.stringify(toolCallEntries) : null,
+              parentMessageId: userMsgDb.id,
+            },
+          })
+        } catch {
+          // 数据库写入失败则放弃
+        }
+      }
       sendSSE('error', { message: err.message || 'AI 服务异常' })
     } finally {
       reply.raw.end()
@@ -306,6 +358,24 @@ export async function chatRoutes(app: FastifyInstance) {
     logToolCall({ userId, action: approved ? 'confirm' : 'reject', toolName: toolCallId })
 
     return { success: true, approved }
+  })
+
+  // 回复建议（用户选择或自定义输入）
+  app.post('/respond-suggestion', async (req, reply) => {
+    const parsed = respondSuggestionSchema.safeParse(req.body)
+    if (!parsed.success) return reply.status(400).send({ message: parsed.error.issues[0].message })
+
+    const { toolCallId, values } = parsed.data
+
+    const handled = respondSuggestion(toolCallId, values)
+    if (!handled) return reply.status(404).send({ message: '建议已过期或不存在' })
+
+    return { success: true, values }
+  })
+
+  // 待处理建议列表
+  app.get('/pending-suggestions', async () => {
+    return { pending: getPendingSuggestions() }
   })
 
   // === 供应商配置 CRUD ===
@@ -714,6 +784,7 @@ function buildSystemPrompt(prefs: any, bookId: string, memories: any[]): string 
 - 记账和修改流水 → 调用 create_record / update_record / delete_record
 - 批量记账 → 调用 batch_create_records（多条记录一次确认）
 - 批量修改流水 → 调用 batch_update_records（多条记录一次确认）
+- 向用户提问获取信息 → 调用 suggest_options（用户操作意图明确但缺少具体参数时使用）
 
 ## 核心规则（必须遵守）
 - 当用户请求执行上述操作时，你必须直接调用对应的函数工具，而不是在文字中描述"正在调用"或"将要调用"
@@ -721,7 +792,8 @@ function buildSystemPrompt(prefs: any, bookId: string, memories: any[]): string 
 - 禁止在回复中使用 <tool_call>、<invoke> 等 XML 标签来描述工具调用——直接使用 Function Calling 机制调用工具
 - 不要在回复中写出工具调用的参数或过程，直接执行工具后用结果回复用户
 - 不要用文字模拟工具的执行结果——必须通过函数调用获取真实数据
-- 当用户意图不明确时，主动追问关键信息（时间范围、分类、金额范围等）
+- 当用户意图明确但缺少具体参数时（如"记一笔麦当劳50元"但未指定账户），调用 suggest_options 让用户选择，不要直接在文字中追问
+- suggest_options 的 options 应基于已查询的真实数据（如已查到的账户列表），而非凭空列举
 - 先澄清再执行操作
 - 涉及创建、修改、删除操作需要用户确认
 - 回答简洁准确，金额保留两位小数

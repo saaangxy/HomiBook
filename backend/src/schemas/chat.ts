@@ -31,6 +31,12 @@ export const confirmActionSchema = z.object({
   approved: z.boolean(),
 })
 
+// 回复建议
+export const respondSuggestionSchema = z.object({
+  toolCallId: z.string(),
+  values: z.record(z.string(), z.string()).nullable(), // null 表示取消，否则为 { field: value } 映射
+})
+
 // 更新偏好设置
 export const updatePreferencesSchema = z.object({
   simpleProviderConfigId: z.string().nullable().optional(),

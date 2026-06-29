@@ -17,6 +17,7 @@ export function ChatWindow() {
   const {
     sessions, currentSessionId, messages, allMessages, isStreaming, error,
     setSessions, setCurrentSession, setMessages, sendMessage, retryMessage, selectBranch, stopStreaming,
+    saveCurrentToCache, restoreFromCache,
   } = useChatStore()
 
   const { currentBookId } = useBookStore()
@@ -37,7 +38,13 @@ export function ChatWindow() {
   }
 
   const handleSelectSession = async (id: string) => {
+    // 保存当前会话状态到缓存（包括可能正在进行的流式内容）
+    saveCurrentToCache()
     setCurrentSession(id)
+
+    // 优先从缓存恢复（保留后台流式进度）
+    if (restoreFromCache(id)) return
+
     try {
       const msgs = await fetchMessages(id)
       const parsed = msgs.map((m) => {
@@ -46,7 +53,7 @@ export function ChatWindow() {
           : [{ id: `hist-0`, type: 'text' as const, content: m.content || '' }]
         return {
           id: m.id,
-          dbId: m.id, // 历史消息的 id 就是数据库 ID
+          dbId: m.id,
           role: m.role as 'user' | 'assistant',
           blocks,
           parentMessageId: m.parentMessageId ?? undefined,
@@ -71,6 +78,7 @@ export function ChatWindow() {
   }
 
   const handleCreateSession = async () => {
+    saveCurrentToCache()
     try {
       const res = await createSession({ accountBookId: currentBookId || undefined })
       const list = await fetchSessions()

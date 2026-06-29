@@ -61,6 +61,7 @@ export type SSEEvent =
   | { type: 'tool-call'; toolCallId: string; toolName: string; args: unknown }
   | { type: 'tool-result'; toolCallId: string; toolName: string; result: unknown; durationMs: number; status: string }
   | { type: 'tool-confirm-required'; toolCallId: string; toolName: string; preview: string }
+  | { type: 'tool-suggest-required'; toolCallId: string; toolName: string; questions: { question: string; field: string; options: string[]; allowCustom: boolean }[] }
   | { type: 'finish'; usage: unknown; userMessageId: string; assistantMessageId: string }
   | { type: 'error'; message: string }
 
@@ -110,6 +111,10 @@ export async function deleteSession(id: string) {
 
 export async function confirmAction(toolCallId: string, approved: boolean) {
   return api.post<{ success: boolean }>(`${BASE}/confirm`, { toolCallId, approved })
+}
+
+export async function respondSuggestion(toolCallId: string, values: Record<string, string> | null) {
+  return api.post<{ success: boolean; values: Record<string, string> | null }>(`${BASE}/respond-suggestion`, { toolCallId, values })
 }
 
 export async function updatePreferences(data: Partial<UserPreferences>) {
