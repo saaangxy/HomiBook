@@ -2,17 +2,18 @@ import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import type { ChatSession } from '@/stores/chat'
-import { Plus, MessageSquare, Trash2 } from 'lucide-react'
+import { Plus, MessageSquare, Trash2, Loader2 } from 'lucide-react'
 
 interface Props {
   sessions: ChatSession[]
   currentId: string | null
+  streamingSessionIds?: string[]
   onSelect: (id: string) => void
   onCreate: () => void
   onDelete: (id: string) => void
 }
 
-export function SessionList({ sessions, currentId, onSelect, onCreate, onDelete }: Props) {
+export function SessionList({ sessions, currentId, streamingSessionIds, onSelect, onCreate, onDelete }: Props) {
   const today = new Date().toDateString()
   const yesterday = new Date(Date.now() - 86400000).toDateString()
 
@@ -50,7 +51,11 @@ export function SessionList({ sessions, currentId, onSelect, onCreate, onDelete 
                   )}
                   onClick={() => onSelect(s.id)}
                 >
-                  <MessageSquare size={14} className="shrink-0 text-muted-foreground" />
+                  {streamingSessionIds?.includes(s.id) ? (
+                    <Loader2 size={14} className="shrink-0 text-blue-500 animate-spin" />
+                  ) : (
+                    <MessageSquare size={14} className="shrink-0 text-muted-foreground" />
+                  )}
                   <span className="truncate flex-1">{s.title}</span>
                   <Button
                     variant="ghost"

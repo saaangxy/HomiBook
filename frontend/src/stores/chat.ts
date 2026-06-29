@@ -57,11 +57,8 @@ interface ChatState {
   messages: Message[]
   allMessages: Message[]
   branchSelections: Record<string, string>
-  isStreaming: boolean
-  streamingMessageId: string | null
-  streamSessionId: string | null
   error: string | null
-  abortController: AbortController | null
+  abortControllers: Record<string, AbortController>
   sessionCache: Record<string, SessionCache>
 
   setSessions: (sessions: ChatSession[]) => void
@@ -72,10 +69,10 @@ interface ChatState {
   sendMessage: (accountBookId: string, message: string, parentMessageId?: string, replaceAssistantDbId?: string) => void
   retryMessage: (assistantMsgId: string) => void
   selectBranch: (parentMessageId: string, childMessageId: string) => void
-  stopStreaming: () => void
+  stopStreaming: (sessionId?: string) => void
 
   addMessage: (msg: Message) => void
-  updateLastAssistant: (updater: (msg: Message) => Message) => void
+  updateStreamMessage: (sessionId: string, messageId: string, updater: (msg: Message) => Message) => void
   saveCurrentToCache: () => void
   restoreFromCache: (sessionId: string) => boolean
 }
@@ -284,11 +281,8 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   messages: [],
   allMessages: [],
   branchSelections: {},
-  isStreaming: false,
-  streamingMessageId: null,
-  streamSessionId: null,
   error: null,
-  abortController: null,
+  abortControllers: {},
   sessionCache: {},
 
   setSessions: (sessions) => set({ sessions }),
@@ -323,38 +317,37 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       messages: [...s.messages, msg],
     })),
 
-  updateLastAssistant: (updater) =>
+  updateStreamMessage: (sessionId, messageId, updater) =>
     set((s) => {
-      const streamId = s.streamingMessageId
-      if (!streamId) return {}
-
       // 后台流式：更新缓存中的消息
-      if (s.currentSessionId !== s.streamSessionId && s.streamSessionId) {
-        const cache = s.sessionCache[s.streamSessionId]
+      if (s.currentSessionId !== sessionId) {
+        const cache = s.sessionCache[sessionId]
         if (!cache) return {}
         const newCache = { ...s.sessionCache }
         const sessionData = { ...cache, allMessages: [...cache.allMessages], messages: [...cache.messages] }
-        const allIdx = sessionData.allMessages.findIndex((m) => m.id === streamId)
+        const allIdx = sessionData.allMessages.findIndex((m) => m.id === messageId)
         if (allIdx >= 0) sessionData.allMessages[allIdx] = updater(sessionData.allMessages[allIdx])
-        const msgIdx = sessionData.messages.findIndex((m) => m.id === streamId)
+        const msgIdx = sessionData.messages.findIndex((m) => m.id === messageId)
         if (msgIdx >= 0) sessionData.messages[msgIdx] = updater(sessionData.messages[msgIdx])
-        newCache[s.streamSessionId] = sessionData
+        newCache[sessionId] = sessionData
         return { sessionCache: newCache }
       }
 
       // 前台流式：更新可见消息
       const msgs = [...s.messages]
       const allMsgs = [...s.allMessages]
-      const allIdx = allMsgs.findIndex((m) => m.id === streamId)
+      const allIdx = allMsgs.findIndex((m) => m.id === messageId)
       if (allIdx >= 0) allMsgs[allIdx] = updater(allMsgs[allIdx])
-      const msgIdx = msgs.findIndex((m) => m.id === streamId)
+      const msgIdx = msgs.findIndex((m) => m.id === messageId)
       if (msgIdx >= 0) msgs[msgIdx] = updater(msgs[msgIdx])
       return { messages: msgs, allMessages: allMsgs }
     }),
 
   sendMessage: (accountBookId, message, parentMessageId, replaceAssistantDbId) => {
     const state = get()
-    if (state.isStreaming) return
+    const sid = state.currentSessionId
+    if (!sid) return
+    if (state.sessionCache[sid]?.isStreaming || state.abortControllers[sid]) return
 
     const userMsg: Message = {
       id: nextId(),
@@ -369,21 +362,27 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       isStreaming: true,
       parentMessageId: userMsg.id, // 临时关联，finish 时替换为 DB ID
     }
+    const assistantMsgId = assistantMsg.id
 
     set((s) => {
       const newAllMessages = [...s.allMessages, userMsg, assistantMsg]
       const newSelections = { ...s.branchSelections }
-      // 编辑时自动切换到新版本分支
       if (parentMessageId) {
         newSelections[parentMessageId] = userMsg.id
+      }
+      const newCache = { ...s.sessionCache }
+      newCache[sid] = {
+        messages: buildActivePath(newAllMessages, newSelections),
+        allMessages: newAllMessages,
+        branchSelections: newSelections,
+        isStreaming: true,
+        streamingMessageId: assistantMsgId,
       }
       return {
         messages: buildActivePath(newAllMessages, newSelections),
         allMessages: newAllMessages,
         branchSelections: newSelections,
-        isStreaming: true,
-        streamingMessageId: assistantMsg.id,
-        streamSessionId: s.currentSessionId,
+        sessionCache: newCache,
         error: null,
       }
     })
@@ -392,19 +391,23 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     let thinkState: DeltaState = 'text'
     const blockIdCounter = { value: 0 }
 
+    // SSE 更新快捷方法
+    const updateMsg = (updater: (msg: Message) => Message) => {
+      get().updateStreamMessage(sid, assistantMsgId, updater)
+    }
+
     const controller = sendMessageStream(
       {
-        sessionId: state.currentSessionId || undefined,
+        sessionId: sid,
         accountBookId,
         message,
         parentMessageId,
         replaceAssistantDbId,
       },
       (event: SSEEvent) => {
-        const currentState = get()
         switch (event.type) {
           case 'text-delta':
-            currentState.updateLastAssistant((msg) => {
+            updateMsg((msg) => {
               const blocks = [...msg.blocks]
               thinkState = processTextDelta(event.delta, thinkState, blocks, blockIdCounter)
               return { ...msg, blocks }
@@ -412,7 +415,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
             break
 
           case 'tool-call':
-            currentState.updateLastAssistant((msg) => ({
+            updateMsg((msg) => ({
               ...msg,
               blocks: [
                 ...msg.blocks,
@@ -429,7 +432,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
             break
 
           case 'tool-result':
-            currentState.updateLastAssistant((msg) => ({
+            updateMsg((msg) => ({
               ...msg,
               blocks: msg.blocks.map((b) =>
                 b.type === 'tool-call' && b.toolCallId === event.toolCallId
@@ -445,8 +448,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
             break
 
           case 'tool-confirm-required':
-            // 更新已有的 tool-call block，不创建新的
-            currentState.updateLastAssistant((msg) => ({
+            updateMsg((msg) => ({
               ...msg,
               blocks: msg.blocks.map((b) =>
                 b.type === 'tool-call' && b.toolCallId === event.toolCallId
@@ -457,7 +459,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
             break
 
           case 'tool-suggest-required':
-            currentState.updateLastAssistant((msg) => ({
+            updateMsg((msg) => ({
               ...msg,
               blocks: msg.blocks.map((b) =>
                 b.type === 'tool-call' && b.toolCallId === event.toolCallId
@@ -473,22 +475,19 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
           case 'finish':
             set((s) => {
-              const streamId = s.streamingMessageId
-              if (!streamId) return {}
-
               // 后台流式：更新缓存
-              if (s.currentSessionId !== s.streamSessionId && s.streamSessionId) {
-                const cache = s.sessionCache[s.streamSessionId]
+              if (s.currentSessionId !== sid) {
+                const cache = s.sessionCache[sid]
                 if (!cache) return {}
                 const newCache = { ...s.sessionCache }
                 const sessionData = { ...cache, allMessages: [...cache.allMessages], messages: [...cache.messages], branchSelections: { ...cache.branchSelections } }
 
-                const asstAllIdx = sessionData.allMessages.findIndex((m) => m.id === streamId)
+                const asstAllIdx = sessionData.allMessages.findIndex((m) => m.id === assistantMsgId)
                 if (asstAllIdx >= 0) {
                   const asst = sessionData.allMessages[asstAllIdx]
                   const userTempId = asst.parentMessageId
                   sessionData.allMessages[asstAllIdx] = { ...asst, dbId: event.assistantMessageId, parentMessageId: event.userMessageId, usage: event.usage as Message['usage'], isStreaming: false }
-                  const asstMsgIdx = sessionData.messages.findIndex((m) => m.id === streamId)
+                  const asstMsgIdx = sessionData.messages.findIndex((m) => m.id === assistantMsgId)
                   if (asstMsgIdx >= 0) sessionData.messages[asstMsgIdx] = { ...sessionData.messages[asstMsgIdx], dbId: event.assistantMessageId, parentMessageId: event.userMessageId, usage: event.usage as Message['usage'], isStreaming: false }
                   if (userTempId) {
                     const userAllIdx = sessionData.allMessages.findIndex((m) => m.id === userTempId)
@@ -504,8 +503,10 @@ export const useChatStore = create<ChatState>()((set, get) => ({
                 }
                 sessionData.isStreaming = false
                 sessionData.streamingMessageId = null
-                newCache[s.streamSessionId] = sessionData
-                return { sessionCache: newCache }
+                newCache[sid] = sessionData
+                const newAbortControllers = { ...s.abortControllers }
+                delete newAbortControllers[sid]
+                return { sessionCache: newCache, abortControllers: newAbortControllers }
               }
 
               // 前台流式：更新可见消息
@@ -513,13 +514,13 @@ export const useChatStore = create<ChatState>()((set, get) => ({
               const msgs = [...s.messages]
               const newSelections = { ...s.branchSelections }
 
-              const asstAllIdx = allMsgs.findIndex((m) => m.id === streamId)
+              const asstAllIdx = allMsgs.findIndex((m) => m.id === assistantMsgId)
               if (asstAllIdx >= 0) {
                 const asst = allMsgs[asstAllIdx]
                 const userTempId = asst.parentMessageId
 
                 allMsgs[asstAllIdx] = { ...asst, dbId: event.assistantMessageId, parentMessageId: event.userMessageId }
-                const asstMsgIdx = msgs.findIndex((m) => m.id === streamId)
+                const asstMsgIdx = msgs.findIndex((m) => m.id === assistantMsgId)
                 if (asstMsgIdx >= 0) msgs[asstMsgIdx] = { ...msgs[asstMsgIdx], dbId: event.assistantMessageId, parentMessageId: event.userMessageId }
 
                 if (userTempId) {
@@ -537,16 +538,20 @@ export const useChatStore = create<ChatState>()((set, get) => ({
                   }
                 }
               }
-              return { messages: msgs, allMessages: allMsgs, branchSelections: newSelections }
+              const newCache = { ...s.sessionCache }
+              newCache[sid] = { ...newCache[sid], isStreaming: false, streamingMessageId: null, messages: msgs, allMessages: allMsgs, branchSelections: newSelections }
+              const newAbortControllers = { ...s.abortControllers }
+              delete newAbortControllers[sid]
+              return { messages: msgs, allMessages: allMsgs, branchSelections: newSelections, sessionCache: newCache, abortControllers: newAbortControllers }
             })
-            currentState.updateLastAssistant((msg) => {
+            updateMsg((msg) => {
               const usage = event.usage as Message['usage']
               return { ...msg, usage }
             })
             break
 
           case 'error':
-            currentState.updateLastAssistant((msg) => ({
+            updateMsg((msg) => ({
               ...msg,
               isStreaming: false,
               blocks: msg.blocks.length === 0
@@ -554,58 +559,54 @@ export const useChatStore = create<ChatState>()((set, get) => ({
                 : msg.blocks,
             }))
             set((s) => {
+              const newCache = { ...s.sessionCache }
+              const newAbortControllers = { ...s.abortControllers }
+              delete newAbortControllers[sid]
               // 后台流式：清除缓存中的流状态
-              if (s.currentSessionId !== s.streamSessionId && s.streamSessionId) {
-                const cache = s.sessionCache[s.streamSessionId]
+              if (s.currentSessionId !== sid) {
+                const cache = s.sessionCache[sid]
                 if (cache) {
-                  const newCache = { ...s.sessionCache }
-                  newCache[s.streamSessionId] = { ...cache, isStreaming: false, streamingMessageId: null }
-                  return { sessionCache: newCache, isStreaming: false, streamingMessageId: null, streamSessionId: null, error: event.message }
+                  newCache[sid] = { ...cache, isStreaming: false, streamingMessageId: null }
                 }
+                return { sessionCache: newCache, abortControllers: newAbortControllers, error: event.message }
               }
-              return { isStreaming: false, streamingMessageId: null, streamSessionId: null, error: event.message }
+              newCache[sid] = { ...newCache[sid], isStreaming: false, streamingMessageId: null }
+              return { sessionCache: newCache, abortControllers: newAbortControllers, error: event.message }
             })
             break
         }
       },
       () => {
         const finalState = get()
-        finalState.updateLastAssistant((msg) => ({ ...msg, isStreaming: false }))
+        updateMsg((msg) => ({ ...msg, isStreaming: false }))
 
-        const streamSid = finalState.streamSessionId
-        const activeSid = finalState.currentSessionId
+        // 清理 abortController
+        set((s) => {
+          const newAbortControllers = { ...s.abortControllers }
+          delete newAbortControllers[sid]
+          const newCache = { ...s.sessionCache }
+          if (newCache[sid]) {
+            newCache[sid] = { ...newCache[sid], isStreaming: false, streamingMessageId: null }
+          }
+          return { sessionCache: newCache, abortControllers: newAbortControllers }
+        })
 
-        // 只更新流所属会话的标题
-        if (streamSid) {
-          import('../api/chat').then(({ fetchSessions }) => {
-            fetchSessions().then((sessions) => {
-              set({ sessions, currentSessionId: activeSid })
-            })
+        // 更新会话列表标题
+        import('../api/chat').then(({ fetchSessions }) => {
+          fetchSessions().then((sessions) => {
+            set((s) => ({ sessions, currentSessionId: s.currentSessionId }))
           })
-        }
-
-        // 后台流完成：清除缓存中的流状态
-        if (streamSid && streamSid !== activeSid) {
-          set((s) => {
-            const cache = s.sessionCache[streamSid]
-            if (!cache) return { isStreaming: false, streamingMessageId: null, streamSessionId: null, abortController: null }
-            const newCache = { ...s.sessionCache }
-            newCache[streamSid] = { ...cache, isStreaming: false, streamingMessageId: null }
-            return { sessionCache: newCache, isStreaming: false, streamingMessageId: null, streamSessionId: null, abortController: null }
-          })
-        } else {
-          set({ isStreaming: false, streamingMessageId: null, streamSessionId: null, abortController: null })
-        }
+        })
       },
     )
 
-    set({ abortController: controller })
+    set((s) => ({ abortControllers: { ...s.abortControllers, [sid]: controller } }))
   },
 
-  // 清理被重试的消息及其后代（本地状态），返回 { text, parentId, assistantDbId } 供 ChatWindow 调用 sendMessage
   retryMessage: (assistantMsgId) => {
     const state = get()
-    if (state.isStreaming) return
+    const sid = state.currentSessionId
+    if (sid && state.sessionCache[sid]?.isStreaming) return
 
     const idx = state.messages.findIndex((m) => m.id === assistantMsgId)
     if (idx <= 0) return
@@ -650,19 +651,29 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     })
   },
 
-  stopStreaming: () => {
-    const { abortController } = get()
-    if (abortController) {
-      abortController.abort()
-      set({ isStreaming: false, streamingMessageId: null, streamSessionId: null, abortController: null })
+  stopStreaming: (sessionId) => {
+    const sid = sessionId || get().currentSessionId
+    if (!sid) return
+    const controller = get().abortControllers[sid]
+    if (controller) {
+      controller.abort()
+      set((s) => {
+        const newAbortControllers = { ...s.abortControllers }
+        delete newAbortControllers[sid]
+        const newCache = { ...s.sessionCache }
+        if (newCache[sid]) {
+          newCache[sid] = { ...newCache[sid], isStreaming: false, streamingMessageId: null }
+        }
+        return { sessionCache: newCache, abortControllers: newAbortControllers }
+      })
     }
   },
 
   saveCurrentToCache: () => {
-    const { currentSessionId, messages, allMessages, branchSelections, isStreaming, streamingMessageId, streamSessionId } = get()
+    const { currentSessionId, messages, allMessages, branchSelections, sessionCache } = get()
     if (!currentSessionId) return
-    // 只有流属于当前会话时，才保存流状态；否则标记为非流式
-    const ownsStream = streamSessionId === currentSessionId
+    // 流状态已在 sessionCache 中正确维护，直接沿用
+    const existing = sessionCache[currentSessionId]
     set((s) => ({
       sessionCache: {
         ...s.sessionCache,
@@ -670,8 +681,8 @@ export const useChatStore = create<ChatState>()((set, get) => ({
           messages: [...messages],
           allMessages: [...allMessages],
           branchSelections: { ...branchSelections },
-          isStreaming: ownsStream ? isStreaming : false,
-          streamingMessageId: ownsStream ? streamingMessageId : null,
+          isStreaming: existing?.isStreaming ?? false,
+          streamingMessageId: existing?.streamingMessageId ?? null,
         },
       },
     }))
@@ -680,15 +691,10 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   restoreFromCache: (sessionId: string) => {
     const cache = get().sessionCache[sessionId]
     if (!cache) return false
-    const { streamSessionId, isStreaming, streamingMessageId } = get()
-    // 如果有另一个会话的流正在后台运行，保留其流状态不被缓存覆盖
-    const otherSessionStreaming = streamSessionId && streamSessionId !== sessionId
     set({
       messages: cache.messages,
       allMessages: cache.allMessages,
       branchSelections: cache.branchSelections,
-      isStreaming: otherSessionStreaming ? isStreaming : cache.isStreaming,
-      streamingMessageId: otherSessionStreaming ? streamingMessageId : cache.streamingMessageId,
     })
     return true
   },

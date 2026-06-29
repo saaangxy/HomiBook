@@ -15,12 +15,26 @@ export function ChatWindow() {
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const {
-    sessions, currentSessionId, messages, allMessages, isStreaming, error,
+    sessions, currentSessionId, messages, allMessages, error,
     setSessions, setCurrentSession, setMessages, sendMessage, retryMessage, selectBranch, stopStreaming,
     saveCurrentToCache, restoreFromCache,
   } = useChatStore()
 
+  const isCurrentStreaming = useChatStore((s) =>
+    s.sessionCache[s.currentSessionId ?? '']?.isStreaming ?? false
+  )
+
   const { currentBookId } = useBookStore()
+
+  // 从 sessionCache 提取正在流式的会话 ID（用字符串避免引用不稳定导致无限循环）
+  const streamingSessionIdsStr = useChatStore((s) =>
+    Object.entries(s.sessionCache)
+      .filter(([, cache]) => cache.isStreaming)
+      .map(([id]) => id)
+      .sort()
+      .join(',')
+  )
+  const streamingSessionIds = streamingSessionIdsStr ? streamingSessionIdsStr.split(',') : []
 
 
   // 初始化加载会话列表
@@ -105,7 +119,7 @@ export function ChatWindow() {
 
   const handleSend = (text?: string) => {
     const msg = (text || input).trim()
-    if (!msg || !currentBookId || isStreaming) return
+    if (!msg || !currentBookId || isCurrentStreaming) return
     setInput('')
 
     const parentId = messages.length > 0
@@ -126,7 +140,7 @@ export function ChatWindow() {
 
   // 编辑消息并提交：取被编辑消息的前一条消息作为 parent，创建新分支
   const handleEditSubmit = (msgId: string, newText: string) => {
-    if (!currentBookId || isStreaming) return
+    if (!currentBookId || isCurrentStreaming) return
     const idx = messages.findIndex((m) => m.id === msgId)
     const parentId = idx > 0 ? messages[idx - 1].dbId || messages[idx - 1].id : undefined
 
@@ -185,6 +199,7 @@ export function ChatWindow() {
         <SessionList
           sessions={sessions}
           currentId={currentSessionId}
+          streamingSessionIds={streamingSessionIds}
           onSelect={handleSelectSession}
           onCreate={handleCreateSession}
           onDelete={handleDeleteSession}
@@ -211,7 +226,7 @@ export function ChatWindow() {
                 <div key={msg.id}>
                   <MessageBubble
                     message={msg}
-                    onRetry={msg.role === 'assistant' && msg.id !== 'greeting' && !msg.isStreaming
+                    onRetry={msg.role === 'assistant' && msg.id !== 'greeting' && !msg.isCurrentStreaming
                       ? () => handleRetry(msg.id)
                       : undefined}
                     onEditSubmit={msg.role === 'user'
@@ -241,9 +256,9 @@ export function ChatWindow() {
               placeholder="输入消息... (Enter 发送，Shift+Enter 换行)"
               rows={2}
               className="min-h-10 resize-none"
-              disabled={isStreaming}
+              disabled={isCurrentStreaming}
             />
-            {isStreaming ? (
+            {isCurrentStreaming ? (
               <Button variant="outline" size="icon" className="shrink-0" onClick={stopStreaming}>
                 <StopCircle size={18} />
               </Button>
