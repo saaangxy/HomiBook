@@ -6,7 +6,7 @@ import { createModel, ALL_PROVIDERS, DEFAULT_BASE_URLS, type ProviderType } from
 import { routeIntent, classifyWithKeywords } from '../services/ai/model-router.js'
 import { assertIsMember } from '../services/ai/security.js'
 import { logToolCall } from '../services/ai/audit.js'
-import { ALL_TOOLS, registerConfirmation, confirmAction, getPendingConfirmations, registerSuggestion, respondSuggestion, getPendingSuggestions, storeImportOverrides } from '../services/ai/tools/index.js'
+import { ALL_TOOLS, registerConfirmation, confirmAction, getPendingConfirmations, registerSuggestion, respondSuggestion, getPendingSuggestions, storeImportOverrides, peekImportOverrides, consumeImportOverrides } from '../services/ai/tools/index.js'
 import { buildConfirmPreview } from '../services/ai/confirm-preview.js'
 import { sendMessageSchema, createSessionSchema, updateSessionSchema, confirmActionSchema, respondSuggestionSchema, updatePreferencesSchema, createProviderConfigSchema, updateProviderConfigSchema } from '../schemas/chat.js'
 
@@ -223,12 +223,86 @@ export async function chatRoutes(app: FastifyInstance) {
 
             // preview_import 预览模式：挂起 LLM，等待用户确认后再继续
             if (tool.name === 'preview_import' && (args as any).mode === 'preview' && result.success) {
+              console.log('[preview_import] registering confirmation for toolCallId:', toolCallId)
               const approved = await registerConfirmation(toolCallId, tool.name, 'import_preview')
               if (!approved) {
                 const entry = toolCallEntries.find((e) => e.toolCallId === toolCallId)
                 if (entry) Object.assign(entry, { status: 'error', result: { error: '用户取消了导入预览' } })
                 return { success: false, error: '用户取消了导入预览', retryable: false }
               }
+
+              // 用户确认后，消费其调整后的映射规则，重新执行映射
+              const fileId = (args as any).fileId as string
+              const userOverrides = consumeImportOverrides(fileId)
+              if (userOverrides) {
+                const mergedArgs = {
+                  ...args,
+                  accountResolutions: userOverrides.accountResolutions ?? (args as any).accountResolutions,
+                  categoryResolutions: userOverrides.categoryResolutions ?? (args as any).categoryResolutions,
+                }
+                const finalResult = await tool.execute(mergedArgs, { userId, accountBookId }) as any
+
+                // 构建供 LLM 检查的简化数据（只返回 4 个关键字段）
+                const buildReviewRecords = (records: any[]) => records.map((r: any) => ({
+                  categoryCode: r.categoryCode,
+                  categoryLabel: r.categoryLabel,
+                  mappedCategoryCode: r.mappedCategoryCode,
+                  mappedCategoryLabel: r.mappedCategoryLabel,
+                  payer: r.payer,
+                  remark: r.remark,
+                }))
+
+                const finalData = finalResult.data || {}
+                const reviewResult = {
+                  success: true,
+                  retryable: false,
+                  data: {
+                    mode: 'review',
+                    source: finalData.source,
+                    records: finalData.records ? buildReviewRecords(finalData.records) : [],
+                    unrecognizedRecords: finalData.unrecognizedRecords ? buildReviewRecords(finalData.unrecognizedRecords) : [],
+                    unmatchedAccounts: finalData.unmatchedAccounts || [],
+                    unmatchedCategories: finalData.unmatchedCategories || [],
+                    stats: finalData.stats,
+                    message: '请检查以上映射结果是否正确。确认无误后调用 confirm_import 工具导入，如有个别错误请告知用户。',
+                  },
+                }
+
+                const reviewDurationMs = Date.now() - start
+                sendSSE('tool-result', { toolCallId, toolName: tool.name, result: reviewResult, durationMs: reviewDurationMs, status: 'success' })
+
+                logToolCall({ userId, sessionId: session.id, action: 'tool_call', toolName: tool.name, input: args, output: reviewResult, durationMs: reviewDurationMs, status: 'success' })
+                const entry = toolCallEntries.find((e) => e.toolCallId === toolCallId)
+                if (entry) Object.assign(entry, { result: reviewResult, durationMs: reviewDurationMs, status: 'success' })
+                return reviewResult
+              }
+            }
+
+            // confirm_import 确认导入预览模式：挂起 LLM，等待用户确认后执行导入
+            if (tool.name === 'confirm_import' && result.success && (result as any).data?.mode === 'confirm_preview') {
+              console.log('[confirm_import] registering confirmation for toolCallId:', toolCallId)
+              const approved = await registerConfirmation(toolCallId, tool.name, 'confirm_import')
+              if (!approved) {
+                const entry = toolCallEntries.find((e) => e.toolCallId === toolCallId)
+                if (entry) Object.assign(entry, { status: 'error', result: { error: '用户取消了导入' } })
+                return { success: false, error: '用户取消了导入', retryable: false }
+              }
+
+              const fileId = (args as any).fileId as string
+              const userOverrides = consumeImportOverrides(fileId)
+              const mergedArgs = { ...args, _execute: true }
+              if (userOverrides?.ownerId) {
+                mergedArgs.ownerId = userOverrides.ownerId
+              }
+
+              const finalResult = await tool.execute(mergedArgs, { userId, accountBookId }) as any
+              const finalDurationMs = Date.now() - start
+              sendSSE('tool-result', { toolCallId, toolName: tool.name, result: finalResult, durationMs: finalDurationMs, status: finalResult.success ? 'success' : 'error' })
+
+              logToolCall({ userId, sessionId: session.id, action: 'tool_call', toolName: tool.name, input: mergedArgs, output: finalResult, durationMs: finalDurationMs, status: finalResult.success ? 'success' : 'error' })
+              const entry = toolCallEntries.find((e) => e.toolCallId === toolCallId)
+              if (entry) Object.assign(entry, { result: finalResult, durationMs: finalDurationMs, status: finalResult.success ? 'success' : 'error' })
+              return finalResult
             }
 
             logToolCall({ userId, sessionId: session.id, action: 'tool_call', toolName: tool.name, input: args, output: result, durationMs, status })
@@ -387,17 +461,22 @@ export async function chatRoutes(app: FastifyInstance) {
     const { toolCallId, approved, data } = parsed.data
     const userId = (req as any).user.id as string
 
-    // 存储用户修改后的导入映射数据，供 confirm_import 使用
+    // 存储用户修改后的导入映射数据，供 confirm_import 使用（合并已有数据避免覆盖）
     if (data?.fileId) {
+      const existing = peekImportOverrides(data.fileId) || {}
       storeImportOverrides(data.fileId, {
-        accountResolutions: data.accountResolutions,
-        categoryResolutions: data.categoryResolutions,
-        unrecognizedResolutions: data.unrecognizedResolutions,
+        accountResolutions: data.accountResolutions ?? existing.accountResolutions,
+        categoryResolutions: data.categoryResolutions ?? existing.categoryResolutions,
+        unrecognizedResolutions: data.unrecognizedResolutions ?? existing.unrecognizedResolutions,
+        ownerId: data.ownerId ?? existing.ownerId,
       })
     }
 
     const handled = confirmAction(toolCallId, approved)
-    if (!handled) return reply.status(404).send({ message: '确认已过期或不存在' })
+    if (!handled) {
+      console.log('[confirm] toolCallId not found:', toolCallId, 'pending keys:', getPendingConfirmations().map(p => p.toolCallId))
+      return reply.status(404).send({ message: '确认已过期或不存在' })
+    }
 
     logToolCall({ userId, action: approved ? 'confirm' : 'reject', toolName: toolCallId })
 

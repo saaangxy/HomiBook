@@ -41,7 +41,7 @@ export const previewImportTool: ToolDef = {
       },
       categoryResolutions: {
         type: 'array',
-        description: 'AI 提供的分类映射规则。用于将源分类名映射到系统分类编码。',
+        description: 'AI 提供的分类映射规则。用于将源分类名映射到系统分类编码。通过交易方名称和说明字段可细分明确具体类型',
         items: {
           type: 'object',
           properties: {
@@ -102,39 +102,57 @@ export const previewImportTool: ToolDef = {
       return { success: false, error: parseResult.errors[0], retryable: false }
     }
 
-    // ---- AI 提供的账户映射：预填 idMap ----
-    const aiPreMappings = new Map<string, string | null>()
+    // ---- 合并 DB 映射规则 + AI 映射规则（内存合并，不写 DB）----
     const newAccountCreations: { sourceAccountName: string; name: string; type: string }[] = []
-    const aiCategoryMap = new Map<string, { targetCategoryCode: string; recordType?: string; payerContains?: string; descriptionContains?: string }>()
 
+    // 从 DB 加载映射
+    const { idMap: dbAccountMappings, nameRecord: accountMappingNames } = await applyAccountMappings(source, parseResult.rows, ctx.accountBookId)
+
+    // AI 账户映射覆盖 DB 映射（现有账户 → 直接用 ID；新建账户 → 记录供前端展示）
+    const accountMappings = new Map(dbAccountMappings)
     if (accountResolutions) {
       for (const ar of accountResolutions) {
         if (ar.action === 'existing' && ar.targetAccountId) {
-          aiPreMappings.set(ar.sourceAccountName, ar.targetAccountId)
+          accountMappings.set(ar.sourceAccountName, ar.targetAccountId)
         } else if (ar.action === 'create' && ar.targetAccountName && ar.accountType) {
-          // 新建账户：用占位符标记，账户将在 confirm_import 时创建
-          aiPreMappings.set(ar.sourceAccountName, `__new__${ar.targetAccountName}`)
+          accountMappings.set(ar.sourceAccountName, `__new__${ar.targetAccountName}`)
           newAccountCreations.push({ sourceAccountName: ar.sourceAccountName, name: ar.targetAccountName, type: ar.accountType })
         }
       }
     }
 
-    if (categoryResolutions) {
-      for (const cr of categoryResolutions) {
-        // 用 sourceCategory + recordType 作为组合键
-        const key = cr.recordType ? `${cr.sourceCategory}::${cr.recordType}` : cr.sourceCategory
-        aiCategoryMap.set(key, cr)
+    // 匹配账户
+    const { unmatched: unmatchedAccounts, nameMatched, accounts } = await resolveAccountsForTool(ctx.accountBookId, parseResult.rows, accountMappings)
+
+    // AI 已解析的账户加回 unmatchedAccounts，供前端展示预填充状态
+    if (accountResolutions && accountResolutions.length > 0) {
+      const existingUnmatchedNames = new Set(unmatchedAccounts.map(ua => ua.csvName))
+      for (const ar of accountResolutions) {
+        if (!existingUnmatchedNames.has(ar.sourceAccountName)) {
+          unmatchedAccounts.push({
+            csvName: ar.sourceAccountName,
+            suggestedType: ar.accountType || '',
+            suggestedName: ar.targetAccountName || ar.sourceAccountName,
+            aiResolution: ar,
+          })
+        }
       }
     }
 
-    // ---- 应用 AI 分类映射到记录 ----
+    // DB 分类映射先应用
+    const { unmatched: dbUnmatchedCategories, allDictItems } = await applyCategoryMappings(source, parseResult.rows)
+
+    // AI 分类映射覆盖（AI 优先于 DB，按 sourceCategory + recordType 匹配）
     if (categoryResolutions && categoryResolutions.length > 0) {
+      const aiCategoryMap = new Map<string, typeof categoryResolutions[number]>()
+      for (const cr of categoryResolutions) {
+        const key = cr.recordType ? `${cr.sourceCategory}::${cr.recordType}` : cr.sourceCategory
+        aiCategoryMap.set(key, cr)
+      }
       for (const r of parseResult.rows) {
-        // 按 recordType 精确匹配优先，其次不限定 recordType
         const keyWithType = `${r.categoryCode}::${r.type}`
         const cr = aiCategoryMap.get(keyWithType) || aiCategoryMap.get(r.categoryCode || '')
         if (cr) {
-          // 检查过滤条件
           if (cr.payerContains && r.payer && !r.payer.includes(cr.payerContains)) continue
           if (cr.descriptionContains && r.remark && !r.remark.includes(cr.descriptionContains)) continue
           r.mappedCategoryCode = cr.targetCategoryCode
@@ -142,22 +160,47 @@ export const previewImportTool: ToolDef = {
       }
     }
 
-    // 应用账户映射（DB 规则）
-    const { idMap: accountMappings, nameRecord: accountMappingNames } = await applyAccountMappings(source, parseResult.rows, ctx.accountBookId)
-
-    // 预览模式：不合并 AI 映射到匹配流程，让未匹配账户仍显示在列表中供用户审查
-    // AI 映射通过 accountResolutions 参数传给前端回显
-    if (isAnalyzeMode || !accountResolutions) {
-      for (const [csvName, id] of aiPreMappings) {
-        accountMappings.set(csvName, id)
+    // 重新计算 unmatchedCategories：AI 覆盖后可能减少了未匹配项
+    const unmatchedCategories: typeof dbUnmatchedCategories = []
+    const mappedSourceCategories = new Set<string>()
+    for (const r of parseResult.rows) {
+      if (r.categoryCode && r.mappedCategoryCode) {
+        mappedSourceCategories.add(r.categoryCode)
       }
     }
-
-    // 匹配账户
-    const { unmatched: unmatchedAccounts, nameMatched, accounts } = await resolveAccountsForTool(ctx.accountBookId, parseResult.rows, accountMappings)
-
-    // 匹配分类（在 AI 预填之后）
-    const { unmatched: unmatchedCategories, allDictItems } = await applyCategoryMappings(source, parseResult.rows)
+    // 收集每个分类出现的记录类型（用于未匹配展示）
+    const categoryTypes = new Map<string, Set<string>>()
+    for (const r of parseResult.rows) {
+      if (!r.categoryCode) continue
+      if (mappedSourceCategories.has(r.categoryCode)) continue
+      const types = categoryTypes.get(r.categoryCode) || new Set()
+      types.add(r.type)
+      categoryTypes.set(r.categoryCode, types)
+    }
+    for (const uc of dbUnmatchedCategories) {
+      if (!mappedSourceCategories.has(uc.sourceCategory)) {
+        unmatchedCategories.push(uc)
+      }
+    }
+    // AI 已映射的分类加回 unmatchedCategories，供前端展示预填充状态
+    if (categoryResolutions && categoryResolutions.length > 0) {
+      const existingUnmatchedSources = new Set(unmatchedCategories.map(uc => uc.sourceCategory))
+      for (const cr of categoryResolutions) {
+        if (!existingUnmatchedSources.has(cr.sourceCategory)) {
+          const types = new Set<string>()
+          for (const r of parseResult.rows) {
+            if (r.categoryCode === cr.sourceCategory) types.add(r.type)
+          }
+          unmatchedCategories.push({
+            sourceCategory: cr.sourceCategory,
+            suggestedCode: cr.targetCategoryCode,
+            types: [...types],
+            aiTargetCode: cr.targetCategoryCode,
+            aiRecordType: cr.recordType,
+          })
+        }
+      }
+    }
 
     // 分离正常记录和未识别记录
     const allNormalRecords = parseResult.rows.filter(r => r.type !== 'UNKNOWN')
@@ -314,7 +357,7 @@ async function resolveAccountsForTool(bookId: string, rows: ParsedRow[], idMap?:
     }
   }
 
-  const unmatched: { csvName: string; suggestedType: string; suggestedName: string; bankName?: string; accountNo?: string; candidates?: { id: string; name: string }[] }[] = []
+  const unmatched: { csvName: string; suggestedType: string; suggestedName: string; bankName?: string; accountNo?: string; candidates?: { id: string; name: string }[]; aiResolution?: { sourceAccountName: string; action: 'existing' | 'create'; targetAccountId?: string; targetAccountName?: string; accountType?: string } }[] = []
   const seen = new Set<string>()
 
   for (const name of accountNames) {

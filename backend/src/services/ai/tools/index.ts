@@ -65,6 +65,7 @@ export function registerConfirmation(
 // 处理用户确认
 export function confirmAction(toolCallId: string, approved: boolean): boolean {
   const pending = pendingConfirmations.get(toolCallId)
+  console.log('[confirmAction] looking for:', toolCallId, 'found:', !!pending, 'pending keys:', getPendingConfirmations().map(p => p.toolCallId))
   if (!pending) return false
 
   pendingConfirmations.delete(toolCallId)
@@ -134,6 +135,7 @@ interface UserImportOverrides {
   accountResolutions?: { sourceAccountName: string; action: 'existing' | 'create'; targetAccountId?: string; targetAccountName?: string; accountType?: string }[]
   categoryResolutions?: { sourceCategory: string; targetCategoryCode: string; recordType?: string; payerContains?: string; descriptionContains?: string }[]
   unrecognizedResolutions?: { rowIndex: number; type: string; accountId: string; categoryCode: string }[]
+  ownerId?: string
 }
 
 const userImportOverrides = new Map<string, UserImportOverrides>()
@@ -146,6 +148,10 @@ export function consumeImportOverrides(fileId: string): UserImportOverrides | un
   const data = userImportOverrides.get(fileId)
   userImportOverrides.delete(fileId)
   return data
+}
+
+export function peekImportOverrides(fileId: string): UserImportOverrides | undefined {
+  return userImportOverrides.get(fileId)
 }
 
 // 生成 AI SDK 可用的工具定义列表

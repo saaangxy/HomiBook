@@ -114,6 +114,7 @@ export async function confirmAction(toolCallId: string, approved: boolean, data?
   accountResolutions?: { sourceAccountName: string; action: 'existing' | 'create'; targetAccountId?: string; targetAccountName?: string; accountType?: string }[]
   categoryResolutions?: { sourceCategory: string; targetCategoryCode: string; recordType?: string; payerContains?: string; descriptionContains?: string }[]
   unrecognizedResolutions?: { rowIndex: number; type: string; accountId: string; categoryCode: string }[]
+  ownerId?: string
 }) {
   return api.post<{ success: boolean }>(`${BASE}/confirm`, { toolCallId, approved, data })
 }

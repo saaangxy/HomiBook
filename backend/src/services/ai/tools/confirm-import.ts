@@ -1,16 +1,16 @@
 import type { ToolDef, ToolContext } from './types.js'
 import { prisma } from '../../../app.js'
 import { parseAlipayCSV, parseWechatXlsx, parseJdCSV, parseCsvWithMapping } from '../../../routes/import-export.js'
-import { applyAccountMappings, matchAccountByName, inferAccount, type ParsedRow } from '../../import/shared.js'
-import { consumeImportOverrides } from './index.js'
+import { applyAccountMappings, applyCategoryMappings, matchAccountByName, inferAccount, type ParsedRow } from '../../import/shared.js'
+import { consumeImportOverrides, peekImportOverrides } from './index.js'
 import { refreshAccountBalance } from '../../../routes/account.js'
 import fs from 'fs'
 import path from 'path'
 
 export const confirmImportTool: ToolDef = {
   name: 'confirm_import',
-  description: '确认导入账单数据。传入 fileId、source 和 AI 生成的映射规则，将解析后的流水记录写入数据库。应在 preview_import 返回无未匹配项后调用。',
-  requireConfirm: true,
+  description: '确认导入账单数据。传入 fileId、source 和经过用户确认的映射规则，展示导入预览后可执行导入。',
+  requireConfirm: false,
   parameters: {
     type: 'object',
     properties: {
@@ -56,12 +56,13 @@ export const confirmImportTool: ToolDef = {
           required: ['sourceCategory', 'targetCategoryCode'],
         },
       },
+      _execute: { type: 'boolean', description: '内部参数：是否执行实际导入' },
     },
     required: ['fileId', 'source'],
   },
 
   async execute(args: any, ctx: ToolContext) {
-    const { fileId, source, columnMapping, typeMapping, headerRow, ownerId, accountResolutions, categoryResolutions } = args as {
+    const { fileId, source, columnMapping, typeMapping, headerRow, ownerId, accountResolutions, categoryResolutions, _execute } = args as {
       fileId: string
       source: 'alipay' | 'wechat' | 'csv' | 'jd'
       columnMapping?: Record<string, string>
@@ -70,6 +71,7 @@ export const confirmImportTool: ToolDef = {
       ownerId?: string
       accountResolutions?: { sourceAccountName: string; action: 'existing' | 'create'; targetAccountId?: string; targetAccountName?: string; accountType?: string }[]
       categoryResolutions?: { sourceCategory: string; targetCategoryCode: string; recordType?: string; payerContains?: string; descriptionContains?: string }[]
+      _execute?: boolean
     }
 
     const effectiveOwnerId = ownerId || ctx.userId
@@ -103,8 +105,9 @@ export const confirmImportTool: ToolDef = {
       return { success: false, error: parseResult.errors[0], retryable: false }
     }
 
-    // ---- 消费用户在前端 ImportPreviewInteractive 中修改后的映射规则 ----
-    const userOverrides = consumeImportOverrides(fileId)
+    // ---- 合并映射规则：用户覆盖 > LLM 参数 ----
+    // Phase 1 (preview): peek 不删除，Phase 2 (execute) 才 consume 删除
+    const userOverrides = _execute ? consumeImportOverrides(fileId) : peekImportOverrides(fileId)
     const effectiveAccountResolutions = userOverrides?.accountResolutions ?? accountResolutions
     const effectiveCategoryResolutions = userOverrides?.categoryResolutions ?? categoryResolutions
 
@@ -121,7 +124,9 @@ export const confirmImportTool: ToolDef = {
       }
     }
 
-    // 应用 AI 分类映射
+    // 应用分类映射（DB 规则 + AI 规则合并）
+    // const { allDictItems } = await applyCategoryMappings(source, parseResult.rows)
+
     if (effectiveCategoryResolutions && effectiveCategoryResolutions.length > 0) {
       const aiCategoryMap = new Map<string, typeof effectiveCategoryResolutions[number]>()
       for (const cr of effectiveCategoryResolutions) {
@@ -197,14 +202,13 @@ export const confirmImportTool: ToolDef = {
       })
     }
 
-    // 检查未匹配账户（不在 aiPreMappings 中的）
+    // 检查未匹配账户（自动推断）
     const seenAccounts = new Set<string>()
     for (const row of parseResult.rows) {
       if (seenAccounts.has(row.accountName)) continue
       seenAccounts.add(row.accountName)
       if (accountMappings.has(row.accountName)) continue
       if (nameToId.has(row.accountName)) continue
-      // 仍有未匹配账户 → 用推断信息创建
       const inferred = inferAccount(row.accountName)
       if (inferred) {
         accountCreations.push({
@@ -238,7 +242,7 @@ export const confirmImportTool: ToolDef = {
     // 构建记录列表（只包含正常记录）
     const normalRecords = parseResult.rows.filter(r => r.type !== 'UNKNOWN')
 
-    // 填充 accountId / toAccountId（保留用户已设置的 accountId，如未识别记录手动指定的）
+    // 填充 accountId / toAccountId
     for (const r of normalRecords) {
       if (!r.accountId) {
         r.accountId = accountMappings.get(r.accountName) || nameToId.get(r.accountName) || null
@@ -248,7 +252,78 @@ export const confirmImportTool: ToolDef = {
       }
     }
 
-    // 导入记录
+    // ---- 获取账本成员（供归属人选择） ----
+    const members = await prisma.accountBookMember.findMany({
+      where: { accountBookId: ctx.accountBookId },
+      select: { user: { select: { id: true, name: true, email: true } } },
+    })
+    const bookOwner = await prisma.accountBook.findUnique({
+      where: { id: ctx.accountBookId },
+      select: { owner: { select: { id: true, name: true, email: true } } },
+    })
+
+    // ---- 阶段1：返回预览数据 ----
+    if (!_execute) {
+      // 查询分类标签
+      const categoryCodes = new Set<string>()
+      for (const r of normalRecords) {
+        if (r.categoryCode) categoryCodes.add(r.categoryCode)
+        if (r.mappedCategoryCode) categoryCodes.add(r.mappedCategoryCode)
+      }
+      const dictEntries = categoryCodes.size > 0
+        ? await prisma.dictionary.findMany({ where: { code: { in: [...categoryCodes] } }, select: { code: true, label: true } })
+        : []
+      const labelMap = new Map(dictEntries.map(d => [d.code, d.label]))
+
+      const ACCOUNT_TYPE_LABELS: Record<string, string> = {
+        BANK_DEBIT: '储蓄卡', CREDIT_CARD: '信用卡', ALIPAY: '支付宝',
+        WECHAT: '微信', INVESTMENT: '投资', CASH: '现金', RECHARGE_CARD: '充值卡', OTHER: '其他',
+      }
+
+      return {
+        success: true,
+        retryable: false,
+        data: {
+          mode: 'confirm_preview',
+          source,
+          fileId,
+          accountsToCreate: accountCreations.map(a => ({
+            name: a.name,
+            type: a.type,
+            typeLabel: ACCOUNT_TYPE_LABELS[a.type] || a.type,
+          })),
+          records: normalRecords.map(r => ({
+            rowIndex: r.rowIndex,
+            date: r.date,
+            type: r.type,
+            amount: r.amount,
+            accountName: r.accountName,
+            categoryCode: r.categoryCode,
+            categoryLabel: r.categoryCode ? (labelMap.get(r.categoryCode) || r.categoryCode) : null,
+            mappedCategoryCode: r.mappedCategoryCode,
+            mappedCategoryLabel: r.mappedCategoryCode ? (labelMap.get(r.mappedCategoryCode) || r.mappedCategoryCode) : null,
+            payer: r.payer,
+            remark: r.remark,
+          })),
+          stats: {
+            totalRecords: normalRecords.length,
+            incomeCount: normalRecords.filter(r => r.type === 'INCOME').length,
+            expenseCount: normalRecords.filter(r => r.type === 'EXPENSE').length,
+            transferCount: normalRecords.filter(r => r.type === 'TRANSFER').length,
+            accountsToCreate: accountCreations.length,
+          },
+          ownerId: effectiveOwnerId,
+          owners: [
+            ...(bookOwner ? [{ id: bookOwner.owner.id, name: bookOwner.owner.name || bookOwner.owner.email, isOwner: true }] : []),
+            ...members.map(m => ({ id: m.user.id, name: m.user.name || m.user.email, isOwner: false })),
+          ],
+          accountBookId: ctx.accountBookId,
+        },
+      }
+    }
+
+    // ---- 阶段2：执行导入 ----
+
     const records = normalRecords.map(r => ({
       date: r.date,
       type: r.type as 'INCOME' | 'EXPENSE' | 'TRANSFER',

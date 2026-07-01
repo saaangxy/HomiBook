@@ -36,12 +36,15 @@ interface UnmatchedAccount {
   bankName?: string
   accountNo?: string
   candidates?: { id: string; name: string }[]
+  aiResolution?: { sourceAccountName: string; action: 'existing' | 'create'; targetAccountId?: string; targetAccountName?: string; accountType?: string }
 }
 
 interface UnmatchedCategory {
   sourceCategory: string
   suggestedCode: string | null
   types: string[]
+  aiTargetCode?: string
+  aiRecordType?: string
 }
 
 interface DictEntry {
@@ -109,7 +112,7 @@ interface Props {
   onImportComplete?: () => void
 }
 
-export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiArgs, onImportComplete }: Props) {
+export function ImportPreviewInteractive({ data, toolCallId, aiArgs, onImportComplete }: Props) {
   const stats = data.stats
   const records = data.records || []
   const unrecognizedRecords = data.unrecognizedRecords || []
@@ -140,6 +143,7 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
   // 确认
   const [confirmed, setConfirmed] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const [confirmError, setConfirmError] = useState<string | null>(null)
 
   // 额外分类映射
   const [extraUnmatched, setExtraUnmatched] = useState<Array<{ id: string; sourceCategory: string; type: string }>>([])
@@ -155,7 +159,14 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
     // 账户解析
     const acctRes: Record<string, AccountResolution> = {}
     for (const ua of data.unmatchedAccounts || []) {
-      if (ua.candidates?.length) {
+      if (ua.aiResolution) {
+        const ar = ua.aiResolution
+        if (ar.action === 'existing' && ar.targetAccountId) {
+          acctRes[ua.csvName] = { action: 'existing', accountId: ar.targetAccountId }
+        } else if (ar.action === 'create' && ar.targetAccountName && ar.accountType) {
+          acctRes[ua.csvName] = { action: 'create', name: ar.targetAccountName, type: ar.accountType }
+        }
+      } else if (ua.candidates?.length) {
         acctRes[ua.csvName] = { action: 'existing', accountId: ua.candidates[0].id }
       } else {
         acctRes[ua.csvName] = { action: 'create', name: ua.suggestedName, type: ua.suggestedType }
@@ -179,7 +190,7 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
       for (const type of uc.types) {
         const key = `${uc.sourceCategory}::${type}`
         catRes[key] = {
-          targetCode: uc.suggestedCode || '',
+          targetCode: uc.aiTargetCode || uc.suggestedCode || '',
           save: true,
           payerContains: '',
           descriptionContains: '',
@@ -317,19 +328,6 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
       {/* 记录列表 */}
       {tab === 'records' && (
         <>
-          {/* 映射分类摘要 */}
-          {data.mappedCategories && data.mappedCategories.length > 0 && (
-            <div className="text-[10px] space-y-0.5">
-              <span className="text-muted-foreground">分类映射结果：</span>
-              {data.mappedCategories.map(mc => (
-                <div key={`${mc.sourceCategory}-${mc.targetCode}`} className="flex items-center gap-1 text-muted-foreground">
-                  <span>{mc.sourceLabel}</span>
-                  <span>→</span>
-                  <span className="text-[#22c55e]">{mc.targetLabel}</span>
-                </div>
-              ))}
-            </div>
-          )}
           <div className="rounded border overflow-hidden max-h-64 overflow-y-auto">
           <table className="w-full text-[10px]">
             <thead className="bg-muted/30 sticky top-0">
@@ -340,23 +338,33 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
                 <th className="px-1 py-0.5 text-right">金额</th>
                 <th className="px-1 py-0.5 text-left">账户</th>
                 <th className="px-1 py-0.5 text-left">分类</th>
+                <th className="px-1 py-0.5 text-left">映射分类</th>
                 <th className="px-1 py-0.5 text-left">交易方</th>
                 <th className="px-1 py-0.5 text-left">说明</th>
               </tr>
             </thead>
             <tbody>
-              {allRecords.map((r, i) => (
+              {allRecords.map((r, i) => {
+                const displayDate = (() => {
+                  try {
+                    const d = new Date(r.date)
+                    if (isNaN(d.getTime())) return r.date
+                    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+                  } catch { return r.date }
+                })()
+                return (
                 <tr key={i} className={cn('border-t', r.type === 'UNKNOWN' && 'bg-red-50/30')}>
                   <td className="px-1 py-0.5 text-muted-foreground">{r.rowIndex}</td>
-                  <td className="px-1 py-0.5">{r.date}</td>
+                  <td className="px-1 py-0.5">{displayDate}</td>
                   <td className={cn('px-1 py-0.5', TYPE_COLORS[r.type])}>{TYPE_LABELS[r.type] || r.type}</td>
                   <td className="px-1 py-0.5 text-right">{r.amount.toFixed(2)}</td>
                   <td className="px-1 py-0.5">{r.accountName}</td>
-                  <td className="px-1 py-0.5">{r.mappedCategoryLabel || r.categoryLabel || r.mappedCategoryCode || r.categoryCode || '-'}</td>
+                  <td className="px-1 py-0.5">{r.categoryLabel || r.categoryCode || '-'}</td>
+                  <td className="px-1 py-0.5">{r.mappedCategoryLabel || r.mappedCategoryCode || '-'}</td>
                   <td className="px-1 py-0.5 max-w-16 truncate">{r.payer || '-'}</td>
                   <td className="px-1 py-0.5 text-muted-foreground max-w-20 truncate">{r.remark || '-'}</td>
                 </tr>
-              ))}
+              )})}
             </tbody>
           </table>
         </div>
@@ -646,6 +654,11 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
 
       {/* 操作栏 */}
       <div className="border-t pt-2 space-y-1.5">
+        {confirmError && (
+          <div className="text-xs text-[#ef4444] bg-red-50 border border-red-200 rounded p-2">
+            {confirmError}
+          </div>
+        )}
         {!confirmed ? (
           <Button
             size="sm"
@@ -653,8 +666,10 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
             disabled={confirming}
             onClick={async () => {
               setConfirming(true)
+              setConfirmError(null)
               try {
                 if (toolCallId) {
+                  console.log('[ImportPreviewInteractive] confirming with toolCallId:', toolCallId)
                   // 构建用户修改后的账户映射
                   const userAccountResolutions: { sourceAccountName: string; action: 'existing' | 'create'; targetAccountId?: string; targetAccountName?: string; accountType?: string }[] = []
                   for (const [csvName, res] of Object.entries(accountResolutions)) {
@@ -710,8 +725,8 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
                 }
                 setConfirmed(true)
                 onImportComplete?.()
-              } catch {
-                // ignore
+              } catch (err: any) {
+                setConfirmError(err?.message || '确认请求失败')
               }
               setConfirming(false)
             }}

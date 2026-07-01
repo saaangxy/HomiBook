@@ -51,6 +51,7 @@ export const confirmActionSchema = z.object({
       accountId: z.string(),
       categoryCode: z.string(),
     })).optional(),
+    ownerId: z.string().optional(),
   }).optional(),
 })
 

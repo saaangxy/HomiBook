@@ -6,6 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Wrench, CheckCircle2, XCircle, Loader2, HelpCircle, ChevronDown, MessageSquareMore } from 'lucide-react'
 import { useState } from 'react'
 import { ImportPreviewInteractive, type ImportPreviewData } from './ImportPreviewInteractive'
+import { ImportConfirmCard } from './ImportConfirmCard'
 
 interface Props {
   toolCall: ToolCallEntry
@@ -70,10 +71,13 @@ export function ToolCallCard({ toolCall }: Props) {
   const [importCompleted, setImportCompleted] = useState(false)
 
   const isPreviewImport = toolCall.toolName === 'preview_import'
+  const isConfirmImport = toolCall.toolName === 'confirm_import'
 
   // 只有 mode=preview 时显示交互卡片，analyze 模式等同查询工具直接返回数据
   const args = typeof toolCall.args === 'object' && toolCall.args != null ? toolCall.args as Record<string, unknown> : null
   const isInteractivePreview = isPreviewImport && args?.mode === 'preview'
+  const confirmResult = isConfirmImport && toolCall.status === 'success' ? ((toolCall.result as any)?.data ?? null) : null
+  const isConfirmCard = confirmResult && (confirmResult.mode === 'confirm_preview' || confirmResult.imported != null)
 
   const handleConfirm = async (approved: boolean) => {
     setConfirming(true)
@@ -159,8 +163,15 @@ export function ToolCallCard({ toolCall }: Props) {
         </div>
       )}
 
+      {/* confirm_import 交互卡片（展示导入确认预览或导入结果） */}
+      {isConfirmCard && showResult && (
+        <div className="mt-2">
+          <ImportConfirmCard data={confirmResult} toolCallId={toolCall.toolCallId} />
+        </div>
+      )}
+
       {/* 其他工具结果（含 preview_import 分析模式）—— 折叠内 */}
-      {!isInteractivePreview && showResult && expanded && (
+      {!isInteractivePreview && !isConfirmCard && showResult && expanded && (
         <div className="mt-1.5">
           <span className="text-muted-foreground text-[10px] uppercase tracking-wide">结果</span>
           <div className="mt-0.5 text-muted-foreground">

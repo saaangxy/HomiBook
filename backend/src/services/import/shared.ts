@@ -30,12 +30,17 @@ export interface UnmatchedAccount {
   bankName?: string
   accountNo?: string
   candidates?: { id: string; name: string }[]
+  /** AI 提供的解析信息（preview 模式带回，供前端展示预填充状态） */
+  aiResolution?: { sourceAccountName: string; action: 'existing' | 'create'; targetAccountId?: string; targetAccountName?: string; accountType?: string }
 }
 
 export interface UnmatchedCategory {
   sourceCategory: string
   suggestedCode: string | null
   types: string[]
+  /** AI 提供的目标分类编码（preview 模式带回，供前端展示预填充状态） */
+  aiTargetCode?: string
+  aiRecordType?: string
 }
 
 // ======================== 账户名推断 ========================
