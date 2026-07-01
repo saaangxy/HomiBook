@@ -217,13 +217,10 @@ export const previewImportTool: ToolDef = {
           source,
           mode: 'analyze',
           records: unmatchedCategoryRecords.map(r => ({
-            rowIndex: r.rowIndex, date: r.date, type: r.type, amount: r.amount,
-            accountName: r.accountName, categoryCode: r.categoryCode,
-            payer: r.payer, remark: r.remark,
+            type: r.type, categoryCode: r.categoryCode, payer: r.payer, remark: r.remark,
           })),
           unrecognizedRecords: allUnrecognizedRecords.map(r => ({
-            rowIndex: r.rowIndex, date: r.date, type: r.type, amount: r.amount,
-            accountName: r.accountName, payer: r.payer, remark: r.remark,
+            amount: r.amount, accountName: r.accountName, payer: r.payer, remark: r.remark,
           })),
           unmatchedAccounts,
           unmatchedCategories,
