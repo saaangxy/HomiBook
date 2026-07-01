@@ -2,6 +2,7 @@ import type { ToolDef, ToolContext } from './types.js'
 import { prisma } from '../../../app.js'
 import { parseAlipayCSV, parseWechatXlsx, parseJdCSV, parseCsvWithMapping } from '../../../routes/import-export.js'
 import { applyAccountMappings, matchAccountByName, inferAccount, type ParsedRow } from '../../import/shared.js'
+import { consumeImportOverrides } from './index.js'
 import { refreshAccountBalance } from '../../../routes/account.js'
 import fs from 'fs'
 import path from 'path'
@@ -102,10 +103,28 @@ export const confirmImportTool: ToolDef = {
       return { success: false, error: parseResult.errors[0], retryable: false }
     }
 
+    // ---- 消费用户在前端 ImportPreviewInteractive 中修改后的映射规则 ----
+    const userOverrides = consumeImportOverrides(fileId)
+    const effectiveAccountResolutions = userOverrides?.accountResolutions ?? accountResolutions
+    const effectiveCategoryResolutions = userOverrides?.categoryResolutions ?? categoryResolutions
+
+    // 应用用户指定的未识别记录处理
+    if (userOverrides?.unrecognizedResolutions && userOverrides.unrecognizedResolutions.length > 0) {
+      const unresMap = new Map(userOverrides.unrecognizedResolutions.map(u => [u.rowIndex, u]))
+      for (const r of parseResult.rows) {
+        const unres = unresMap.get(r.rowIndex)
+        if (unres && r.type === 'UNKNOWN') {
+          r.type = unres.type as 'INCOME' | 'EXPENSE' | 'TRANSFER'
+          r.accountId = unres.accountId || null
+          if (unres.categoryCode) r.mappedCategoryCode = unres.categoryCode
+        }
+      }
+    }
+
     // 应用 AI 分类映射
-    if (categoryResolutions && categoryResolutions.length > 0) {
-      const aiCategoryMap = new Map<string, typeof categoryResolutions[number]>()
-      for (const cr of categoryResolutions) {
+    if (effectiveCategoryResolutions && effectiveCategoryResolutions.length > 0) {
+      const aiCategoryMap = new Map<string, typeof effectiveCategoryResolutions[number]>()
+      for (const cr of effectiveCategoryResolutions) {
         const key = cr.recordType ? `${cr.sourceCategory}::${cr.recordType}` : cr.sourceCategory
         aiCategoryMap.set(key, cr)
       }
@@ -123,8 +142,8 @@ export const confirmImportTool: ToolDef = {
     // 构建 AI 账户预映射
     const aiPreMappings = new Map<string, string | null>()
     const newAccountCreations: { sourceAccountName: string; name: string; type: string }[] = []
-    if (accountResolutions) {
-      for (const ar of accountResolutions) {
+    if (effectiveAccountResolutions) {
+      for (const ar of effectiveAccountResolutions) {
         if (ar.action === 'existing' && ar.targetAccountId) {
           aiPreMappings.set(ar.sourceAccountName, ar.targetAccountId)
         } else if (ar.action === 'create' && ar.targetAccountName && ar.accountType) {
@@ -204,8 +223,8 @@ export const confirmImportTool: ToolDef = {
 
     // 构建 newMappings
     const newMappings: { sourceCategory: string; targetCategoryCode: string; payerContains?: string; descriptionContains?: string; recordType?: string }[] = []
-    if (categoryResolutions) {
-      for (const cr of categoryResolutions) {
+    if (effectiveCategoryResolutions) {
+      for (const cr of effectiveCategoryResolutions) {
         newMappings.push({
           sourceCategory: cr.sourceCategory,
           targetCategoryCode: cr.targetCategoryCode,
@@ -219,10 +238,12 @@ export const confirmImportTool: ToolDef = {
     // 构建记录列表（只包含正常记录）
     const normalRecords = parseResult.rows.filter(r => r.type !== 'UNKNOWN')
 
-    // 填充 accountId / toAccountId
+    // 填充 accountId / toAccountId（保留用户已设置的 accountId，如未识别记录手动指定的）
     for (const r of normalRecords) {
-      r.accountId = accountMappings.get(r.accountName) || nameToId.get(r.accountName) || null
-      if (r.toAccountName) {
+      if (!r.accountId) {
+        r.accountId = accountMappings.get(r.accountName) || nameToId.get(r.accountName) || null
+      }
+      if (r.toAccountName && !r.toAccountId) {
         r.toAccountId = accountMappings.get(r.toAccountName) || nameToId.get(r.toAccountName) || null
       }
     }

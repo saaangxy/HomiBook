@@ -69,11 +69,6 @@ export function ToolCallCard({ toolCall }: Props) {
   const [expanded, setExpanded] = useState(false)
   const [importCompleted, setImportCompleted] = useState(false)
 
-  // 诊断日志：追踪 preview_import 工具的状态变化
-  if (toolCall.toolName === 'preview_import') {
-    console.log('[ToolCallCard] render preview_import:', { toolCallId: toolCall.toolCallId, status: toolCall.status, hasResult: toolCall.result != null, argsMode: (toolCall.args as any)?.mode })
-  }
-
   const isPreviewImport = toolCall.toolName === 'preview_import'
 
   // 只有 mode=preview 时显示交互卡片，analyze 模式等同查询工具直接返回数据
@@ -158,7 +153,7 @@ export function ToolCallCard({ toolCall }: Props) {
             const source = (toolCall.args as any)?.source || previewData.source || ''
             const accountBookId = previewData.accountBookId
             return accountBookId
-              ? <ImportPreviewInteractive data={previewData} source={source} accountBookId={accountBookId} aiArgs={toolCall.args as any} onImportComplete={() => setImportCompleted(true)} />
+              ? <ImportPreviewInteractive data={previewData} source={source} accountBookId={accountBookId} toolCallId={toolCall.toolCallId} aiArgs={toolCall.args as any} onImportComplete={() => setImportCompleted(true)} />
               : <FallbackJson data={result} />
           })()}
         </div>

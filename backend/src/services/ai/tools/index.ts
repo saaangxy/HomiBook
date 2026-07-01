@@ -126,6 +126,28 @@ export function getPendingSuggestions(): { toolCallId: string; questions: Questi
   }))
 }
 
+// ---- 用户导入覆盖数据存储 ----
+// 前端 ImportPreviewInteractive 组件中用户修改后的映射规则
+// 通过 confirmAction API 传入，由 confirm_import 消费
+
+interface UserImportOverrides {
+  accountResolutions?: { sourceAccountName: string; action: 'existing' | 'create'; targetAccountId?: string; targetAccountName?: string; accountType?: string }[]
+  categoryResolutions?: { sourceCategory: string; targetCategoryCode: string; recordType?: string; payerContains?: string; descriptionContains?: string }[]
+  unrecognizedResolutions?: { rowIndex: number; type: string; accountId: string; categoryCode: string }[]
+}
+
+const userImportOverrides = new Map<string, UserImportOverrides>()
+
+export function storeImportOverrides(fileId: string, data: UserImportOverrides) {
+  userImportOverrides.set(fileId, data)
+}
+
+export function consumeImportOverrides(fileId: string): UserImportOverrides | undefined {
+  const data = userImportOverrides.get(fileId)
+  userImportOverrides.delete(fileId)
+  return data
+}
+
 // 生成 AI SDK 可用的工具定义列表
 export function buildAITools() {
   return ALL_TOOLS.map((tool) => ({

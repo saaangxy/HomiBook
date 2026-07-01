@@ -29,6 +29,29 @@ export const updateSessionSchema = z.object({
 export const confirmActionSchema = z.object({
   toolCallId: z.string(),
   approved: z.boolean(),
+  data: z.object({
+    fileId: z.string().optional(),
+    accountResolutions: z.array(z.object({
+      sourceAccountName: z.string(),
+      action: z.enum(['existing', 'create']),
+      targetAccountId: z.string().optional(),
+      targetAccountName: z.string().optional(),
+      accountType: z.string().optional(),
+    })).optional(),
+    categoryResolutions: z.array(z.object({
+      sourceCategory: z.string(),
+      targetCategoryCode: z.string(),
+      recordType: z.string().optional(),
+      payerContains: z.string().optional(),
+      descriptionContains: z.string().optional(),
+    })).optional(),
+    unrecognizedResolutions: z.array(z.object({
+      rowIndex: z.number(),
+      type: z.string(),
+      accountId: z.string(),
+      categoryCode: z.string(),
+    })).optional(),
+  }).optional(),
 })
 
 // 回复建议

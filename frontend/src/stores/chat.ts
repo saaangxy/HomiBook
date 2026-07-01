@@ -415,7 +415,6 @@ export const useChatStore = create<ChatState>()((set, get) => ({
             break
 
           case 'tool-call':
-            console.log('[Store] tool-call received:', { toolCallId: event.toolCallId, toolName: event.toolName })
             updateMsg((msg) => ({
               ...msg,
               blocks: [
@@ -433,23 +432,21 @@ export const useChatStore = create<ChatState>()((set, get) => ({
             break
 
           case 'tool-result':
-            console.log('[Store] tool-result received:', { toolCallId: event.toolCallId, toolName: event.toolName, status: event.status, merge: event.merge })
             updateMsg((msg) => ({
               ...msg,
               blocks: msg.blocks.map((b) => {
                 if (b.type === 'tool-call' && b.toolCallId === event.toolCallId) {
                   if (event.merge?.action === 'append') {
-                    // 合并模式：将新数据追加到已有 result.data 的数组字段
+                    // 合并模式：只追加 records，其余字段以第一批为准不覆盖
                     const existing = (b as any).result || {}
                     const existingData = existing.data || {}
                     const incomingData = (event.result as any)?.data || {}
                     const mergedData: any = { ...existingData }
                     for (const key of Object.keys(incomingData)) {
-                      if (Array.isArray(incomingData[key]) && Array.isArray(mergedData[key])) {
+                      if (key === 'records' && Array.isArray(mergedData[key])) {
                         mergedData[key] = [...mergedData[key], ...incomingData[key]]
-                      } else {
-                        mergedData[key] = incomingData[key]
                       }
+                      // 其他字段（含 unrecognizedRecords）不覆盖，保持第一批的值
                     }
                     return {
                       ...b,

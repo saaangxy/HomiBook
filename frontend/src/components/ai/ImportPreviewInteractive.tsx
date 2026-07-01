@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { ACCOUNT_TYPE_LABELS, type AccountType } from '@/api/account'
-import { useChatStore } from '@/stores/chat'
+import { confirmAction } from '@/api/chat'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -100,14 +100,16 @@ interface Props {
   data: ImportPreviewData
   source: string
   accountBookId: string
+  toolCallId?: string
   aiArgs?: {
+    fileId?: string
     accountResolutions?: AIAccountResolution[]
     categoryResolutions?: AICategoryResolution[]
   }
   onImportComplete?: () => void
 }
 
-export function ImportPreviewInteractive({ data, accountBookId, aiArgs, onImportComplete }: Props) {
+export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiArgs, onImportComplete }: Props) {
   const stats = data.stats
   const records = data.records || []
   const unrecognizedRecords = data.unrecognizedRecords || []
@@ -138,7 +140,6 @@ export function ImportPreviewInteractive({ data, accountBookId, aiArgs, onImport
   // 确认
   const [confirmed, setConfirmed] = useState(false)
   const [confirming, setConfirming] = useState(false)
-  const sendMessage = useChatStore(s => s.sendMessage)
 
   // 额外分类映射
   const [extraUnmatched, setExtraUnmatched] = useState<Array<{ id: string; sourceCategory: string; type: string }>>([])
@@ -653,8 +654,60 @@ export function ImportPreviewInteractive({ data, accountBookId, aiArgs, onImport
             onClick={async () => {
               setConfirming(true)
               try {
-                // 通知 AI 继续：发送确认消息触发 confirm_import
-                sendMessage(accountBookId, '映射已确认，请继续导入')
+                if (toolCallId) {
+                  // 构建用户修改后的账户映射
+                  const userAccountResolutions: { sourceAccountName: string; action: 'existing' | 'create'; targetAccountId?: string; targetAccountName?: string; accountType?: string }[] = []
+                  for (const [csvName, res] of Object.entries(accountResolutions)) {
+                    if (res.action === 'existing' && res.accountId) {
+                      userAccountResolutions.push({ sourceAccountName: csvName, action: 'existing', targetAccountId: res.accountId })
+                    } else if (res.action === 'create' && res.name) {
+                      userAccountResolutions.push({ sourceAccountName: csvName, action: 'create', targetAccountName: res.name, accountType: res.type })
+                    }
+                  }
+
+                  // 构建用户修改后的分类映射（仅保留 save=true 且有目标分类的）
+                  const userCategoryResolutions: { sourceCategory: string; targetCategoryCode: string; recordType?: string; payerContains?: string; descriptionContains?: string }[] = []
+                  for (const [key, cr] of Object.entries(categoryResolutions)) {
+                    if (!cr.targetCode || !cr.save) continue
+                    // key 格式: "sourceCategory::TYPE" 或 "sourceCategory::TYPE::eN"
+                    const parts = key.split('::')
+                    const sourceCategory = parts[0]
+                    const recordType = parts[1] && !parts[1].startsWith('e') ? parts[1] : undefined
+                    userCategoryResolutions.push({
+                      sourceCategory,
+                      targetCategoryCode: cr.targetCode,
+                      recordType,
+                      payerContains: cr.payerContains || undefined,
+                      descriptionContains: cr.descriptionContains || undefined,
+                    })
+                  }
+
+                  // 构建未识别记录的手动指定
+                  const userUnrecognizedResolutions: { rowIndex: number; type: string; accountId: string; categoryCode: string }[] = []
+                  for (const r of unrecognizedRecords) {
+                    const res = unrecognizedResolutions[r.rowIndex]
+                    if (res?.type && res?.accountId) {
+                      userUnrecognizedResolutions.push({
+                        rowIndex: r.rowIndex,
+                        type: res.type,
+                        accountId: res.accountId,
+                        categoryCode: res.categoryCode || '',
+                      })
+                    }
+                  }
+
+                  const fileId = aiArgs?.fileId
+                  if (fileId) {
+                    await confirmAction(toolCallId, true, {
+                      fileId,
+                      accountResolutions: userAccountResolutions.length > 0 ? userAccountResolutions : undefined,
+                      categoryResolutions: userCategoryResolutions.length > 0 ? userCategoryResolutions : undefined,
+                      unrecognizedResolutions: userUnrecognizedResolutions.length > 0 ? userUnrecognizedResolutions : undefined,
+                    })
+                  } else {
+                    await confirmAction(toolCallId, true)
+                  }
+                }
                 setConfirmed(true)
                 onImportComplete?.()
               } catch {

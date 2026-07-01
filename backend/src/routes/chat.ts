@@ -6,7 +6,7 @@ import { createModel, ALL_PROVIDERS, DEFAULT_BASE_URLS, type ProviderType } from
 import { routeIntent, classifyWithKeywords } from '../services/ai/model-router.js'
 import { assertIsMember } from '../services/ai/security.js'
 import { logToolCall } from '../services/ai/audit.js'
-import { ALL_TOOLS, registerConfirmation, confirmAction, getPendingConfirmations, registerSuggestion, respondSuggestion, getPendingSuggestions } from '../services/ai/tools/index.js'
+import { ALL_TOOLS, registerConfirmation, confirmAction, getPendingConfirmations, registerSuggestion, respondSuggestion, getPendingSuggestions, storeImportOverrides } from '../services/ai/tools/index.js'
 import { buildConfirmPreview } from '../services/ai/confirm-preview.js'
 import { sendMessageSchema, createSessionSchema, updateSessionSchema, confirmActionSchema, respondSuggestionSchema, updatePreferencesSchema, createProviderConfigSchema, updateProviderConfigSchema } from '../schemas/chat.js'
 
@@ -138,9 +138,6 @@ export async function chatRoutes(app: FastifyInstance) {
     const sendSSE = (event: string, data: unknown) => {
       try {
         const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
-        if (event === 'tool-result') {
-          console.log(`[SSE] sending tool-result: ${(data as any).toolName}, size: ${(payload.length / 1024).toFixed(1)}KB, status: ${(data as any).status}`)
-        }
         reply.raw.write(payload)
       } catch (e) {
         console.error(`[SSE] write error for event "${event}":`, e)
@@ -222,6 +219,16 @@ export async function chatRoutes(app: FastifyInstance) {
               }
             } else {
               sendSSE('tool-result', { toolCallId, toolName: tool.name, result, durationMs, status })
+            }
+
+            // preview_import 预览模式：挂起 LLM，等待用户确认后再继续
+            if (tool.name === 'preview_import' && (args as any).mode === 'preview' && result.success) {
+              const approved = await registerConfirmation(toolCallId, tool.name, 'import_preview')
+              if (!approved) {
+                const entry = toolCallEntries.find((e) => e.toolCallId === toolCallId)
+                if (entry) Object.assign(entry, { status: 'error', result: { error: '用户取消了导入预览' } })
+                return { success: false, error: '用户取消了导入预览', retryable: false }
+              }
             }
 
             logToolCall({ userId, sessionId: session.id, action: 'tool_call', toolName: tool.name, input: args, output: result, durationMs, status })
@@ -377,8 +384,17 @@ export async function chatRoutes(app: FastifyInstance) {
     const parsed = confirmActionSchema.safeParse(req.body)
     if (!parsed.success) return reply.status(400).send({ message: parsed.error.issues[0].message })
 
-    const { toolCallId, approved } = parsed.data
+    const { toolCallId, approved, data } = parsed.data
     const userId = (req as any).user.id as string
+
+    // 存储用户修改后的导入映射数据，供 confirm_import 使用
+    if (data?.fileId) {
+      storeImportOverrides(data.fileId, {
+        accountResolutions: data.accountResolutions,
+        categoryResolutions: data.categoryResolutions,
+        unrecognizedResolutions: data.unrecognizedResolutions,
+      })
+    }
 
     const handled = confirmAction(toolCallId, approved)
     if (!handled) return reply.status(404).send({ message: '确认已过期或不存在' })

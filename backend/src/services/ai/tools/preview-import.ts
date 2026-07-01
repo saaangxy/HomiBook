@@ -71,7 +71,6 @@ export const previewImportTool: ToolDef = {
     }
 
     const isAnalyzeMode = mode !== 'preview'
-    console.log(`[preview_import] execute start, mode: ${isAnalyzeMode ? 'analyze' : 'preview'}, fileId: ${fileId}`)
 
     // 查找临时文件
     const uploadDir = path.resolve('uploads')
@@ -146,9 +145,12 @@ export const previewImportTool: ToolDef = {
     // 应用账户映射（DB 规则）
     const { idMap: accountMappings, nameRecord: accountMappingNames } = await applyAccountMappings(source, parseResult.rows, ctx.accountBookId)
 
-    // 合并 AI 预映射到 idMap（AI 优先级高于 DB）
-    for (const [csvName, id] of aiPreMappings) {
-      accountMappings.set(csvName, id)
+    // 预览模式：不合并 AI 映射到匹配流程，让未匹配账户仍显示在列表中供用户审查
+    // AI 映射通过 accountResolutions 参数传给前端回显
+    if (isAnalyzeMode || !accountResolutions) {
+      for (const [csvName, id] of aiPreMappings) {
+        accountMappings.set(csvName, id)
+      }
     }
 
     // 匹配账户
@@ -250,7 +252,6 @@ export const previewImportTool: ToolDef = {
       }
     }
 
-    console.log(`[preview_import] execute done, mode: preview, records: ${allNormalRecords.length}, unrecognized: ${allUnrecognizedRecords.length}`)
     return {
       success: true,
       retryable: false,

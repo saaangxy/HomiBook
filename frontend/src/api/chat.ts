@@ -109,8 +109,13 @@ export async function deleteSession(id: string) {
   return api.delete(`${BASE}/sessions/${id}`)
 }
 
-export async function confirmAction(toolCallId: string, approved: boolean) {
-  return api.post<{ success: boolean }>(`${BASE}/confirm`, { toolCallId, approved })
+export async function confirmAction(toolCallId: string, approved: boolean, data?: {
+  fileId?: string
+  accountResolutions?: { sourceAccountName: string; action: 'existing' | 'create'; targetAccountId?: string; targetAccountName?: string; accountType?: string }[]
+  categoryResolutions?: { sourceCategory: string; targetCategoryCode: string; recordType?: string; payerContains?: string; descriptionContains?: string }[]
+  unrecognizedResolutions?: { rowIndex: number; type: string; accountId: string; categoryCode: string }[]
+}) {
+  return api.post<{ success: boolean }>(`${BASE}/confirm`, { toolCallId, approved, data })
 }
 
 export async function respondSuggestion(toolCallId: string, values: Record<string, string> | null) {
@@ -216,9 +221,6 @@ export function sendMessageStream(
             const data = line.slice(6)
             try {
               const parsed = JSON.parse(data)
-              if (eventType === 'tool-result') {
-                console.log('[SSE] tool-result parsed:', { toolCallId: parsed.toolCallId, toolName: parsed.toolName, status: parsed.status, resultKeys: parsed.result ? Object.keys(parsed.result) : 'NO_RESULT', dataSize: data.length })
-              }
               onEvent({ type: eventType as SSEEvent['type'], ...parsed })
             } catch (e) {
               console.error('[SSE] JSON parse failed for event:', eventType, 'error:', e, 'dataLen:', data.length, 'dataPreview:', data.slice(0, 200))
