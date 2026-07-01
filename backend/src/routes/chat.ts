@@ -170,6 +170,7 @@ export async function chatRoutes(app: FastifyInstance) {
                 allowCustom: q.allowCustom ?? true,
               }))
               sendSSE('tool-suggest-required', { toolCallId, toolName: tool.name, questions })
+              await saveMessageSnapshot()
               const values = await registerSuggestion(toolCallId, questions)
               if (values === null) {
                 const entry = toolCallEntries.find((e) => e.toolCallId === toolCallId)
@@ -193,6 +194,7 @@ export async function chatRoutes(app: FastifyInstance) {
             if (tool.requireConfirm) {
               const preview = await buildConfirmPreview(tool.name, args, accountBookId)
               sendSSE('tool-confirm-required', { toolCallId, toolName: tool.name, preview })
+              await saveMessageSnapshot()
               const approved = await registerConfirmation(toolCallId, tool.name, preview)
               if (!approved) {
                 const entry = toolCallEntries.find((e) => e.toolCallId === toolCallId)
@@ -224,6 +226,7 @@ export async function chatRoutes(app: FastifyInstance) {
             // preview_import 预览模式：挂起 LLM，等待用户确认后再继续
             if (tool.name === 'preview_import' && (args as any).mode === 'preview' && result.success) {
               console.log('[preview_import] registering confirmation for toolCallId:', toolCallId)
+              await saveMessageSnapshot()
               const approved = await registerConfirmation(toolCallId, tool.name, 'import_preview')
               if (!approved) {
                 const entry = toolCallEntries.find((e) => e.toolCallId === toolCallId)
@@ -281,6 +284,7 @@ export async function chatRoutes(app: FastifyInstance) {
             // confirm_import 确认导入预览模式：挂起 LLM，等待用户确认后执行导入
             if (tool.name === 'confirm_import' && result.success && (result as any).data?.mode === 'confirm_preview') {
               console.log('[confirm_import] registering confirmation for toolCallId:', toolCallId)
+              await saveMessageSnapshot()
               const approved = await registerConfirmation(toolCallId, tool.name, 'confirm_import')
               if (!approved) {
                 const entry = toolCallEntries.find((e) => e.toolCallId === toolCallId)
@@ -322,7 +326,26 @@ export async function chatRoutes(app: FastifyInstance) {
       }
     }
 
-    let assistantMsgDb: { id: string } | null = null
+    const msgState = { dbId: null as string | null }
+
+    // 持久化快照：在阻塞确认前保存当前消息状态，防止刷新页面丢失聊天记录
+    const saveMessageSnapshot = async () => {
+      const snapData = {
+        sessionId: session.id,
+        role: 'assistant' as const,
+        content: fullText,
+        modelProvider: route.provider,
+        modelName: route.model,
+        toolCalls: toolCallEntries.length > 0 ? JSON.stringify(toolCallEntries) : null,
+        parentMessageId: userMsgDb.id,
+      }
+      if (msgState.dbId) {
+        await prisma.chatMessage.update({ where: { id: msgState.dbId }, data: snapData }).catch(() => {})
+      } else {
+        const created = await prisma.chatMessage.create({ data: snapData }).catch(() => null)
+        if (created) msgState.dbId = created.id
+      }
+    }
 
     try {
       const activeConfig = route.provider === simpleProvider ? simpleConfig : complexConfig
@@ -346,25 +369,36 @@ export async function chatRoutes(app: FastifyInstance) {
         }
       }
 
-      // 保存 assistant 消息（含工具调用记录）
-      assistantMsgDb = await prisma.chatMessage.create({
-        data: {
-          sessionId: session.id,
-          role: 'assistant',
-          content: fullText,
-          modelProvider: route.provider,
-          modelName: route.model,
-          toolCalls: toolCallEntries.length > 0 ? JSON.stringify(toolCallEntries) : null,
-          parentMessageId: userMsgDb.id,
-        },
-      })
+      // 流结束后最终保存 assistant 消息
+      const finalData = {
+        sessionId: session.id,
+        role: 'assistant' as const,
+        content: fullText,
+        modelProvider: route.provider,
+        modelName: route.model,
+        toolCalls: toolCallEntries.length > 0 ? JSON.stringify(toolCallEntries) : null,
+        parentMessageId: userMsgDb.id,
+      }
+      if (msgState.dbId) {
+        await prisma.chatMessage.update({ where: { id: msgState.dbId }, data: finalData })
+      } else {
+        const created = await prisma.chatMessage.create({ data: finalData })
+        if (created) msgState.dbId = created.id
+      }
 
-      sendSSE('finish', { usage: await result.usage, userMessageId: userMsgDb.id, assistantMessageId: assistantMsgDb.id })
+      sendSSE('finish', { usage: await result.usage, userMessageId: userMsgDb.id, assistantMessageId: msgState.dbId! })
     } catch (err: any) {
       // 流中断或 AI 异常时，保存已生成的部分内容
-      if (!assistantMsgDb && (fullText || toolCallEntries.length > 0)) {
+      if (msgState.dbId) {
         try {
-          assistantMsgDb = await prisma.chatMessage.create({
+          await prisma.chatMessage.update({
+            where: { id: msgState.dbId },
+            data: { content: fullText || '(响应中断)', toolCalls: toolCallEntries.length > 0 ? JSON.stringify(toolCallEntries) : null },
+          })
+        } catch { /* ignore */ }
+      } else if (fullText || toolCallEntries.length > 0) {
+        try {
+          const created = await prisma.chatMessage.create({
             data: {
               sessionId: session.id,
               role: 'assistant',
