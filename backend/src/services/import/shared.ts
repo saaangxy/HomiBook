@@ -255,7 +255,8 @@ export async function applyCategoryMappings(source: string, rows: ParsedRow[]) {
   }
 
   for (const r of rows) {
-    if (r.categoryCode) {
+    // 如果已有映射（如 AI 预填），不覆盖
+    if (r.categoryCode && r.mappedCategoryCode === null) {
       r.mappedCategoryCode = findBestMapping(r)
     }
   }

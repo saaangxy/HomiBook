@@ -26,7 +26,7 @@ export const previewImportTool: ToolDef = {
       headerRow: { type: 'number', description: 'CSV 来源时的表头行号（从1开始），不填自动检测' },
       accountResolutions: {
         type: 'array',
-        description: 'AI 提供的账户匹配规则。每个未匹配的源账户名对应一条规则。',
+        description: 'AI 提供的账户匹配规则。每个未匹配的源账户名对应一条规则。设为相同名称即可合并为一个账户',
         items: {
           type: 'object',
           properties: {
