@@ -2,12 +2,16 @@ import { useEffect, useRef, useState } from 'react'
 import { useChatStore } from '@/stores/chat'
 import { useBookStore } from '@/stores/book'
 import { fetchSessions, fetchMessages, createSession, deleteSession as deleteSessionApi } from '@/api/chat'
+import { importExportApi } from '@/api/import-export'
 import { MessageBubble } from './MessageBubble'
 import { SessionList } from './SessionList'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Send, StopCircle } from 'lucide-react'
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Send, StopCircle, Upload } from 'lucide-react'
 import { parseContentIntoBlocks, type MessageBlock } from '@/stores/chat'
 
 export function ChatWindow() {
@@ -178,6 +182,35 @@ export function ChatWindow() {
     sendMessage(currentBookId, text, parentId, assistantDbId)
   }
 
+  // ---- 导入 ----
+  const [importing, setImporting] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const pendingSourceRef = useRef<string>('')
+
+  const handleImportClick = (source: string) => {
+    pendingSourceRef.current = source
+    fileInputRef.current?.click()
+  }
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !currentBookId) return
+
+    setImporting(true)
+    try {
+      const res = await importExportApi.uploadTempFile(file)
+      const sourceLabel: Record<string, string> = { alipay: '支付宝', wechat: '微信', csv: 'CSV', jd: '京东' }
+      const src = pendingSourceRef.current
+      const msg = `请导入${sourceLabel[src] || src}账单文件\nfileId: ${res.fileId}\nsource: ${src}\n文件名: ${res.filename}`
+      handleSend(msg)
+    } catch {
+      // ignore
+    }
+    setImporting(false)
+    // 清除 input 以允许重复选择同一文件
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -226,7 +259,7 @@ export function ChatWindow() {
                 <div key={msg.id}>
                   <MessageBubble
                     message={msg}
-                    onRetry={msg.role === 'assistant' && msg.id !== 'greeting' && !msg.isCurrentStreaming
+                    onRetry={msg.role === 'assistant' && msg.id !== 'greeting' && !msg.isStreaming
                       ? () => handleRetry(msg.id)
                       : undefined}
                     onEditSubmit={msg.role === 'user'
@@ -248,6 +281,14 @@ export function ChatWindow() {
 
         {/* 输入区 */}
         <div className="p-3 border-t">
+          {/* 隐藏文件上传 */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            accept=".csv,.xls,.xlsx"
+            onChange={handleFileChange}
+          />
           <div className="flex gap-2 items-end">
             <Textarea
               value={input}
@@ -256,16 +297,31 @@ export function ChatWindow() {
               placeholder="输入消息... (Enter 发送，Shift+Enter 换行)"
               rows={2}
               className="min-h-10 resize-none"
-              disabled={isCurrentStreaming}
+              disabled={isCurrentStreaming || importing}
             />
             {isCurrentStreaming ? (
-              <Button variant="outline" size="icon" className="shrink-0" onClick={stopStreaming}>
+              <Button variant="outline" size="icon" className="shrink-0" onClick={() => stopStreaming()}>
                 <StopCircle size={18} />
               </Button>
             ) : (
-              <Button size="icon" className="shrink-0" onClick={() => handleSend()} disabled={!input.trim() || !currentBookId}>
-                <Send size={18} />
-              </Button>
+              <>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="icon" variant="outline" className="shrink-0" disabled={!currentBookId || importing} title="导入账单">
+                      <Upload size={18} />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent side="top" align="end">
+                    <DropdownMenuItem onClick={() => handleImportClick('alipay')}>支付宝</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleImportClick('wechat')}>微信</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleImportClick('jd')}>京东</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleImportClick('csv')}>其他 CSV</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <Button size="icon" className="shrink-0" onClick={() => handleSend()} disabled={!input.trim() || !currentBookId || importing}>
+                  <Send size={18} />
+                </Button>
+              </>
             )}
           </div>
         </div>

@@ -2,11 +2,24 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { parse } from 'csv-parse/sync'
 import iconv from 'iconv-lite'
+import crypto from 'crypto'
+import fs from 'fs'
+import path from 'path'
 import { prisma } from '../app.js'
 import { authenticate } from '../middleware/auth.js'
 import { zSchema } from '../lib/schema-helpers.js'
 import { refreshAccountBalance } from './account.js'
 import * as XLSX from 'xlsx'
+import {
+  matchAccountByName,
+  applyAccountMappings,
+  applyCategoryMappings,
+  inferAccount,
+  NAME_TYPE_RULES,
+  type ParsedRow,
+  type UnmatchedAccount,
+  type UnmatchedCategory,
+} from '../services/import/shared.js'
 
 // 支付宝体系内账户关键词 — 统一映射到"支付宝"账户，其余（银行卡等）保持原名
 const ALIPAY_INTERNAL_PATTERN = /花呗|余额宝|余额|账户余额|集分宝|红包|淘金币|支付宝|他人代付/
@@ -24,50 +37,6 @@ function resolveWechatAccountName(name: string) {
   return name
 }
 
-// 按名称关键词推断账户类型
-const NAME_TYPE_RULES: { test: (name: string) => boolean; type: string }[] = [
-  { test: (n) => /微信/.test(n), type: 'WECHAT' },
-  { test: (n) => /支付宝/.test(n), type: 'ALIPAY' },
-  { test: (n) => /信用卡/.test(n), type: 'CREDIT_CARD' },
-  { test: (n) => /储蓄卡|借记卡/.test(n), type: 'BANK_DEBIT' },
-  { test: (n) => /银行/.test(n), type: 'BANK_DEBIT' },
-  { test: (n) => /投资|理财|基金|股票|余额宝/.test(n), type: 'INVESTMENT' },
-  { test: (n) => /现金/.test(n), type: 'CASH' },
-  { test: (n) => /充值/.test(n), type: 'RECHARGE_CARD' },
-]
-
-function inferAccount(paymentMethod: string): { type: string; defaultName: string; bankName?: string; accountNo?: string } | null {
-  if (!paymentMethod) return null
-
-  // 1. 银行卡：XX银行储蓄卡(NNNN) 或 XX银行信用卡(NNNN)
-  const cardMatch = paymentMethod.match(/^(.+?银行).*?[储蓄信用]卡.*?[\(（](\d+)[\)）]/)
-  if (cardMatch) {
-    return {
-      type: paymentMethod.includes('信用') ? 'CREDIT_CARD' : 'BANK_DEBIT',
-      defaultName: paymentMethod,
-      bankName: cardMatch[1],
-      accountNo: cardMatch[2],
-    }
-  }
-
-  // 2. 通用银行匹配（储蓄卡/信用卡，可能无卡号）
-  const bankMatch = paymentMethod.match(/^(.+?银行)/)
-  if (bankMatch) {
-    const type = /信用/.test(paymentMethod) ? 'CREDIT_CARD' : 'BANK_DEBIT'
-    return { type, defaultName: paymentMethod, bankName: bankMatch[1] }
-  }
-
-  // 3. 按名称关键词规则匹配
-  for (const rule of NAME_TYPE_RULES) {
-    if (rule.test(paymentMethod)) {
-      return { type: rule.type, defaultName: paymentMethod }
-    }
-  }
-
-  // 4. 其他
-  return { type: 'OTHER', defaultName: paymentMethod }
-}
-
 async function assertIsMember(bookId: string, userId: string) {
   const book = await prisma.accountBook.findUnique({ where: { id: bookId } })
   if (!book) throw Object.assign(new Error('账本不存在'), { statusCode: 404 })
@@ -79,22 +48,6 @@ async function assertIsMember(bookId: string, userId: string) {
 }
 
 // ======================== Alipay CSV 解析 ========================
-
-interface ParsedRow {
-  date: string
-  type: 'INCOME' | 'EXPENSE' | 'TRANSFER' | 'UNKNOWN'
-  amount: number
-  accountName: string
-  accountId: string | null
-  toAccountName: string | null
-  toAccountId: string | null
-  categoryCode: string | null
-  mappedCategoryCode: string | null  // 映射后的系统分类
-  payer: string | null
-  remark: string
-  tags: string[]
-  rowIndex: number
-}
 
 function detectEncoding(buffer: Buffer): string {
   // 检查 UTF-8 BOM
@@ -110,7 +63,7 @@ function detectEncoding(buffer: Buffer): string {
   return 'gbk'
 }
 
-function parseAlipayCSV(buffer: Buffer): { rows: ParsedRow[]; errors: string[] } {
+export function parseAlipayCSV(buffer: Buffer): { rows: ParsedRow[]; errors: string[] } {
   const encoding = detectEncoding(buffer)
   const text = encoding === 'utf8' ? buffer.toString('utf8') : iconv.decode(buffer, 'gbk')
 
@@ -294,7 +247,7 @@ function excelSerialToISO(serial: number): string {
   return new Date(excelEpoch + serial * 86400000).toISOString()
 }
 
-function parseWechatXlsx(buffer: Buffer): { rows: ParsedRow[]; errors: string[] } {
+export function parseWechatXlsx(buffer: Buffer): { rows: ParsedRow[]; errors: string[] } {
   const workbook = XLSX.read(buffer, { type: 'buffer' })
   const sheetName = workbook.SheetNames[0]
   const sheet = workbook.Sheets[sheetName]
@@ -440,7 +393,7 @@ function resolveJdAccountName(name: string) {
   return name
 }
 
-function parseJdCSV(buffer: Buffer): { rows: ParsedRow[]; errors: string[] } {
+export function parseJdCSV(buffer: Buffer): { rows: ParsedRow[]; errors: string[] } {
   const encoding = detectEncoding(buffer)
   const text = encoding === 'utf8' ? buffer.toString('utf8') : iconv.decode(buffer, 'gbk')
 
@@ -647,7 +600,7 @@ function parseDateStr(raw: string): string | null {
   return date.toISOString()
 }
 
-function parseCsvWithMapping(
+export function parseCsvWithMapping(
   buffer: Buffer,
   columnMapping: Record<string, string>,
   typeMapping: Record<string, string>,
@@ -785,113 +738,7 @@ function parseCsvWithMapping(
 }
 
 // ======================== 账户匹配 & 分类映射 ========================
-
-// 账户匹配结果：唯一匹配 / 多个候选 / 无匹配
-type AccountMatchResult =
-  | { matched: true; id: string; name: string }
-  | { matched: false; ambiguous: true; candidates: { id: string; name: string }[] }
-  | { matched: false; ambiguous: false }
-
-// 按名称包含匹配已有账户（优先级：精确 → 账户名包含目标名 → 目标名包含账户名）
-// 同一优先级有多条匹配时返回 ambiguous，交由用户手动选择
-function matchAccountByName(name: string, allAccounts: { id: string; name: string }[]): AccountMatchResult {
-  if (!name || allAccounts.length === 0) return { matched: false, ambiguous: false }
-
-  // 1. 精确匹配
-  const exact = allAccounts.filter(acc => acc.name === name)
-  if (exact.length === 1) return { matched: true, id: exact[0].id, name: exact[0].name }
-  if (exact.length > 1) return { matched: false, ambiguous: true, candidates: exact }
-
-  // 2. 账户名包含目标名
-  const contains = allAccounts.filter(acc => acc.name.includes(name))
-  if (contains.length === 1) return { matched: true, id: contains[0].id, name: contains[0].name }
-  if (contains.length > 1) return { matched: false, ambiguous: true, candidates: contains }
-
-  // 3. 目标名包含账户名
-  const containedBy = allAccounts.filter(acc => name.includes(acc.name))
-  if (containedBy.length === 1) return { matched: true, id: containedBy[0].id, name: containedBy[0].name }
-  if (containedBy.length > 1) return { matched: false, ambiguous: true, candidates: containedBy }
-
-  return { matched: false, ambiguous: false }
-}
-
-// 加载导入账户映射并按评分匹配，返回 csvAccountName → targetAccountId 的映射及展示用名称记录
-async function applyAccountMappings(source: string, rows: ParsedRow[], bookId: string) {
-  const sourceNames = [...new Set(rows.map(r => r.accountName).filter(Boolean))]
-  if (sourceNames.length === 0) return { idMap: new Map<string, string | null>(), nameRecord: {} as Record<string, string> }
-
-  const allMappings = await prisma.importAccountMapping.findMany({
-    where: {
-      source,
-      sourceAccountName: { in: sourceNames },
-    },
-    orderBy: [{ sourceAccountName: 'asc' }, { payerContains: 'desc' }, { descriptionContains: 'desc' }],
-  })
-
-  if (allMappings.length === 0) return { idMap: new Map<string, string | null>(), nameRecord: {} as Record<string, string> }
-
-  // 按 sourceAccountName 分组
-  const mappingsByName = new Map<string, typeof allMappings>()
-  for (const m of allMappings) {
-    const list = mappingsByName.get(m.sourceAccountName) || []
-    list.push(m)
-    mappingsByName.set(m.sourceAccountName, list)
-  }
-
-  // 加载账本全部活跃账户，用包含匹配查找
-  const allAccounts = await prisma.account.findMany({
-    where: { accountBookId: bookId, status: 'ACTIVE' },
-    select: { id: true, name: true },
-  })
-
-  const idMap = new Map<string, string | null>()
-  const nameRecord: Record<string, string> = {}
-
-  for (const r of rows) {
-    const key = r.accountName
-    if (idMap.has(key)) continue
-
-    const candidates = mappingsByName.get(key)
-    if (!candidates || candidates.length === 0) {
-      idMap.set(key, null)
-      continue
-    }
-
-    // 评分匹配（与分类映射 findBestMapping 逻辑一致）
-    let best: string | null = null
-    let bestScore = -1
-    for (const m of candidates) {
-      let score = 0
-      if (m.payerContains) {
-        if (r.payer && r.payer.includes(m.payerContains)) score += 2
-        else continue
-      }
-      if (m.descriptionContains) {
-        if (r.remark && r.remark.includes(m.descriptionContains)) score += 1
-        else continue
-      }
-      if (score > bestScore) {
-        bestScore = score
-        best = m.targetAccountName
-      }
-    }
-
-    // 将 targetAccountName 转为 ID（通过包含匹配查找已有账户）
-    if (best) {
-      const result = matchAccountByName(best, allAccounts)
-      if (result.matched) {
-        idMap.set(key, result.id)
-        nameRecord[key] = result.name
-      } else {
-        idMap.set(key, null)
-      }
-    } else {
-      idMap.set(key, null)
-    }
-  }
-
-  return { idMap, nameRecord }
-}
+// matchAccountByName, applyAccountMappings, inferAccount 等已提取到 ../services/import/shared.ts
 
 async function resolveAccounts(bookId: string, rows: ParsedRow[], idMap?: Map<string, string | null>) {
   // 收集所有唯一账户名
@@ -965,115 +812,10 @@ async function resolveAccounts(bookId: string, rows: ParsedRow[], idMap?: Map<st
 }
 
 async function resolveCategories(source: string, rows: ParsedRow[]) {
-  const sourceCategories = [...new Set(rows.map(r => r.categoryCode).filter(Boolean))] as string[]
-  const allTypes = [...new Set(rows.map(r => r.type))]
-
-  // 查询所有相关映射（匹配空 recordType 或当前导入数据的类型）
-  const allMappings = await prisma.importCategoryMapping.findMany({
-    where: {
-      source,
-      sourceCategory: { in: sourceCategories },
-      OR: [
-        { recordType: '' },
-        { recordType: { in: allTypes } },
-      ],
-    },
-    orderBy: [{ sourceCategory: 'asc' }, { payerContains: 'desc' }, { descriptionContains: 'desc' }],
-  })
-
-  // 按 sourceCategory 分组
-  const mappingsByCat = new Map<string, typeof allMappings>()
-  for (const m of allMappings) {
-    const list = mappingsByCat.get(m.sourceCategory) || []
-    list.push(m)
-    mappingsByCat.set(m.sourceCategory, list)
-  }
-
-  // 获取所有系统字典分类
-  const allDictItems = await prisma.dictionary.findMany({
-    where: { group: { in: ['transaction_category_income', 'transaction_category_expense', 'transaction_category_transfer'] } },
-    select: { code: true, label: true, group: true },
-  })
-  const expenseCodes = new Set(allDictItems.filter(d => d.group === 'transaction_category_expense').map(d => d.code))
-  const allCodes = allDictItems.map(d => d.code)
-
-  // 匹配映射 — 选择最匹配的（条件匹配优先于无条件匹配）
-  function findBestMapping(row: ParsedRow): string | null {
-    const candidates = mappingsByCat.get(row.categoryCode!)
-    if (!candidates || candidates.length === 0) return null
-
-    let best: string | null = null
-    let bestScore = -1
-
-    for (const m of candidates) {
-      // recordType 不匹配则跳过（空表示通用映射，适用于所有类型）
-      if (m.recordType && m.recordType !== row.type) continue
-      let score = 0
-      // 精确类型匹配加分
-      if (m.recordType === row.type) score += 1
-      if (m.payerContains) {
-        if (row.payer && row.payer.includes(m.payerContains)) score += 2
-        else continue // payerContains 不匹配，跳过此映射
-      }
-      if (m.descriptionContains) {
-        if (row.remark && row.remark.includes(m.descriptionContains)) score += 1
-        else continue // descriptionContains 不匹配，跳过此映射
-      }
-      if (score > bestScore) {
-        bestScore = score
-        best = m.targetCategoryCode
-      }
-    }
-
-    return best
-  }
-
-  // 收集每个分类出现的记录类型
-  const categoryTypes = new Map<string, Set<string>>()
-  for (const r of rows) {
-    if (!r.categoryCode) continue
-    const types = categoryTypes.get(r.categoryCode) || new Set()
-    types.add(r.type)
-    categoryTypes.set(r.categoryCode, types)
-  }
-
-  // 先填充 mappedCategoryCode，再判断哪些分类真正未匹配
-  for (const r of rows) {
-    if (r.categoryCode) {
-      r.mappedCategoryCode = findBestMapping(r)
-    }
-  }
-
-  // 收集仍有未匹配记录的分类
-  const categoriesWithUnmatched = new Set<string>()
-  for (const r of rows) {
-    if (r.categoryCode && r.mappedCategoryCode === null) {
-      categoriesWithUnmatched.add(r.categoryCode)
-    }
-  }
-
-  // 未映射的分类：只有至少有一条记录没匹配上的分类才算
-  const unmatched: { sourceCategory: string; suggestedCode: string | null; types: string[] }[] = []
-  const seen = new Set<string>()
-
-  for (const cat of sourceCategories) {
-    if (!categoriesWithUnmatched.has(cat)) continue
-    if (seen.has(cat)) continue
-    seen.add(cat)
-
-    // 尝试模糊匹配
-    let matched: string | null = null
-    for (const code of expenseCodes) {
-      if (cat.includes(code) || code.includes(cat)) {
-        matched = code
-        break
-      }
-    }
-    unmatched.push({ sourceCategory: cat, suggestedCode: matched, types: [...(categoryTypes.get(cat) || [])] })
-  }
-
-  return { unmatched, allDictItems: allDictItems.map(d => ({ code: d.code, label: d.label, group: d.group })) }
+  return applyCategoryMappings(source, rows)
 }
+
+// ======================== 路由 ========================
 
 // ======================== 路由 ========================
 
@@ -1121,6 +863,30 @@ const importConfirmSchema = z.object({
 
 export async function importExportRoutes(app: FastifyInstance) {
   app.addHook('onRequest', authenticate)
+
+  // ===== 临时文件上传（供 AI 导入工具使用） =====
+  app.post('/import/upload', {
+    schema: {
+      description: '上传导入文件到临时存储，返回 fileId 供 preview_import 工具使用',
+      tags: ['导入导出'],
+      consumes: ['multipart/form-data'],
+    },
+  }, async (req, reply) => {
+    const data = await req.file()
+    if (!data) return reply.status(400).send({ message: '缺少文件' })
+    const buffer = await data.toBuffer()
+    if (buffer.length === 0) return reply.status(400).send({ message: '文件为空' })
+
+    const uploadDir = path.resolve('uploads')
+    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true })
+
+    const fileId = crypto.randomUUID()
+    const ext = path.extname(data.filename) || '.tmp'
+    const filename = `${fileId}${ext}`
+    fs.writeFileSync(path.join(uploadDir, filename), buffer)
+
+    return { fileId, filename: data.filename, size: buffer.length }
+  })
 
   // ===== CSV 文件分析 =====
   app.post('/import/csv/analyze', {

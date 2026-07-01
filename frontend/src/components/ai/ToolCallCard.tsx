@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Wrench, CheckCircle2, XCircle, Loader2, HelpCircle, ChevronDown, MessageSquareMore } from 'lucide-react'
 import { useState } from 'react'
+import { ImportPreviewInteractive, type ImportPreviewData } from './ImportPreviewInteractive'
 
 interface Props {
   toolCall: ToolCallEntry
@@ -17,6 +18,10 @@ const toolLabels: Record<string, string> = {
   get_stats: '统计分析',
   query_categories: '查询分类',
   suggest_options: '补充信息',
+  preview_import: '导入预览',
+  query_import_mappings: '查询映射',
+  save_import_mapping: '保存映射',
+  confirm_import: '确认导入',
 }
 
 // ---- ConfirmPreview 类型 ----
@@ -62,6 +67,18 @@ function cellColorClass(color?: 'green' | 'red') {
 export function ToolCallCard({ toolCall }: Props) {
   const [confirming, setConfirming] = useState(false)
   const [expanded, setExpanded] = useState(false)
+  const [importCompleted, setImportCompleted] = useState(false)
+
+  // 诊断日志：追踪 preview_import 工具的状态变化
+  if (toolCall.toolName === 'preview_import') {
+    console.log('[ToolCallCard] render preview_import:', { toolCallId: toolCall.toolCallId, status: toolCall.status, hasResult: toolCall.result != null, argsMode: (toolCall.args as any)?.mode })
+  }
+
+  const isPreviewImport = toolCall.toolName === 'preview_import'
+
+  // 只有 mode=preview 时显示交互卡片，analyze 模式等同查询工具直接返回数据
+  const args = typeof toolCall.args === 'object' && toolCall.args != null ? toolCall.args as Record<string, unknown> : null
+  const isInteractivePreview = isPreviewImport && args?.mode === 'preview'
 
   const handleConfirm = async (approved: boolean) => {
     setConfirming(true)
@@ -77,13 +94,17 @@ export function ToolCallCard({ toolCall }: Props) {
   const showResult = toolCall.status === 'success' && toolCall.result != null
   const showError = toolCall.status === 'error' && toolCall.result != null
 
+  // 交互式预览：成功但未完成导入 → 琥珀色
+  const isImportPending = isInteractivePreview && toolCall.status === 'success' && !importCompleted
+
   return (
     <div className={cn(
       'rounded-xl border px-3 py-2 text-xs',
       toolCall.status === 'pending' && 'border-blue-200 bg-blue-50/50',
-      toolCall.status === 'success' && 'border-green-200 bg-green-50/50',
       toolCall.status === 'error' && 'border-red-200 bg-red-50/50',
       toolCall.status === 'confirming' && 'border-amber-200 bg-amber-50/50',
+      isImportPending && 'border-amber-200 bg-amber-50/50',
+      toolCall.status === 'success' && !isImportPending && 'border-green-200 bg-green-50/50',
       toolCall.status === 'suggesting' && 'border-violet-200 bg-violet-50/50',
     )}>
       {/* 可点击头部 */}
@@ -92,7 +113,8 @@ export function ToolCallCard({ toolCall }: Props) {
         onClick={() => setExpanded(!expanded)}
       >
         {toolCall.status === 'pending' && <Loader2 size={14} className="animate-spin text-blue-500" />}
-        {toolCall.status === 'success' && <CheckCircle2 size={14} className="text-green-500" />}
+        {isImportPending && <HelpCircle size={14} className="text-amber-500" />}
+        {toolCall.status === 'success' && !isImportPending && <CheckCircle2 size={14} className="text-green-500" />}
         {toolCall.status === 'error' && <XCircle size={14} className="text-red-500" />}
         {toolCall.status === 'confirming' && <HelpCircle size={14} className="text-amber-500" />}
         {toolCall.status === 'suggesting' && <MessageSquareMore size={14} className="text-violet-500" />}
@@ -101,46 +123,56 @@ export function ToolCallCard({ toolCall }: Props) {
         {toolCall.durationMs != null && (
           <span className="text-muted-foreground ml-auto">{toolCall.durationMs}ms</span>
         )}
-        {(showArgs || showResult || showError) && (
+        {showArgs && (
           <ChevronDown size={12} className={cn('transition-transform', expanded && 'rotate-180')} />
         )}
       </button>
 
-      {/* 折叠内容 */}
-      {expanded && (
-        <div className="mt-1.5 space-y-1.5">
-          {/* 参数 */}
-          {showArgs && (
-            <div>
-              <span className="text-muted-foreground text-[10px] uppercase tracking-wide">参数</span>
-              <pre className="text-xs bg-background rounded p-1.5 max-h-24 overflow-auto mt-0.5">
-                {typeof toolCall.args === 'string'
-                  ? toolCall.args
-                  : JSON.stringify(toolCall.args, null, 2)}
-              </pre>
-            </div>
-          )}
+      {/* 折叠内容：仅参数（交互内容始终可见，与 confirming/suggesting 一致） */}
+      {expanded && showArgs && (
+        <div className="mt-1.5">
+          <span className="text-muted-foreground text-[10px] uppercase tracking-wide">参数</span>
+          <pre className="text-xs bg-background rounded p-1.5 max-h-24 overflow-auto mt-0.5">
+            {typeof toolCall.args === 'string'
+              ? toolCall.args
+              : JSON.stringify(toolCall.args, null, 2)}
+          </pre>
+        </div>
+      )}
 
-          {/* 结果 */}
-          {showResult && (
-            <div>
-              <span className="text-muted-foreground text-[10px] uppercase tracking-wide">结果</span>
-              <div className="text-muted-foreground mt-0.5">
-                {typeof toolCall.result === 'string'
-                  ? toolCall.result
-                  : JSON.stringify(toolCall.result, null, 2)}
-              </div>
-            </div>
-          )}
+      {/* 错误信息 —— 始终可见 */}
+      {showError && (
+        <div className="mt-1.5 text-red-600">
+          {typeof toolCall.result === 'object' && (toolCall.result as any)?.error
+            ? (toolCall.result as any).error
+            : '执行失败'}
+        </div>
+      )}
 
-          {/* 错误信息 */}
-          {showError && (
-            <div className="text-red-600">
-              {typeof toolCall.result === 'object' && (toolCall.result as any)?.error
-                ? (toolCall.result as any).error
-                : '执行失败'}
-            </div>
-          )}
+      {/* preview_import 交互卡片（带映射时始终可见） */}
+      {isInteractivePreview && showResult && (
+        <div className="mt-2">
+          {(() => {
+            const result = toolCall.result as any
+            const previewData: ImportPreviewData = result.data ?? result
+            const source = (toolCall.args as any)?.source || previewData.source || ''
+            const accountBookId = previewData.accountBookId
+            return accountBookId
+              ? <ImportPreviewInteractive data={previewData} source={source} accountBookId={accountBookId} aiArgs={toolCall.args as any} onImportComplete={() => setImportCompleted(true)} />
+              : <FallbackJson data={result} />
+          })()}
+        </div>
+      )}
+
+      {/* 其他工具结果（含 preview_import 分析模式）—— 折叠内 */}
+      {!isInteractivePreview && showResult && expanded && (
+        <div className="mt-1.5">
+          <span className="text-muted-foreground text-[10px] uppercase tracking-wide">结果</span>
+          <div className="mt-0.5 text-muted-foreground">
+            {typeof toolCall.result === 'string'
+              ? toolCall.result
+              : JSON.stringify(toolCall.result, null, 2)}
+          </div>
         </div>
       )}
 
@@ -149,7 +181,7 @@ export function ToolCallCard({ toolCall }: Props) {
         <ConfirmPreviewView preview={toolCall.preview} onConfirm={handleConfirm} confirming={confirming} />
       )}
 
-      {/* 建议选择 UI */}
+      {/* 建议选择 UI —— 始终可见 */}
       {toolCall.status === 'suggesting' && toolCall.suggestion && (
         <SuggestionView
           suggestion={toolCall.suggestion}
@@ -387,4 +419,8 @@ function SuggestionView({
       </div>
     </div>
   )
+}
+
+function FallbackJson({ data }: { data: any }) {
+  return <pre className="text-[10px] bg-background rounded p-1.5 max-h-48 overflow-auto">{JSON.stringify(data, null, 2)}</pre>
 }

@@ -59,7 +59,7 @@ export interface UserProviderConfig {
 export type SSEEvent =
   | { type: 'text-delta'; delta: string }
   | { type: 'tool-call'; toolCallId: string; toolName: string; args: unknown }
-  | { type: 'tool-result'; toolCallId: string; toolName: string; result: unknown; durationMs: number; status: string }
+  | { type: 'tool-result'; toolCallId: string; toolName: string; result: unknown; durationMs: number; status: string; merge?: { action?: 'append'; batch?: number; total: number } }
   | { type: 'tool-confirm-required'; toolCallId: string; toolName: string; preview: string }
   | { type: 'tool-suggest-required'; toolCallId: string; toolName: string; questions: { question: string; field: string; options: string[]; allowCustom: boolean }[] }
   | { type: 'finish'; usage: unknown; userMessageId: string; assistantMessageId: string }
@@ -216,9 +216,12 @@ export function sendMessageStream(
             const data = line.slice(6)
             try {
               const parsed = JSON.parse(data)
+              if (eventType === 'tool-result') {
+                console.log('[SSE] tool-result parsed:', { toolCallId: parsed.toolCallId, toolName: parsed.toolName, status: parsed.status, resultKeys: parsed.result ? Object.keys(parsed.result) : 'NO_RESULT', dataSize: data.length })
+              }
               onEvent({ type: eventType as SSEEvent['type'], ...parsed })
-            } catch {
-              // skip malformed data
+            } catch (e) {
+              console.error('[SSE] JSON parse failed for event:', eventType, 'error:', e, 'dataLen:', data.length, 'dataPreview:', data.slice(0, 200))
             }
             eventType = ''
           }

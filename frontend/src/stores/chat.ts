@@ -415,6 +415,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
             break
 
           case 'tool-call':
+            console.log('[Store] tool-call received:', { toolCallId: event.toolCallId, toolName: event.toolName })
             updateMsg((msg) => ({
               ...msg,
               blocks: [
@@ -432,18 +433,39 @@ export const useChatStore = create<ChatState>()((set, get) => ({
             break
 
           case 'tool-result':
+            console.log('[Store] tool-result received:', { toolCallId: event.toolCallId, toolName: event.toolName, status: event.status, merge: event.merge })
             updateMsg((msg) => ({
               ...msg,
-              blocks: msg.blocks.map((b) =>
-                b.type === 'tool-call' && b.toolCallId === event.toolCallId
-                  ? {
-                      ...b,
-                      result: event.result,
-                      durationMs: event.durationMs,
-                      status: (event.status === 'success' ? 'success' : 'error') as 'success' | 'error',
+              blocks: msg.blocks.map((b) => {
+                if (b.type === 'tool-call' && b.toolCallId === event.toolCallId) {
+                  if (event.merge?.action === 'append') {
+                    // 合并模式：将新数据追加到已有 result.data 的数组字段
+                    const existing = (b as any).result || {}
+                    const existingData = existing.data || {}
+                    const incomingData = (event.result as any)?.data || {}
+                    const mergedData: any = { ...existingData }
+                    for (const key of Object.keys(incomingData)) {
+                      if (Array.isArray(incomingData[key]) && Array.isArray(mergedData[key])) {
+                        mergedData[key] = [...mergedData[key], ...incomingData[key]]
+                      } else {
+                        mergedData[key] = incomingData[key]
+                      }
                     }
-                  : b,
-              ),
+                    return {
+                      ...b,
+                      result: { ...existing, data: mergedData },
+                      status: event.status as 'success' | 'error',
+                    }
+                  }
+                  return {
+                    ...b,
+                    result: event.result,
+                    durationMs: event.durationMs,
+                    status: (event.status === 'success' ? 'success' : 'error') as 'success' | 'error',
+                  }
+                }
+                return b
+              }),
             }))
             break
 
@@ -577,7 +599,6 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         }
       },
       () => {
-        const finalState = get()
         updateMsg((msg) => ({ ...msg, isStreaming: false }))
 
         // 清理 abortController

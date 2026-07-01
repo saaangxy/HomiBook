@@ -137,9 +137,13 @@ export async function chatRoutes(app: FastifyInstance) {
 
     const sendSSE = (event: string, data: unknown) => {
       try {
-        reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
-      } catch {
-        // 客户端断开连接时忽略写入错误，让流处理继续完成
+        const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
+        if (event === 'tool-result') {
+          console.log(`[SSE] sending tool-result: ${(data as any).toolName}, size: ${(payload.length / 1024).toFixed(1)}KB, status: ${(data as any).status}`)
+        }
+        reply.raw.write(payload)
+      } catch (e) {
+        console.error(`[SSE] write error for event "${event}":`, e)
       }
     }
 
@@ -205,9 +209,23 @@ export async function chatRoutes(app: FastifyInstance) {
             const result = await tool.execute(args, { userId, accountBookId })
             const durationMs = Date.now() - start
             const status = result.success ? 'success' : 'error'
-            sendSSE('tool-result', { toolCallId, toolName: tool.name, result, durationMs, status })
+
+            // 大数据分批：将 result.data 中超过 BATCH_SIZE 的数组字段拆分为多个 tool-result 事件
+            const batches = splitResultBatches(result, 50)
+            if (batches.length > 1) {
+              for (let i = 0; i < batches.length; i++) {
+                const batchResult = batches[i]
+                const merge = i === 0
+                  ? { total: batches.length }
+                  : { action: 'append' as const, batch: i + 1, total: batches.length }
+                sendSSE('tool-result', { toolCallId, toolName: tool.name, result: batchResult, durationMs, status: batchResult.success ? 'success' : 'error', merge })
+              }
+            } else {
+              sendSSE('tool-result', { toolCallId, toolName: tool.name, result, durationMs, status })
+            }
+
             logToolCall({ userId, sessionId: session.id, action: 'tool_call', toolName: tool.name, input: args, output: result, durationMs, status })
-            // 更新持久化记录
+            // 更新持久化记录（存完整数据）
             const entry = toolCallEntries.find((e) => e.toolCallId === toolCallId)
             if (entry) Object.assign(entry, { result, durationMs, status })
             return result
@@ -774,6 +792,38 @@ function extractKeywords(text: string): string[] {
   return [...new Set(keywords)].slice(0, 20)
 }
 
+/** 将 result.data 中超过 batchSize 的数组字段拆分，返回分批发货的 result 数组 */
+function splitResultBatches(result: any, batchSize: number): any[] {
+  const data = result?.data
+  if (!data || typeof data !== 'object') return [result]
+
+  const arrayFields: { key: string; items: any[] }[] = []
+  for (const [key, value] of Object.entries(data)) {
+    if (Array.isArray(value) && value.length > batchSize) {
+      arrayFields.push({ key, items: value as any[] })
+    }
+  }
+
+  if (arrayFields.length === 0) return [result]
+
+  // 以最长数组为准计算批次数
+  const maxLength = Math.max(...arrayFields.map(f => f.items.length))
+  const totalBatches = Math.ceil(maxLength / batchSize)
+
+  const batches: any[] = []
+  for (let i = 0; i < totalBatches; i++) {
+    const batchData: any = { ...data }
+    for (const { key, items } of arrayFields) {
+      const start = i * batchSize
+      const end = start + batchSize
+      batchData[key] = items.slice(start, end)
+    }
+    batches.push({ ...result, data: batchData })
+  }
+
+  return batches
+}
+
 function buildSystemPrompt(prefs: any, bookId: string, bookName: string, memories: any[]): string {
   const memoryContext = memories.length > 0
     ? `\n\n## 用户长期记忆（供参考）\n${memories.map((m: any, i: number) => `${i + 1}. ${m.content}`).join('\n')}\n`
@@ -795,6 +845,29 @@ function buildSystemPrompt(prefs: any, bookId: string, bookName: string, memorie
 - 批量记账 → 调用 batch_create_records（多条记录一次确认）
 - 批量修改流水 → 调用 batch_update_records（多条记录一次确认）
 - 向用户提问获取信息 → 调用 suggest_options（用户操作意图明确但缺少具体参数时使用）
+- 查询已有导入映射 → 调用 query_import_mappings
+- 预览导入流水文件(分析) → 调用 preview_import（mode="analyze"，仅返回未匹配数据供 AI 分析，不展示交互卡片）
+- 预览导入流水文件(预览) → 调用 preview_import（mode="preview"，传入映射规则，展示交互卡片供用户确认调整，返回全部记录及映射后的分类名称）
+- 确认导入流水 → 调用 confirm_import（传入 fileId、source 和映射规则，一次性完成导入）
+- 保存导入映射规则 → 调用 save_import_mapping（仅在用户明确要求时调用，日常导入无需调用）
+
+## 导入流水数据（严格按以下顺序调用工具）
+当用户发送导入账单消息（包含 fileId 和 source 参数）时，你必须立即按以下顺序调用工具，禁止用文字描述或模拟结果：
+
+1. 调用 preview_import(fileId, source, mode="analyze") 解析文件获取未匹配数据
+2. 分析预览结果中的 unmatchedAccounts、unmatchedCategories 和 allDictItems：
+   - 为每个未匹配账户生成 accountResolutions：已有候选(candidates) → action="existing" + targetAccountId；无候选 → action="create" + 推断的 targetAccountName + accountType
+   - 为每个未匹配分类生成 categoryResolutions：根据源分类名和 allDictItems 中的分类编码/标签进行语义匹配，选择 targetCategoryCode；如有明显交易方特征可加 payerContains/descriptionContains 过滤
+3. 调用 preview_import(fileId, source, mode="preview", { accountResolutions, categoryResolutions }) 展示交互卡片供用户确认
+4. 用户确认后，调用 confirm_import(fileId, source, { accountResolutions, categoryResolutions }) 确认导入
+5. 导入完成后用简短文字总结导入记录数和创建账户数
+
+注意：
+- 不要调用 save_import_mapping 工具——映射规则由 confirm_import 随导入一起保存
+- 不要凭空描述导入预览的统计数字和记录内容——这些数据来自工具返回结果
+- accountResolutions 中 action="create" 时的 accountType 必须是以下之一：BANK_DEBIT、CREDIT_CARD、ALIPAY、WECHAT、INVESTMENT、CASH、RECHARGE_CARD、OTHER
+- categoryResolutions 的 targetCategoryCode 必须从 allDictItems 中选取，不可臆造编码
+- 如果步骤4中反复匹配失败（超过10%的记录仍无法匹配），告知用户具体哪些分类无法匹配并请求用户指导
 
 ## 核心规则（必须遵守）
 - 当用户请求执行上述操作时，你必须直接调用对应的函数工具，而不是在文字中描述"正在调用"或"将要调用"

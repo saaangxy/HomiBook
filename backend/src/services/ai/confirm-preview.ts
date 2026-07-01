@@ -1,4 +1,8 @@
 import { prisma } from '../../app.js'
+import { parseAlipayCSV, parseWechatXlsx, parseJdCSV, parseCsvWithMapping } from '../../routes/import-export.js'
+import { applyAccountMappings, matchAccountByName, type ParsedRow } from '../import/shared.js'
+import fs from 'fs'
+import path from 'path'
 
 // ---- 类型定义 ----
 
@@ -114,6 +118,10 @@ export async function buildConfirmPreview(
       return buildBatchUpdatePreview(args, accountBookId)
     case 'set_budget':
       return buildBudgetPreview(args)
+    case 'save_import_mapping':
+      return buildSaveImportMappingPreview(args)
+    case 'confirm_import':
+      return buildConfirmImportPreview(args, accountBookId)
     default:
       return buildGenericPreview(toolName, args)
   }
@@ -412,6 +420,275 @@ async function buildBudgetPreview(args: any): Promise<string> {
     title: '确认设定预算',
     budgetFields,
   }
+  return JSON.stringify(preview)
+}
+
+async function buildSaveImportMappingPreview(args: any): Promise<string> {
+  const { mappingType, source, mappings } = args as {
+    mappingType: 'account' | 'category'
+    source: string
+    mappings: any[]
+  }
+
+  if (!mappings || mappings.length === 0) {
+    return JSON.stringify({
+      type: 'generic',
+      title: '保存导入映射',
+      description: '映射列表为空',
+    } satisfies ConfirmPreview)
+  }
+
+  const sourceLabel: Record<string, string> = { alipay: '支付宝', wechat: '微信', csv: 'CSV', jd: '京东' }
+  const title = mappingType === 'account'
+    ? `确认保存 ${mappings.length} 条账户映射规则（来源: ${sourceLabel[source] || source}）`
+    : `确认保存 ${mappings.length} 条分类映射规则（来源: ${sourceLabel[source] || source}）`
+
+  if (mappingType === 'account') {
+    const preview: ConfirmPreview = {
+      type: 'records-table',
+      title,
+      description: '保存后，后续导入时相同的源账户名将自动匹配到目标账户',
+      columns: ['源账户名', '目标账户', '交易方过滤', '说明过滤'],
+      rows: mappings.map((m) => [
+        { text: m.sourceAccountName },
+        { text: `${m.targetAccountName}` },
+        { text: m.payerContains || '-' },
+        { text: m.descriptionContains || '-' },
+      ]),
+    }
+    return JSON.stringify(preview)
+  } else {
+    // 查询分类编码对应的标签
+    const codes = [...new Set(mappings.map((m) => m.targetCategoryCode))]
+    const dictEntries = await prisma.dictionary.findMany({
+      where: { code: { in: codes } },
+      select: { code: true, label: true },
+    })
+    const labelMap = new Map(dictEntries.map(d => [d.code, d.label]))
+
+    const preview: ConfirmPreview = {
+      type: 'records-table',
+      title,
+      description: '保存后，后续导入时相同的源分类名将自动映射到目标系统分类',
+      columns: ['源分类名', '目标分类', '交易方过滤', '说明过滤', '记录类型'],
+      rows: mappings.map((m) => [
+        { text: m.sourceCategory },
+        { text: `${labelMap.get(m.targetCategoryCode) || m.targetCategoryCode}` },
+        { text: m.payerContains || '-' },
+        { text: m.descriptionContains || '-' },
+        { text: m.recordType || '-' },
+      ]),
+    }
+    return JSON.stringify(preview)
+  }
+}
+
+async function buildConfirmImportPreview(args: any, accountBookId: string): Promise<string> {
+  const { fileId, source, columnMapping, typeMapping, headerRow, accountResolutions, categoryResolutions } = args as {
+    fileId: string
+    source: 'alipay' | 'wechat' | 'csv' | 'jd'
+    columnMapping?: Record<string, string>
+    typeMapping?: Record<string, string>
+    headerRow?: number
+    accountResolutions?: { sourceAccountName: string; action: 'existing' | 'create'; targetAccountId?: string; targetAccountName?: string; accountType?: string }[]
+    categoryResolutions?: { sourceCategory: string; targetCategoryCode: string; recordType?: string; payerContains?: string; descriptionContains?: string }[]
+  }
+
+  const uploadDir = path.resolve('uploads')
+  let targetFile: string | undefined
+  try {
+    const files = fs.readdirSync(uploadDir)
+    targetFile = files.find(f => f.startsWith(fileId))
+  } catch {
+    targetFile = undefined
+  }
+  if (!targetFile) {
+    return JSON.stringify({
+      type: 'generic',
+      title: '确认导入 - 文件不存在',
+      description: '文件可能已过期，请重新上传',
+      text: `fileId: ${fileId}`,
+    } satisfies ConfirmPreview)
+  }
+
+  const filePath = path.join(uploadDir, targetFile)
+  const buffer = fs.readFileSync(filePath)
+
+  let parseResult: { rows: ParsedRow[]; errors: string[] }
+  if (source === 'alipay') {
+    parseResult = parseAlipayCSV(buffer)
+  } else if (source === 'wechat') {
+    parseResult = parseWechatXlsx(buffer)
+  } else if (source === 'jd') {
+    parseResult = parseJdCSV(buffer)
+  } else {
+    if (!columnMapping || !typeMapping) {
+      return JSON.stringify({
+        type: 'generic',
+        title: '确认导入 - 参数不足',
+        description: 'CSV 来源需要 columnMapping 和 typeMapping',
+      } satisfies ConfirmPreview)
+    }
+    parseResult = parseCsvWithMapping(buffer, columnMapping, typeMapping, headerRow)
+  }
+
+  if (parseResult.rows.length === 0) {
+    return JSON.stringify({
+      type: 'generic',
+      title: '确认导入 - 无有效数据',
+      description: parseResult.errors[0] || '未解析到任何记录',
+    } satisfies ConfirmPreview)
+  }
+
+  // 应用 AI 分类映射
+  if (categoryResolutions && categoryResolutions.length > 0) {
+    const aiCategoryMap = new Map<string, typeof categoryResolutions[number]>()
+    for (const cr of categoryResolutions) {
+      const key = cr.recordType ? `${cr.sourceCategory}::${cr.recordType}` : cr.sourceCategory
+      aiCategoryMap.set(key, cr)
+    }
+    for (const r of parseResult.rows) {
+      const keyWithType = `${r.categoryCode}::${r.type}`
+      const cr = aiCategoryMap.get(keyWithType) || aiCategoryMap.get(r.categoryCode || '')
+      if (cr) {
+        if (cr.payerContains && r.payer && !r.payer.includes(cr.payerContains)) continue
+        if (cr.descriptionContains && r.remark && !r.remark.includes(cr.descriptionContains)) continue
+        r.mappedCategoryCode = cr.targetCategoryCode
+      }
+    }
+  }
+
+  // AI 账户预映射
+  const aiPreMappings = new Map<string, string | null>()
+  const newAccountCreations: { sourceAccountName: string; name: string; type: string }[] = []
+  if (accountResolutions) {
+    for (const ar of accountResolutions) {
+      if (ar.action === 'existing' && ar.targetAccountId) {
+        aiPreMappings.set(ar.sourceAccountName, ar.targetAccountId)
+      } else if (ar.action === 'create' && ar.targetAccountName && ar.accountType) {
+        aiPreMappings.set(ar.sourceAccountName, `__new__${ar.targetAccountName}`)
+        newAccountCreations.push({ sourceAccountName: ar.sourceAccountName, name: ar.targetAccountName, type: ar.accountType })
+      }
+    }
+  }
+
+  // 应用 DB 映射
+  const { idMap: accountMappings } = await applyAccountMappings(source, parseResult.rows, accountBookId)
+  for (const [csvName, id] of aiPreMappings) {
+    accountMappings.set(csvName, id)
+  }
+
+  const allAccounts = await prisma.account.findMany({
+    where: { accountBookId, status: 'ACTIVE' },
+    select: { id: true, name: true },
+  })
+
+  const nameToId = new Map<string, string>()
+  for (const row of parseResult.rows) {
+    for (const name of [row.accountName, row.toAccountName].filter(Boolean) as string[]) {
+      if (accountMappings.has(name) || nameToId.has(name)) continue
+      const result = matchAccountByName(name, allAccounts)
+      if (result.matched) nameToId.set(name, result.id)
+    }
+  }
+
+  // 构建 id→name 映射（显示账户名称而非 ID）
+  const idToNameMap = new Map<string, string>()
+  for (const a of allAccounts) {
+    idToNameMap.set(a.id, a.name)
+  }
+
+  // 查询分类标签
+  const allCategoryCodes = [...new Set(parseResult.rows.map(r => r.mappedCategoryCode || r.categoryCode).filter(Boolean))] as string[]
+  const dictEntries = await prisma.dictionary.findMany({
+    where: { code: { in: allCategoryCodes } },
+    select: { code: true, label: true },
+  })
+  const categoryLabelMap = new Map(dictEntries.map(d => [d.code, d.label]))
+
+  const normalRecords = parseResult.rows.filter(r => r.type !== 'UNKNOWN')
+
+  const TYPE_LABELS: Record<string, string> = { INCOME: '收入', EXPENSE: '支出', TRANSFER: '转账' }
+  const TYPE_NAME: Record<string, string> = {
+    BANK_DEBIT: '储蓄卡', CREDIT_CARD: '信用卡', ALIPAY: '支付宝', WECHAT: '微信',
+    INVESTMENT: '投资', CASH: '现金', RECHARGE_CARD: '储值卡', OTHER: '其他',
+  }
+
+  // 解析账户显示名称（映射 ID → 名称，或新建占位符 → 新名称）
+  function resolveAccountName(csvName: string, mappedId: string | null | undefined): string {
+    if (mappedId) {
+      if (mappedId.startsWith('__new__')) return mappedId.slice(7)
+      const name = idToNameMap.get(mappedId)
+      if (name) return name
+    }
+    const id = nameToId.get(csvName)
+    if (id) {
+      const name = idToNameMap.get(id)
+      if (name) return name
+    }
+    return csvName
+  }
+
+  // 构建表格（全部记录，最多200行防撑爆）
+  const maxTableRows = 200
+  const columns = ['日期', '类型', '账户', '目标账户', '分类', '金额', '备注']
+  const allRows: PreviewCell[][] = normalRecords.map(r => {
+    const dateStr = r.date.slice(0, 10)
+    const accountDisplay = resolveAccountName(r.accountName, accountMappings.get(r.accountName))
+    const toAccountDisplay = r.toAccountName
+      ? resolveAccountName(r.toAccountName, accountMappings.get(r.toAccountName))
+      : '-'
+    const catCode = r.mappedCategoryCode || r.categoryCode
+    const catLabel = catCode ? (categoryLabelMap.get(catCode) || catCode) : '-'
+
+    return [
+      { text: dateStr },
+      { text: TYPE_LABELS[r.type] || r.type, color: r.type === 'INCOME' ? 'green' : r.type === 'EXPENSE' ? 'red' : undefined },
+      { text: accountDisplay },
+      { text: toAccountDisplay !== accountDisplay ? toAccountDisplay : '-' },
+      { text: catLabel },
+      { text: r.amount.toFixed(2), color: r.type === 'INCOME' ? 'green' : r.type === 'EXPENSE' ? 'red' : undefined },
+      { text: (r.remark || '-').slice(0, 40) },
+    ]
+  })
+  const displayRows = allRows.length > maxTableRows ? allRows.slice(0, maxTableRows) : allRows
+
+  // 描述信息
+  const descriptionParts: string[] = [`共 ${normalRecords.length} 条记录`]
+
+  // 账户创建列表
+  if (newAccountCreations.length > 0) {
+    descriptionParts.push(`将创建 ${newAccountCreations.length} 个新账户`)
+    const creationLines = newAccountCreations.map(c =>
+      `  • ${c.name} (${TYPE_NAME[c.type] || c.type}) ← ${c.sourceAccountName}`
+    )
+    descriptionParts.push(creationLines.join('\n'))
+  }
+
+  if (allRows.length > maxTableRows) {
+    descriptionParts.push(`表格仅展示前 ${maxTableRows} 条，其余 ${allRows.length - maxTableRows} 条将在导入时一并处理`)
+  }
+
+  // 解析归属人名称
+  if (args.ownerId) {
+    const member = await prisma.accountBookMember.findFirst({
+      where: { accountBookId, userId: args.ownerId },
+      select: { user: { select: { nickname: true } } },
+    })
+    const ownerName = member?.user?.nickname || args.ownerId
+    descriptionParts.push(`归属人：${ownerName}`)
+  } else {
+    descriptionParts.push('归属人：本人（默认）')
+  }
+
+  const preview: ConfirmPreview = {
+    type: 'records-table',
+    title: '确认导入账单数据',
+    description: descriptionParts.join('\n'),
+    columns,
+    rows: displayRows,
+  }
+
   return JSON.stringify(preview)
 }
 

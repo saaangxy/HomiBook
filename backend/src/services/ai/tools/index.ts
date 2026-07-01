@@ -11,6 +11,10 @@ import { setBudgetTool } from './set-budget.js'
 import { batchCreateRecordsTool } from './batch-create-records.js'
 import { batchUpdateRecordsTool } from './batch-update-records.js'
 import { suggestOptionsTool } from './suggest-options.js'
+import { queryImportMappingsTool } from './query-import-mappings.js'
+import { saveImportMappingTool } from './save-import-mapping.js'
+import { previewImportTool } from './preview-import.js'
+import { confirmImportTool } from './confirm-import.js'
 
 // 所有可用工具注册
 export const ALL_TOOLS: ToolDef[] = [
@@ -26,6 +30,10 @@ export const ALL_TOOLS: ToolDef[] = [
   batchCreateRecordsTool,
   batchUpdateRecordsTool,
   suggestOptionsTool,
+  queryImportMappingsTool,
+  saveImportMappingTool,
+  previewImportTool,
+  confirmImportTool,
 ]
 
 // 确认管理器：内存 Map 存储待确认的工具调用

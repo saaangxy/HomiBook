@@ -94,6 +94,9 @@ export interface AccountMapping {
 }
 
 export const importExportApi = {
+  uploadTempFile: (file: File): Promise<{ fileId: string; filename: string; size: number }> =>
+    api.uploadForm('/api/records/import/upload', file, {}),
+
   preview: (
     file: File,
     source: string,
