@@ -91,7 +91,7 @@ export function ToolCallCard({ toolCall }: Props) {
 
   const showArgs = toolCall.args != null
   const showResult = toolCall.status === 'success' && toolCall.result != null
-  const showError = toolCall.status === 'error' && toolCall.result != null
+  const showError = toolCall.status === 'error'
 
   // 交互式预览：成功但未完成导入 → 琥珀色
   const isImportPending = isInteractivePreview && toolCall.status === 'success' && !importCompleted

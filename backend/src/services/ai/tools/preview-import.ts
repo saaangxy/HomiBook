@@ -47,7 +47,7 @@ export const previewImportTool: ToolDef = {
           properties: {
             sourceCategory: { type: 'string', description: '流水中的源分类名称' },
             targetCategoryCode: { type: 'string', description: '目标系统分类编码（必须在 allDictItems 中存在）' },
-            recordType: { type: 'string', enum: ['INCOME', 'EXPENSE', 'TRANSFER'], description: '限定记录类型（可选，不填则匹配所有类型）' },
+            recordType: { type: 'string', enum: ['INCOME', 'EXPENSE', 'TRANSFER'], description: '限定记录类型（可选,不填则匹配所有类型,除确定不限类型全部映射的分类外,该字段应该填写对应类型）' },
             payerContains: { type: 'string', description: '交易方名称过滤条件（可选）' },
             descriptionContains: { type: 'string', description: '说明字段过滤条件（可选）' },
           },

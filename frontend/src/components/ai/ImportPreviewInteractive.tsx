@@ -197,31 +197,59 @@ export function ImportPreviewInteractive({ data, toolCallId, aiArgs, onImportCom
         }
       }
     }
-    // AI 提供的分类映射回显（覆盖默认值）
+    // AI 提供的分类映射回显
     if (aiArgs?.categoryResolutions) {
+      let extraIdx = 0
+      const extraEntries: Array<{ id: string; sourceCategory: string; type: string }> = []
+
       for (const cr of aiArgs.categoryResolutions) {
-        const key = cr.recordType ? `${cr.sourceCategory}::${cr.recordType}` : cr.sourceCategory
-        if (catRes[key]) {
-          catRes[key] = {
-            targetCode: cr.targetCategoryCode,
-            save: true,
-            payerContains: cr.payerContains || '',
-            descriptionContains: cr.descriptionContains || '',
+        const hasFilters = !!(cr.payerContains || cr.descriptionContains)
+
+        if (hasFilters) {
+          // 带过滤条件的映射：为每种记录类型创建独立条目（eN 后缀）
+          const matchTypes = cr.recordType
+            ? [cr.recordType]
+            : [...new Set(
+                Object.keys(catRes)
+                  .filter(k => k.startsWith(cr.sourceCategory + '::'))
+                  .map(k => k.split('::')[1])
+              )]
+          // 如果没有匹配的类型且没有 recordType，尝试从 unmatchedCategories 查找
+          if (matchTypes.length === 0 && !cr.recordType) {
+            const uc = (data.unmatchedCategories || []).find(c => c.sourceCategory === cr.sourceCategory)
+            if (uc) matchTypes.push(...uc.types)
+          }
+          for (const type of matchTypes) {
+            const id = String(extraIdx++)
+            const key = `${cr.sourceCategory}::${type}::e${id}`
+            catRes[key] = {
+              targetCode: cr.targetCategoryCode,
+              save: true,
+              payerContains: cr.payerContains || '',
+              descriptionContains: cr.descriptionContains || '',
+            }
+            extraEntries.push({ id, sourceCategory: cr.sourceCategory, type })
           }
         } else {
-          // AI 可能为已有 recordType 限定的分类创建了映射，但默认键可能不同
-          // 查找匹配 sourceCategory 的所有键并更新
-          for (const k of Object.keys(catRes)) {
-            if (k.startsWith(cr.sourceCategory + '::')) {
-              catRes[k] = {
-                targetCode: cr.targetCategoryCode,
-                save: true,
-                payerContains: cr.payerContains || '',
-                descriptionContains: cr.descriptionContains || '',
+          // 无过滤条件：作为该 sourceCategory 的默认映射
+          if (cr.recordType) {
+            const key = `${cr.sourceCategory}::${cr.recordType}`
+            if (catRes[key]) {
+              catRes[key].targetCode = cr.targetCategoryCode
+            }
+          } else {
+            for (const k of Object.keys(catRes)) {
+              if (k.startsWith(cr.sourceCategory + '::') && !k.includes('::e')) {
+                catRes[k].targetCode = cr.targetCategoryCode
               }
             }
           }
         }
+      }
+
+      if (extraEntries.length > 0) {
+        setExtraUnmatched(extraEntries)
+        setNextExtraId(extraIdx)
       }
     }
     setCategoryResolutions(catRes)

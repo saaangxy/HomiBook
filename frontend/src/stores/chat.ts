@@ -456,7 +456,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
                   }
                   return {
                     ...b,
-                    result: event.result,
+                    result: event.result ?? (event.error ? { error: event.error } : undefined),
                     durationMs: event.durationMs,
                     status: (event.status === 'success' ? 'success' : 'error') as 'success' | 'error',
                   }

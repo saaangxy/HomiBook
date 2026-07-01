@@ -59,7 +59,7 @@ export interface UserProviderConfig {
 export type SSEEvent =
   | { type: 'text-delta'; delta: string }
   | { type: 'tool-call'; toolCallId: string; toolName: string; args: unknown }
-  | { type: 'tool-result'; toolCallId: string; toolName: string; result: unknown; durationMs: number; status: string; merge?: { action?: 'append'; batch?: number; total: number } }
+  | { type: 'tool-result'; toolCallId: string; toolName: string; result: unknown; durationMs: number; status: string; error?: string; merge?: { action?: 'append'; batch?: number; total: number } }
   | { type: 'tool-confirm-required'; toolCallId: string; toolName: string; preview: string }
   | { type: 'tool-suggest-required'; toolCallId: string; toolName: string; questions: { question: string; field: string; options: string[]; allowCustom: boolean }[] }
   | { type: 'finish'; usage: unknown; userMessageId: string; assistantMessageId: string }

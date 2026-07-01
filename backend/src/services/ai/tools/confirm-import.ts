@@ -255,11 +255,11 @@ export const confirmImportTool: ToolDef = {
     // ---- 获取账本成员（供归属人选择） ----
     const members = await prisma.accountBookMember.findMany({
       where: { accountBookId: ctx.accountBookId },
-      select: { user: { select: { id: true, name: true, email: true } } },
+      select: { user: { select: { id: true, nickname: true, email: true } } },
     })
     const bookOwner = await prisma.accountBook.findUnique({
       where: { id: ctx.accountBookId },
-      select: { owner: { select: { id: true, name: true, email: true } } },
+      select: { owner: { select: { id: true, nickname: true, email: true } } },
     })
 
     // ---- 阶段1：返回预览数据 ----
@@ -314,8 +314,8 @@ export const confirmImportTool: ToolDef = {
           },
           ownerId: effectiveOwnerId,
           owners: [
-            ...(bookOwner ? [{ id: bookOwner.owner.id, name: bookOwner.owner.name || bookOwner.owner.email, isOwner: true }] : []),
-            ...members.map(m => ({ id: m.user.id, name: m.user.name || m.user.email, isOwner: false })),
+            ...(bookOwner ? [{ id: bookOwner.owner.id, name: bookOwner.owner.nickname || bookOwner.owner.email, isOwner: true }] : []),
+            ...members.map(m => ({ id: m.user.id, name: m.user.nickname || m.user.email, isOwner: false })),
           ],
           accountBookId: ctx.accountBookId,
         },
