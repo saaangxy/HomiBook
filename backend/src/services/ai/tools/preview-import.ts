@@ -131,6 +131,8 @@ export const previewImportTool: ToolDef = {
           types: [...new Set(parseResult.rows.filter(r => r.categoryCode === cr.sourceCategory).map(r => r.type))],
           aiTargetCode: cr.targetCategoryCode,
           aiRecordType: cr.recordType,
+          payerContains: cr.payerContains || '',
+          descriptionContains: cr.descriptionContains || '',
         }))
       : dbUnmatchedCategories
 

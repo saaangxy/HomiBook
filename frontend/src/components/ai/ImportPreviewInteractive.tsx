@@ -45,6 +45,8 @@ interface UnmatchedCategory {
   types: string[]
   aiTargetCode?: string
   aiRecordType?: string
+  payerContains?: string
+  descriptionContains?: string
 }
 
 interface DictEntry {
@@ -128,9 +130,9 @@ export function ImportPreviewInteractive({ data, toolCallId, aiArgs, onImportCom
     | { action: 'existing'; accountId: string }
   const [accountResolutions, setAccountResolutions] = useState<Record<string, AccountResolution>>({})
 
-  // 分类解析
-  type CategoryResolution = { targetCode: string; save: boolean; payerContains: string; descriptionContains: string }
-  const [categoryResolutions, setCategoryResolutions] = useState<Record<string, CategoryResolution>>({})
+  // 分类解析 - 数组结构，复制/删除/更新全部操作此字段
+  interface CategoryResolution { id: string; sourceCategory: string; type: string; targetCode: string; save: boolean; payerContains: string; descriptionContains: string }
+  const [categoryResolutions, setCategoryResolutions] = useState<CategoryResolution[]>([])
 
   // 未识别记录解析
   type UnrecognizedResolution = { type: string; accountId: string; categoryCode: string }
@@ -144,11 +146,6 @@ export function ImportPreviewInteractive({ data, toolCallId, aiArgs, onImportCom
   const [confirmed, setConfirmed] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [confirmError, setConfirmError] = useState<string | null>(null)
-
-  // 额外分类映射
-  const [extraUnmatched, setExtraUnmatched] = useState<Array<{ id: string; sourceCategory: string; type: string }>>([])
-  const [nextExtraId, setNextExtraId] = useState(1)
-  const [removedKeys, setRemovedKeys] = useState<Record<string, boolean>>({})
 
   // ---- 初始化 ----
   const initialized = { current: false }
@@ -184,20 +181,20 @@ export function ImportPreviewInteractive({ data, toolCallId, aiArgs, onImportCom
     }
     setAccountResolutions(acctRes)
 
-    // 分类解析 - 直接展示后端返回的映射规则
-    const catRes: Record<string, CategoryResolution> = {}
-    for (const uc of data.unmatchedCategories || []) {
-      const type = uc.aiRecordType || uc.types[0] || ''
-      if (!type) continue
-      const key = `${uc.sourceCategory}::${type}`
-      catRes[key] = {
-        targetCode: uc.suggestedCode || '',
-        save: true,
-        payerContains: '',
-        descriptionContains: '',
-      }
-    }
-    setCategoryResolutions(catRes)
+    // 分类解析 - 直接从后端映射规则构建数组
+    setCategoryResolutions(
+      (data.unmatchedCategories || [])
+        .filter(uc => uc.aiRecordType || uc.types[0])
+        .map((uc, i) => ({
+          id: String(i),
+          sourceCategory: uc.sourceCategory,
+          type: uc.aiRecordType || uc.types[0] || '',
+          targetCode: uc.suggestedCode || '',
+          save: true,
+          payerContains: uc.payerContains || '',
+          descriptionContains: uc.descriptionContains || '',
+        }))
+    )
 
     // 未识别记录
     const unresRes: Record<number, UnrecognizedResolution> = {}
@@ -212,7 +209,7 @@ export function ImportPreviewInteractive({ data, toolCallId, aiArgs, onImportCom
     const res = accountResolutions[ua.csvName]
     return res && (res.action === 'existing' ? !res.accountId : !res.name)
   }).length
-  const unresolvedCatCount = Object.values(categoryResolutions).filter(cr => !cr.targetCode).length
+  const unresolvedCatCount = categoryResolutions.filter(cr => !cr.targetCode).length
   const unresolvedUnrecCount = unrecognizedRecords.filter(r => {
     const res = unrecognizedResolutions[r.rowIndex]
     return !res?.type || !res?.accountId
@@ -223,7 +220,7 @@ export function ImportPreviewInteractive({ data, toolCallId, aiArgs, onImportCom
   const tabs = [
     { key: 'records' as const, label: `记录 (${allRecords.length})` },
     { key: 'unmatchedAccounts' as const, label: `未匹配账户 (${(data.unmatchedAccounts || []).length})` },
-    { key: 'unmatchedCategories' as const, label: `未匹配分类 (${(data.unmatchedCategories || []).length})` },
+    { key: 'unmatchedCategories' as const, label: `未匹配分类 (${categoryResolutions.length})` },
     { key: 'unrecognized' as const, label: `需处理 (${unrecognizedRecords.length})` },
   ]
 
@@ -424,25 +421,11 @@ export function ImportPreviewInteractive({ data, toolCallId, aiArgs, onImportCom
       {/* 未匹配分类 */}
       {tab === 'unmatchedCategories' && (
         <div className="space-y-2">
-          {(data.unmatchedCategories || []).length === 0 && extraUnmatched.length === 0 ? (
-            <p className="text-muted-foreground text-xs">全部分类已匹配</p>
+          {categoryResolutions.length === 0 ? (
+            <p className="text-muted-foreground text-xs">全部分类已映射</p>
           ) : (
             (() => {
-              // 直接展示后端返回的映射规则（一行一条）+ 用户额外规则
-              const allUnmatched: Array<{ key: string; sourceCategory: string; type: string; isExtra: boolean }> = []
-              for (const uc of data.unmatchedCategories || []) {
-                const type = uc.aiRecordType || uc.types[0] || ''
-                if (!type) continue
-                const key = `${uc.sourceCategory}::${type}`
-                if (!removedKeys[key]) { allUnmatched.push({ key, sourceCategory: uc.sourceCategory, type, isExtra: false }) }
-              }
-              for (const ex of extraUnmatched) {
-                const key = `${ex.sourceCategory}::${ex.type}::e${ex.id}`
-                if (!removedKeys[key]) { allUnmatched.push({ key, sourceCategory: ex.sourceCategory, type: ex.type, isExtra: true }) }
-              }
-
-              const grouped = Map.groupBy(allUnmatched, u => u.type)
-
+              const grouped = Map.groupBy(categoryResolutions, cr => cr.type)
               return (
                 <div className="space-y-2">
                   {[...grouped.entries()].map(([type, items]) => (
@@ -454,14 +437,13 @@ export function ImportPreviewInteractive({ data, toolCallId, aiArgs, onImportCom
                         <span className="text-[10px] text-muted-foreground">{items.length} 项</span>
                       </div>
                       <div className="space-y-1">
-                        {items.map(u => {
-                          const cr = categoryResolutions[u.key] || { targetCode: '', save: true, payerContains: '', descriptionContains: '' }
+                        {items.map(cr => {
                           const updateCr = (patch: Partial<CategoryResolution>) =>
-                            setCategoryResolutions(prev => ({ ...prev, [u.key]: { ...cr, ...patch } }))
+                            setCategoryResolutions(prev => prev.map(e => e.id === cr.id ? { ...e, ...patch } : e))
 
                           return (
-                            <div key={u.key} className="flex items-center gap-1.5 p-1.5 rounded bg-muted/30">
-                              <span className="text-[10px] font-medium min-w-[50px] max-w-[70px] truncate">{u.sourceCategory}</span>
+                            <div key={cr.id} className="flex items-center gap-1.5 p-1.5 rounded bg-muted/30">
+                              <span className="text-[10px] font-medium min-w-[50px] max-w-[70px] truncate">{cr.sourceCategory}</span>
                               <Input
                                 className="h-6 text-[10px] w-[80px]"
                                 placeholder="交易方包含"
@@ -475,7 +457,7 @@ export function ImportPreviewInteractive({ data, toolCallId, aiArgs, onImportCom
                                 onChange={(e) => updateCr({ descriptionContains: e.target.value })}
                               />
                               <span className="text-[10px] text-muted-foreground">→</span>
-                              <Popover open={comboOpen === u.key} onOpenChange={(open) => { setComboOpen(open ? u.key : null); setCategorySearch('') }}>
+                              <Popover open={comboOpen === cr.id} onOpenChange={(open) => { setComboOpen(open ? cr.id : null); setCategorySearch('') }}>
                                 <PopoverTrigger asChild>
                                   <Button variant="outline" className="h-6 text-[10px] px-1.5 flex-1 justify-between min-w-[80px]">
                                     <span className={cr.targetCode ? '' : 'text-muted-foreground'}>
@@ -530,21 +512,18 @@ export function ImportPreviewInteractive({ data, toolCallId, aiArgs, onImportCom
                               <Button
                                 variant="ghost" size="sm" className="text-[10px] h-6 px-1 shrink-0"
                                 onClick={() => {
-                                  const newId = nextExtraId
-                                  setNextExtraId(newId + 1)
-                                  setExtraUnmatched(prev => [...prev, { id: String(newId), sourceCategory: u.sourceCategory, type: u.type }])
+                                  const newId = String(categoryResolutions.length)
+                                  setCategoryResolutions(prev => [...prev, { ...cr, id: newId, payerContains: '', descriptionContains: '' }])
                                 }}
                               >
                                 复制
                               </Button>
-                              {u.isExtra && (
-                                <Button
-                                  variant="ghost" size="sm" className="text-[10px] h-6 px-1 text-red-500 shrink-0"
-                                  onClick={() => setRemovedKeys(prev => ({ ...prev, [u.key]: true }))}
-                                >
-                                  ×
-                                </Button>
-                              )}
+                              <Button
+                                variant="ghost" size="sm" className="text-[10px] h-6 px-1 text-red-500 shrink-0"
+                                onClick={() => setCategoryResolutions(prev => prev.filter(e => e.id !== cr.id))}
+                              >
+                                ×
+                              </Button>
                             </div>
                           )
                         })}
@@ -649,16 +628,12 @@ export function ImportPreviewInteractive({ data, toolCallId, aiArgs, onImportCom
 
                   // 构建用户修改后的分类映射（仅保留 save=true 且有目标分类的）
                   const userCategoryResolutions: { sourceCategory: string; targetCategoryCode: string; recordType?: string; payerContains?: string; descriptionContains?: string }[] = []
-                  for (const [key, cr] of Object.entries(categoryResolutions)) {
+                  for (const cr of categoryResolutions) {
                     if (!cr.targetCode || !cr.save) continue
-                    // key 格式: "sourceCategory::TYPE" 或 "sourceCategory::TYPE::eN"
-                    const parts = key.split('::')
-                    const sourceCategory = parts[0]
-                    const recordType = parts[1] && !parts[1].startsWith('e') ? parts[1] : undefined
                     userCategoryResolutions.push({
-                      sourceCategory,
+                      sourceCategory: cr.sourceCategory,
                       targetCategoryCode: cr.targetCode,
-                      recordType,
+                      recordType: cr.type,
                       payerContains: cr.payerContains || undefined,
                       descriptionContains: cr.descriptionContains || undefined,
                     })
