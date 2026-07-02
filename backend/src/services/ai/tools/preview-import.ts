@@ -108,15 +108,18 @@ export const previewImportTool: ToolDef = {
     // 匹配账户
     const { unmatched: unmatchedAccounts, nameMatched, accounts } = await resolveAccountsForTool(ctx.accountBookId, parseResult.rows, accountMappings)
 
-    // AI 账户映射规则直接展示，供前端预填充
+    // AI 账户映射规则直接展示，供前端预填充（跳过已在 DB 未匹配列表中的同名项）
     if (accountResolutions?.length) {
+      const existingNames = new Set(unmatchedAccounts.map(ua => ua.csvName))
       unmatchedAccounts.push(
-        ...accountResolutions.map(ar => ({
-          csvName: ar.sourceAccountName,
-          suggestedType: ar.accountType || '',
-          suggestedName: ar.targetAccountName || ar.sourceAccountName,
-          aiResolution: ar,
-        }))
+        ...accountResolutions
+          .filter(ar => !existingNames.has(ar.sourceAccountName))
+          .map(ar => ({
+            csvName: ar.sourceAccountName,
+            suggestedType: ar.accountType || '',
+            suggestedName: ar.targetAccountName || ar.sourceAccountName,
+            aiResolution: ar,
+          }))
       )
     }
 
