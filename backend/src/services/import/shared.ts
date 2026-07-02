@@ -113,90 +113,145 @@ export function matchAccountByName(name: string, allAccounts: { id: string; name
 
 // ======================== 账户映射 ========================
 
-/** 加载导入账户映射并按评分匹配 */
-export async function applyAccountMappings(source: string, rows: ParsedRow[], bookId: string) {
+/** AI 账户映射参数 */
+export interface AIAccountResolution {
+  sourceAccountName: string
+  action: 'existing' | 'create'
+  targetAccountId?: string
+  targetAccountName?: string
+  accountType?: string
+}
+
+/** 加载导入账户映射并按评分匹配。aiResolutions 按 sourceAccountName 覆盖/补充 DB 规则（不写 DB） */
+export async function applyAccountMappings(
+  source: string,
+  rows: ParsedRow[],
+  bookId: string,
+  aiResolutions?: AIAccountResolution[],
+) {
   const sourceNames = [...new Set(rows.map(r => r.accountName).filter(Boolean))]
-  if (sourceNames.length === 0) return { idMap: new Map<string, string | null>(), nameRecord: {} as Record<string, string> }
+  const empty = { idMap: new Map<string, string | null>(), nameRecord: {} as Record<string, string>, newAccountCreations: [] as { sourceAccountName: string; name: string; type: string }[] }
+  if (sourceNames.length === 0 && !aiResolutions?.length) return empty
 
-  const allMappings = await prisma.importAccountMapping.findMany({
-    where: {
-      source,
-      sourceAccountName: { in: sourceNames },
-    },
-    orderBy: [{ sourceAccountName: 'asc' }, { payerContains: 'desc' }, { descriptionContains: 'desc' }],
-  })
+  const idMap = new Map<string, string | null>()
+  const nameRecord: Record<string, string> = {}
 
-  if (allMappings.length === 0) return { idMap: new Map<string, string | null>(), nameRecord: {} as Record<string, string> }
-
-  const mappingsByName = new Map<string, typeof allMappings>()
-  for (const m of allMappings) {
-    const list = mappingsByName.get(m.sourceAccountName) || []
-    list.push(m)
-    mappingsByName.set(m.sourceAccountName, list)
-  }
-
+  // 加载所有活跃账户（DB 评分 + AI 覆盖共用）
   const allAccounts = await prisma.account.findMany({
     where: { accountBookId: bookId, status: 'ACTIVE' },
     select: { id: true, name: true },
   })
 
-  const idMap = new Map<string, string | null>()
-  const nameRecord: Record<string, string> = {}
+  // DB 映射评分
+  if (sourceNames.length > 0) {
+    const allMappings = await prisma.importAccountMapping.findMany({
+      where: {
+        source,
+        sourceAccountName: { in: sourceNames },
+      },
+      orderBy: [{ sourceAccountName: 'asc' }, { payerContains: 'desc' }, { descriptionContains: 'desc' }],
+    })
 
-  for (const r of rows) {
-    const key = r.accountName
-    if (idMap.has(key)) continue
+    if (allMappings.length > 0) {
+      const mappingsByName = Map.groupBy(allMappings, m => m.sourceAccountName)
 
-    const candidates = mappingsByName.get(key)
-    if (!candidates || candidates.length === 0) {
-      idMap.set(key, null)
-      continue
-    }
+      for (const r of rows) {
+        const key = r.accountName
+        if (idMap.has(key)) continue
 
-    let best: string | null = null
-    let bestScore = -1
-    for (const m of candidates) {
-      let score = 0
-      if (m.payerContains) {
-        if (r.payer && r.payer.includes(m.payerContains)) score += 2
-        else continue
-      }
-      if (m.descriptionContains) {
-        if (r.remark && r.remark.includes(m.descriptionContains)) score += 1
-        else continue
-      }
-      if (score > bestScore) {
-        bestScore = score
-        best = m.targetAccountName
-      }
-    }
+        const candidates = mappingsByName.get(key)
+        if (!candidates || candidates.length === 0) {
+          idMap.set(key, null)
+          continue
+        }
 
-    if (best) {
-      const result = matchAccountByName(best, allAccounts)
-      if (result.matched) {
-        idMap.set(key, result.id)
-        nameRecord[key] = result.name
-      } else {
-        idMap.set(key, null)
+        let best: string | null = null
+        let bestScore = -1
+        for (const m of candidates) {
+          let score = 0
+          if (m.payerContains && r.payer && r.payer.includes(m.payerContains)) {
+            score += 1
+          }
+          if (m.descriptionContains && r.remark && r.remark.includes(m.descriptionContains)) {
+            score += 1
+          }
+          if (score > bestScore) {
+            bestScore = score
+            best = m.targetAccountName
+          }
+        }
+
+        if (best) {
+          const result = matchAccountByName(best, allAccounts)
+          if (result.matched) {
+            idMap.set(key, result.id)
+            nameRecord[key] = result.name
+          } else {
+            idMap.set(key, null)
+          }
+        } else {
+          idMap.set(key, null)
+        }
       }
-    } else {
-      idMap.set(key, null)
     }
   }
 
-  return { idMap, nameRecord }
+  // AI 账户映射覆盖/补充（AI 优先于 DB，按 sourceAccountName 覆盖）
+  const newAccountCreations: { sourceAccountName: string; name: string; type: string }[] = []
+  if (aiResolutions?.length) {
+    for (const ar of aiResolutions) {
+      if (ar.action === 'existing' && ar.targetAccountId) {
+        idMap.set(ar.sourceAccountName, ar.targetAccountId)
+        const acc = allAccounts.find(a => a.id === ar.targetAccountId)
+        if (acc) nameRecord[ar.sourceAccountName] = acc.name
+      } else if (ar.action === 'create' && ar.targetAccountName && ar.accountType) {
+        const matched = matchAccountByName(ar.targetAccountName, allAccounts)
+        if (matched.matched) {
+          idMap.set(ar.sourceAccountName, matched.id)
+          nameRecord[ar.sourceAccountName] = matched.name
+        } else {
+          newAccountCreations.push({ sourceAccountName: ar.sourceAccountName, name: ar.targetAccountName, type: ar.accountType })
+        }
+      }
+    }
+  }
+
+  return { idMap, nameRecord, newAccountCreations }
 }
 
 // ======================== 分类映射 ========================
 
-/** 加载导入分类映射并按评分匹配 */
-export async function applyCategoryMappings(source: string, rows: ParsedRow[]) {
+/** 映射条目（DB 和 AI 统一结构） */
+interface MappingEntry {
+  sourceCategory: string
+  recordType: string
+  payerContains: string
+  descriptionContains: string
+  targetCategoryCode: string
+}
+
+/** AI 分类映射参数 */
+export interface AICategoryResolution {
+  sourceCategory: string
+  targetCategoryCode: string
+  recordType?: string
+  payerContains?: string
+  descriptionContains?: string
+}
+
+/** 加载导入分类映射并按评分匹配。aiResolutions 按唯一键覆盖/补充 DB 规则（不写 DB） */
+export async function applyCategoryMappings(
+  source: string,
+  rows: ParsedRow[],
+  aiResolutions?: AICategoryResolution[],
+) {
   const sourceCategories = [...new Set(rows.map(r => r.categoryCode).filter(Boolean))] as string[]
   if (sourceCategories.length === 0) return { unmatched: [] as UnmatchedCategory[], allDictItems: [] as { code: string; label: string; group: string }[] }
 
   const allTypes = [...new Set(rows.map(r => r.type))]
 
-  const allMappings = await prisma.importCategoryMapping.findMany({
+  // 加载 DB 映射
+  const dbMappings = await prisma.importCategoryMapping.findMany({
     where: {
       source,
       sourceCategory: { in: sourceCategories },
@@ -208,12 +263,38 @@ export async function applyCategoryMappings(source: string, rows: ParsedRow[]) {
     orderBy: [{ sourceCategory: 'asc' }, { payerContains: 'desc' }, { descriptionContains: 'desc' }],
   })
 
-  const mappingsByCat = new Map<string, typeof allMappings>()
-  for (const m of allMappings) {
-    const list = mappingsByCat.get(m.sourceCategory) || []
-    list.push(m)
-    mappingsByCat.set(m.sourceCategory, list)
+  // DB 映射 → 统一 MappingEntry
+  const allMappings: MappingEntry[] = dbMappings.map(m => ({
+    sourceCategory: m.sourceCategory,
+    recordType: m.recordType,
+    payerContains: m.payerContains,
+    descriptionContains: m.descriptionContains,
+    targetCategoryCode: m.targetCategoryCode,
+  }))
+
+  // AI 映射覆盖/补充（唯一键：sourceCategory + recordType + payerContains + descriptionContains）
+  if (aiResolutions?.length) {
+    const merged = new Map<string, MappingEntry>()
+    for (const cr of aiResolutions) {
+      const entry: MappingEntry = {
+        sourceCategory: cr.sourceCategory,
+        recordType: cr.recordType || '',
+        payerContains: cr.payerContains || '',
+        descriptionContains: cr.descriptionContains || '',
+        targetCategoryCode: cr.targetCategoryCode,
+      }
+      merged.set(`${entry.sourceCategory}::${entry.recordType}::${entry.payerContains}::${entry.descriptionContains}`, entry)
+    }
+    for (const m of allMappings) {
+      const key = `${m.sourceCategory}::${m.recordType}::${m.payerContains}::${m.descriptionContains}`
+      if (!merged.has(key)) merged.set(key, m)
+    }
+    allMappings.length = 0
+    allMappings.push(...merged.values())
   }
+
+  // 按 sourceCategory 分组
+  const mappingsByCat = Map.groupBy(allMappings, m => m.sourceCategory)
 
   const allDictItems = await prisma.dictionary.findMany({
     where: { group: { in: ['transaction_category_income', 'transaction_category_expense', 'transaction_category_transfer'] } },
@@ -221,54 +302,19 @@ export async function applyCategoryMappings(source: string, rows: ParsedRow[]) {
   })
   const expenseCodes = new Set(allDictItems.filter(d => d.group === 'transaction_category_expense').map(d => d.code))
 
-  // 评分匹配
-  function findBestMapping(row: ParsedRow): string | null {
-    const candidates = mappingsByCat.get(row.categoryCode!)
-    if (!candidates || candidates.length === 0) return null
-
-    let best: string | null = null
-    let bestScore = -1
-
-    for (const m of candidates) {
-      if (m.recordType && m.recordType !== row.type) continue
-      let score = 0
-      if (m.recordType === row.type) score += 1
-      if (m.payerContains) {
-        if (row.payer && row.payer.includes(m.payerContains)) score += 2
-        else continue
-      }
-      if (m.descriptionContains) {
-        if (row.remark && row.remark.includes(m.descriptionContains)) score += 1
-        else continue
-      }
-      if (score > bestScore) {
-        bestScore = score
-        best = m.targetCategoryCode
-      }
-    }
-
-    return best
-  }
-
   // 收集每个分类出现的记录类型
   const categoryTypes = new Map<string, Set<string>>()
+  // 收集仍有未匹配记录的分类
+  const categoriesWithUnmatched = new Set<string>()
   for (const r of rows) {
     if (!r.categoryCode) continue
     const types = categoryTypes.get(r.categoryCode) || new Set()
     types.add(r.type)
     categoryTypes.set(r.categoryCode, types)
-  }
 
-  for (const r of rows) {
-    // 如果已有映射（如 AI 预填），不覆盖
     if (r.categoryCode && r.mappedCategoryCode === null) {
       r.mappedCategoryCode = findBestMapping(r)
     }
-  }
-
-  // 收集仍有未匹配记录的分类
-  const categoriesWithUnmatched = new Set<string>()
-  for (const r of rows) {
     if (r.categoryCode && r.mappedCategoryCode === null) {
       categoriesWithUnmatched.add(r.categoryCode)
     }
@@ -290,6 +336,34 @@ export async function applyCategoryMappings(source: string, rows: ParsedRow[]) {
       }
     }
     unmatched.push({ sourceCategory: cat, suggestedCode: matched, types: [...(categoryTypes.get(cat) || [])] })
+  }
+
+
+  // 评分匹配
+  function findBestMapping(row: ParsedRow): string | null {
+    const candidates = mappingsByCat.get(row.categoryCode!)
+    if (!candidates || candidates.length === 0) return null
+
+    let best: string | null = null
+    let bestScore = -1
+
+    for (const m of candidates) {
+      if (m.recordType && m.recordType !== row.type) continue
+      let score = 0
+      if (m.recordType === row.type) score += 1
+      if (m.payerContains && row.payer && row.payer.includes(m.payerContains)) {
+        score += 1
+      }
+      if (m.descriptionContains && row.remark && row.remark.includes(m.descriptionContains)) {
+        score += 1
+      }
+      if (score > bestScore) {
+        bestScore = score
+        best = m.targetCategoryCode
+      }
+    }
+
+    return best
   }
 
   return { unmatched, allDictItems: allDictItems.map(d => ({ code: d.code, label: d.label, group: d.group })) }

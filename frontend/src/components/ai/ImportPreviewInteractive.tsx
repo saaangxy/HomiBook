@@ -155,7 +155,7 @@ export function ImportPreviewInteractive({ data, toolCallId, aiArgs, onImportCom
   useEffect(() => {
     if (initialized.current) return
     initialized.current = true
-
+    console.log('ImportPreviewInteractive.tsx: {}',data);
     // 账户解析
     const acctRes: Record<string, AccountResolution> = {}
     for (const ua of data.unmatchedAccounts || []) {
@@ -184,52 +184,17 @@ export function ImportPreviewInteractive({ data, toolCallId, aiArgs, onImportCom
     }
     setAccountResolutions(acctRes)
 
-    // 分类解析
+    // 分类解析 - 直接展示后端返回的映射规则
     const catRes: Record<string, CategoryResolution> = {}
     for (const uc of data.unmatchedCategories || []) {
-      for (const type of uc.types) {
-        const key = `${uc.sourceCategory}::${type}`
-        catRes[key] = {
-          targetCode: uc.aiTargetCode || uc.suggestedCode || '',
-          save: true,
-          payerContains: '',
-          descriptionContains: '',
-        }
-      }
-    }
-    // AI 提供的分类映射回显：全部作为额外条目，统一用 eN 后缀
-    if (aiArgs?.categoryResolutions) {
-      let extraIdx = 0
-      const extraEntries: Array<{ id: string; sourceCategory: string; type: string }> = []
-
-      for (const cr of aiArgs.categoryResolutions) {
-        const matchTypes = cr.recordType
-          ? [cr.recordType]
-          : [...new Set(
-              Object.keys(catRes)
-                .filter(k => k.startsWith(cr.sourceCategory + '::'))
-                .map(k => k.split('::')[1])
-            )]
-        if (matchTypes.length === 0) {
-          const uc = (data.unmatchedCategories || []).find(c => c.sourceCategory === cr.sourceCategory)
-          if (uc) matchTypes.push(...uc.types)
-        }
-        for (const type of matchTypes) {
-          const id = String(extraIdx++)
-          const key = `${cr.sourceCategory}::${type}::e${id}`
-          catRes[key] = {
-            targetCode: cr.targetCategoryCode,
-            save: true,
-            payerContains: cr.payerContains || '',
-            descriptionContains: cr.descriptionContains || '',
-          }
-          extraEntries.push({ id, sourceCategory: cr.sourceCategory, type })
-        }
-      }
-
-      if (extraEntries.length > 0) {
-        setExtraUnmatched(extraEntries)
-        setNextExtraId(extraIdx)
+      const type = uc.aiRecordType || uc.types[0] || ''
+      if (!type) continue
+      const key = `${uc.sourceCategory}::${type}`
+      catRes[key] = {
+        targetCode: uc.suggestedCode || '',
+        save: true,
+        payerContains: '',
+        descriptionContains: '',
       }
     }
     setCategoryResolutions(catRes)
@@ -463,30 +428,24 @@ export function ImportPreviewInteractive({ data, toolCallId, aiArgs, onImportCom
             <p className="text-muted-foreground text-xs">全部分类已匹配</p>
           ) : (
             (() => {
+              // 直接展示后端返回的映射规则（一行一条）+ 用户额外规则
               const allUnmatched: Array<{ key: string; sourceCategory: string; type: string; isExtra: boolean }> = []
-              const seen = new Set<string>()
               for (const uc of data.unmatchedCategories || []) {
-                for (const type of uc.types) {
-                  const key = `${uc.sourceCategory}::${type}`
-                  if (!removedKeys[key]) { seen.add(key); allUnmatched.push({ key, sourceCategory: uc.sourceCategory, type, isExtra: false }) }
-                }
+                const type = uc.aiRecordType || uc.types[0] || ''
+                if (!type) continue
+                const key = `${uc.sourceCategory}::${type}`
+                if (!removedKeys[key]) { allUnmatched.push({ key, sourceCategory: uc.sourceCategory, type, isExtra: false }) }
               }
               for (const ex of extraUnmatched) {
                 const key = `${ex.sourceCategory}::${ex.type}::e${ex.id}`
                 if (!removedKeys[key]) { allUnmatched.push({ key, sourceCategory: ex.sourceCategory, type: ex.type, isExtra: true }) }
               }
 
-              // 按类型分组
-              const grouped = new Map<string, typeof allUnmatched>()
-              for (const u of allUnmatched) {
-                const list = grouped.get(u.type) || []
-                list.push(u)
-                grouped.set(u.type, list)
-              }
+              const grouped = Map.groupBy(allUnmatched, u => u.type)
 
               return (
                 <div className="space-y-2">
-                  {Array.from(grouped.entries()).map(([type, items]) => (
+                  {[...grouped.entries()].map(([type, items]) => (
                     <div key={type}>
                       <div className="flex items-center gap-2 mb-1">
                         <Badge className={cn('text-[10px]', type === 'EXPENSE' ? 'bg-[#fef2f2] text-[#ef4444]' : type === 'INCOME' ? 'bg-[#f0fdf4] text-[#22c55e]' : 'bg-[#eff6ff] text-[#3b82f6]')}>
@@ -536,7 +495,7 @@ export function ImportPreviewInteractive({ data, toolCallId, aiArgs, onImportCom
                                     />
                                   </div>
                                   <div className="max-h-48 overflow-y-auto p-1">
-                                    {Array.from(groupedDictItems(type).entries()).map(([group, items]) => (
+                                    {[...groupedDictItems(type).entries()].map(([group, items]) => (
                                       <div key={group}>
                                         <p className="text-[10px] text-muted-foreground px-2 py-0.5 font-medium">
                                           {GROUP_HEADING[group] || group}

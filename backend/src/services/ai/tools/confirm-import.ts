@@ -124,45 +124,11 @@ export const confirmImportTool: ToolDef = {
       }
     }
 
-    // 应用分类映射（DB 规则 + AI 规则合并）
-    // const { allDictItems } = await applyCategoryMappings(source, parseResult.rows)
+    // DB + AI 分类映射合并应用（AI 按唯一键覆盖/补充 DB，统一走评分匹配）
+    await applyCategoryMappings(source, parseResult.rows, effectiveCategoryResolutions)
 
-    if (effectiveCategoryResolutions && effectiveCategoryResolutions.length > 0) {
-      const aiCategoryMap = new Map<string, typeof effectiveCategoryResolutions[number]>()
-      for (const cr of effectiveCategoryResolutions) {
-        const key = cr.recordType ? `${cr.sourceCategory}::${cr.recordType}` : cr.sourceCategory
-        aiCategoryMap.set(key, cr)
-      }
-      for (const r of parseResult.rows) {
-        const keyWithType = `${r.categoryCode}::${r.type}`
-        const cr = aiCategoryMap.get(keyWithType) || aiCategoryMap.get(r.categoryCode || '')
-        if (cr) {
-          if (cr.payerContains && r.payer && !r.payer.includes(cr.payerContains)) continue
-          if (cr.descriptionContains && r.remark && !r.remark.includes(cr.descriptionContains)) continue
-          r.mappedCategoryCode = cr.targetCategoryCode
-        }
-      }
-    }
-
-    // 构建 AI 账户预映射
-    const aiPreMappings = new Map<string, string | null>()
-    const newAccountCreations: { sourceAccountName: string; name: string; type: string }[] = []
-    if (effectiveAccountResolutions) {
-      for (const ar of effectiveAccountResolutions) {
-        if (ar.action === 'existing' && ar.targetAccountId) {
-          aiPreMappings.set(ar.sourceAccountName, ar.targetAccountId)
-        } else if (ar.action === 'create' && ar.targetAccountName && ar.accountType) {
-          aiPreMappings.set(ar.sourceAccountName, `__new__${ar.targetAccountName}`)
-          newAccountCreations.push({ sourceAccountName: ar.sourceAccountName, name: ar.targetAccountName, type: ar.accountType })
-        }
-      }
-    }
-
-    // 应用 DB 账户映射
-    const { idMap: accountMappings } = await applyAccountMappings(source, parseResult.rows, ctx.accountBookId)
-    for (const [csvName, id] of aiPreMappings) {
-      accountMappings.set(csvName, id)
-    }
+    // 应用 DB 账户映射 + AI 覆盖
+    const { idMap: accountMappings, newAccountCreations } = await applyAccountMappings(source, parseResult.rows, ctx.accountBookId, effectiveAccountResolutions)
 
     // 匹配账户
     const allAccounts = await prisma.account.findMany({

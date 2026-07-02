@@ -103,104 +103,36 @@ export const previewImportTool: ToolDef = {
     }
 
     // ---- 合并 DB 映射规则 + AI 映射规则（内存合并，不写 DB）----
-    const newAccountCreations: { sourceAccountName: string; name: string; type: string }[] = []
-
-    // 从 DB 加载映射
-    const { idMap: dbAccountMappings, nameRecord: accountMappingNames } = await applyAccountMappings(source, parseResult.rows, ctx.accountBookId)
-
-    // AI 账户映射覆盖 DB 映射（现有账户 → 直接用 ID；新建账户 → 记录供前端展示）
-    const accountMappings = new Map(dbAccountMappings)
-    if (accountResolutions) {
-      for (const ar of accountResolutions) {
-        if (ar.action === 'existing' && ar.targetAccountId) {
-          accountMappings.set(ar.sourceAccountName, ar.targetAccountId)
-        } else if (ar.action === 'create' && ar.targetAccountName && ar.accountType) {
-          accountMappings.set(ar.sourceAccountName, `__new__${ar.targetAccountName}`)
-          newAccountCreations.push({ sourceAccountName: ar.sourceAccountName, name: ar.targetAccountName, type: ar.accountType })
-        }
-      }
-    }
+    const { idMap: accountMappings, nameRecord: accountMappingNames, newAccountCreations } = await applyAccountMappings(source, parseResult.rows, ctx.accountBookId, accountResolutions)
 
     // 匹配账户
     const { unmatched: unmatchedAccounts, nameMatched, accounts } = await resolveAccountsForTool(ctx.accountBookId, parseResult.rows, accountMappings)
 
-    // AI 已解析的账户加回 unmatchedAccounts，供前端展示预填充状态
-    if (accountResolutions && accountResolutions.length > 0) {
-      const existingUnmatchedNames = new Set(unmatchedAccounts.map(ua => ua.csvName))
-      for (const ar of accountResolutions) {
-        if (!existingUnmatchedNames.has(ar.sourceAccountName)) {
-          unmatchedAccounts.push({
-            csvName: ar.sourceAccountName,
-            suggestedType: ar.accountType || '',
-            suggestedName: ar.targetAccountName || ar.sourceAccountName,
-            aiResolution: ar,
-          })
-        }
-      }
+    // AI 账户映射规则直接展示，供前端预填充
+    if (accountResolutions?.length) {
+      unmatchedAccounts.push(
+        ...accountResolutions.map(ar => ({
+          csvName: ar.sourceAccountName,
+          suggestedType: ar.accountType || '',
+          suggestedName: ar.targetAccountName || ar.sourceAccountName,
+          aiResolution: ar,
+        }))
+      )
     }
 
-    // DB 分类映射先应用
-    const { unmatched: dbUnmatchedCategories, allDictItems } = await applyCategoryMappings(source, parseResult.rows)
+    // DB + AI 分类映射合并应用（AI 按唯一键覆盖/补充 DB，统一走评分匹配）
+    const { unmatched: dbUnmatchedCategories, allDictItems } = await applyCategoryMappings(source, parseResult.rows, categoryResolutions)
 
-    // AI 分类映射覆盖（AI 优先于 DB，按 sourceCategory + recordType 匹配）
-    if (categoryResolutions && categoryResolutions.length > 0) {
-      const aiCategoryMap = new Map<string, typeof categoryResolutions[number]>()
-      for (const cr of categoryResolutions) {
-        const key = cr.recordType ? `${cr.sourceCategory}::${cr.recordType}` : cr.sourceCategory
-        aiCategoryMap.set(key, cr)
-      }
-      for (const r of parseResult.rows) {
-        const keyWithType = `${r.categoryCode}::${r.type}`
-        const cr = aiCategoryMap.get(keyWithType) || aiCategoryMap.get(r.categoryCode || '')
-        if (cr) {
-          if (cr.payerContains && r.payer && !r.payer.includes(cr.payerContains)) continue
-          if (cr.descriptionContains && r.remark && !r.remark.includes(cr.descriptionContains)) continue
-          r.mappedCategoryCode = cr.targetCategoryCode
-        }
-      }
-    }
-
-    // 重新计算 unmatchedCategories：AI 覆盖后可能减少了未匹配项
-    const unmatchedCategories: typeof dbUnmatchedCategories = []
-    const mappedSourceCategories = new Set<string>()
-    for (const r of parseResult.rows) {
-      if (r.categoryCode && r.mappedCategoryCode) {
-        mappedSourceCategories.add(r.categoryCode)
-      }
-    }
-    // 收集每个分类出现的记录类型（用于未匹配展示）
-    const categoryTypes = new Map<string, Set<string>>()
-    for (const r of parseResult.rows) {
-      if (!r.categoryCode) continue
-      if (mappedSourceCategories.has(r.categoryCode)) continue
-      const types = categoryTypes.get(r.categoryCode) || new Set()
-      types.add(r.type)
-      categoryTypes.set(r.categoryCode, types)
-    }
-    for (const uc of dbUnmatchedCategories) {
-      if (!mappedSourceCategories.has(uc.sourceCategory)) {
-        unmatchedCategories.push(uc)
-      }
-    }
-    // AI 已映射的分类加回 unmatchedCategories，供前端展示预填充状态
-    if (categoryResolutions && categoryResolutions.length > 0) {
-      const existingUnmatchedSources = new Set(unmatchedCategories.map(uc => uc.sourceCategory))
-      for (const cr of categoryResolutions) {
-        if (!existingUnmatchedSources.has(cr.sourceCategory)) {
-          const types = new Set<string>()
-          for (const r of parseResult.rows) {
-            if (r.categoryCode === cr.sourceCategory) types.add(r.type)
-          }
-          unmatchedCategories.push({
-            sourceCategory: cr.sourceCategory,
-            suggestedCode: cr.targetCategoryCode,
-            types: [...types],
-            aiTargetCode: cr.targetCategoryCode,
-            aiRecordType: cr.recordType,
-          })
-        }
-      }
-    }
+    // AI 分类映射规则直接展示
+    const unmatchedCategories = categoryResolutions?.length
+      ? categoryResolutions.map(cr => ({
+          sourceCategory: cr.sourceCategory,
+          suggestedCode: cr.targetCategoryCode,
+          types: [...new Set(parseResult.rows.filter(r => r.categoryCode === cr.sourceCategory).map(r => r.type))],
+          aiTargetCode: cr.targetCategoryCode,
+          aiRecordType: cr.recordType,
+        }))
+      : dbUnmatchedCategories
 
     // 分离正常记录和未识别记录
     const allNormalRecords = parseResult.rows.filter(r => r.type !== 'UNKNOWN')
@@ -275,22 +207,23 @@ export const previewImportTool: ToolDef = {
     })
 
     // 构建映射摘要
-    let mappedCategories: { sourceCategory: string; sourceLabel: string; targetCode: string; targetLabel: string; recordType?: string }[] = []
-    if (categoryResolutions) {
+    const mappedCategories = !categoryResolutions ? undefined : (() => {
       const seen = new Set<string>()
-      for (const r of allNormalRecords) {
-        if (!r.mappedCategoryCode || !r.categoryCode) continue
-        const key = `${r.categoryCode}::${r.mappedCategoryCode}`
-        if (seen.has(key)) continue
-        seen.add(key)
-        mappedCategories.push({
-          sourceCategory: r.categoryCode,
-          sourceLabel: categoryLabelMap.get(r.categoryCode) || r.categoryCode,
-          targetCode: r.mappedCategoryCode,
-          targetLabel: categoryLabelMap.get(r.mappedCategoryCode) || r.mappedCategoryCode,
+      return allNormalRecords
+        .filter(r => r.mappedCategoryCode && r.categoryCode)
+        .filter(r => {
+          const key = `${r.categoryCode}::${r.mappedCategoryCode}`
+          if (seen.has(key)) return false
+          seen.add(key)
+          return true
         })
-      }
-    }
+        .map(r => ({
+          sourceCategory: r.categoryCode!,
+          sourceLabel: categoryLabelMap.get(r.categoryCode!) || r.categoryCode!,
+          targetCode: r.mappedCategoryCode!,
+          targetLabel: categoryLabelMap.get(r.mappedCategoryCode!) || r.mappedCategoryCode!,
+        }))
+    })()
 
     return {
       success: true,
@@ -307,7 +240,7 @@ export const previewImportTool: ToolDef = {
         accountBookId: ctx.accountBookId,
         accountMappingNames: { ...nameMatched, ...accountMappingNames },
         newAccountCreations: newAccountCreations.length > 0 ? newAccountCreations : undefined,
-        mappedCategories: mappedCategories.length > 0 ? mappedCategories : undefined,
+        mappedCategories,
         stats: {
           totalLines: parseResult.rows.length + parseResult.errors.length,
           parsedRows: allNormalRecords.length,
@@ -322,11 +255,7 @@ export const previewImportTool: ToolDef = {
 
 /** 账户匹配（与 import-export.ts 中 resolveAccounts 逻辑一致） */
 async function resolveAccountsForTool(bookId: string, rows: ParsedRow[], idMap?: Map<string, string | null>) {
-  const accountNames = new Set<string>()
-  for (const r of rows) {
-    accountNames.add(r.accountName)
-    if (r.toAccountName) accountNames.add(r.toAccountName)
-  }
+  const accountNames = new Set(rows.flatMap(r => [r.accountName, r.toAccountName].filter((x): x is string => x != null)))
 
   const mappedCsvNameToId = new Map<string, string>()
   if (idMap) {
@@ -335,7 +264,7 @@ async function resolveAccountsForTool(bookId: string, rows: ParsedRow[], idMap?:
     }
   }
 
-  const namesToLookup = Array.from(accountNames).filter(n => !mappedCsvNameToId.has(n))
+  const namesToLookup = [...accountNames].filter(n => !mappedCsvNameToId.has(n))
   const allAccounts = await prisma.account.findMany({
     where: { accountBookId: bookId, status: 'ACTIVE' },
     select: { id: true, name: true, type: true },
@@ -354,35 +283,27 @@ async function resolveAccountsForTool(bookId: string, rows: ParsedRow[], idMap?:
     }
   }
 
-  const unmatched: { csvName: string; suggestedType: string; suggestedName: string; bankName?: string; accountNo?: string; candidates?: { id: string; name: string }[]; aiResolution?: { sourceAccountName: string; action: 'existing' | 'create'; targetAccountId?: string; targetAccountName?: string; accountType?: string } }[] = []
-  const seen = new Set<string>()
-
-  for (const name of accountNames) {
-    if (mappedCsvNameToId.has(name)) continue
-    if (nameToId.has(name)) continue
-    if (seen.has(name)) continue
-    seen.add(name)
-    const ambCandidates = candidatesMap.get(name)
-    const inferred = inferAccount(name)
-    if (inferred || ambCandidates) {
-      unmatched.push({
-        csvName: name,
-        suggestedType: inferred?.type || '',
-        suggestedName: inferred?.defaultName || name,
-        bankName: inferred?.bankName,
-        accountNo: inferred?.accountNo,
-        ...(ambCandidates ? { candidates: ambCandidates } : {}),
-      })
-    }
-  }
+  const unmatched = [...new Set(
+    [...accountNames].filter(name => !mappedCsvNameToId.has(name) && !nameToId.has(name))
+  )]
+    .map(name => ({ name, amb: candidatesMap.get(name), inf: inferAccount(name) }))
+    .filter(({ amb, inf }) => inf || amb)
+    .map(({ name, inf, amb }) => ({
+      csvName: name,
+      suggestedType: inf?.type || '',
+      suggestedName: inf?.defaultName || name,
+      ...(inf?.bankName != null ? { bankName: inf.bankName } : {}),
+      ...(inf?.accountNo != null ? { accountNo: inf.accountNo } : {}),
+      ...(amb ? { candidates: amb } : {}),
+    }))
 
   // 填充 accountId / toAccountId
-  for (const r of rows) {
+  rows.forEach(r => {
     r.accountId = mappedCsvNameToId.get(r.accountName) || nameToId.get(r.accountName) || null
     if (r.toAccountName) {
       r.toAccountId = mappedCsvNameToId.get(r.toAccountName) || nameToId.get(r.toAccountName) || null
     }
-  }
+  })
 
   return { unmatched, nameMatched, accounts: allAccounts }
 }
