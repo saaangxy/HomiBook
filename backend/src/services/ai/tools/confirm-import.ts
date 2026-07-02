@@ -2,8 +2,8 @@ import type { ToolDef, ToolContext } from './types.js'
 import { prisma } from '../../../app.js'
 import { parseAlipayCSV, parseWechatXlsx, parseJdCSV, parseCsvWithMapping } from '../../../routes/import-export.js'
 import { applyAccountMappings, applyCategoryMappings, matchAccountByName, inferAccount, type ParsedRow } from '../../import/shared.js'
+import { createAccountsInTx, saveCategoryMappingsInTx, saveAccountMappingsInTx, AccountResolver, batchCreateRecordsInTx, refreshBalances } from '../../import/execute.js'
 import { consumeImportOverrides, peekImportOverrides } from './index.js'
-import { refreshAccountBalance } from '../../../routes/account.js'
 import fs from 'fs'
 import path from 'path'
 
@@ -332,146 +332,16 @@ export const confirmImportTool: ToolDef = {
       tags: r.tags,
     }))
 
-    const accountMap = new Map<string, string>()
-    let accountsCreated = 0
-    const affectedAccounts = new Set<string>()
-
-    await prisma.$transaction(async (tx) => {
-      // 创建新账户
-      for (const acct of accountCreations) {
-        const existing = await tx.account.findFirst({
-          where: { accountBookId: ctx.accountBookId, name: acct.name },
-        })
-        if (existing) {
-          for (const sn of acct.csvName.split(', ')) {
-            accountMap.set(sn, existing.id)
-          }
-          accountMap.set(acct.name, existing.id)
-          continue
-        }
-        accountsCreated++
-        const created = await tx.account.create({
-          data: {
-            accountBookId: ctx.accountBookId,
-            ownerId: effectiveOwnerId,
-            name: acct.name,
-            type: acct.type,
-            bankName: acct.bankName || null,
-            accountNo: acct.accountNo || null,
-            balance: 0,
-          },
-        })
-        for (const sn of acct.csvName.split(', ')) {
-          accountMap.set(sn, created.id)
-        }
-        accountMap.set(acct.name, created.id)
-      }
-
-      // 保存分类映射
-      for (const m of newMappings) {
-        await tx.importCategoryMapping.upsert({
-          where: {
-            source_sourceCategory_payerContains_descriptionContains_recordType: {
-              source,
-              sourceCategory: m.sourceCategory,
-              payerContains: m.payerContains || '',
-              descriptionContains: m.descriptionContains || '',
-              recordType: m.recordType || '',
-            },
-          },
-          create: {
-            source,
-            sourceCategory: m.sourceCategory,
-            payerContains: m.payerContains || '',
-            descriptionContains: m.descriptionContains || '',
-            recordType: m.recordType || '',
-            targetCategoryCode: m.targetCategoryCode,
-          },
-          update: { targetCategoryCode: m.targetCategoryCode },
-        })
-      }
-
-      // 保存账户映射
-      for (const m of newAccountMappings) {
-        await tx.importAccountMapping.upsert({
-          where: {
-            source_sourceAccountName_payerContains_descriptionContains: {
-              source,
-              sourceAccountName: m.sourceAccountName,
-              payerContains: '',
-              descriptionContains: '',
-            },
-          },
-          create: {
-            source,
-            sourceAccountName: m.sourceAccountName,
-            payerContains: '',
-            descriptionContains: '',
-            targetAccountName: m.targetAccountName,
-          },
-          update: { targetAccountName: m.targetAccountName },
-        })
-      }
-
-      // 解析账户 ID
-      const nameCache = new Map<string, string>()
-      const resolveAccountId = async (idOrName: string): Promise<string> => {
-        if (accountMap.has(idOrName)) return accountMap.get(idOrName)!
-        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrName)) return idOrName
-        if (nameCache.has(idOrName)) return nameCache.get(idOrName)!
-        const acc = await tx.account.findFirst({ where: { accountBookId: ctx.accountBookId, name: idOrName } })
-        if (acc) {
-          nameCache.set(idOrName, acc.id)
-          return acc.id
-        }
-        throw Object.assign(new Error(`账户不存在: ${idOrName}`), { statusCode: 400 })
-      }
-
-      // 批量创建记录
-      const batchSize = 100
-      for (let i = 0; i < records.length; i += batchSize) {
-        const batch = records.slice(i, i + batchSize)
-        const resolvedAccounts = await Promise.all(batch.map(async r => ({
-          accountId: await resolveAccountId(r.accountId),
-          toAccountId: r.toAccountId ? await resolveAccountId(r.toAccountId) : null,
-        })))
-
-        const createData = batch.map((r, idx) => {
-          const accountId = resolvedAccounts[idx].accountId
-          const toAccountId = resolvedAccounts[idx].toAccountId
-          affectedAccounts.add(accountId)
-          if (toAccountId) affectedAccounts.add(toAccountId)
-
-          return {
-            accountBookId: ctx.accountBookId,
-            type: r.type,
-            amount: r.amount,
-            date: new Date(r.date),
-            remark: r.remark || null,
-            tags: JSON.stringify(r.tags ?? []),
-            accountId,
-            fromAccountId: r.type === 'TRANSFER' ? accountId : null,
-            toAccountId: r.type === 'TRANSFER' ? toAccountId : null,
-            categoryCode: r.categoryCode || null,
-            payer: r.payer || null,
-            ownerId: effectiveOwnerId,
-          }
-        })
-
-        await Promise.all(
-          createData.map(d =>
-            tx.record.create({ data: d })
-          )
-        )
-      }
+    const { accountMap, accountsCreated, affectedAccounts } = await prisma.$transaction(async (tx) => {
+      const { accountMap, accountsCreated } = await createAccountsInTx(tx, ctx.accountBookId, effectiveOwnerId, accountCreations)
+      await saveCategoryMappingsInTx(tx, source, newMappings)
+      await saveAccountMappingsInTx(tx, source, newAccountMappings)
+      const resolver = new AccountResolver(tx, accountMap, ctx.accountBookId)
+      const affectedAccounts = await batchCreateRecordsInTx(tx, ctx.accountBookId, effectiveOwnerId, records, idOrName => resolver.resolve(idOrName))
+      return { accountMap, accountsCreated, affectedAccounts }
     })
 
-    // 刷新账户余额
-    for (const accId of affectedAccounts) {
-      try {
-        await refreshAccountBalance(accId)
-      } catch { /* ignore */ }
-    }
+    await refreshBalances(affectedAccounts)
 
     // 清理临时文件
     try {
