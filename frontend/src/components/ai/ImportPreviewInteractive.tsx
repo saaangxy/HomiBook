@@ -446,13 +446,13 @@ export function ImportPreviewInteractive({ data, toolCallId, aiArgs, onImportCom
                               <span className="text-[10px] font-medium min-w-[50px] max-w-[70px] truncate">{cr.sourceCategory}</span>
                               <Input
                                 className="h-6 text-[10px] w-[80px]"
-                                placeholder="交易方包含"
+                                placeholder="交易方正则"
                                 value={cr.payerContains}
                                 onChange={(e) => updateCr({ payerContains: e.target.value })}
                               />
                               <Input
                                 className="h-6 text-[10px] w-[80px]"
-                                placeholder="说明包含"
+                                placeholder="说明正则"
                                 value={cr.descriptionContains}
                                 onChange={(e) => updateCr({ descriptionContains: e.target.value })}
                               />

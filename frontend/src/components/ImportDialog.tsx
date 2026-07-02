@@ -1135,13 +1135,13 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                             <div key={compositeKey} className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 flex-wrap">
                               <span className="text-sm min-w-[72px]">{uc.sourceCategory}</span>
                               <Input
-                                placeholder="交易方包含"
+                                placeholder="交易方正则"
                                 value={cr?.payerContains || ''}
                                 onChange={(e) => updateCr({ payerContains: e.target.value })}
                                 className="h-8 text-xs w-[110px] bg-background"
                               />
                               <Input
-                                placeholder="说明包含"
+                                placeholder="说明正则"
                                 value={cr?.descriptionContains || ''}
                                 onChange={(e) => updateCr({ descriptionContains: e.target.value })}
                                 className="h-8 text-xs w-[110px] bg-background"

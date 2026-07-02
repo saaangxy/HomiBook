@@ -1,5 +1,16 @@
 import { prisma } from '../../app.js'
 
+// ======================== 工具函数 ========================
+
+/** 检查文本是否匹配模式（支持正则表达式，如 燃气|电力|汇通 匹配任一关键词）。无效正则回退为字面包含匹配 */
+export function testMatch(pattern: string, text: string): boolean {
+  try {
+    return new RegExp(pattern).test(text)
+  } catch {
+    return text.includes(pattern)
+  }
+}
+
 // ======================== 类型 ========================
 
 export interface ParsedRow {
@@ -169,10 +180,10 @@ export async function applyAccountMappings(
         let bestScore = -1
         for (const m of candidates) {
           let score = 0
-          if (m.payerContains && r.payer && r.payer.includes(m.payerContains)) {
+          if (m.payerContains && r.payer && testMatch(m.payerContains, r.payer)) {
             score += 1
           }
-          if (m.descriptionContains && r.remark && r.remark.includes(m.descriptionContains)) {
+          if (m.descriptionContains && r.remark && testMatch(m.descriptionContains, r.remark)) {
             score += 1
           }
           if (score > bestScore) {
@@ -351,10 +362,10 @@ export async function applyCategoryMappings(
       if (m.recordType && m.recordType !== row.type) continue
       let score = 0
       if (m.recordType === row.type) score += 1
-      if (m.payerContains && row.payer && row.payer.includes(m.payerContains)) {
+      if (m.payerContains && row.payer && testMatch(m.payerContains, row.payer)) {
         score += 1
       }
-      if (m.descriptionContains && row.remark && row.remark.includes(m.descriptionContains)) {
+      if (m.descriptionContains && row.remark && testMatch(m.descriptionContains, row.remark)) {
         score += 1
       }
       if (score > bestScore) {

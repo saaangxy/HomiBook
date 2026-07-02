@@ -1,6 +1,6 @@
 import { prisma } from '../../app.js'
 import { parseAlipayCSV, parseWechatXlsx, parseJdCSV, parseCsvWithMapping } from '../../routes/import-export.js'
-import { applyAccountMappings, matchAccountByName, type ParsedRow } from '../import/shared.js'
+import { applyAccountMappings, matchAccountByName, testMatch, type ParsedRow } from '../import/shared.js'
 import fs from 'fs'
 import path from 'path'
 
@@ -448,7 +448,7 @@ async function buildSaveImportMappingPreview(args: any): Promise<string> {
       type: 'records-table',
       title,
       description: '保存后，后续导入时相同的源账户名将自动匹配到目标账户',
-      columns: ['源账户名', '目标账户', '交易方过滤', '说明过滤'],
+      columns: ['源账户名', '目标账户', '交易方正则', '说明正则'],
       rows: mappings.map((m) => [
         { text: m.sourceAccountName },
         { text: `${m.targetAccountName}` },
@@ -470,7 +470,7 @@ async function buildSaveImportMappingPreview(args: any): Promise<string> {
       type: 'records-table',
       title,
       description: '保存后，后续导入时相同的源分类名将自动映射到目标系统分类',
-      columns: ['源分类名', '目标分类', '交易方过滤', '说明过滤', '记录类型'],
+      columns: ['源分类名', '目标分类', '交易方正则', '说明正则', '记录类型'],
       rows: mappings.map((m) => [
         { text: m.sourceCategory },
         { text: `${labelMap.get(m.targetCategoryCode) || m.targetCategoryCode}` },
@@ -551,8 +551,8 @@ async function buildConfirmImportPreview(args: any, accountBookId: string): Prom
       const keyWithType = `${r.categoryCode}::${r.type}`
       const cr = aiCategoryMap.get(keyWithType) || aiCategoryMap.get(r.categoryCode || '')
       if (cr) {
-        if (cr.payerContains && r.payer && !r.payer.includes(cr.payerContains)) continue
-        if (cr.descriptionContains && r.remark && !r.remark.includes(cr.descriptionContains)) continue
+        if (cr.payerContains && r.payer && !testMatch(cr.payerContains, r.payer)) continue
+        if (cr.descriptionContains && r.remark && !testMatch(cr.descriptionContains, r.remark)) continue
         r.mappedCategoryCode = cr.targetCategoryCode
       }
     }

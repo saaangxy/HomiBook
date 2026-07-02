@@ -23,8 +23,8 @@ export const saveImportMappingTool: ToolDef = {
             sourceCategory: { type: 'string', description: '源分类名称（分类映射必填）' },
             targetCategoryCode: { type: 'string', description: '目标系统分类编码（分类映射必填）' },
             // 通用条件字段
-            payerContains: { type: 'string', description: '交易方名称过滤条件（可选）' },
-            descriptionContains: { type: 'string', description: '说明字段过滤条件（可选）' },
+            payerContains: { type: 'string', description: '交易方名称正则过滤条件（可选），如 燃气|电力|汇通 匹配任一关键词' },
+            descriptionContains: { type: 'string', description: '说明字段正则过滤条件（可选），如 燃气|电力|汇通 匹配任一关键词' },
             recordType: { type: 'string', enum: ['INCOME', 'EXPENSE', 'TRANSFER', ''], description: '记录类型过滤（分类映射可选）' },
           },
         },

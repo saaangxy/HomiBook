@@ -1065,8 +1065,8 @@ export function SettingsPage() {
                   <TableHeader>
                     <TableRow className="bg-muted/50 hover:bg-muted/50">
                       <TableHead className="text-xs">CSV 原始分类</TableHead>
-                      <TableHead className="text-xs">交易方包含</TableHead>
-                      <TableHead className="text-xs">说明包含</TableHead>
+                      <TableHead className="text-xs">交易方正则</TableHead>
+                      <TableHead className="text-xs">说明正则</TableHead>
                       <TableHead className="text-xs">类型</TableHead>
                       <TableHead className="text-xs">系统分类编码</TableHead>
                       <TableHead className="text-xs w-16 text-right">操作</TableHead>
@@ -1173,8 +1173,8 @@ export function SettingsPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="text-xs">CSV原始账户名</TableHead>
-                      <TableHead className="text-xs">交易方包含</TableHead>
-                      <TableHead className="text-xs">说明包含</TableHead>
+                      <TableHead className="text-xs">交易方正则</TableHead>
+                      <TableHead className="text-xs">说明正则</TableHead>
                       <TableHead className="text-xs">目标账户名</TableHead>
                       <TableHead className="text-xs w-[72px]">操作</TableHead>
                     </TableRow>
@@ -1474,18 +1474,18 @@ export function SettingsPage() {
               />
             </div>
             <div>
-              <Label className="text-xs text-muted-foreground mb-1 block">交易方包含 (可选)</Label>
+              <Label className="text-xs text-muted-foreground mb-1 block">交易方正则 (可选)</Label>
               <Input
-                placeholder="例如：麦当劳，留空则不限制"
+                placeholder="例如：麦当劳|肯德基，留空则不限制"
                 value={mappingNewPayerContains}
                 onChange={(e) => setMappingNewPayerContains(e.target.value)}
                 className="bg-background border-border"
               />
             </div>
             <div>
-              <Label className="text-xs text-muted-foreground mb-1 block">商品说明包含 (可选)</Label>
+              <Label className="text-xs text-muted-foreground mb-1 block">商品说明正则 (可选)</Label>
               <Input
-                placeholder="例如：早餐，留空则不限制"
+                placeholder="例如：早餐|午餐，留空则不限制"
                 value={mappingNewDescriptionContains}
                 onChange={(e) => setMappingNewDescriptionContains(e.target.value)}
                 className="bg-background border-border"
@@ -1582,18 +1582,18 @@ export function SettingsPage() {
               />
             </div>
             <div>
-              <Label className="text-xs text-muted-foreground mb-1 block">交易方包含 (可选)</Label>
+              <Label className="text-xs text-muted-foreground mb-1 block">交易方正则 (可选)</Label>
               <Input
-                placeholder="例如：麦当劳，留空则不限制"
+                placeholder="例如：麦当劳|肯德基，留空则不限制"
                 value={accountMappingNewPayerContains}
                 onChange={(e) => setAccountMappingNewPayerContains(e.target.value)}
                 className="bg-background border-border"
               />
             </div>
             <div>
-              <Label className="text-xs text-muted-foreground mb-1 block">商品说明包含 (可选)</Label>
+              <Label className="text-xs text-muted-foreground mb-1 block">商品说明正则 (可选)</Label>
               <Input
-                placeholder="例如：还款，留空则不限制"
+                placeholder="例如：还款|转账，留空则不限制"
                 value={accountMappingNewDescriptionContains}
                 onChange={(e) => setAccountMappingNewDescriptionContains(e.target.value)}
                 className="bg-background border-border"
