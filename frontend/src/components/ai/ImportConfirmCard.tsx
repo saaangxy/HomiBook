@@ -15,12 +15,16 @@ interface ConfirmRecord {
   type: string
   amount: number
   accountName: string
+  accountId?: string | null
+  toAccountName?: string | null
+  toAccountId?: string | null
   categoryCode?: string | null
   categoryLabel?: string | null
   mappedCategoryCode?: string | null
   mappedCategoryLabel?: string | null
   payer?: string | null
   remark?: string
+  tags?: string[]
 }
 
 interface AccountToCreate {
@@ -161,7 +165,7 @@ export function ImportConfirmCard({ data, toolCallId }: Props) {
           <SelectContent>
             {data.owners.map((o) => (
               <SelectItem key={o.id} value={o.id}>
-                {o.name}{o.isOwner ? ' (账本主人)' : ''}
+                {o.name}
               </SelectItem>
             ))}
           </SelectContent>
@@ -179,14 +183,18 @@ export function ImportConfirmCard({ data, toolCallId }: Props) {
                 <TableHead className="text-[10px] px-1.5 py-1">类型</TableHead>
                 <TableHead className="text-[10px] px-1.5 py-1 text-right">金额</TableHead>
                 <TableHead className="text-[10px] px-1.5 py-1">账户</TableHead>
+                <TableHead className="text-[10px] px-1.5 py-1">目标账户</TableHead>
                 <TableHead className="text-[10px] px-1.5 py-1">分类</TableHead>
+                <TableHead className="text-[10px] px-1.5 py-1">映射分类</TableHead>
+                <TableHead className="text-[10px] px-1.5 py-1">交易方</TableHead>
+                <TableHead className="text-[10px] px-1.5 py-1">说明</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {data.records.slice(0, 50).map((r) => (
                 <TableRow key={r.rowIndex}>
                   <TableCell className="text-[10px] px-1.5 py-0.5 text-muted-foreground">{r.rowIndex}</TableCell>
-                  <TableCell className="text-[10px] px-1.5 py-0.5">{r.date?.slice(0, 10) || r.date}</TableCell>
+                  <TableCell className="text-[10px] px-1.5 py-0.5">{r.date}</TableCell>
                   <TableCell className={cn('text-[10px] px-1.5 py-0.5', TYPE_COLORS[r.type] || '')}>
                     {TYPE_LABELS[r.type] || r.type}
                   </TableCell>
@@ -194,11 +202,19 @@ export function ImportConfirmCard({ data, toolCallId }: Props) {
                     {r.amount.toFixed(2)}
                   </TableCell>
                   <TableCell className="text-[10px] px-1.5 py-0.5">{r.accountName}</TableCell>
+                  <TableCell className="text-[10px] px-1.5 py-0.5 text-muted-foreground">
+                    {r.toAccountName || '-'}
+                  </TableCell>
+                  <TableCell className="text-[10px] px-1.5 py-0.5">
+                    {r.categoryLabel || r.categoryCode || '-'}
+                  </TableCell>
                   <TableCell className="text-[10px] px-1.5 py-0.5">
                     <span className={r.mappedCategoryLabel ? 'text-green-600' : ''}>
-                      {r.mappedCategoryLabel || r.categoryLabel || r.categoryCode || '-'}
+                      {r.mappedCategoryLabel || r.mappedCategoryCode || '-'}
                     </span>
                   </TableCell>
+                  <TableCell className="text-[10px] px-1.5 py-0.5 max-w-16 truncate">{r.payer || '-'}</TableCell>
+                  <TableCell className="text-[10px] px-1.5 py-0.5 text-muted-foreground max-w-20 truncate">{r.remark || '-'}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

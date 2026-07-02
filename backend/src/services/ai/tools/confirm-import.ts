@@ -149,47 +149,56 @@ export const confirmImportTool: ToolDef = {
       }
     }
 
-    // 构建 accountCreations 和 newAccountMappings
-    const accountCreations: { csvName: string; name: string; type: string; bankName?: string; accountNo?: string }[] = []
-    const newAccountMappings: { sourceAccountName: string; targetAccountName: string }[] = []
-
-    const createdNames = new Set<string>()
+    // 构建 accountCreations（按 targetName 合并，避免多个源账户映射到同一目标时重复创建）
+    const creationByName = new Map<string, { csvNames: Set<string>; name: string; type: string; bankName?: string; accountNo?: string }>()
     for (const nac of newAccountCreations) {
-      if (createdNames.has(nac.sourceAccountName)) continue
-      createdNames.add(nac.sourceAccountName)
-      accountCreations.push({
-        csvName: nac.sourceAccountName,
-        name: nac.name,
-        type: nac.type,
-      })
-      newAccountMappings.push({
-        sourceAccountName: nac.sourceAccountName,
-        targetAccountName: nac.name,
-      })
+      const existing = creationByName.get(nac.name)
+      if (existing) {
+        existing.csvNames.add(nac.sourceAccountName)
+      } else {
+        creationByName.set(nac.name, { csvNames: new Set([nac.sourceAccountName]), name: nac.name, type: nac.type })
+      }
     }
 
-    // 检查未匹配账户（自动推断）
+    // 自动推断未匹配账户（跳过已被 AI 映射覆盖的源账户名）
+    const mappedSourceNames = new Set([...creationByName.values()].flatMap(c => [...c.csvNames]))
     const seenAccounts = new Set<string>()
     for (const row of parseResult.rows) {
       if (seenAccounts.has(row.accountName)) continue
       seenAccounts.add(row.accountName)
       if (accountMappings.has(row.accountName)) continue
       if (nameToId.has(row.accountName)) continue
+      if (mappedSourceNames.has(row.accountName)) continue
       const inferred = inferAccount(row.accountName)
       if (inferred) {
-        accountCreations.push({
-          csvName: row.accountName,
-          name: inferred.defaultName,
-          type: inferred.type,
-          bankName: inferred.bankName,
-          accountNo: inferred.accountNo,
-        })
-        newAccountMappings.push({
-          sourceAccountName: row.accountName,
-          targetAccountName: inferred.defaultName,
-        })
+        const existing = creationByName.get(inferred.defaultName)
+        if (existing) {
+          existing.csvNames.add(row.accountName)
+          if (inferred.bankName) existing.bankName = inferred.bankName
+          if (inferred.accountNo) existing.accountNo = inferred.accountNo
+        } else {
+          creationByName.set(inferred.defaultName, {
+            csvNames: new Set([row.accountName]),
+            name: inferred.defaultName,
+            type: inferred.type,
+            bankName: inferred.bankName,
+            accountNo: inferred.accountNo,
+          })
+        }
       }
     }
+
+    const accountCreations = [...creationByName.values()].map(c => ({
+      csvName: [...c.csvNames].join(', '),
+      name: c.name,
+      type: c.type,
+      bankName: c.bankName,
+      accountNo: c.accountNo,
+    }))
+
+    const newAccountMappings = [...creationByName.values()].flatMap(c =>
+      [...c.csvNames].map(sn => ({ sourceAccountName: sn, targetAccountName: c.name })),
+    )
 
     // 构建 newMappings
     const newMappings: { sourceCategory: string; targetCategoryCode: string; payerContains?: string; descriptionContains?: string; recordType?: string }[] = []
@@ -227,6 +236,15 @@ export const confirmImportTool: ToolDef = {
       where: { id: ctx.accountBookId },
       select: { owner: { select: { id: true, nickname: true, email: true } } },
     })
+    const bookOwnerId = bookOwner?.owner.id
+
+    const formatDate = (d: string) => {
+      try {
+        const dt = new Date(d)
+        if (isNaN(dt.getTime())) return d
+        return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')} ${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}:${String(dt.getSeconds()).padStart(2, '0')}`
+      } catch { return d }
+    }
 
     // ---- 阶段1：返回预览数据 ----
     if (!_execute) {
@@ -260,16 +278,20 @@ export const confirmImportTool: ToolDef = {
           })),
           records: normalRecords.map(r => ({
             rowIndex: r.rowIndex,
-            date: r.date,
+            date: formatDate(r.date),
             type: r.type,
             amount: r.amount,
             accountName: r.accountName,
+            accountId: r.accountId,
+            toAccountName: r.toAccountName,
+            toAccountId: r.toAccountId,
             categoryCode: r.categoryCode,
             categoryLabel: r.categoryCode ? (labelMap.get(r.categoryCode) || r.categoryCode) : null,
             mappedCategoryCode: r.mappedCategoryCode,
             mappedCategoryLabel: r.mappedCategoryCode ? (labelMap.get(r.mappedCategoryCode) || r.mappedCategoryCode) : null,
             payer: r.payer,
             remark: r.remark,
+            tags: r.tags,
           })),
           stats: {
             totalRecords: normalRecords.length,
@@ -281,7 +303,7 @@ export const confirmImportTool: ToolDef = {
           ownerId: effectiveOwnerId,
           owners: [
             ...(bookOwner ? [{ id: bookOwner.owner.id, name: bookOwner.owner.nickname || bookOwner.owner.email, isOwner: true }] : []),
-            ...members.map(m => ({ id: m.user.id, name: m.user.nickname || m.user.email, isOwner: false })),
+            ...members.filter(m => m.user.id !== bookOwnerId).map(m => ({ id: m.user.id, name: m.user.nickname || m.user.email, isOwner: false })),
           ],
           accountBookId: ctx.accountBookId,
         },
@@ -290,11 +312,19 @@ export const confirmImportTool: ToolDef = {
 
     // ---- 阶段2：执行导入 ----
 
+    // 构建源账户名 → 新建账户名映射（csvName 已合并为逗号分隔）
+    const csvNameToNewName = new Map<string, string>()
+    for (const c of creationByName.values()) {
+      for (const sn of c.csvNames) {
+        csvNameToNewName.set(sn, c.name)
+      }
+    }
+
     const records = normalRecords.map(r => ({
       date: r.date,
       type: r.type as 'INCOME' | 'EXPENSE' | 'TRANSFER',
       amount: r.amount,
-      accountId: r.accountId || (accountCreations.find(a => a.csvName === r.accountName)?.name || r.accountName),
+      accountId: r.accountId || csvNameToNewName.get(r.accountName) || r.accountName,
       toAccountId: r.toAccountId || undefined,
       categoryCode: r.mappedCategoryCode || r.categoryCode,
       payer: r.payer,
@@ -313,7 +343,9 @@ export const confirmImportTool: ToolDef = {
           where: { accountBookId: ctx.accountBookId, name: acct.name },
         })
         if (existing) {
-          accountMap.set(acct.csvName, existing.id)
+          for (const sn of acct.csvName.split(', ')) {
+            accountMap.set(sn, existing.id)
+          }
           accountMap.set(acct.name, existing.id)
           continue
         }
@@ -329,7 +361,9 @@ export const confirmImportTool: ToolDef = {
             balance: 0,
           },
         })
-        accountMap.set(acct.csvName, created.id)
+        for (const sn of acct.csvName.split(', ')) {
+          accountMap.set(sn, created.id)
+        }
         accountMap.set(acct.name, created.id)
       }
 

@@ -1,6 +1,6 @@
 import { prisma } from '../../app.js'
 import { parseAlipayCSV, parseWechatXlsx, parseJdCSV, parseCsvWithMapping } from '../../routes/import-export.js'
-import { applyAccountMappings, matchAccountByName, testMatch, type ParsedRow } from '../import/shared.js'
+import { applyAccountMappings, applyCategoryMappings, matchAccountByName, type ParsedRow } from '../import/shared.js'
 import fs from 'fs'
 import path from 'path'
 
@@ -540,43 +540,10 @@ async function buildConfirmImportPreview(args: any, accountBookId: string): Prom
     } satisfies ConfirmPreview)
   }
 
-  // 应用 AI 分类映射
-  if (categoryResolutions && categoryResolutions.length > 0) {
-    const aiCategoryMap = new Map<string, typeof categoryResolutions[number]>()
-    for (const cr of categoryResolutions) {
-      const key = cr.recordType ? `${cr.sourceCategory}::${cr.recordType}` : cr.sourceCategory
-      aiCategoryMap.set(key, cr)
-    }
-    for (const r of parseResult.rows) {
-      const keyWithType = `${r.categoryCode}::${r.type}`
-      const cr = aiCategoryMap.get(keyWithType) || aiCategoryMap.get(r.categoryCode || '')
-      if (cr) {
-        if (cr.payerContains && r.payer && !testMatch(cr.payerContains, r.payer)) continue
-        if (cr.descriptionContains && r.remark && !testMatch(cr.descriptionContains, r.remark)) continue
-        r.mappedCategoryCode = cr.targetCategoryCode
-      }
-    }
-  }
+  // 使用统一映射逻辑（与 preview_import / confirm_import 执行阶段一致）
+  await applyCategoryMappings(source, parseResult.rows, categoryResolutions)
 
-  // AI 账户预映射
-  const aiPreMappings = new Map<string, string | null>()
-  const newAccountCreations: { sourceAccountName: string; name: string; type: string }[] = []
-  if (accountResolutions) {
-    for (const ar of accountResolutions) {
-      if (ar.action === 'existing' && ar.targetAccountId) {
-        aiPreMappings.set(ar.sourceAccountName, ar.targetAccountId)
-      } else if (ar.action === 'create' && ar.targetAccountName && ar.accountType) {
-        aiPreMappings.set(ar.sourceAccountName, `__new__${ar.targetAccountName}`)
-        newAccountCreations.push({ sourceAccountName: ar.sourceAccountName, name: ar.targetAccountName, type: ar.accountType })
-      }
-    }
-  }
-
-  // 应用 DB 映射
-  const { idMap: accountMappings } = await applyAccountMappings(source, parseResult.rows, accountBookId)
-  for (const [csvName, id] of aiPreMappings) {
-    accountMappings.set(csvName, id)
-  }
+  const { idMap: accountMappings, newAccountCreations } = await applyAccountMappings(source, parseResult.rows, accountBookId, accountResolutions)
 
   const allAccounts = await prisma.account.findMany({
     where: { accountBookId, status: 'ACTIVE' },
@@ -614,10 +581,9 @@ async function buildConfirmImportPreview(args: any, accountBookId: string): Prom
     INVESTMENT: '投资', CASH: '现金', RECHARGE_CARD: '储值卡', OTHER: '其他',
   }
 
-  // 解析账户显示名称（映射 ID → 名称，或新建占位符 → 新名称）
+  // 解析账户显示名称（优先查找已有账户，其次查找待创建的新账户）
   function resolveAccountName(csvName: string, mappedId: string | null | undefined): string {
     if (mappedId) {
-      if (mappedId.startsWith('__new__')) return mappedId.slice(7)
       const name = idToNameMap.get(mappedId)
       if (name) return name
     }
@@ -626,6 +592,8 @@ async function buildConfirmImportPreview(args: any, accountBookId: string): Prom
       const name = idToNameMap.get(id)
       if (name) return name
     }
+    const newAcct = newAccountCreations.find(c => c.sourceAccountName === csvName)
+    if (newAcct) return newAcct.name
     return csvName
   }
 
@@ -656,11 +624,21 @@ async function buildConfirmImportPreview(args: any, accountBookId: string): Prom
   // 描述信息
   const descriptionParts: string[] = [`共 ${normalRecords.length} 条记录`]
 
-  // 账户创建列表
+  // 账户创建列表（按目标名去重合并）
   if (newAccountCreations.length > 0) {
-    descriptionParts.push(`将创建 ${newAccountCreations.length} 个新账户`)
-    const creationLines = newAccountCreations.map(c =>
-      `  • ${c.name} (${TYPE_NAME[c.type] || c.type}) ← ${c.sourceAccountName}`
+    const creationByName = new Map<string, { sourceNames: Set<string>; name: string; type: string }>()
+    for (const c of newAccountCreations) {
+      const existing = creationByName.get(c.name)
+      if (existing) {
+        existing.sourceNames.add(c.sourceAccountName)
+      } else {
+        creationByName.set(c.name, { sourceNames: new Set([c.sourceAccountName]), name: c.name, type: c.type })
+      }
+    }
+    const deduped = [...creationByName.values()]
+    descriptionParts.push(`将创建 ${deduped.length} 个新账户`)
+    const creationLines = deduped.map(c =>
+      `  • ${c.name} (${TYPE_NAME[c.type] || c.type}) ← ${[...c.sourceNames].join(', ')}`
     )
     descriptionParts.push(creationLines.join('\n'))
   }
