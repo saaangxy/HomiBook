@@ -62,7 +62,7 @@ export type SSEEvent =
   | { type: 'tool-result'; toolCallId: string; toolName: string; result: unknown; durationMs: number; status: string; error?: string; merge?: { action?: 'append'; batch?: number; total: number } }
   | { type: 'tool-confirm-required'; toolCallId: string; toolName: string; preview: string }
   | { type: 'tool-suggest-required'; toolCallId: string; toolName: string; questions: { question: string; field: string; options: string[]; allowCustom: boolean }[] }
-  | { type: 'finish'; usage: unknown; userMessageId: string; assistantMessageId: string }
+  | { type: 'finish'; usage?: unknown; userMessageId: string; assistantMessageId: string; pendingConfirmation?: { toolCallId: string; toolName: string }; pendingSuggestion?: { toolCallId: string } }
   | { type: 'error'; message: string }
 
 // GET APIs
@@ -91,11 +91,6 @@ export async function fetchProviderModels(provider: string, baseURL?: string) {
   return api.get<{ models: string[] }>(`${BASE}/providers/models?${params}`)
 }
 
-export async function fetchPendingConfirmations() {
-  const res = await api.get<{ pending: { toolCallId: string; toolName: string; preview: string }[] }>(`${BASE}/pending-confirmations`)
-  return res.pending
-}
-
 // MUTATE APIs
 export async function createSession(data?: { title?: string; modelProvider?: string; modelName?: string; accountBookId?: string }) {
   return api.post<{ session: ChatSession }>(`${BASE}/sessions`, data || {})
@@ -109,18 +104,101 @@ export async function deleteSession(id: string) {
   return api.delete(`${BASE}/sessions/${id}`)
 }
 
-export async function confirmAction(toolCallId: string, approved: boolean, data?: {
-  fileId?: string
-  accountResolutions?: { sourceAccountName: string; action: 'existing' | 'create'; targetAccountId?: string; targetAccountName?: string; accountType?: string }[]
-  categoryResolutions?: { sourceCategory: string; targetCategoryCode: string; recordType?: string; payerContains?: string; descriptionContains?: string }[]
-  unrecognizedResolutions?: { rowIndex: number; type: string; accountId: string; categoryCode: string }[]
-  ownerId?: string
-}) {
-  return api.post<{ success: boolean }>(`${BASE}/confirm`, { toolCallId, approved, data })
+export function confirmActionStream(
+  params: { toolCallId: string; approved: boolean; accountBookId: string; sessionId?: string; data?: Record<string, unknown> },
+  onEvent: (event: SSEEvent) => void,
+  onDone: () => void,
+): AbortController {
+  const controller = new AbortController()
+  const token = getToken()
+
+  fetch(`${BASE}/confirm`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(params),
+    signal: controller.signal,
+  })
+    .then(async (response) => {
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ message: '请求失败' }))
+        onEvent({ type: 'error', message: err.message || `HTTP ${response.status}` })
+        onDone()
+        return
+      }
+
+      const contentType = response.headers.get('Content-Type') || ''
+      if (contentType.includes('text/event-stream')) {
+        parseSSEStream(response, onEvent, onDone, controller.signal)
+      } else {
+        // JSON 响应（拒绝操作等）
+        try {
+          const json = await response.json()
+          if (json.approved === false) {
+            onEvent({ type: 'tool-result', toolCallId: params.toolCallId, toolName: '', result: { error: '用户拒绝了此操作' }, durationMs: 0, status: 'error' })
+          }
+        } catch { /* ignore */ }
+        onDone()
+      }
+    })
+    .catch((err) => {
+      if (err.name !== 'AbortError') {
+        onEvent({ type: 'error', message: err.message || '网络错误' })
+      }
+      onDone()
+    })
+
+  return controller
 }
 
-export async function respondSuggestion(toolCallId: string, values: Record<string, string> | null) {
-  return api.post<{ success: boolean; values: Record<string, string> | null }>(`${BASE}/respond-suggestion`, { toolCallId, values })
+export function respondSuggestionStream(
+  params: { toolCallId: string; values: Record<string, string> | null; accountBookId: string; sessionId?: string },
+  onEvent: (event: SSEEvent) => void,
+  onDone: () => void,
+): AbortController {
+  const controller = new AbortController()
+  const token = getToken()
+
+  fetch(`${BASE}/respond-suggestion`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(params),
+    signal: controller.signal,
+  })
+    .then(async (response) => {
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ message: '请求失败' }))
+        onEvent({ type: 'error', message: err.message || `HTTP ${response.status}` })
+        onDone()
+        return
+      }
+
+      const contentType = response.headers.get('Content-Type') || ''
+      if (contentType.includes('text/event-stream')) {
+        parseSSEStream(response, onEvent, onDone, controller.signal)
+      } else {
+        try {
+          const json = await response.json()
+          if (json.acknowledged) {
+            onEvent({ type: 'tool-result', toolCallId: params.toolCallId, toolName: '', result: { error: '用户取消了选择' }, durationMs: 0, status: 'error' })
+          }
+        } catch { /* ignore */ }
+        onDone()
+      }
+    })
+    .catch((err) => {
+      if (err.name !== 'AbortError') {
+        onEvent({ type: 'error', message: err.message || '网络错误' })
+      }
+      onDone()
+    })
+
+  return controller
 }
 
 export async function updatePreferences(data: Partial<UserPreferences>) {
@@ -170,6 +248,58 @@ export async function saveProviderBaseURL(provider: string, baseURL: string) {
   return api.post<{ success: boolean; baseURL: string; isCustom: boolean }>(`${BASE}/providers/baseurl`, { provider, baseURL })
 }
 
+// 共享 SSE 流解析
+async function parseSSEStream(
+  response: Response,
+  onEvent: (event: SSEEvent) => void,
+  onDone: () => void,
+  signal?: AbortSignal,
+) {
+  const reader = response.body?.getReader()
+  if (!reader) {
+    onEvent({ type: 'error', message: '无法读取响应流' })
+    onDone()
+    return
+  }
+
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  try {
+    while (true) {
+      if (signal?.aborted) break
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+
+      let eventType = ''
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          eventType = line.slice(7).trim()
+        } else if (line.startsWith('data: ')) {
+          const data = line.slice(6)
+          try {
+            const parsed = JSON.parse(data)
+            onEvent({ type: eventType as SSEEvent['type'], ...parsed })
+          } catch (e) {
+            console.error('[SSE] JSON parse failed for event:', eventType, 'error:', e, 'dataLen:', data.length, 'dataPreview:', data.slice(0, 200))
+          }
+          eventType = ''
+        }
+      }
+    }
+  } catch (err: any) {
+    if (err.name !== 'AbortError') {
+      onEvent({ type: 'error', message: err.message || '网络错误' })
+    }
+  }
+
+  onDone()
+}
+
 // SSE 流式发送消息
 export function sendMessageStream(
   params: { sessionId?: string; accountBookId: string; message: string; parentMessageId?: string; replaceAssistantDbId?: string },
@@ -195,43 +325,7 @@ export function sendMessageStream(
         onDone()
         return
       }
-
-      const reader = response.body?.getReader()
-      if (!reader) {
-        onEvent({ type: 'error', message: '无法读取响应流' })
-        onDone()
-        return
-      }
-
-      const decoder = new TextDecoder()
-      let buffer = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-
-        let eventType = ''
-        for (const line of lines) {
-          if (line.startsWith('event: ')) {
-            eventType = line.slice(7).trim()
-          } else if (line.startsWith('data: ')) {
-            const data = line.slice(6)
-            try {
-              const parsed = JSON.parse(data)
-              onEvent({ type: eventType as SSEEvent['type'], ...parsed })
-            } catch (e) {
-              console.error('[SSE] JSON parse failed for event:', eventType, 'error:', e, 'dataLen:', data.length, 'dataPreview:', data.slice(0, 200))
-            }
-            eventType = ''
-          }
-        }
-      }
-
-      onDone()
+      await parseSSEStream(response, onEvent, onDone, controller.signal)
     })
     .catch((err) => {
       if (err.name !== 'AbortError') {

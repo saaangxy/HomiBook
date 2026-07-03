@@ -1,6 +1,7 @@
 import { cn } from '@/lib/utils'
 import type { ToolCallEntry } from '@/stores/chat'
-import { confirmAction, respondSuggestion } from '@/api/chat'
+import { useChatStore } from '@/stores/chat'
+import { useBookStore } from '@/stores/book'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Wrench, CheckCircle2, XCircle, Loader2, HelpCircle, ChevronDown, MessageSquareMore, AlertTriangle } from 'lucide-react'
@@ -109,14 +110,12 @@ export function ToolCallCard({ toolCall }: Props) {
 
   const [confirmError, setConfirmError] = useState(false)
 
-  const handleConfirm = async (approved: boolean) => {
+  const handleConfirm = (approved: boolean) => {
+    const { currentBookId } = useBookStore.getState()
+    if (!currentBookId) return
     setConfirming(true)
     setConfirmError(false)
-    try {
-      await confirmAction(toolCall.toolCallId, approved)
-    } catch {
-      setConfirmError(true)
-    }
+    useChatStore.getState().confirmAndContinue(currentBookId, toolCall.toolCallId, approved)
     setConfirming(false)
   }
 
@@ -382,6 +381,8 @@ function SuggestionView({
 
   const handleSubmit = async () => {
     if (!allFilled || submitting) return
+    const { currentBookId } = useBookStore.getState()
+    if (!currentBookId) return
     const values: Record<string, string> = {}
     for (const q of questions) {
       values[q.field] = getValue(q.field)
@@ -389,7 +390,7 @@ function SuggestionView({
     setSubmitting(true)
     setError(null)
     try {
-      await respondSuggestion(toolCallId, values)
+      useChatStore.getState().respondToSuggestion(currentBookId, toolCallId, values)
       setSubmitted(true)
     } catch {
       setSubmitting(false)
@@ -489,7 +490,10 @@ function SuggestionView({
           onClick={async () => {
             setError(null)
             try {
-              await respondSuggestion(toolCallId, null)
+              const { currentBookId } = useBookStore.getState()
+              if (currentBookId) {
+                useChatStore.getState().respondToSuggestion(currentBookId, toolCallId, null)
+              }
             } catch {
               setError('此操作已过期，请重新发起请求')
             }

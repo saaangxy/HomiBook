@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
-import { confirmAction } from '@/api/chat'
+import { useChatStore } from '@/stores/chat'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
@@ -100,10 +100,7 @@ export function ImportConfirmCard({ data, toolCallId }: Props) {
   const handleConfirm = async () => {
     setSubmitting(true)
     try {
-      // confirmAction 会触发后端执行 _execute: true 实际导入
-      await confirmAction(toolCallId, true, { fileId: data.fileId, ownerId })
-      // 导入成功后 SSE 会推送 tool-result 事件，前端状态由 store 更新
-      // 这里乐观显示成功
+      useChatStore.getState().confirmAndContinue(data.accountBookId, toolCallId, true, { fileId: data.fileId, ownerId })
       setLocalResult({ success: true, data: { imported: data.stats.totalRecords, accountsCreated: data.stats.accountsToCreate } })
     } catch (err: any) {
       setLocalResult({ success: false, error: err?.message || '确认请求失败' })
@@ -114,7 +111,7 @@ export function ImportConfirmCard({ data, toolCallId }: Props) {
   const handleReject = async () => {
     setSubmitting(true)
     try {
-      await confirmAction(toolCallId, false)
+      useChatStore.getState().confirmAndContinue(data.accountBookId, toolCallId, false)
       setLocalResult({ success: false, error: '已取消导入' })
     } catch (err: any) {
       setLocalResult({ success: false, error: err?.message || '取消失败' })

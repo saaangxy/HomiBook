@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { ACCOUNT_TYPE_LABELS, type AccountType } from '@/api/account'
-import { confirmAction } from '@/api/chat'
+import { useChatStore } from '@/stores/chat'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -114,7 +114,7 @@ interface Props {
   onImportComplete?: () => void
 }
 
-export function ImportPreviewInteractive({ data, toolCallId, aiArgs, onImportComplete }: Props) {
+export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiArgs, onImportComplete }: Props) {
   const stats = data.stats
   const records = data.records || []
   const unrecognizedRecords = data.unrecognizedRecords || []
@@ -615,7 +615,10 @@ export function ImportPreviewInteractive({ data, toolCallId, aiArgs, onImportCom
               setConfirmError(null)
               try {
                 if (toolCallId) {
-                  console.log('[ImportPreviewInteractive] confirming with toolCallId:', toolCallId)
+                  const overrides: Record<string, unknown> = {}
+                  const fileId = aiArgs?.fileId
+                  if (fileId) overrides.fileId = fileId
+
                   // 构建用户修改后的账户映射
                   const userAccountResolutions: { sourceAccountName: string; action: 'existing' | 'create'; targetAccountId?: string; targetAccountName?: string; accountType?: string }[] = []
                   for (const [csvName, res] of Object.entries(accountResolutions)) {
@@ -625,8 +628,9 @@ export function ImportPreviewInteractive({ data, toolCallId, aiArgs, onImportCom
                       userAccountResolutions.push({ sourceAccountName: csvName, action: 'create', targetAccountName: res.name, accountType: res.type })
                     }
                   }
+                  if (userAccountResolutions.length > 0) overrides.accountResolutions = userAccountResolutions
 
-                  // 构建用户修改后的分类映射（仅保留 save=true 且有目标分类的）
+                  // 构建用户修改后的分类映射
                   const userCategoryResolutions: { sourceCategory: string; targetCategoryCode: string; recordType?: string; payerContains?: string; descriptionContains?: string }[] = []
                   for (const cr of categoryResolutions) {
                     if (!cr.targetCode || !cr.save) continue
@@ -638,6 +642,7 @@ export function ImportPreviewInteractive({ data, toolCallId, aiArgs, onImportCom
                       descriptionContains: cr.descriptionContains || undefined,
                     })
                   }
+                  if (userCategoryResolutions.length > 0) overrides.categoryResolutions = userCategoryResolutions
 
                   // 构建未识别记录的手动指定
                   const userUnrecognizedResolutions: { rowIndex: number; type: string; accountId: string; categoryCode: string }[] = []
@@ -652,18 +657,14 @@ export function ImportPreviewInteractive({ data, toolCallId, aiArgs, onImportCom
                       })
                     }
                   }
+                  if (userUnrecognizedResolutions.length > 0) overrides.unrecognizedResolutions = userUnrecognizedResolutions
 
-                  const fileId = aiArgs?.fileId
-                  if (fileId) {
-                    await confirmAction(toolCallId, true, {
-                      fileId,
-                      accountResolutions: userAccountResolutions.length > 0 ? userAccountResolutions : undefined,
-                      categoryResolutions: userCategoryResolutions.length > 0 ? userCategoryResolutions : undefined,
-                      unrecognizedResolutions: userUnrecognizedResolutions.length > 0 ? userUnrecognizedResolutions : undefined,
-                    })
-                  } else {
-                    await confirmAction(toolCallId, true)
-                  }
+                  useChatStore.getState().confirmAndContinue(
+                    accountBookId,
+                    toolCallId,
+                    true,
+                    Object.keys(overrides).length > 0 ? overrides : undefined,
+                  )
                 }
                 setConfirmed(true)
                 onImportComplete?.()
