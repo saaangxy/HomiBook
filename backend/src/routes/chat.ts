@@ -229,6 +229,119 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
   }
 }
 
+// ---- 共享辅助：查找并验证待处理工具消息 ----
+
+interface PendingToolMsg {
+  message: { id: string; toolCalls: string | null; sessionId: string; parentMessageId: string | null; modelProvider: string | null; modelName: string | null }
+  entry: any
+  toolCalls: any[]
+  session: { accountBookId: string | null; id: string }
+  accountBookId: string
+}
+
+async function findPendingToolMessage(toolCallId: string, userId: string): Promise<{ success: true; data: PendingToolMsg } | { success: false; status: number; message: string }> {
+  const message = await prisma.chatMessage.findFirst({
+    where: { toolCalls: { contains: toolCallId } },
+    select: { id: true, toolCalls: true, sessionId: true, parentMessageId: true, modelProvider: true, modelName: true },
+  })
+  if (!message) return { success: false, status: 404, message: '确认已过期或不存在' }
+
+  let toolCalls: any[]
+  try { toolCalls = JSON.parse(message.toolCalls || '[]') } catch { return { success: false, status: 404, message: '确认已过期或不存在' } }
+  const entry = toolCalls.find((tc: any) => tc.toolCallId === toolCallId)
+  if (!entry) return { success: false, status: 404, message: '确认已过期或不存在' }
+
+  const session = await prisma.chatSession.findUnique({
+    where: { id: message.sessionId },
+    select: { accountBookId: true, id: true },
+  })
+  if (!session?.accountBookId) return { success: false, status: 404, message: '会话不存在' }
+  try { await assertIsMember(session.accountBookId, userId) } catch (e: any) {
+    return { success: false, status: e.statusCode || 403, message: e.message }
+  }
+
+  return { success: true, data: { message, entry, toolCalls, session, accountBookId: session.accountBookId } }
+}
+
+// ---- 共享辅助：构建 AI SDK CoreMessage 数组 ----
+
+async function buildChatMessages(sessionId: string, pendingToolCallId: string, pendingToolName: string, pendingToolResult: unknown) {
+  const dbMessages = await prisma.chatMessage.findMany({
+    where: { sessionId },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true, role: true, content: true, toolCalls: true, parentMessageId: true, modelProvider: true, modelName: true },
+    take: 100,
+  })
+
+  const messages: any[] = []
+  for (const msg of dbMessages) {
+    if (msg.role === 'user') {
+      messages.push({ role: 'user', content: msg.content })
+    } else if (msg.role === 'assistant') {
+      const tcList = msg.toolCalls ? JSON.parse(msg.toolCalls) : []
+      const contentParts: any[] = []
+      if (msg.content) contentParts.push({ type: 'text', text: msg.content })
+      for (const tc of tcList) {
+        contentParts.push({ type: 'tool-call', toolCallId: tc.toolCallId, toolName: tc.toolName, args: tc.args })
+      }
+      messages.push({ role: 'assistant', content: contentParts })
+
+      const completedResults = tcList.filter((tc: any) =>
+        tc.toolCallId !== pendingToolCallId && tc.result != null && tc.status !== 'confirming' && tc.status !== 'suggesting',
+      )
+      if (completedResults.length > 0) {
+        messages.push({
+          role: 'tool',
+          content: completedResults.map((tc: any) => ({
+            type: 'tool-result',
+            toolCallId: tc.toolCallId,
+            toolName: tc.toolName,
+            result: tc.result,
+          })),
+        })
+      }
+    }
+  }
+
+  messages.push({
+    role: 'tool',
+    content: [{ type: 'tool-result', toolCallId: pendingToolCallId, toolName: pendingToolName, result: pendingToolResult }],
+  })
+
+  return messages
+}
+
+// ---- 共享辅助：加载 LLM 配置并启动 SSE 续写流 ----
+
+async function continueWithLLM(reply: any, sessionId: string, accountBookId: string, userId: string, message: { modelProvider: string | null; modelName: string | null; id: string }, messages: any[]) {
+  const prefs = await loadPreferences(userId)
+  const provider = message.modelProvider || ''
+  const model = message.modelName || ''
+
+  if (!provider || !model) {
+    return reply.status(500).send({ message: '无法确定模型配置，请重新发送消息' })
+  }
+
+  const providerConfigs = await prisma.userProviderConfig.findMany({ where: { userId } })
+  const activeConfig = providerConfigs.find(c => c.provider === provider)
+  const apiKey = activeConfig?.apiKey || (await loadApiKey(provider))
+  const baseURL = activeConfig?.baseURL || (await loadBaseURL(provider))
+
+  const book = await prisma.accountBook.findUnique({ where: { id: accountBookId }, select: { name: true } })
+  const bookName = book?.name || accountBookId
+  const memories = await searchMemories(userId, '', 5)
+  const systemPrompt = buildSystemPrompt(prefs, accountBookId, bookName, memories)
+
+  await streamAssistantResponse({
+    reply, sessionId, accountBookId, userId, systemPrompt, messages,
+    parentMessageId: message.id,
+    provider, model, apiKey, baseURL,
+    temperature: activeConfig?.temperature ?? prefs.temperature,
+    maxTokens: activeConfig?.maxTokens ?? prefs.maxTokens,
+    maxSteps: prefs.maxSteps,
+  })
+}
+
 export async function chatRoutes(app: FastifyInstance) {
   app.addHook('onRequest', authenticate)
 
@@ -460,28 +573,9 @@ export async function chatRoutes(app: FastifyInstance) {
       })
     }
 
-    // 从数据库查找包含此 toolCallId 的 assistant 消息
-    const message = await prisma.chatMessage.findFirst({
-      where: { toolCalls: { contains: toolCallId } },
-      select: { id: true, toolCalls: true, sessionId: true, parentMessageId: true, modelProvider: true, modelName: true },
-    })
-    if (!message) return reply.status(404).send({ message: '确认已过期或不存在' })
-
-    let toolCalls: any[]
-    try { toolCalls = JSON.parse(message.toolCalls || '[]') } catch { return reply.status(404).send({ message: '确认已过期或不存在' }) }
-    const entry = toolCalls.find((tc: any) => tc.toolCallId === toolCallId)
-    if (!entry) return reply.status(404).send({ message: '确认已过期或不存在' })
-
-    const session = await prisma.chatSession.findUnique({
-      where: { id: message.sessionId },
-      select: { accountBookId: true, id: true },
-    })
-    if (!session?.accountBookId) return reply.status(404).send({ message: '会话不存在' })
-    try { await assertIsMember(session.accountBookId, userId) } catch (e: any) {
-      return reply.status(e.statusCode || 403).send({ message: e.message })
-    }
-
-    const accountBookId = session.accountBookId
+    const found = await findPendingToolMessage(toolCallId, userId)
+    if (!found.success) return reply.status(found.status).send({ message: found.message })
+    const { message, entry, toolCalls, accountBookId } = found.data
 
     // 用户拒绝 → 更新快照状态，不启动新 SSE
     if (!approved) {
@@ -506,7 +600,6 @@ export async function chatRoutes(app: FastifyInstance) {
     let toolResult: any
 
     if (entry.toolName === 'preview_import') {
-      // 预览模式确认 → 重新执行获取 review 结果
       const args = entry.args || {}
       const fileId = args.fileId as string
       const userOverrides = peekImportOverrides(fileId)
@@ -517,7 +610,6 @@ export async function chatRoutes(app: FastifyInstance) {
       }
       toolResult = await tool.execute(mergedArgs, ctx)
     } else if (entry.toolName === 'confirm_import') {
-      // 确认导入 → 执行实际导入
       const args = entry.args || {}
       const fileId = args.fileId as string
       const userOverrides = peekImportOverrides(fileId)
@@ -525,11 +617,10 @@ export async function chatRoutes(app: FastifyInstance) {
       if (userOverrides?.ownerId) mergedArgs.ownerId = userOverrides.ownerId
       toolResult = await tool.execute(mergedArgs, ctx)
     } else {
-      // requireConfirm 工具 → 直接执行
       toolResult = await tool.execute(entry.args || {}, ctx)
     }
 
-    logToolCall({ userId, sessionId: session.id, action: 'confirm', toolName: entry.toolName, input: entry.args, output: toolResult })
+    logToolCall({ userId, sessionId: found.data.session.id, action: 'confirm', toolName: entry.toolName, input: entry.args, output: toolResult })
 
     // 更新 DB 快照中该工具调用的结果
     const doneEntry = toolCalls.find((tc: any) => tc.toolCallId === toolCallId)
@@ -542,97 +633,8 @@ export async function chatRoutes(app: FastifyInstance) {
       }).catch(() => {})
     }
 
-    // ---- 构建 AI SDK 格式的消息历史 ----
-    const dbMessages = await prisma.chatMessage.findMany({
-      where: { sessionId: message.sessionId },
-      orderBy: { createdAt: 'asc' },
-      select: { id: true, role: true, content: true, toolCalls: true, parentMessageId: true, modelProvider: true, modelName: true },
-      take: 100,
-    })
-
-    const messages: any[] = []
-    for (const msg of dbMessages) {
-      if (msg.role === 'user') {
-        messages.push({ role: 'user', content: msg.content })
-      } else if (msg.role === 'assistant') {
-        const tcList = msg.toolCalls ? JSON.parse(msg.toolCalls) : []
-        const contentParts: any[] = []
-        if (msg.content) contentParts.push({ type: 'text', text: msg.content })
-        for (const tc of tcList) {
-          contentParts.push({ type: 'tool-call', toolCallId: tc.toolCallId, toolName: tc.toolName, args: tc.args })
-        }
-        messages.push({ role: 'assistant', content: contentParts })
-
-        // 已完成工具调用的 results（排除当前正在确认的，因为我们会新追加）
-        const completedResults = tcList.filter((tc: any) =>
-          tc.toolCallId !== toolCallId && tc.result != null && tc.status !== 'confirming' && tc.status !== 'suggesting',
-        )
-        if (completedResults.length > 0) {
-          messages.push({
-            role: 'tool',
-            content: completedResults.map((tc: any) => ({
-              type: 'tool-result',
-              toolCallId: tc.toolCallId,
-              toolName: tc.toolName,
-              result: tc.result,
-            })),
-          })
-        }
-      }
-    }
-
-    // 追加待确认工具的 result
-    messages.push({
-      role: 'tool',
-      content: [{
-        type: 'tool-result',
-        toolCallId,
-        toolName: entry.toolName,
-        result: toolResult,
-      }],
-    })
-
-    // ---- 加载 LLM 配置并启动新 SSE 流 ----
-    const prefs = await loadPreferences(userId)
-    const provider = message.modelProvider || ''
-    const model = message.modelName || ''
-
-    if (!provider || !model) {
-      return reply.status(500).send({ message: '无法确定模型配置，请重新发送消息' })
-    }
-
-    const providerConfigs = await prisma.userProviderConfig.findMany({
-      where: { userId },
-    })
-    const activeConfig = providerConfigs.find(c => c.provider === provider)
-    const apiKey = activeConfig?.apiKey || (await loadApiKey(provider))
-    const baseURL = activeConfig?.baseURL || (await loadBaseURL(provider))
-
-    const book = await prisma.accountBook.findUnique({
-      where: { id: accountBookId },
-      select: { name: true },
-    })
-    const bookName = book?.name || accountBookId
-    const memories = await searchMemories(userId, '', 5)
-    const systemPrompt = buildSystemPrompt(prefs, accountBookId, bookName, memories)
-
-    // 续写消息的 parent 是原始 assistant 消息（形成链：user → assistant1(含tool_call) → assistant2(续写)）
-    await streamAssistantResponse({
-      reply,
-      sessionId: message.sessionId,
-      accountBookId,
-      userId,
-      systemPrompt,
-      messages,
-      parentMessageId: message.id,
-      provider,
-      model,
-      apiKey,
-      baseURL,
-      temperature: activeConfig?.temperature ?? prefs.temperature,
-      maxTokens: activeConfig?.maxTokens ?? prefs.maxTokens,
-      maxSteps: prefs.maxSteps,
-    })
+    const messages = await buildChatMessages(message.sessionId, toolCallId, entry.toolName, toolResult)
+    await continueWithLLM(reply, message.sessionId, accountBookId, userId, message, messages)
   })
 
   // 回复建议（用户选择或自定义输入）→ SSE 流式继续对话
@@ -643,28 +645,9 @@ export async function chatRoutes(app: FastifyInstance) {
     const { toolCallId, values } = parsed.data
     const userId = (req as any).user.id as string
 
-    // 从数据库查找包含此 toolCallId 的 assistant 消息
-    const message = await prisma.chatMessage.findFirst({
-      where: { toolCalls: { contains: toolCallId } },
-      select: { id: true, toolCalls: true, sessionId: true, parentMessageId: true, modelProvider: true, modelName: true },
-    })
-    if (!message) return reply.status(404).send({ message: '建议已过期或不存在' })
-
-    let toolCalls: any[]
-    try { toolCalls = JSON.parse(message.toolCalls || '[]') } catch { return reply.status(404).send({ message: '建议已过期或不存在' }) }
-    const entry = toolCalls.find((tc: any) => tc.toolCallId === toolCallId)
-    if (!entry) return reply.status(404).send({ message: '建议已过期或不存在' })
-
-    const session = await prisma.chatSession.findUnique({
-      where: { id: message.sessionId },
-      select: { accountBookId: true, id: true },
-    })
-    if (!session?.accountBookId) return reply.status(404).send({ message: '会话不存在' })
-    try { await assertIsMember(session.accountBookId, userId) } catch (e: any) {
-      return reply.status(e.statusCode || 403).send({ message: e.message })
-    }
-
-    const accountBookId = session.accountBookId
+    const found = await findPendingToolMessage(toolCallId, userId)
+    if (!found.success) return reply.status(found.status).send({ message: found.message })
+    const { message, entry, toolCalls, accountBookId } = found.data
 
     // 用户取消选择
     if (values === null) {
@@ -693,94 +676,8 @@ export async function chatRoutes(app: FastifyInstance) {
       }).catch(() => {})
     }
 
-    // ---- 构建 AI SDK 格式的消息历史 ----
-    const dbMessages = await prisma.chatMessage.findMany({
-      where: { sessionId: message.sessionId },
-      orderBy: { createdAt: 'asc' },
-      select: { id: true, role: true, content: true, toolCalls: true, parentMessageId: true, modelProvider: true, modelName: true },
-      take: 100,
-    })
-
-    const messages: any[] = []
-    for (const msg of dbMessages) {
-      if (msg.role === 'user') {
-        messages.push({ role: 'user', content: msg.content })
-      } else if (msg.role === 'assistant') {
-        const tcList = msg.toolCalls ? JSON.parse(msg.toolCalls) : []
-        const contentParts: any[] = []
-        if (msg.content) contentParts.push({ type: 'text', text: msg.content })
-        for (const tc of tcList) {
-          contentParts.push({ type: 'tool-call', toolCallId: tc.toolCallId, toolName: tc.toolName, args: tc.args })
-        }
-        messages.push({ role: 'assistant', content: contentParts })
-
-        const completedResults = tcList.filter((tc: any) =>
-          tc.toolCallId !== toolCallId && tc.result != null && tc.status !== 'confirming' && tc.status !== 'suggesting',
-        )
-        if (completedResults.length > 0) {
-          messages.push({
-            role: 'tool',
-            content: completedResults.map((tc: any) => ({
-              type: 'tool-result',
-              toolCallId: tc.toolCallId,
-              toolName: tc.toolName,
-              result: tc.result,
-            })),
-          })
-        }
-      }
-    }
-
-    messages.push({
-      role: 'tool',
-      content: [{
-        type: 'tool-result',
-        toolCallId,
-        toolName: entry.toolName,
-        result: toolResult,
-      }],
-    })
-
-    // ---- 加载 LLM 配置并启动新 SSE 流 ----
-    const prefs = await loadPreferences(userId)
-    const provider = message.modelProvider || ''
-    const model = message.modelName || ''
-
-    if (!provider || !model) {
-      return reply.status(500).send({ message: '无法确定模型配置，请重新发送消息' })
-    }
-
-    const providerConfigs = await prisma.userProviderConfig.findMany({
-      where: { userId },
-    })
-    const activeConfig = providerConfigs.find(c => c.provider === provider)
-    const apiKey = activeConfig?.apiKey || (await loadApiKey(provider))
-    const baseURL = activeConfig?.baseURL || (await loadBaseURL(provider))
-
-    const book = await prisma.accountBook.findUnique({
-      where: { id: accountBookId },
-      select: { name: true },
-    })
-    const bookName = book?.name || accountBookId
-    const memories = await searchMemories(userId, '', 5)
-    const systemPrompt = buildSystemPrompt(prefs, accountBookId, bookName, memories)
-
-    await streamAssistantResponse({
-      reply,
-      sessionId: message.sessionId,
-      accountBookId,
-      userId,
-      systemPrompt,
-      messages,
-      parentMessageId: message.id,
-      provider,
-      model,
-      apiKey,
-      baseURL,
-      temperature: activeConfig?.temperature ?? prefs.temperature,
-      maxTokens: activeConfig?.maxTokens ?? prefs.maxTokens,
-      maxSteps: prefs.maxSteps,
-    })
+    const messages = await buildChatMessages(message.sessionId, toolCallId, entry.toolName, toolResult)
+    await continueWithLLM(reply, message.sessionId, accountBookId, userId, message, messages)
   })
 
   // === 供应商配置 CRUD ===

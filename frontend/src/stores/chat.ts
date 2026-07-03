@@ -429,7 +429,94 @@ function makeSSEHandler(
 
 // ---- Store ----
 
-export const useChatStore = create<ChatState>()((set, get) => ({
+export const useChatStore = create<ChatState>()((set, get) => {
+  // ---- 共享：创建续写助手消息并启动 SSE 流 ----
+  function startContinuationStream(
+    accountBookId: string,
+    toolCallId: string,
+    parentDbId: string,
+    parentId: string,
+    optimisticUpdate: (b: any) => any,
+    streamStarter: (handleEvent: (e: SSEEvent) => void, handleDone: () => void) => AbortController,
+  ) {
+    const state = get()
+    const sid = state.currentSessionId!
+    if (state.sessionCache[sid]?.isStreaming || state.abortControllers[sid]) return
+
+    const continuationMsg: Message = {
+      id: nextId(),
+      role: 'assistant',
+      blocks: [],
+      isStreaming: true,
+      parentMessageId: parentDbId,
+    }
+    const continuationMsgId = continuationMsg.id
+
+    set((s) => {
+      const newAllMessages = [...s.allMessages, continuationMsg]
+      const newSelections = { ...s.branchSelections }
+      newSelections[parentDbId] = continuationMsg.id
+      const newCache = { ...s.sessionCache }
+      newCache[sid] = {
+        messages: buildActivePath(newAllMessages, newSelections),
+        allMessages: newAllMessages,
+        branchSelections: newSelections,
+        isStreaming: true,
+        streamingMessageId: continuationMsgId,
+      }
+      return {
+        messages: buildActivePath(newAllMessages, newSelections),
+        allMessages: newAllMessages,
+        branchSelections: newSelections,
+        sessionCache: newCache,
+        error: null,
+      }
+    })
+
+    // 乐观更新父消息中的工具调用状态
+    get().updateStreamMessage(sid, parentId, (msg) => ({
+      ...msg,
+      blocks: msg.blocks.map((b) =>
+        b.type === 'tool-call' && b.toolCallId === toolCallId
+          ? { ...b, ...optimisticUpdate(b) }
+          : b,
+      ),
+    }))
+
+    const ctx: SSEStreamContext = {
+      sid, assistantMsgId: continuationMsgId,
+      get, set,
+      thinkState: { value: 'text' },
+      blockIdCounter: { value: 0 },
+    }
+
+    const { handleEvent, handleDone } = makeSSEHandler(ctx, (event) => {
+      set((s) => {
+        const allMsgs = [...s.allMessages]
+        const msgs = [...s.messages]
+        const newSelections = { ...s.branchSelections }
+
+        const asstAllIdx = allMsgs.findIndex((m) => m.id === continuationMsgId)
+        if (asstAllIdx >= 0) {
+          allMsgs[asstAllIdx] = { ...allMsgs[asstAllIdx], dbId: event.assistantMessageId, parentMessageId: event.userMessageId }
+          const asstMsgIdx = msgs.findIndex((m) => m.id === continuationMsgId)
+          if (asstMsgIdx >= 0) msgs[asstMsgIdx] = { ...msgs[asstMsgIdx], dbId: event.assistantMessageId, parentMessageId: event.userMessageId }
+        }
+        newSelections[event.userMessageId] = event.assistantMessageId
+
+        const newCache = { ...s.sessionCache }
+        newCache[sid] = { ...newCache[sid], isStreaming: false, streamingMessageId: null, messages: msgs, allMessages: allMsgs, branchSelections: newSelections }
+        const newAbortControllers = { ...s.abortControllers }
+        delete newAbortControllers[sid]
+        return { messages: msgs, allMessages: allMsgs, branchSelections: newSelections, sessionCache: newCache, abortControllers: newAbortControllers }
+      })
+    })
+
+    const controller = streamStarter(handleEvent, handleDone)
+    set((s) => ({ abortControllers: { ...s.abortControllers, [sid]: controller } }))
+  }
+
+  return {
   sessions: [],
   currentSessionId: null,
   messages: [],
@@ -634,9 +721,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     const state = get()
     const sid = state.currentSessionId
     if (!sid) return
-    if (state.sessionCache[sid]?.isStreaming || state.abortControllers[sid]) return
 
-    // 找到包含此工具调用的助手消息
     const parentMsg = state.messages.find(m =>
       m.role === 'assistant' && m.blocks.some(b =>
         b.type === 'tool-call' && b.toolCallId === toolCallId
@@ -644,10 +729,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     )
     const parentDbId = parentMsg?.dbId
     if (!parentDbId) return
-
     const parentId = parentMsg!.id
 
-    // 拒绝：本地更新状态，API 调用更新 DB
+    // 拒绝：本地更新状态，API 调用更新 DB（fire-and-forget）
     if (!approved) {
       get().updateStreamMessage(sid, parentId, (msg) => ({
         ...msg,
@@ -657,96 +741,24 @@ export const useChatStore = create<ChatState>()((set, get) => ({
             : b,
         ),
       }))
-      // 发送 API 调用更新数据库（fire-and-forget）
       confirmActionStream({ toolCallId, approved: false, accountBookId, sessionId: sid, data }, () => {}, () => {})
       return
     }
 
-    // 批准：创建续写助手消息，开始 SSE 流
-    const continuationMsg: Message = {
-      id: nextId(),
-      role: 'assistant',
-      blocks: [],
-      isStreaming: true,
-      parentMessageId: parentDbId,
-    }
-    const continuationMsgId = continuationMsg.id
-
-    set((s) => {
-      const newAllMessages = [...s.allMessages, continuationMsg]
-      const newSelections = { ...s.branchSelections }
-      newSelections[parentDbId] = continuationMsg.id
-      const newCache = { ...s.sessionCache }
-      newCache[sid] = {
-        messages: buildActivePath(newAllMessages, newSelections),
-        allMessages: newAllMessages,
-        branchSelections: newSelections,
-        isStreaming: true,
-        streamingMessageId: continuationMsgId,
-      }
-      return {
-        messages: buildActivePath(newAllMessages, newSelections),
-        allMessages: newAllMessages,
-        branchSelections: newSelections,
-        sessionCache: newCache,
-        error: null,
-      }
-    })
-
-    // 乐观更新已确认工具的状态
-    get().updateStreamMessage(sid, parentId, (msg) => ({
-      ...msg,
-      blocks: msg.blocks.map((b) =>
-        b.type === 'tool-call' && b.toolCallId === toolCallId
-          ? { ...b, status: 'success' as const }
-          : b,
+    startContinuationStream(
+      accountBookId, toolCallId, parentDbId, parentId,
+      () => ({ status: 'success' as const }),
+      (handleEvent, handleDone) => confirmActionStream(
+        { toolCallId, approved: true, accountBookId, sessionId: sid, data },
+        handleEvent, handleDone,
       ),
-    }))
-
-    const ctx: SSEStreamContext = {
-      sid, assistantMsgId: continuationMsgId,
-      get, set,
-      thinkState: { value: 'text' },
-      blockIdCounter: { value: 0 },
-    }
-
-    const { handleEvent, handleDone } = makeSSEHandler(ctx, (event) => {
-      set((s) => {
-        const allMsgs = [...s.allMessages]
-        const msgs = [...s.messages]
-        const newSelections = { ...s.branchSelections }
-
-        const asstAllIdx = allMsgs.findIndex((m) => m.id === continuationMsgId)
-        if (asstAllIdx >= 0) {
-          allMsgs[asstAllIdx] = { ...allMsgs[asstAllIdx], dbId: event.assistantMessageId, parentMessageId: event.userMessageId }
-          const asstMsgIdx = msgs.findIndex((m) => m.id === continuationMsgId)
-          if (asstMsgIdx >= 0) msgs[asstMsgIdx] = { ...msgs[asstMsgIdx], dbId: event.assistantMessageId, parentMessageId: event.userMessageId }
-        }
-        // 父助手消息 DB ID → 续写消息 DB ID
-        newSelections[event.userMessageId] = event.assistantMessageId
-
-        const newCache = { ...s.sessionCache }
-        newCache[sid] = { ...newCache[sid], isStreaming: false, streamingMessageId: null, messages: msgs, allMessages: allMsgs, branchSelections: newSelections }
-        const newAbortControllers = { ...s.abortControllers }
-        delete newAbortControllers[sid]
-        return { messages: msgs, allMessages: allMsgs, branchSelections: newSelections, sessionCache: newCache, abortControllers: newAbortControllers }
-      })
-    })
-
-    const controller = confirmActionStream(
-      { toolCallId, approved: true, accountBookId, sessionId: sid, data },
-      handleEvent,
-      handleDone,
     )
-
-    set((s) => ({ abortControllers: { ...s.abortControllers, [sid]: controller } }))
   },
 
   respondToSuggestion: (accountBookId, toolCallId, values) => {
     const state = get()
     const sid = state.currentSessionId
     if (!sid) return
-    if (state.sessionCache[sid]?.isStreaming || state.abortControllers[sid]) return
 
     const parentMsg = state.messages.find(m =>
       m.role === 'assistant' && m.blocks.some(b =>
@@ -755,10 +767,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     )
     const parentDbId = parentMsg?.dbId
     if (!parentDbId) return
-
     const parentId = parentMsg!.id
 
-    // 取消选择：本地更新状态
+    // 取消选择：本地更新状态（fire-and-forget）
     if (values === null) {
       get().updateStreamMessage(sid, parentId, (msg) => ({
         ...msg,
@@ -772,83 +783,14 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       return
     }
 
-    // 提交选择：创建续写助手消息
-    const continuationMsg: Message = {
-      id: nextId(),
-      role: 'assistant',
-      blocks: [],
-      isStreaming: true,
-      parentMessageId: parentDbId,
-    }
-    const continuationMsgId = continuationMsg.id
-
-    set((s) => {
-      const newAllMessages = [...s.allMessages, continuationMsg]
-      const newSelections = { ...s.branchSelections }
-      newSelections[parentDbId] = continuationMsg.id
-      const newCache = { ...s.sessionCache }
-      newCache[sid] = {
-        messages: buildActivePath(newAllMessages, newSelections),
-        allMessages: newAllMessages,
-        branchSelections: newSelections,
-        isStreaming: true,
-        streamingMessageId: continuationMsgId,
-      }
-      return {
-        messages: buildActivePath(newAllMessages, newSelections),
-        allMessages: newAllMessages,
-        branchSelections: newSelections,
-        sessionCache: newCache,
-        error: null,
-      }
-    })
-
-    // 乐观更新建议状态
-    get().updateStreamMessage(sid, parentId, (msg) => ({
-      ...msg,
-      blocks: msg.blocks.map((b) =>
-        b.type === 'tool-call' && b.toolCallId === toolCallId
-          ? { ...b, status: 'success' as const, result: { success: true, values } }
-          : b,
+    startContinuationStream(
+      accountBookId, toolCallId, parentDbId, parentId,
+      () => ({ status: 'success' as const, result: { success: true, values } }),
+      (handleEvent, handleDone) => respondSuggestionStream(
+        { toolCallId, values, accountBookId, sessionId: sid },
+        handleEvent, handleDone,
       ),
-    }))
-
-    const ctx: SSEStreamContext = {
-      sid, assistantMsgId: continuationMsgId,
-      get, set,
-      thinkState: { value: 'text' },
-      blockIdCounter: { value: 0 },
-    }
-
-    const { handleEvent, handleDone } = makeSSEHandler(ctx, (event) => {
-      set((s) => {
-        const allMsgs = [...s.allMessages]
-        const msgs = [...s.messages]
-        const newSelections = { ...s.branchSelections }
-
-        const asstAllIdx = allMsgs.findIndex((m) => m.id === continuationMsgId)
-        if (asstAllIdx >= 0) {
-          allMsgs[asstAllIdx] = { ...allMsgs[asstAllIdx], dbId: event.assistantMessageId, parentMessageId: event.userMessageId }
-          const asstMsgIdx = msgs.findIndex((m) => m.id === continuationMsgId)
-          if (asstMsgIdx >= 0) msgs[asstMsgIdx] = { ...msgs[asstMsgIdx], dbId: event.assistantMessageId, parentMessageId: event.userMessageId }
-        }
-        newSelections[event.userMessageId] = event.assistantMessageId
-
-        const newCache = { ...s.sessionCache }
-        newCache[sid] = { ...newCache[sid], isStreaming: false, streamingMessageId: null, messages: msgs, allMessages: allMsgs, branchSelections: newSelections }
-        const newAbortControllers = { ...s.abortControllers }
-        delete newAbortControllers[sid]
-        return { messages: msgs, allMessages: allMsgs, branchSelections: newSelections, sessionCache: newCache, abortControllers: newAbortControllers }
-      })
-    })
-
-    const controller = respondSuggestionStream(
-      { toolCallId, values, accountBookId, sessionId: sid },
-      handleEvent,
-      handleDone,
     )
-
-    set((s) => ({ abortControllers: { ...s.abortControllers, [sid]: controller } }))
   },
 
   retryMessage: (assistantMsgId) => {
@@ -946,4 +888,5 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     })
     return true
   },
-}))
+  }
+})
