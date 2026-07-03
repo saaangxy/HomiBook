@@ -242,6 +242,7 @@ export function ToolCallCard({ toolCall }: Props) {
         <SuggestionView
           suggestion={effectiveSuggestion}
           toolCallId={toolCall.toolCallId}
+          expired={isExpired}
         />
       )}
     </div>
@@ -355,9 +356,11 @@ type QuestionDef = { question: string; field: string; options: string[]; allowCu
 function SuggestionView({
   suggestion,
   toolCallId,
+  expired,
 }: {
   suggestion: { questions: QuestionDef[] }
   toolCallId: string
+  expired?: boolean
 }) {
   const { questions } = suggestion
   // selectedOption: field → selected option (or '__custom__')
@@ -463,11 +466,17 @@ function SuggestionView({
           <span>{error}</span>
         </div>
       )}
+      {expired && !error && (
+        <div className="flex items-center gap-1.5 text-amber-600 text-xs">
+          <AlertTriangle size={12} />
+          <span>此操作在重新加载后已过期，请在聊天输入框中直接回复你的选择</span>
+        </div>
+      )}
       <div className="flex gap-2">
         <Button
           size="sm"
           variant="default"
-          disabled={!allFilled || submitting}
+          disabled={!allFilled || submitting || expired}
           onClick={handleSubmit}
         >
           {submitting ? <Loader2 size={12} className="animate-spin mr-1" /> : null}
@@ -476,7 +485,7 @@ function SuggestionView({
         <Button
           size="sm"
           variant="ghost"
-          disabled={submitting}
+          disabled={submitting || expired}
           onClick={async () => {
             setError(null)
             try {

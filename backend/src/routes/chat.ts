@@ -996,7 +996,7 @@ function buildSystemPrompt(prefs: any, bookId: string, bookName: string, memorie
    - 为每个未匹配账户生成 accountResolutions：已有候选(candidates) → action="existing" + targetAccountId；无候选 → action="create" + 推断的 targetAccountName + accountType
    - 为每个未匹配分类生成 categoryResolutions：根据源分类名和 allDictItems 中的分类编码/标签进行语义匹配，选择 targetCategoryCode；如有明显交易方特征可加 payerContains/descriptionContains 过滤
 3. 调用 preview_import(fileId, source, mode="preview", { accountResolutions, categoryResolutions }) 展示交互卡片供用户确认
-4. 用户确认后，调用 confirm_import(fileId, source, { accountResolutions, categoryResolutions }) 确认导入
+4. 用户确认后，直接调用 confirm_import(fileId, source, { accountResolutions, categoryResolutions }) 确认导入,不要输出任何文本
 5. 导入完成后用简短文字总结导入记录数和创建账户数
 
 注意：

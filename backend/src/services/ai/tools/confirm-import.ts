@@ -56,7 +56,6 @@ export const confirmImportTool: ToolDef = {
           required: ['sourceCategory', 'targetCategoryCode'],
         },
       },
-      _execute: { type: 'boolean', description: '内部参数：是否执行实际导入' },
     },
     required: ['fileId', 'source'],
   },
