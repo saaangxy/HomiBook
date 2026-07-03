@@ -145,7 +145,7 @@ export async function chatRoutes(app: FastifyInstance) {
     }
 
     // 收集工具调用记录，用于持久化
-    const toolCallEntries: Array<{ toolCallId: string; toolName: string; args?: unknown; result?: unknown; durationMs?: number; status: string; textOffset: number }> = []
+    const toolCallEntries: Array<{ toolCallId: string; toolName: string; args?: unknown; result?: unknown; durationMs?: number; status: string; textOffset: number; preview?: string; suggestion?: { questions: { question: string; field: string; options: string[]; allowCustom: boolean }[] } }> = []
     let fullText = ''
 
     // 构建 AI SDK 工具格式
@@ -170,6 +170,8 @@ export async function chatRoutes(app: FastifyInstance) {
                 allowCustom: q.allowCustom ?? true,
               }))
               sendSSE('tool-suggest-required', { toolCallId, toolName: tool.name, questions })
+              const suggestEntry = toolCallEntries.find((e) => e.toolCallId === toolCallId)
+              if (suggestEntry) Object.assign(suggestEntry, { status: 'suggesting', suggestion: { questions } })
               await saveMessageSnapshot()
               const values = await registerSuggestion(toolCallId, questions)
               if (values === null) {
@@ -194,6 +196,8 @@ export async function chatRoutes(app: FastifyInstance) {
             if (tool.requireConfirm) {
               const preview = await buildConfirmPreview(tool.name, args, accountBookId)
               sendSSE('tool-confirm-required', { toolCallId, toolName: tool.name, preview })
+              const confirmEntry = toolCallEntries.find((e) => e.toolCallId === toolCallId)
+              if (confirmEntry) Object.assign(confirmEntry, { status: 'confirming', preview })
               await saveMessageSnapshot()
               const approved = await registerConfirmation(toolCallId, tool.name, preview)
               if (!approved) {
@@ -226,6 +230,8 @@ export async function chatRoutes(app: FastifyInstance) {
             // preview_import 预览模式：挂起 LLM，等待用户确认后再继续
             if (tool.name === 'preview_import' && (args as any).mode === 'preview' && result.success) {
               console.log('[preview_import] registering confirmation for toolCallId:', toolCallId)
+              const previewEntry = toolCallEntries.find((e) => e.toolCallId === toolCallId)
+              if (previewEntry) Object.assign(previewEntry, { result, durationMs, status })
               await saveMessageSnapshot()
               const approved = await registerConfirmation(toolCallId, tool.name, 'import_preview')
               if (!approved) {
@@ -284,6 +290,8 @@ export async function chatRoutes(app: FastifyInstance) {
             // confirm_import 确认导入预览模式：挂起 LLM，等待用户确认后执行导入
             if (tool.name === 'confirm_import' && result.success && (result as any).data?.mode === 'confirm_preview') {
               console.log('[confirm_import] registering confirmation for toolCallId:', toolCallId)
+              const confirmImportEntry = toolCallEntries.find((e) => e.toolCallId === toolCallId)
+              if (confirmImportEntry) Object.assign(confirmImportEntry, { result, durationMs, status })
               await saveMessageSnapshot()
               const approved = await registerConfirmation(toolCallId, tool.name, 'confirm_import')
               if (!approved) {

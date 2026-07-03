@@ -3,8 +3,8 @@ import type { ToolCallEntry } from '@/stores/chat'
 import { confirmAction, respondSuggestion } from '@/api/chat'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Wrench, CheckCircle2, XCircle, Loader2, HelpCircle, ChevronDown, MessageSquareMore } from 'lucide-react'
-import { useState } from 'react'
+import { Wrench, CheckCircle2, XCircle, Loader2, HelpCircle, ChevronDown, MessageSquareMore, AlertTriangle } from 'lucide-react'
+import { useState, useMemo } from 'react'
 import { ImportPreviewInteractive, type ImportPreviewData } from './ImportPreviewInteractive'
 import { ImportConfirmCard } from './ImportConfirmCard'
 
@@ -75,48 +75,79 @@ export function ToolCallCard({ toolCall }: Props) {
 
   // 只有 mode=preview 时显示交互卡片，analyze 模式等同查询工具直接返回数据
   const args = typeof toolCall.args === 'object' && toolCall.args != null ? toolCall.args as Record<string, unknown> : null
+
+  // 从历史记录加载时 status 可能为 'pending'（旧数据快照），根据已有字段推断实际状态
+  const { effectiveStatus, effectiveSuggestion, isExpired, expiredMessage } = useMemo(() => {
+    if (toolCall.status !== 'pending') {
+      return { effectiveStatus: toolCall.status, effectiveSuggestion: toolCall.suggestion, isExpired: false, expiredMessage: undefined as string | undefined }
+    }
+    // suggest_options 有 questions 参数 → 实际在等待用户选择
+    if (toolCall.toolName === 'suggest_options') {
+      const questions = (toolCall.args as any)?.questions
+      if (questions?.length > 0) {
+        return { effectiveStatus: 'suggesting' as const, effectiveSuggestion: { questions }, isExpired: true, expiredMessage: undefined }
+      }
+    }
+    // 有 result → 实际已执行成功
+    if (toolCall.result != null) return { effectiveStatus: 'success' as const, effectiveSuggestion: undefined, isExpired: false, expiredMessage: undefined }
+    // 有 preview → 等待确认
+    if (toolCall.preview) return { effectiveStatus: 'confirming' as const, effectiveSuggestion: undefined, isExpired: true, expiredMessage: undefined }
+    // preview_import 预览模式但没有 result → 预览数据未持久化
+    if (toolCall.toolName === 'preview_import' && (toolCall.args as any)?.mode === 'preview') {
+      return { effectiveStatus: 'error' as const, effectiveSuggestion: undefined, isExpired: true, expiredMessage: '导入预览数据已过期，请重新上传文件发起导入' }
+    }
+    // confirm_import 但没有 result → 确认状态未持久化
+    if (toolCall.toolName === 'confirm_import') {
+      return { effectiveStatus: 'error' as const, effectiveSuggestion: undefined, isExpired: true, expiredMessage: '导入确认已过期，请重新发起导入' }
+    }
+    return { effectiveStatus: 'pending' as const, effectiveSuggestion: undefined, isExpired: false, expiredMessage: undefined }
+  }, [toolCall.status, toolCall.toolName, toolCall.args, toolCall.result, toolCall.preview, toolCall.suggestion])
+
   const isInteractivePreview = isPreviewImport && args?.mode === 'preview'
-  const confirmResult = isConfirmImport && toolCall.status === 'success' ? ((toolCall.result as any)?.data ?? null) : null
+  const confirmResult = isConfirmImport && effectiveStatus === 'success' ? ((toolCall.result as any)?.data ?? null) : null
   const isConfirmCard = confirmResult && (confirmResult.mode === 'confirm_preview' || confirmResult.imported != null)
+
+  const [confirmError, setConfirmError] = useState(false)
 
   const handleConfirm = async (approved: boolean) => {
     setConfirming(true)
+    setConfirmError(false)
     try {
       await confirmAction(toolCall.toolCallId, approved)
     } catch {
-      // ignore
+      setConfirmError(true)
     }
     setConfirming(false)
   }
 
   const showArgs = toolCall.args != null
-  const showResult = toolCall.status === 'success' && toolCall.result != null
-  const showError = toolCall.status === 'error'
+  const showResult = effectiveStatus === 'success' && toolCall.result != null
+  const showError = effectiveStatus === 'error'
 
   // 交互式预览：成功但未完成导入 → 琥珀色
-  const isImportPending = isInteractivePreview && toolCall.status === 'success' && !importCompleted
+  const isImportPending = isInteractivePreview && effectiveStatus === 'success' && !importCompleted
 
   return (
     <div className={cn(
       'rounded-xl border px-3 py-2 text-xs',
-      toolCall.status === 'pending' && 'border-blue-200 bg-blue-50/50',
-      toolCall.status === 'error' && 'border-red-200 bg-red-50/50',
-      toolCall.status === 'confirming' && 'border-amber-200 bg-amber-50/50',
+      effectiveStatus === 'pending' && 'border-blue-200 bg-blue-50/50',
+      effectiveStatus === 'error' && 'border-red-200 bg-red-50/50',
+      effectiveStatus === 'confirming' && 'border-amber-200 bg-amber-50/50',
       isImportPending && 'border-amber-200 bg-amber-50/50',
-      toolCall.status === 'success' && !isImportPending && 'border-green-200 bg-green-50/50',
-      toolCall.status === 'suggesting' && 'border-violet-200 bg-violet-50/50',
+      effectiveStatus === 'success' && !isImportPending && 'border-green-200 bg-green-50/50',
+      effectiveStatus === 'suggesting' && 'border-violet-200 bg-violet-50/50',
     )}>
       {/* 可点击头部 */}
       <button
         className="flex items-center gap-2 w-full text-left"
         onClick={() => setExpanded(!expanded)}
       >
-        {toolCall.status === 'pending' && <Loader2 size={14} className="animate-spin text-blue-500" />}
+        {effectiveStatus === 'pending' && <Loader2 size={14} className="animate-spin text-blue-500" />}
         {isImportPending && <HelpCircle size={14} className="text-amber-500" />}
-        {toolCall.status === 'success' && !isImportPending && <CheckCircle2 size={14} className="text-green-500" />}
-        {toolCall.status === 'error' && <XCircle size={14} className="text-red-500" />}
-        {toolCall.status === 'confirming' && <HelpCircle size={14} className="text-amber-500" />}
-        {toolCall.status === 'suggesting' && <MessageSquareMore size={14} className="text-violet-500" />}
+        {effectiveStatus === 'success' && !isImportPending && <CheckCircle2 size={14} className="text-green-500" />}
+        {effectiveStatus === 'error' && <XCircle size={14} className="text-red-500" />}
+        {effectiveStatus === 'confirming' && <HelpCircle size={14} className="text-amber-500" />}
+        {effectiveStatus === 'suggesting' && <MessageSquareMore size={14} className="text-violet-500" />}
         <Wrench size={14} className="text-muted-foreground" />
         <span className="font-medium">{toolLabels[toolCall.toolName] || toolCall.toolName}</span>
         {toolCall.durationMs != null && (
@@ -182,15 +213,34 @@ export function ToolCallCard({ toolCall }: Props) {
         </div>
       )}
 
+      {/* 历史数据过期提示 —— 始终可见 */}
+      {isExpired && (
+        <div className={cn(
+          'mt-2 flex items-center gap-1.5 text-[11px]',
+          effectiveStatus === 'error' ? 'text-red-600' : 'text-amber-600',
+        )}>
+          <AlertTriangle size={12} />
+          <span>{expiredMessage || '此操作在重新加载后已过期，请重新发起请求'}</span>
+        </div>
+      )}
+
       {/* 确认按钮 —— 始终可见 */}
-      {toolCall.status === 'confirming' && (
-        <ConfirmPreviewView preview={toolCall.preview} onConfirm={handleConfirm} confirming={confirming} />
+      {(effectiveStatus === 'confirming' || (isExpired && toolCall.preview)) && (
+        <>
+          <ConfirmPreviewView preview={toolCall.preview} onConfirm={handleConfirm} confirming={confirming} />
+          {confirmError && (
+            <div className="flex items-center gap-1.5 text-red-600 text-xs mt-1">
+              <XCircle size={12} />
+              <span>此操作已过期，请重新发起请求</span>
+            </div>
+          )}
+        </>
       )}
 
       {/* 建议选择 UI —— 始终可见 */}
-      {toolCall.status === 'suggesting' && toolCall.suggestion && (
+      {effectiveStatus === 'suggesting' && effectiveSuggestion && (
         <SuggestionView
-          suggestion={toolCall.suggestion}
+          suggestion={effectiveSuggestion}
           toolCallId={toolCall.toolCallId}
         />
       )}
@@ -316,6 +366,7 @@ function SuggestionView({
   const [customInputs, setCustomInputs] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   // 每个 field 的当前值：选项值或自定义输入
   const getValue = (field: string) => {
@@ -333,11 +384,13 @@ function SuggestionView({
       values[q.field] = getValue(q.field)
     }
     setSubmitting(true)
+    setError(null)
     try {
       await respondSuggestion(toolCallId, values)
       setSubmitted(true)
     } catch {
       setSubmitting(false)
+      setError('此操作已过期，请重新发起请求')
     }
   }
 
@@ -404,6 +457,12 @@ function SuggestionView({
           </div>
         )
       })}
+      {error && (
+        <div className="flex items-center gap-1.5 text-red-600 text-xs">
+          <XCircle size={12} />
+          <span>{error}</span>
+        </div>
+      )}
       <div className="flex gap-2">
         <Button
           size="sm"
@@ -418,7 +477,14 @@ function SuggestionView({
           size="sm"
           variant="ghost"
           disabled={submitting}
-          onClick={() => respondSuggestion(toolCallId, null)}
+          onClick={async () => {
+            setError(null)
+            try {
+              await respondSuggestion(toolCallId, null)
+            } catch {
+              setError('此操作已过期，请重新发起请求')
+            }
+          }}
         >
           取消
         </Button>

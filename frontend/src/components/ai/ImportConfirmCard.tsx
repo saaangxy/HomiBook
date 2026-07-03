@@ -105,8 +105,8 @@ export function ImportConfirmCard({ data, toolCallId }: Props) {
       // 导入成功后 SSE 会推送 tool-result 事件，前端状态由 store 更新
       // 这里乐观显示成功
       setLocalResult({ success: true, data: { imported: data.stats.totalRecords, accountsCreated: data.stats.accountsToCreate } })
-    } catch {
-      setLocalResult({ success: false, error: '确认请求失败' })
+    } catch (err: any) {
+      setLocalResult({ success: false, error: err?.message || '确认请求失败' })
     }
     setSubmitting(false)
   }
@@ -116,8 +116,8 @@ export function ImportConfirmCard({ data, toolCallId }: Props) {
     try {
       await confirmAction(toolCallId, false)
       setLocalResult({ success: false, error: '已取消导入' })
-    } catch {
-      setLocalResult({ success: false, error: '取消失败' })
+    } catch (err: any) {
+      setLocalResult({ success: false, error: err?.message || '取消失败' })
     }
     setSubmitting(false)
   }
