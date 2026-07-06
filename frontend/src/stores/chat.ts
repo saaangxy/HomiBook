@@ -280,6 +280,7 @@ function collectDescendantIds(allMessages: Message[], startDbId: string): Set<st
 type SSEStreamContext = {
   sid: string
   assistantMsgId: string
+  parentMsgId?: string
   get: () => ChatState
   set: (partial: Partial<ChatState> | ((s: ChatState) => Partial<ChatState>)) => void
   thinkState: { value: DeltaState }
@@ -292,6 +293,15 @@ function makeSSEHandler(
 ) {
   const updateMsg = (updater: (msg: Message) => Message) => {
     ctx.get().updateStreamMessage(ctx.sid, ctx.assistantMsgId, updater)
+  }
+
+  // 更新 tool-result：同时更新当前消息和父消息（initialSSEEvents 场景），
+  // 其中一个找不到对应 block 时自然成为 no-op
+  const updateToolResult = (updater: (msg: Message) => Message) => {
+    ctx.get().updateStreamMessage(ctx.sid, ctx.assistantMsgId, updater)
+    if (ctx.parentMsgId) {
+      ctx.get().updateStreamMessage(ctx.sid, ctx.parentMsgId, updater)
+    }
   }
 
   const handleEvent = (event: SSEEvent) => {
@@ -322,7 +332,7 @@ function makeSSEHandler(
         break
 
       case 'tool-result':
-        updateMsg((msg) => ({
+        updateToolResult((msg) => ({
           ...msg,
           blocks: msg.blocks.map((b) => {
             if (b.type === 'tool-call' && b.toolCallId === event.toolCallId) {
@@ -433,6 +443,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
   // ---- 共享：创建续写助手消息并启动 SSE 流 ----
   function startContinuationStream(
     parentDbId: string,
+    parentId: string,
     streamStarter: (handleEvent: (e: SSEEvent) => void, handleDone: () => void) => AbortController,
   ) {
     const state = get()
@@ -470,7 +481,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
     })
 
     const ctx: SSEStreamContext = {
-      sid, assistantMsgId: continuationMsgId,
+      sid, assistantMsgId: continuationMsgId, parentMsgId: parentId,
       get, set,
       thinkState: { value: 'text' },
       blockIdCounter: { value: 0 },
@@ -732,7 +743,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
     }
 
     startContinuationStream(
-      parentDbId,
+      parentDbId, parentId,
       (handleEvent, handleDone) => confirmActionStream(
         { toolCallId, approved: true, accountBookId, sessionId: sid, data },
         handleEvent, handleDone,
@@ -769,7 +780,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
     }
 
     startContinuationStream(
-      parentDbId,
+      parentDbId, parentId,
       (handleEvent, handleDone) => respondSuggestionStream(
         { toolCallId, values, accountBookId, sessionId: sid },
         handleEvent, handleDone,
