@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { CheckCircle2, Loader2, XCircle } from 'lucide-react'
+import { CheckCircle2 } from 'lucide-react'
 
 // ---- 类型 ----
 
@@ -75,10 +75,6 @@ interface Props {
 
 export function ImportConfirmCard({ data, toolCallId }: Props) {
   const [ownerId, setOwnerId] = useState(isPreviewData(data) ? data.ownerId : '')
-  const [submitting, setSubmitting] = useState(false)
-  const [localResult, setLocalResult] = useState<{ success: boolean; data?: { imported: number; accountsCreated: number }; error?: string } | null>(
-    !isPreviewData(data) ? { success: true, data: { imported: data.imported, accountsCreated: data.accountsCreated } } : null
-  )
 
   // 如果已经是导入结果，直接显示
   if (!isPreviewData(data)) {
@@ -97,26 +93,12 @@ export function ImportConfirmCard({ data, toolCallId }: Props) {
     )
   }
 
-  const handleConfirm = async () => {
-    setSubmitting(true)
-    try {
-      useChatStore.getState().confirmAndContinue(data.accountBookId, toolCallId, true, { fileId: data.fileId, ownerId })
-      setLocalResult({ success: true, data: { imported: data.stats.totalRecords, accountsCreated: data.stats.accountsToCreate } })
-    } catch (err: any) {
-      setLocalResult({ success: false, error: err?.message || '确认请求失败' })
-    }
-    setSubmitting(false)
+  const handleConfirm = () => {
+    useChatStore.getState().confirmAndContinue(data.accountBookId, toolCallId, true, { fileId: data.fileId, ownerId })
   }
 
-  const handleReject = async () => {
-    setSubmitting(true)
-    try {
-      useChatStore.getState().confirmAndContinue(data.accountBookId, toolCallId, false)
-      setLocalResult({ success: false, error: '已取消导入' })
-    } catch (err: any) {
-      setLocalResult({ success: false, error: err?.message || '取消失败' })
-    }
-    setSubmitting(false)
+  const handleReject = () => {
+    useChatStore.getState().confirmAndContinue(data.accountBookId, toolCallId, false)
   }
 
   const TYPE_LABELS: Record<string, string> = { INCOME: '收入', EXPENSE: '支出', TRANSFER: '转账' }
@@ -155,7 +137,7 @@ export function ImportConfirmCard({ data, toolCallId }: Props) {
       {/* 归属人选择 */}
       <div className="flex items-center gap-2 text-xs">
         <span className="text-muted-foreground shrink-0">归属人:</span>
-        <Select value={ownerId} onValueChange={setOwnerId} disabled={submitting || localResult != null}>
+        <Select value={ownerId} onValueChange={setOwnerId}>
           <SelectTrigger className="h-7 text-xs">
             <SelectValue />
           </SelectTrigger>
@@ -219,38 +201,15 @@ export function ImportConfirmCard({ data, toolCallId }: Props) {
         </div>
       )}
 
-      {/* 操作按钮 / 结果 */}
-      {localResult ? (
-        <div className={cn(
-          'rounded-lg p-3 text-xs',
-          localResult.success ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200',
-        )}>
-          {localResult.success ? (
-            <div className="flex items-center gap-2">
-              <CheckCircle2 size={14} className="text-green-500" />
-              <span>
-                已导入 <strong>{localResult.data?.imported}</strong> 条记录
-                {localResult.data?.accountsCreated ? <>，新建 <strong>{localResult.data.accountsCreated}</strong> 个账户</> : ''}
-              </span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 text-red-600">
-              <XCircle size={14} />
-              <span>{localResult.error}</span>
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="flex gap-2">
-          <Button size="sm" variant="default" disabled={submitting} onClick={handleConfirm}>
-            {submitting && <Loader2 size={12} className="animate-spin mr-1" />}
-            确认导入 {data.stats.totalRecords} 条记录
-          </Button>
-          <Button size="sm" variant="outline" disabled={submitting} onClick={handleReject}>
-            取消
-          </Button>
-        </div>
-      )}
+      {/* 操作按钮 */}
+      <div className="flex gap-2">
+        <Button size="sm" variant="default" onClick={handleConfirm}>
+          确认导入 {data.stats.totalRecords} 条记录
+        </Button>
+        <Button size="sm" variant="outline" onClick={handleReject}>
+          取消
+        </Button>
+      </div>
     </div>
   )
 }

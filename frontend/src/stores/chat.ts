@@ -746,7 +746,19 @@ export const useChatStore = create<ChatState>()((set, get) => {
 
     startContinuationStream(
       toolCallId, parentDbId, parentId,
-      () => ({ status: 'success' as const }),
+      (b) => {
+        const update: any = { status: 'success' as const }
+        // preview_import: 乐观写入 confirmed 标记，组件直接从 data 读取状态
+        if (b.toolName === 'preview_import' && b.result?.data) {
+          update.result = { ...b.result, data: { ...b.result.data, confirmed: true } }
+        }
+        // confirm_import: 乐观写入导入结果，使 isPreviewData 返回 false
+        if (b.toolName === 'confirm_import' && b.result?.data?.mode === 'confirm_preview') {
+          const d = b.result.data
+          update.result = { ...b.result, data: { imported: d.stats?.totalRecords ?? 0, accountsCreated: d.stats?.accountsToCreate ?? 0 } }
+        }
+        return update
+      },
       (handleEvent, handleDone) => confirmActionStream(
         { toolCallId, approved: true, accountBookId, sessionId: sid, data },
         handleEvent, handleDone,
@@ -784,7 +796,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
 
     startContinuationStream(
       toolCallId, parentDbId, parentId,
-      () => ({ status: 'success' as const, result: { success: true, values } }),
+      (b) => ({ status: 'success' as const, result: { ...b.result, submitted: true, values } }),
       (handleEvent, handleDone) => respondSuggestionStream(
         { toolCallId, values, accountBookId, sessionId: sid },
         handleEvent, handleDone,

@@ -5,7 +5,7 @@ import { useBookStore } from '@/stores/book'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Wrench, CheckCircle2, XCircle, Loader2, HelpCircle, ChevronDown, MessageSquareMore, AlertTriangle } from 'lucide-react'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import { ImportPreviewInteractive, type ImportPreviewData } from './ImportPreviewInteractive'
 import { ImportConfirmCard } from './ImportConfirmCard'
 
@@ -69,9 +69,6 @@ function cellColorClass(color?: 'green' | 'red') {
 export function ToolCallCard({ toolCall }: Props) {
   const [confirming, setConfirming] = useState(false)
   const [expanded, setExpanded] = useState(false)
-  const [importCompleted, setImportCompleted] = useState(() => {
-    return !!(toolCall.result as any)?.data?.confirmed
-  })
 
   const isPreviewImport = toolCall.toolName === 'preview_import'
   const isConfirmImport = toolCall.toolName === 'confirm_import'
@@ -126,7 +123,7 @@ export function ToolCallCard({ toolCall }: Props) {
   const showError = effectiveStatus === 'error'
 
   // 交互式预览：成功但未完成导入 → 琥珀色
-  const isImportPending = isInteractivePreview && effectiveStatus === 'success' && !importCompleted
+  const isImportPending = isInteractivePreview && effectiveStatus === 'success' && !(toolCall.result as any)?.data?.confirmed
 
   return (
     <div className={cn(
@@ -189,7 +186,7 @@ export function ToolCallCard({ toolCall }: Props) {
             const source = (toolCall.args as any)?.source || previewData.source || ''
             const accountBookId = previewData.accountBookId
             return accountBookId
-              ? <ImportPreviewInteractive data={previewData} source={source} accountBookId={accountBookId} toolCallId={toolCall.toolCallId} aiArgs={toolCall.args as any} onImportComplete={() => setImportCompleted(true)} />
+              ? <ImportPreviewInteractive data={previewData} source={source} accountBookId={accountBookId} toolCallId={toolCall.toolCallId} aiArgs={toolCall.args as any} />
               : <FallbackJson data={result} />
           })()}
         </div>
@@ -364,15 +361,10 @@ function SuggestionView({
   expired?: boolean
 }) {
   const { questions } = suggestion
-  // selectedOption: field → selected option (or '__custom__')
   const [selectedOption, setSelectedOption] = useState<Record<string, string>>({})
-  // customInputs: field → custom text
   const [customInputs, setCustomInputs] = useState<Record<string, string>>({})
-  const [submitting, setSubmitting] = useState(false)
-  const [submitted, setSubmitted] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const submittingRef = useRef(false)
 
-  // 每个 field 的当前值：选项值或自定义输入
   const getValue = (field: string) => {
     const sel = selectedOption[field]
     if (!sel) return ''
@@ -381,37 +373,16 @@ function SuggestionView({
 
   const allFilled = questions.every((q) => !!getValue(q.field))
 
-  const handleSubmit = async () => {
-    if (!allFilled || submitting) return
+  const handleSubmit = () => {
+    if (!allFilled || submittingRef.current) return
     const { currentBookId } = useBookStore.getState()
     if (!currentBookId) return
     const values: Record<string, string> = {}
     for (const q of questions) {
       values[q.field] = getValue(q.field)
     }
-    setSubmitting(true)
-    setError(null)
-    try {
-      useChatStore.getState().respondToSuggestion(currentBookId, toolCallId, values)
-      setSubmitted(true)
-    } catch {
-      setSubmitting(false)
-      setError('此操作已过期，请重新发起请求')
-    }
-  }
-
-  if (submitted) {
-    return (
-      <div className="mt-2 space-y-1">
-        {questions.map((q) => (
-          <div key={q.field} className="flex items-center gap-2 text-green-600 text-xs">
-            <CheckCircle2 size={12} />
-            <span className="text-muted-foreground">{q.question}</span>
-            <span className="font-medium">{getValue(q.field)}</span>
-          </div>
-        ))}
-      </div>
-    )
+    submittingRef.current = true
+    useChatStore.getState().respondToSuggestion(currentBookId, toolCallId, values)
   }
 
   return (
@@ -463,13 +434,7 @@ function SuggestionView({
           </div>
         )
       })}
-      {error && (
-        <div className="flex items-center gap-1.5 text-red-600 text-xs">
-          <XCircle size={12} />
-          <span>{error}</span>
-        </div>
-      )}
-      {expired && !error && (
+      {expired && (
         <div className="flex items-center gap-1.5 text-amber-600 text-xs">
           <AlertTriangle size={12} />
           <span>此操作在重新加载后已过期，请在聊天输入框中直接回复你的选择</span>
@@ -479,25 +444,19 @@ function SuggestionView({
         <Button
           size="sm"
           variant="default"
-          disabled={!allFilled || submitting || expired}
+          disabled={!allFilled || expired}
           onClick={handleSubmit}
         >
-          {submitting ? <Loader2 size={12} className="animate-spin mr-1" /> : null}
           提交
         </Button>
         <Button
           size="sm"
           variant="ghost"
-          disabled={submitting || expired}
-          onClick={async () => {
-            setError(null)
-            try {
-              const { currentBookId } = useBookStore.getState()
-              if (currentBookId) {
-                useChatStore.getState().respondToSuggestion(currentBookId, toolCallId, null)
-              }
-            } catch {
-              setError('此操作已过期，请重新发起请求')
+          disabled={expired}
+          onClick={() => {
+            const { currentBookId } = useBookStore.getState()
+            if (currentBookId) {
+              useChatStore.getState().respondToSuggestion(currentBookId, toolCallId, null)
             }
           }}
         >

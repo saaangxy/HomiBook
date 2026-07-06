@@ -112,15 +112,15 @@ interface Props {
     accountResolutions?: AIAccountResolution[]
     categoryResolutions?: AICategoryResolution[]
   }
-  onImportComplete?: () => void
 }
 
-export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiArgs, onImportComplete }: Props) {
+export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiArgs }: Props) {
   const stats = data.stats
   const records = data.records || []
   const unrecognizedRecords = data.unrecognizedRecords || []
   const accounts = data.accounts || []
   const allDictItems = data.allDictItems || []
+  const isConfirmed = !!data.confirmed
 
   // ---- 状态 ----
   const [tab, setTab] = useState<'records' | 'unmatchedAccounts' | 'unmatchedCategories' | 'unrecognized'>('records')
@@ -143,12 +143,7 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
   const [comboOpen, setComboOpen] = useState<string | null>(null)
   const [categorySearch, setCategorySearch] = useState('')
 
-  // 确认
-  const [confirmed, setConfirmed] = useState(() => {
-    if(data.confirmed){
-      return true
-    }
-  })
+  // 确认（状态由父组件 ToolCallCard 管理，通过 props 传入，和 handleSend 模式一致）
   const [confirming, setConfirming] = useState(false)
   const [confirmError, setConfirmError] = useState<string | null>(null)
 
@@ -609,7 +604,7 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
             {confirmError}
           </div>
         )}
-        {!confirmed ? (
+        {!isConfirmed ? (
           <Button
             size="sm"
             className="w-full text-xs"
@@ -670,8 +665,6 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
                     Object.keys(overrides).length > 0 ? overrides : undefined,
                   )
                 }
-                setConfirmed(true)
-                onImportComplete?.()
               } catch (err: any) {
                 setConfirmError(err?.message || '确认请求失败')
               }
