@@ -27,6 +27,7 @@ interface StreamAssistantOptions {
   temperature: number
   maxTokens: number
   maxSteps: number
+  initialSSEEvents?: { event: string; data: any }[]
 }
 
 async function streamAssistantResponse(opts: StreamAssistantOptions) {
@@ -44,6 +45,13 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
       reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
     } catch (e) {
       console.error(`[SSE] write error for event "${event}":`, e)
+    }
+  }
+
+  // 发送初始 SSE 事件（如已确认的工具结果）
+  if (opts.initialSSEEvents) {
+    for (const ev of opts.initialSSEEvents) {
+      sendSSE(ev.event, ev.data)
     }
   }
 
@@ -324,7 +332,7 @@ async function buildChatMessages(sessionId: string, pendingToolCallId: string, p
 
 // ---- 共享辅助：加载 LLM 配置并启动 SSE 续写流 ----
 
-async function continueWithLLM(reply: any, sessionId: string, accountBookId: string, userId: string, message: { modelProvider: string | null; modelName: string | null; id: string }, messages: any[]) {
+async function continueWithLLM(reply: any, sessionId: string, accountBookId: string, userId: string, message: { modelProvider: string | null; modelName: string | null; id: string }, messages: any[], initialSSEEvents?: { event: string; data: any }[]) {
   const prefs = await loadPreferences(userId)
   const provider = message.modelProvider || ''
   const model = message.modelName || ''
@@ -350,6 +358,7 @@ async function continueWithLLM(reply: any, sessionId: string, accountBookId: str
     temperature: activeConfig?.temperature ?? prefs.temperature,
     maxTokens: activeConfig?.maxTokens ?? prefs.maxTokens,
     maxSteps: prefs.maxSteps,
+    initialSSEEvents,
   })
 }
 
@@ -609,6 +618,7 @@ export async function chatRoutes(app: FastifyInstance) {
 
     const ctx = { userId, accountBookId }
     let toolResult: any
+    const reExecStart = Date.now()
 
     if (entry.toolName === 'preview_import') {
       const args = entry.args || {}
@@ -660,6 +670,11 @@ export async function chatRoutes(app: FastifyInstance) {
 
     logToolCall({ userId, sessionId: found.data.session.id, action: 'confirm', toolName: entry.toolName, input: entry.args, output: toolResult })
 
+    const reviewDurationMs = Date.now() - reExecStart
+    const initialSSEEvents = [
+      { event: 'tool-result', data: { toolCallId, toolName: entry.toolName, result: toolResult, durationMs: reviewDurationMs, status: toolResult.success ? 'success' : 'error' } },
+    ]
+
     toolResult.data = { ...toolResult.data, confirmed: true }
     // 更新 DB 快照中该工具调用的结果
     const doneEntry = toolCalls.find((tc: any) => tc.toolCallId === toolCallId)
@@ -673,7 +688,7 @@ export async function chatRoutes(app: FastifyInstance) {
     }
 
     const messages = await buildChatMessages(message.sessionId, toolCallId, entry.toolName, toolResult)
-    await continueWithLLM(reply, message.sessionId, accountBookId, userId, message, messages)
+    await continueWithLLM(reply, message.sessionId, accountBookId, userId, message, messages, initialSSEEvents)
   })
 
   // 回复建议（用户选择或自定义输入）→ SSE 流式继续对话
@@ -704,6 +719,9 @@ export async function chatRoutes(app: FastifyInstance) {
 
     // 构建 suggest_options 的 tool result
     const toolResult = { success: true, values }
+    const initialSSEEvents = [
+      { event: 'tool-result', data: { toolCallId, toolName: entry.toolName, result: toolResult, durationMs: 0, status: 'success' } },
+    ]
 
     const doneEntry = toolCalls.find((tc: any) => tc.toolCallId === toolCallId)
     if (doneEntry) {
@@ -716,7 +734,7 @@ export async function chatRoutes(app: FastifyInstance) {
     }
 
     const messages = await buildChatMessages(message.sessionId, toolCallId, entry.toolName, toolResult)
-    await continueWithLLM(reply, message.sessionId, accountBookId, userId, message, messages)
+    await continueWithLLM(reply, message.sessionId, accountBookId, userId, message, messages, initialSSEEvents)
   })
 
   // === 供应商配置 CRUD ===

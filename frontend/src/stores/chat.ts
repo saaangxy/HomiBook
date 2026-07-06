@@ -432,10 +432,7 @@ function makeSSEHandler(
 export const useChatStore = create<ChatState>()((set, get) => {
   // ---- 共享：创建续写助手消息并启动 SSE 流 ----
   function startContinuationStream(
-    toolCallId: string,
     parentDbId: string,
-    parentId: string,
-    optimisticUpdate: (b: any) => any,
     streamStarter: (handleEvent: (e: SSEEvent) => void, handleDone: () => void) => AbortController,
   ) {
     const state = get()
@@ -471,16 +468,6 @@ export const useChatStore = create<ChatState>()((set, get) => {
         error: null,
       }
     })
-
-    // 乐观更新父消息中的工具调用状态
-    get().updateStreamMessage(sid, parentId, (msg) => ({
-      ...msg,
-      blocks: msg.blocks.map((b) =>
-        b.type === 'tool-call' && b.toolCallId === toolCallId
-          ? { ...b, ...optimisticUpdate(b) }
-          : b,
-      ),
-    }))
 
     const ctx: SSEStreamContext = {
       sid, assistantMsgId: continuationMsgId,
@@ -745,20 +732,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
     }
 
     startContinuationStream(
-      toolCallId, parentDbId, parentId,
-      (b) => {
-        const update: any = { status: 'success' as const }
-        // preview_import: 乐观写入 confirmed 标记，组件直接从 data 读取状态
-        if (b.toolName === 'preview_import' && b.result?.data) {
-          update.result = { ...b.result, data: { ...b.result.data, confirmed: true } }
-        }
-        // confirm_import: 乐观写入导入结果，使 isPreviewData 返回 false
-        if (b.toolName === 'confirm_import' && b.result?.data?.mode === 'confirm_preview') {
-          const d = b.result.data
-          update.result = { ...b.result, data: { imported: d.stats?.totalRecords ?? 0, accountsCreated: d.stats?.accountsToCreate ?? 0 } }
-        }
-        return update
-      },
+      parentDbId,
       (handleEvent, handleDone) => confirmActionStream(
         { toolCallId, approved: true, accountBookId, sessionId: sid, data },
         handleEvent, handleDone,
@@ -795,8 +769,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
     }
 
     startContinuationStream(
-      toolCallId, parentDbId, parentId,
-      (b) => ({ status: 'success' as const, result: { ...b.result, submitted: true, values } }),
+      parentDbId,
       (handleEvent, handleDone) => respondSuggestionStream(
         { toolCallId, values, accountBookId, sessionId: sid },
         handleEvent, handleDone,
