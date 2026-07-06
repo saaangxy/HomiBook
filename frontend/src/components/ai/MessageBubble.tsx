@@ -103,7 +103,7 @@ export function MessageBubble({ message, onRetry, onEditSubmit, versions, onSwit
         </AvatarFallback>
       </Avatar>
 
-      <div className={cn('flex flex-col gap-2 min-w-0', isUser ? 'items-end' : 'items-start', isEditing ? 'w-[60%]' : 'max-w-[75%]')}>
+      <div className={cn('flex flex-col gap-2 min-w-0', isUser ? 'items-end' : 'items-start min-w-[60%]', isEditing ? 'w-[60%]' : 'max-w-[75%]')}>
         {isUser ? (
           <>
             {/* 版本切换 */}
