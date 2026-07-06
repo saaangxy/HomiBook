@@ -619,7 +619,34 @@ export async function chatRoutes(app: FastifyInstance) {
         accountResolutions: userOverrides?.accountResolutions ?? args.accountResolutions,
         categoryResolutions: userOverrides?.categoryResolutions ?? args.categoryResolutions,
       }
-      toolResult = await tool.execute(mergedArgs, ctx)
+      const reResult = await tool.execute(mergedArgs, ctx) as any
+
+      // 构建供 LLM 检查的简化数据（只返回关键字段，压缩上下文长度）
+      const buildReviewRecords = (records: any[]) => records.map((r: any) => ({
+        type: r.type,
+        categoryCode: r.categoryCode,
+        categoryLabel: r.categoryLabel,
+        mappedCategoryCode: r.mappedCategoryCode,
+        mappedCategoryLabel: r.mappedCategoryLabel,
+        payer: r.payer,
+        remark: r.remark,
+      }))
+
+      const reData = reResult.data || {}
+      toolResult = {
+        success: true,
+        retryable: false,
+        data: {
+          mode: 'review',
+          source: reData.source,
+          records: reData.records ? buildReviewRecords(reData.records) : [],
+          unrecognizedRecords: reData.unrecognizedRecords ? buildReviewRecords(reData.unrecognizedRecords) : [],
+          unmatchedAccounts: reData.unmatchedAccounts || [],
+          unmatchedCategories: reData.unmatchedCategories || [],
+          stats: reData.stats,
+          message: '请检查以上映射结果是否正确。确认无误后调用 confirm_import 工具导入，如有个别错误请告知用户。',
+        },
+      }
     } else if (entry.toolName === 'confirm_import') {
       const args = entry.args || {}
       const fileId = args.fileId as string
