@@ -633,6 +633,7 @@ export async function chatRoutes(app: FastifyInstance) {
 
     logToolCall({ userId, sessionId: found.data.session.id, action: 'confirm', toolName: entry.toolName, input: entry.args, output: toolResult })
 
+    toolResult.data = { ...toolResult.data, confirmed: true }
     // 更新 DB 快照中该工具调用的结果
     const doneEntry = toolCalls.find((tc: any) => tc.toolCallId === toolCallId)
     if (doneEntry) {

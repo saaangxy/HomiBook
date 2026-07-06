@@ -432,7 +432,6 @@ function makeSSEHandler(
 export const useChatStore = create<ChatState>()((set, get) => {
   // ---- 共享：创建续写助手消息并启动 SSE 流 ----
   function startContinuationStream(
-    accountBookId: string,
     toolCallId: string,
     parentDbId: string,
     parentId: string,
@@ -746,7 +745,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
     }
 
     startContinuationStream(
-      accountBookId, toolCallId, parentDbId, parentId,
+      toolCallId, parentDbId, parentId,
       () => ({ status: 'success' as const }),
       (handleEvent, handleDone) => confirmActionStream(
         { toolCallId, approved: true, accountBookId, sessionId: sid, data },
@@ -784,7 +783,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
     }
 
     startContinuationStream(
-      accountBookId, toolCallId, parentDbId, parentId,
+      toolCallId, parentDbId, parentId,
       () => ({ status: 'success' as const, result: { success: true, values } }),
       (handleEvent, handleDone) => respondSuggestionStream(
         { toolCallId, values, accountBookId, sessionId: sid },

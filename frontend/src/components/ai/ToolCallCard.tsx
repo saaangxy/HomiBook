@@ -69,7 +69,9 @@ function cellColorClass(color?: 'green' | 'red') {
 export function ToolCallCard({ toolCall }: Props) {
   const [confirming, setConfirming] = useState(false)
   const [expanded, setExpanded] = useState(false)
-  const [importCompleted, setImportCompleted] = useState(false)
+  const [importCompleted, setImportCompleted] = useState(() => {
+    return !!(toolCall.result as any)?.data?.confirmed
+  })
 
   const isPreviewImport = toolCall.toolName === 'preview_import'
   const isConfirmImport = toolCall.toolName === 'confirm_import'

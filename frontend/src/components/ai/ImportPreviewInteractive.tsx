@@ -58,6 +58,7 @@ interface DictEntry {
 export interface ImportPreviewData {
   source?: string
   mode?: string
+  confirmed?: boolean
   records?: ParsedRow[]
   unrecognizedRecords?: ParsedRow[]
   unmatchedAccounts?: UnmatchedAccount[]
@@ -143,7 +144,11 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
   const [categorySearch, setCategorySearch] = useState('')
 
   // 确认
-  const [confirmed, setConfirmed] = useState(false)
+  const [confirmed, setConfirmed] = useState(() => {
+    if(data.confirmed){
+      return true
+    }
+  })
   const [confirming, setConfirming] = useState(false)
   const [confirmError, setConfirmError] = useState<string | null>(null)
 
@@ -152,7 +157,6 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
   useEffect(() => {
     if (initialized.current) return
     initialized.current = true
-    console.log('ImportPreviewInteractive.tsx: {}',data);
     // 账户解析
     const acctRes: Record<string, AccountResolution> = {}
     for (const ua of data.unmatchedAccounts || []) {
