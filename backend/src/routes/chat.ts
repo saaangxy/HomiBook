@@ -92,6 +92,7 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
             if (entry) Object.assign(entry, { status: 'suggesting', suggestion: { questions } })
             await saveMessageSnapshot()
             pendingState.suggestion = { toolCallId, questions }
+            abortController.abort()
             return { __pending: true, toolCallId }
           }
 
@@ -103,6 +104,7 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
             if (entry) Object.assign(entry, { status: 'confirming', preview })
             await saveMessageSnapshot()
             pendingState.abort = { toolCallId, toolName: tool.name, args }
+            abortController.abort()
             return { __pending: true, toolCallId }
           }
 
@@ -127,6 +129,7 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
             if (entry) Object.assign(entry, { result, durationMs, status })
             await saveMessageSnapshot()
             pendingState.abort = { toolCallId, toolName: tool.name, args }
+            abortController.abort()
             return result
           }
 
@@ -136,6 +139,7 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
             if (entry) Object.assign(entry, { result, durationMs, status })
             await saveMessageSnapshot()
             pendingState.abort = { toolCallId, toolName: tool.name, args }
+            abortController.abort()
             return result
           }
 
@@ -155,6 +159,8 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
     }
   }
 
+  const abortController = new AbortController()
+
   try {
     const llmModel = createModel(provider as ProviderType, model, { apiKey, baseURL })
     const result = streamText({
@@ -165,6 +171,7 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
       temperature,
       maxOutputTokens: maxTokens,
       stopWhen: stepCountIs(maxSteps),
+      abortSignal: abortController.signal,
     })
 
     for await (const part of result.fullStream) {
@@ -207,6 +214,10 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
     sendSSE('finish', { usage, assistantMessageId: msgState.dbId, userMessageId: parentMessageId })
     return { assistantMessageId: msgState.dbId, usage }
   } catch (err: any) {
+    // AbortError 是预期行为（pendingState.abort/suggestion 触发），静默处理
+    if (err.name === 'AbortError') {
+      return { assistantMessageId: msgState.dbId, usage: null }
+    }
     if (msgState.dbId) {
       try {
         await prisma.chatMessage.update({
@@ -282,7 +293,7 @@ async function buildChatMessages(sessionId: string, pendingToolCallId: string, p
       const contentParts: any[] = []
       if (msg.content) contentParts.push({ type: 'text', text: msg.content })
       for (const tc of tcList) {
-        contentParts.push({ type: 'tool-call', toolCallId: tc.toolCallId, toolName: tc.toolName, args: tc.args })
+        contentParts.push({ type: 'tool-call', toolCallId: tc.toolCallId, toolName: tc.toolName, input: tc.args })
       }
       messages.push({ role: 'assistant', content: contentParts })
 
@@ -296,7 +307,7 @@ async function buildChatMessages(sessionId: string, pendingToolCallId: string, p
             type: 'tool-result',
             toolCallId: tc.toolCallId,
             toolName: tc.toolName,
-            result: tc.result,
+            output: { type: 'json', value: tc.result },
           })),
         })
       }
@@ -305,7 +316,7 @@ async function buildChatMessages(sessionId: string, pendingToolCallId: string, p
 
   messages.push({
     role: 'tool',
-    content: [{ type: 'tool-result', toolCallId: pendingToolCallId, toolName: pendingToolName, result: pendingToolResult }],
+    content: [{ type: 'tool-result', toolCallId: pendingToolCallId, toolName: pendingToolName, output: { type: 'json', value: pendingToolResult } }],
   })
 
   return messages
