@@ -61,8 +61,8 @@ export const respondSuggestionSchema = z.object({
   values: z.record(z.string(), z.string()).nullable(), // null 表示取消，否则为 { field: value } 映射
 })
 
-// 更新偏好设置
-export const updatePreferencesSchema = z.object({
+// 更新助手配置
+export const updateAIConfigSchema = z.object({
   simpleProviderConfigId: z.string().nullable().optional(),
   simpleModel: z.string().optional(),
   complexProviderConfigId: z.string().nullable().optional(),

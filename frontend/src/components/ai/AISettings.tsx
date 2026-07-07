@@ -20,7 +20,7 @@ import {
   Hash,
 } from 'lucide-react'
 import {
-  fetchPreferences, updatePreferences, fetchProviders, fetchProviderModels,
+  fetchAIConfig, updateAIConfig, fetchProviders, fetchProviderModels,
   fetchProviderConfigs, createProviderConfig, updateProviderConfig, deleteProviderConfig, copyProviderConfig,
   type ProviderInfo, type UserProviderConfig,
 } from '@/api/chat'
@@ -37,7 +37,7 @@ export function AIAssistantSettings() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
-  // ---------- 偏好 ----------
+  // ---------- 助手配置 ----------
   const [simpleConfigId, setSimpleConfigId] = useState<string | null>(null)
   const [simpleModel, setSimpleModel] = useState('')
   const [complexConfigId, setComplexConfigId] = useState<string | null>(null)
@@ -77,7 +77,7 @@ export function AIAssistantSettings() {
     setLoading(true)
     try {
       const [prefs, providerList, configList] = await Promise.all([
-        fetchPreferences(),
+        fetchAIConfig(),
         fetchProviders(),
         fetchProviderConfigs(),
       ])
@@ -97,13 +97,13 @@ export function AIAssistantSettings() {
     }
   }
 
-  // ==================== 偏好保存 ====================
-  const handleSavePrefs = async () => {
+  // ==================== 助手配置保存 ====================
+  const handleSaveAIConfig = async () => {
     setSaving(true)
     setError('')
     setSuccess('')
     try {
-      await updatePreferences({
+      await updateAIConfig({
         simpleProviderConfigId: simpleConfigId,
         simpleModel,
         complexProviderConfigId: complexConfigId,
@@ -112,7 +112,7 @@ export function AIAssistantSettings() {
         autoConfirmCreate: autoConfirm,
         maxSteps,
       })
-      setSuccess('偏好设置已保存')
+      setSuccess('助手配置已保存')
     } catch (err: any) {
       setError(err.message || '保存失败')
     } finally {
@@ -371,8 +371,8 @@ export function AIAssistantSettings() {
         </div>
       </div>
 
-      {/* 保存偏好 */}
-      <Button onClick={handleSavePrefs} disabled={saving} className="w-full">
+      {/* 保存助手配置 */}
+      <Button onClick={handleSaveAIConfig} disabled={saving} className="w-full">
         {saving ? <Spinner /> : '保存配置'}
       </Button>
 

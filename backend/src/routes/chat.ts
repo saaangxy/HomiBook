@@ -8,7 +8,7 @@ import { assertIsMember } from '../services/ai/security.js'
 import { logToolCall } from '../services/ai/audit.js'
 import { ALL_TOOLS, storeImportOverrides, peekImportOverrides, consumeImportOverrides } from '../services/ai/tools/index.js'
 import { buildConfirmPreview } from '../services/ai/confirm-preview.js'
-import { sendMessageSchema, createSessionSchema, updateSessionSchema, confirmActionSchema, respondSuggestionSchema, updatePreferencesSchema, createProviderConfigSchema, updateProviderConfigSchema } from '../schemas/chat.js'
+import { sendMessageSchema, createSessionSchema, updateSessionSchema, confirmActionSchema, respondSuggestionSchema, updateAIConfigSchema, createProviderConfigSchema, updateProviderConfigSchema } from '../schemas/chat.js'
 
 // ---- 共享流式响应函数：供 /send 和 /confirm 复用 ----
 
@@ -319,7 +319,7 @@ async function buildChatMessages(sessionId: string, pendingToolCallId: string, p
 // ---- 共享辅助：加载 LLM 配置并启动 SSE 续写流 ----
 
 async function continueWithLLM(reply: any, sessionId: string, accountBookId: string, userId: string, message: { modelProvider: string | null; modelName: string | null; id: string }, messages: any[], initialSSEEvents?: { event: string; data: any }[]) {
-  const prefs = await loadPreferences(userId)
+  const prefs = await loadAIConfig(userId)
   const provider = message.modelProvider || ''
   const model = message.modelName || ''
 
@@ -367,7 +367,7 @@ export async function chatRoutes(app: FastifyInstance) {
     const session = await getOrCreateSession(sid, userId, accountBookId, message)
 
     // 加载用户配置
-    const prefs = await loadPreferences(userId)
+    const prefs = await loadAIConfig(userId)
 
     // 加载供应商配置
     const simpleConfig = prefs.simpleProviderConfigId
@@ -547,7 +547,7 @@ export async function chatRoutes(app: FastifyInstance) {
 
     if (messages.length === 0) return { title: session.title }
 
-    const prefs = await loadPreferences(userId)
+    const prefs = await loadAIConfig(userId)
     const simpleConfig = prefs.simpleProviderConfigId
       ? await prisma.userProviderConfig.findUnique({ where: { id: prefs.simpleProviderConfigId } })
       : null
@@ -855,21 +855,21 @@ export async function chatRoutes(app: FastifyInstance) {
     return copy
   })
 
-  // 获取偏好
-  app.get('/preferences', async (req) => {
+  // 获取助手配置
+  app.get('/ai-config', async (req) => {
     const userId = (req as any).user.id as string
-    const prefs = await loadPreferences(userId)
-    return prefs
+    const config = await loadAIConfig(userId)
+    return config
   })
 
-  // 更新偏好
-  app.put('/preferences', async (req, reply) => {
-    const parsed = updatePreferencesSchema.safeParse(req.body)
+  // 更新助手配置
+  app.put('/ai-config', async (req, reply) => {
+    const parsed = updateAIConfigSchema.safeParse(req.body)
     if (!parsed.success) return reply.status(400).send({ message: parsed.error.issues[0].message })
 
     const userId = (req as any).user.id as string
 
-    await prisma.userPreference.upsert({
+    await prisma.userAIConfig.upsert({
       where: { userId },
       create: { userId, ...parsed.data },
       update: parsed.data,
@@ -1048,8 +1048,8 @@ async function getOrCreateSession(sid: string | undefined, userId: string, bookI
   })
 }
 
-async function loadPreferences(userId: string) {
-  const prefs = await prisma.userPreference.findUnique({ where: { userId } })
+async function loadAIConfig(userId: string) {
+  const prefs = await prisma.userAIConfig.findUnique({ where: { userId } })
   return {
     simpleProviderConfigId: prefs?.simpleProviderConfigId || null,
     simpleModel: prefs?.simpleModel || '',

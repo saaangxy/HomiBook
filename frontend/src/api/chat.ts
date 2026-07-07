@@ -28,7 +28,7 @@ export interface ProviderInfo {
   defaultBaseURL: string
 }
 
-export interface UserPreferences {
+export interface UserAIConfig {
   simpleProviderConfigId: string | null
   simpleModel: string
   complexProviderConfigId: string | null
@@ -76,8 +76,8 @@ export async function fetchMessages(sessionId: string) {
   return res.messages
 }
 
-export async function fetchPreferences() {
-  return api.get<UserPreferences>(`${BASE}/preferences`)
+export async function fetchAIConfig() {
+  return api.get<UserAIConfig>(`${BASE}/ai-config`)
 }
 
 export async function fetchProviders() {
@@ -206,8 +206,8 @@ export function respondSuggestionStream(
   return controller
 }
 
-export async function updatePreferences(data: Partial<UserPreferences>) {
-  return api.put(`${BASE}/preferences`, data)
+export async function updateAIConfig(data: Partial<UserAIConfig>) {
+  return api.put(`${BASE}/ai-config`, data)
 }
 
 // Provider config CRUD

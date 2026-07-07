@@ -30,7 +30,7 @@ model User {
   chatSessions         ChatSession[]
   memories             UserMemory[]
   auditLogs            AgentAuditLog[]
-  aiPreference         UserPreference?
+  aiConfig         UserAIConfig?
   providerConfigs      UserProviderConfig[]
 }
 
@@ -393,8 +393,8 @@ model AgentAuditLog {
   @@index([sessionId, createdAt])
 }
 
-// AI 用户偏好
-model UserPreference {
+// AI 助手配置
+model UserAIConfig {
   id        String   @id @default(uuid())
   userId    String   @unique
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
