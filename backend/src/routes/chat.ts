@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { streamText, stepCountIs, jsonSchema } from 'ai'
+import { streamText, generateText, stepCountIs, jsonSchema } from 'ai'
 import { prisma } from '../app.js'
 import { authenticate } from '../middleware/auth.js'
 import { createModel, ALL_PROVIDERS, DEFAULT_BASE_URLS, type ProviderType } from '../services/ai/providers.js'
@@ -57,6 +57,7 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
 
   const toolCallEntries: any[] = []
   let fullText = ''
+  let activeToolCount = 0
   const pendingState = { abort: null as { toolCallId: string; toolName: string; args: any } | null, suggestion: null as { toolCallId: string; questions: any[] } | null }
 
   const msgState = { dbId: null as string | null }
@@ -89,6 +90,7 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
         const toolCallId = `call_${tool.name}_${start}`
         sendSSE('tool-call', { toolCallId, toolName: tool.name, args })
         toolCallEntries.push({ toolCallId, toolName: tool.name, args, status: 'pending', textOffset: fullText.length })
+        activeToolCount++
         try {
           // ---- suggest_options：关闭流等待用户选择 ----
           if (tool.name === 'suggest_options') {
@@ -162,6 +164,8 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
           const entry = toolCallEntries.find(e => e.toolCallId === toolCallId)
           if (entry) Object.assign(entry, { result: { error: err.message }, durationMs, status: 'error' })
           return { success: false, error: err.message, retryable: false }
+        } finally {
+          activeToolCount--
         }
       },
     }
@@ -190,22 +194,8 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
       }
     }
 
-    // 流结束 → 保存最终 assistant 消息
-    const finalData = {
-      sessionId,
-      role: 'assistant' as const,
-      content: fullText,
-      modelProvider: provider,
-      modelName: model,
-      toolCalls: toolCallEntries.length > 0 ? JSON.stringify(toolCallEntries) : null,
-      parentMessageId,
-    }
-    if (msgState.dbId) {
-      await prisma.chatMessage.update({ where: { id: msgState.dbId }, data: finalData })
-    } else {
-      const created = await prisma.chatMessage.create({ data: finalData })
-      if (created) msgState.dbId = created.id
-    }
+    // 流结束 → 保存最终 assistant 消息（包含所有已执行工具的结果）
+    await saveMessageSnapshot()
 
     const abort = pendingState.abort
     if (abort) {
@@ -222,25 +212,16 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
     sendSSE('finish', { usage, assistantMessageId: msgState.dbId, userMessageId: parentMessageId })
     return { assistantMessageId: msgState.dbId, usage }
   } catch (err: any) {
-    // AbortError 是预期行为（pendingState.abort/suggestion 触发），静默处理
+    // AbortError 是预期行为，等待并发工具执行完成后保存状态
     if (err.name === 'AbortError') {
+      const deadline = Date.now() + 5000
+      while (activeToolCount > 0 && Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, 50))
+      }
+      await saveMessageSnapshot().catch(() => {})
       return { assistantMessageId: msgState.dbId, usage: null }
     }
-    if (msgState.dbId) {
-      try {
-        await prisma.chatMessage.update({
-          where: { id: msgState.dbId },
-          data: { content: fullText || '(响应中断)', toolCalls: toolCallEntries.length > 0 ? JSON.stringify(toolCallEntries) : null },
-        })
-      } catch { /* ignore */ }
-    } else if (fullText || toolCallEntries.length > 0) {
-      try {
-        const created = await prisma.chatMessage.create({
-          data: { sessionId, role: 'assistant', content: fullText || '(响应中断)', modelProvider: provider, modelName: model, toolCalls: toolCallEntries.length > 0 ? JSON.stringify(toolCallEntries) : null, parentMessageId },
-        })
-        if (created) msgState.dbId = created.id
-      } catch { /* ignore */ }
-    }
+    await saveMessageSnapshot().catch(() => {})
     sendSSE('error', { message: err.message || 'AI 服务异常' })
     return { assistantMessageId: msgState.dbId, usage: null }
   } finally {
@@ -483,10 +464,7 @@ export async function chatRoutes(app: FastifyInstance) {
     const apiKey = activeConfig?.apiKey || (await loadApiKey(route.provider))
     const baseURL = activeConfig?.baseURL || (await loadBaseURL(route.provider))
 
-    const messages = [
-      { role: 'system' as const, content: systemPrompt },
-      ...history,
-    ]
+    const messages = [...history]
 
     await streamAssistantResponse({
       reply,
@@ -544,6 +522,61 @@ export async function chatRoutes(app: FastifyInstance) {
 
     await prisma.chatSession.update({ where: { id }, data: parsed.data })
     return { success: true }
+  })
+
+  // 自动生成会话标题
+  app.post('/sessions/:id/generate-title', async (req, reply) => {
+    const userId = (req as any).user.id as string
+    const { id } = req.params as { id: string }
+
+    const session = await prisma.chatSession.findUnique({ where: { id } })
+    if (!session || session.userId !== userId) return reply.status(404).send({ message: '会话不存在' })
+
+    // 获取前几轮对话作为上下文
+    const messages = await prisma.chatMessage.findMany({
+      where: { sessionId: id },
+      orderBy: { createdAt: 'asc' },
+      take: 6,
+      select: { role: true, content: true },
+    })
+
+    if (messages.length === 0) return { title: session.title }
+
+    const prefs = await loadPreferences(userId)
+    const simpleConfig = prefs.simpleProviderConfigId
+      ? await prisma.userProviderConfig.findUnique({ where: { id: prefs.simpleProviderConfigId } })
+      : null
+    const provider = simpleConfig?.provider || ''
+    const model = prefs.simpleModel || ''
+    if (!provider || !model) return { title: session.title }
+
+    const apiKey = await loadApiKey(provider)
+    const baseURL = simpleConfig?.baseURL || DEFAULT_BASE_URLS[provider as ProviderType] || ''
+
+    const conversationText = messages.map(m =>
+      `${m.role === 'user' ? '用户' : '助手'}: ${(m.content || '').slice(0, 200)}`
+    ).join('\n')
+
+    try {
+      const modelInstance = createModel(provider as ProviderType, model, { apiKey, baseURL })
+      const result = await generateText({
+        model: modelInstance,
+        system: '你是一个标题生成助手。根据对话内容生成一个简短的标题（20个字以内），只返回标题文本，不要加引号或额外说明。',
+        prompt: `请为以下对话生成一个简短的标题（20个字以内）：\n\n${conversationText}`,
+        maxOutputTokens: 100,
+        temperature: 0.3,
+      })
+
+      const title = result.text.trim().slice(0, 30)
+      if (title) {
+        await prisma.chatSession.update({ where: { id }, data: { title } })
+        return { title }
+      }
+    } catch {
+      // 标题生成失败，保持原标题
+    }
+
+    return { title: session.title }
   })
 
   // 删除会话

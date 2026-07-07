@@ -281,6 +281,7 @@ type SSEStreamContext = {
   sid: string
   assistantMsgId: string
   parentMsgId?: string
+  isSecondExchange?: boolean
   get: () => ChatState
   set: (partial: Partial<ChatState> | ((s: ChatState) => Partial<ChatState>)) => void
   thinkState: { value: DeltaState }
@@ -427,11 +428,23 @@ function makeSSEHandler(
       }
       return { sessionCache: newCache, abortControllers: newAbortControllers }
     })
-    import('../api/chat').then(({ fetchSessions }) => {
-      fetchSessions().then((sessions) => {
-        ctx.set((s) => ({ sessions, currentSessionId: s.currentSessionId }))
+
+    const refreshSessions = () => {
+      import('../api/chat').then(({ fetchSessions }) => {
+        fetchSessions().then((sessions) => {
+          ctx.set((s) => ({ sessions, currentSessionId: s.currentSessionId }))
+        })
       })
-    })
+    }
+
+    // 第二轮对话完成后异步生成标题
+    if (ctx.isSecondExchange) {
+      import('../api/chat').then(({ generateSessionTitle }) => {
+        generateSessionTitle(ctx.sid).then(() => refreshSessions()).catch(() => refreshSessions())
+      })
+    } else {
+      refreshSessions()
+    }
   }
 
   return { handleEvent, handleDone }
@@ -625,9 +638,13 @@ export const useChatStore = create<ChatState>()((set, get) => {
       }
     })
 
+    const existingUserMsgCount = state.allMessages.filter(m => m.role === 'user').length
+    const isSecondExchange = existingUserMsgCount === 1
+
     const ctx: SSEStreamContext = {
       sid, assistantMsgId,
       get, set,
+      isSecondExchange,
       thinkState: { value: 'text' },
       blockIdCounter: { value: 0 },
     }

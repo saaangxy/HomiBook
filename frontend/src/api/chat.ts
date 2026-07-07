@@ -100,6 +100,11 @@ export async function updateSession(id: string, data: { title?: string; modelPro
   return api.patch(`${BASE}/sessions/${id}`, data)
 }
 
+export async function generateSessionTitle(sessionId: string) {
+  const res = await api.post<{ title: string }>(`${BASE}/sessions/${sessionId}/generate-title`,{})
+  return res.title
+}
+
 export async function deleteSession(id: string) {
   return api.delete(`${BASE}/sessions/${id}`)
 }
