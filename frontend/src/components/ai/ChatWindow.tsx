@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useChatStore } from '@/stores/chat'
 import { useBookStore } from '@/stores/book'
-import { fetchSessions, fetchMessages, createSession, deleteSession as deleteSessionApi } from '@/api/chat'
+import { fetchSessions, fetchMessages, createSession, updateSession, deleteSession as deleteSessionApi } from '@/api/chat'
 import { importExportApi } from '@/api/import-export'
 import { MessageBubble } from './MessageBubble'
 import { SessionList } from './SessionList'
@@ -141,6 +141,13 @@ export function ChatWindow() {
     }
 
     sendMessage(currentBookId, msg, parentId)
+
+    // 首条消息时自动更新会话标题（parentId 为 undefined 或无历史消息均为首条）
+    if ((!parentId || parentId === 'greeting') && currentSessionId) {
+      const title = msg.length > 30 ? msg.slice(0, 30) + '...' : msg
+      updateSession(currentSessionId, { title }).catch(() => {})
+      setSessions(sessions.map(s => s.id === currentSessionId ? { ...s, title } : s))
+    }
   }
 
   // 编辑消息并提交：取被编辑消息的前一条消息作为 parent，创建新分支
