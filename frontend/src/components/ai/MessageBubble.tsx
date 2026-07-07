@@ -4,8 +4,9 @@ import remarkGfm from 'remark-gfm'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
 import type { Message, MessageBlock } from '@/stores/chat'
+import { useAuthStore } from '@/stores/auth'
 import { ToolCallCard } from './ToolCallCard'
-import { Bot, User, Brain, ChevronDown, ChevronLeft, ChevronRight, Copy, RefreshCw, Pencil, Check, Loader2 } from 'lucide-react'
+import { Bot, Brain, ChevronDown, ChevronLeft, ChevronRight, Copy, RefreshCw, Pencil, Check, Loader2 } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 
@@ -26,6 +27,9 @@ export function getMessageText(message: Message): string {
 }
 
 export function MessageBubble({ message, onRetry, onEditSubmit, versions, onSwitchVersion }: Props) {
+  const user = useAuthStore((s) => s.user)
+  const userInitial = (user?.nickname || user?.username || '用')[0]
+
   const isUser = message.role === 'user'
   const [openThinkBlocks, setOpenThinkBlocks] = useState<Set<string>>(new Set())
   const [copied, setCopied] = useState(false)
@@ -97,9 +101,9 @@ export function MessageBubble({ message, onRetry, onEditSubmit, versions, onSwit
     <div
       className={cn('flex gap-3 group', isUser ? 'flex-row-reverse' : 'flex-row')}
     >
-      <Avatar className={cn('w-8 h-8 shrink-0 rounded-lg', isUser ? 'bg-primary' : 'bg-muted')}>
-        <AvatarFallback className={cn('text-xs', isUser ? 'text-primary-foreground' : 'text-foreground')}>
-          {isUser ? <User size={14} /> : <Bot size={14} />}
+      <Avatar className={cn('w-8 h-8 shrink-0 rounded-lg', isUser ? 'bg-gradient-to-br from-primary to-primary/40' : 'bg-muted')}>
+        <AvatarFallback className={cn('text-xs font-medium', isUser ? 'text-primary-foreground bg-transparent' : 'text-foreground')}>
+          {isUser ? userInitial : <Bot size={14} />}
         </AvatarFallback>
       </Avatar>
 
