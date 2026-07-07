@@ -27,11 +27,12 @@ interface StreamAssistantOptions {
   temperature: number
   maxTokens: number
   maxSteps: number
+  autoConfirmCreate: boolean
   initialSSEEvents?: { event: string; data: any }[]
 }
 
 async function streamAssistantResponse(opts: StreamAssistantOptions) {
-  const { reply, sessionId, accountBookId, userId, systemPrompt, messages, parentMessageId, provider, model, apiKey, baseURL, temperature, maxTokens, maxSteps } = opts
+  const { reply, sessionId, accountBookId, userId, systemPrompt, messages, parentMessageId, provider, model, apiKey, baseURL, temperature, maxTokens, maxSteps, autoConfirmCreate } = opts
 
   reply.raw.writeHead(200, {
     'Content-Type': 'text/event-stream',
@@ -106,8 +107,19 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
             return { __pending: true, toolCallId }
           }
 
-          // ---- requireConfirm：关闭流等待用户确认 ----
+          // ---- requireConfirm：关闭流等待用户确认（自动确认开启时直接执行） ----
           if (tool.requireConfirm) {
+            if (autoConfirmCreate) {
+              // 自动确认：直接执行工具，跳过确认流程
+              const result = await tool.execute(args, { userId, accountBookId })
+              const durationMs = Date.now() - start
+              const status = result.success ? 'success' : 'error'
+              sendSSE('tool-result', { toolCallId, toolName: tool.name, result, durationMs, status })
+              logToolCall({ userId, sessionId, action: 'tool_call', toolName: tool.name, input: args, output: result, durationMs, status })
+              const entry = toolCallEntries.find(e => e.toolCallId === toolCallId)
+              if (entry) Object.assign(entry, { result, durationMs, status })
+              return result
+            }
             const preview = await buildConfirmPreview(tool.name, args, accountBookId)
             sendSSE('tool-confirm-required', { toolCallId, toolName: tool.name, preview })
             const entry = toolCallEntries.find(e => e.toolCallId === toolCallId)
@@ -344,6 +356,7 @@ async function continueWithLLM(reply: any, sessionId: string, accountBookId: str
     temperature: activeConfig?.temperature ?? prefs.temperature,
     maxTokens: activeConfig?.maxTokens ?? prefs.maxTokens,
     maxSteps: prefs.maxSteps,
+    autoConfirmCreate: prefs.autoConfirmCreate,
     initialSSEEvents,
   })
 }
@@ -486,6 +499,7 @@ export async function chatRoutes(app: FastifyInstance) {
       temperature: activeConfig?.temperature ?? prefs.temperature,
       maxTokens: activeConfig?.maxTokens ?? prefs.maxTokens,
       maxSteps: prefs.maxSteps,
+      autoConfirmCreate: prefs.autoConfirmCreate,
     })
   })
 
@@ -1247,6 +1261,6 @@ function buildSystemPrompt(prefs: any, bookId: string, bookName: string, memorie
 - 先澄清再执行操作
 - 涉及创建、修改、删除操作需要用户确认
 - 回答简洁准确，金额保留两位小数
-- 使用中文回复
+- ${prefs.language === 'en' ? 'Reply in English' : '使用中文回复'}
 ${memoryContext}`
 }
