@@ -103,7 +103,7 @@ export function ImportConfirmCard({ data, toolCallId }: Props) {
 
   const TYPE_LABELS: Record<string, string> = { INCOME: '收入', EXPENSE: '支出', TRANSFER: '转账' }
   const TYPE_COLORS: Record<string, string> = { INCOME: 'text-green-600', EXPENSE: 'text-red-600', TRANSFER: 'text-blue-600' }
-  const SOURCE_LABELS: Record<string, string> = { alipay: '支付宝', wechat: '微信', csv: 'CSV', jd: '京东' }
+  const SOURCE_LABELS: Record<string, string> = { alipay: '支付宝', wechat: '微信', jd: '京东' }
 
   return (
     <div className="space-y-3 mt-2">

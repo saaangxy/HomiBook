@@ -1,6 +1,6 @@
 import type { ToolDef, ToolContext } from './types.js'
 import { prisma } from '../../../app.js'
-import { parseAlipayCSV, parseWechatXlsx, parseJdCSV, parseCsvWithMapping } from '../../../routes/import-export.js'
+import { parseAlipayCSV, parseWechatXlsx, parseJdCSV } from '../../../routes/import-export.js'
 import { applyAccountMappings, applyCategoryMappings, matchAccountByName, inferAccount, type ParsedRow } from '../../import/shared.js'
 import { createAccountsInTx, saveCategoryMappingsInTx, saveAccountMappingsInTx, AccountResolver, batchCreateRecordsInTx, refreshBalances } from '../../import/execute.js'
 import { consumeImportOverrides, peekImportOverrides } from './index.js'
@@ -15,16 +15,7 @@ export const confirmImportTool: ToolDef = {
     type: 'object',
     properties: {
       fileId: { type: 'string', description: '上传文件后获得的 fileId' },
-      source: { type: 'string', enum: ['alipay', 'wechat', 'csv', 'jd'], description: '账单来源类型' },
-      columnMapping: {
-        type: 'object',
-        description: 'CSV 来源时的列映射',
-      },
-      typeMapping: {
-        type: 'object',
-        description: 'CSV 来源时的类型值映射',
-      },
-      headerRow: { type: 'number', description: 'CSV 来源时的表头行号（从1开始）' },
+      source: { type: 'string', enum: ['alipay', 'wechat', 'jd'], description: '账单来源类型' },
       ownerId: { type: 'string', description: '记录归属人ID，不填默认本人' },
       accountResolutions: {
         type: 'array',
@@ -61,12 +52,9 @@ export const confirmImportTool: ToolDef = {
   },
 
   async execute(args: any, ctx: ToolContext) {
-    const { fileId, source, columnMapping, typeMapping, headerRow, ownerId, accountResolutions, categoryResolutions, _execute } = args as {
+    const { fileId, source, ownerId, accountResolutions, categoryResolutions, _execute } = args as {
       fileId: string
-      source: 'alipay' | 'wechat' | 'csv' | 'jd'
-      columnMapping?: Record<string, string>
-      typeMapping?: Record<string, string>
-      headerRow?: number
+      source: 'alipay' | 'wechat' | 'jd'
       ownerId?: string
       accountResolutions?: { sourceAccountName: string; action: 'existing' | 'create'; targetAccountId?: string; targetAccountName?: string; accountType?: string }[]
       categoryResolutions?: { sourceCategory: string; targetCategoryCode: string; recordType?: string; payerContains?: string; descriptionContains?: string }[]
@@ -94,10 +82,7 @@ export const confirmImportTool: ToolDef = {
     } else if (source === 'jd') {
       parseResult = parseJdCSV(buffer)
     } else {
-      if (!columnMapping || !typeMapping) {
-        return { success: false, error: 'CSV 来源需要 columnMapping 和 typeMapping 参数', retryable: false }
-      }
-      parseResult = parseCsvWithMapping(buffer, columnMapping, typeMapping, headerRow)
+      return { success: false, error: `不支持的账单来源: ${source}`, retryable: false }
     }
 
     if (parseResult.rows.length === 0 && parseResult.errors.length > 0) {

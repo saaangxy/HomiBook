@@ -1,6 +1,6 @@
 import type { ToolDef, ToolContext } from './types.js'
 import { prisma } from '../../../app.js'
-import { parseAlipayCSV, parseWechatXlsx, parseJdCSV, parseCsvWithMapping } from '../../../routes/import-export.js'
+import { parseAlipayCSV, parseWechatXlsx, parseJdCSV } from '../../../routes/import-export.js'
 import { applyAccountMappings, applyCategoryMappings, matchAccountByName, inferAccount, type ParsedRow } from '../../import/shared.js'
 import fs from 'fs'
 import path from 'path'
@@ -13,17 +13,8 @@ export const previewImportTool: ToolDef = {
     type: 'object',
     properties: {
       fileId: { type: 'string', description: '上传文件后获得的 fileId' },
-      source: { type: 'string', enum: ['alipay', 'wechat', 'csv', 'jd'], description: '账单来源类型' },
+      source: { type: 'string', enum: ['alipay', 'wechat', 'jd'], description: '账单来源类型' },
       mode: { type: 'string', enum: ['analyze', 'preview'], description: '模式：analyze=分析模式（默认），返回未匹配数据供 AI 分析，不展示交互卡片；preview=预览模式，展示交互卡片供用户确认' },
-      columnMapping: {
-        type: 'object',
-        description: 'CSV 来源时的列映射 (date/amount/type/accountName/toAccountName/categoryCode/payer/remark/tags 等 → CSV 列名)',
-      },
-      typeMapping: {
-        type: 'object',
-        description: 'CSV 来源时的类型值映射 (CSV中的值 → INCOME/EXPENSE/TRANSFER)',
-      },
-      headerRow: { type: 'number', description: 'CSV 来源时的表头行号（从1开始），不填自动检测' },
       accountResolutions: {
         type: 'array',
         description: 'AI 提供的账户匹配规则。每个未匹配的源账户名对应一条规则。设为相同名称即可合并为一个账户',
@@ -59,13 +50,10 @@ export const previewImportTool: ToolDef = {
   },
 
   async execute(args: any, ctx: ToolContext) {
-    const { fileId, source, mode, columnMapping, typeMapping, headerRow, accountResolutions, categoryResolutions } = args as {
+    const { fileId, source, mode, accountResolutions, categoryResolutions } = args as {
       fileId: string
-      source: 'alipay' | 'wechat' | 'csv' | 'jd'
+      source: 'alipay' | 'wechat' | 'jd'
       mode?: 'analyze' | 'preview'
-      columnMapping?: Record<string, string>
-      typeMapping?: Record<string, string>
-      headerRow?: number
       accountResolutions?: { sourceAccountName: string; action: 'existing' | 'create'; targetAccountId?: string; targetAccountName?: string; accountType?: string }[]
       categoryResolutions?: { sourceCategory: string; targetCategoryCode: string; recordType?: string; payerContains?: string; descriptionContains?: string }[]
     }
@@ -92,10 +80,7 @@ export const previewImportTool: ToolDef = {
     } else if (source === 'jd') {
       parseResult = parseJdCSV(buffer)
     } else {
-      if (!columnMapping || !typeMapping) {
-        return { success: false, error: 'CSV 来源需要 columnMapping 和 typeMapping 参数', retryable: false }
-      }
-      parseResult = parseCsvWithMapping(buffer, columnMapping, typeMapping, headerRow)
+      return { success: false, error: `不支持的账单来源: ${source}`, retryable: false }
     }
 
     if (parseResult.rows.length === 0 && parseResult.errors.length > 0) {

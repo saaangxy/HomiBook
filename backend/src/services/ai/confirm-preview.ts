@@ -1,5 +1,5 @@
 import { prisma } from '../../app.js'
-import { parseAlipayCSV, parseWechatXlsx, parseJdCSV, parseCsvWithMapping } from '../../routes/import-export.js'
+import { parseAlipayCSV, parseWechatXlsx, parseJdCSV } from '../../routes/import-export.js'
 import { applyAccountMappings, applyCategoryMappings, matchAccountByName, type ParsedRow } from '../import/shared.js'
 import fs from 'fs'
 import path from 'path'
@@ -438,7 +438,7 @@ async function buildSaveImportMappingPreview(args: any): Promise<string> {
     } satisfies ConfirmPreview)
   }
 
-  const sourceLabel: Record<string, string> = { alipay: '支付宝', wechat: '微信', csv: 'CSV', jd: '京东' }
+  const sourceLabel: Record<string, string> = { alipay: '支付宝', wechat: '微信', jd: '京东' }
   const title = mappingType === 'account'
     ? `确认保存 ${mappings.length} 条账户映射规则（来源: ${sourceLabel[source] || source}）`
     : `确认保存 ${mappings.length} 条分类映射规则（来源: ${sourceLabel[source] || source}）`
@@ -484,12 +484,9 @@ async function buildSaveImportMappingPreview(args: any): Promise<string> {
 }
 
 async function buildConfirmImportPreview(args: any, accountBookId: string): Promise<string> {
-  const { fileId, source, columnMapping, typeMapping, headerRow, accountResolutions, categoryResolutions } = args as {
+  const { fileId, source, accountResolutions, categoryResolutions } = args as {
     fileId: string
-    source: 'alipay' | 'wechat' | 'csv' | 'jd'
-    columnMapping?: Record<string, string>
-    typeMapping?: Record<string, string>
-    headerRow?: number
+    source: 'alipay' | 'wechat' | 'jd'
     accountResolutions?: { sourceAccountName: string; action: 'existing' | 'create'; targetAccountId?: string; targetAccountName?: string; accountType?: string }[]
     categoryResolutions?: { sourceCategory: string; targetCategoryCode: string; recordType?: string; payerContains?: string; descriptionContains?: string }[]
   }
@@ -522,14 +519,11 @@ async function buildConfirmImportPreview(args: any, accountBookId: string): Prom
   } else if (source === 'jd') {
     parseResult = parseJdCSV(buffer)
   } else {
-    if (!columnMapping || !typeMapping) {
-      return JSON.stringify({
-        type: 'generic',
-        title: '确认导入 - 参数不足',
-        description: 'CSV 来源需要 columnMapping 和 typeMapping',
-      } satisfies ConfirmPreview)
-    }
-    parseResult = parseCsvWithMapping(buffer, columnMapping, typeMapping, headerRow)
+    return JSON.stringify({
+      type: 'generic',
+      title: '确认导入 - 不支持的来源',
+      description: `不支持的账单来源: ${source}`,
+    } satisfies ConfirmPreview)
   }
 
   if (parseResult.rows.length === 0) {

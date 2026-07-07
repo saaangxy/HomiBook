@@ -378,7 +378,7 @@ export async function chatRoutes(app: FastifyInstance) {
     }
 
     // 获取或创建会话
-    const session = await getOrCreateSession(sid, userId, accountBookId)
+    const session = await getOrCreateSession(sid, userId, accountBookId, message)
 
     // 加载用户配置
     const prefs = await loadPreferences(userId)
@@ -997,13 +997,16 @@ export async function chatRoutes(app: FastifyInstance) {
 }
 
 // 辅助函数
-async function getOrCreateSession(sid: string | undefined, userId: string, bookId: string) {
+async function getOrCreateSession(sid: string | undefined, userId: string, bookId: string, firstMessage?: string) {
   if (sid) {
     const existing = await prisma.chatSession.findUnique({ where: { id: sid } })
     if (existing && existing.userId === userId) return existing
   }
+  const title = firstMessage
+    ? firstMessage.length > 30 ? firstMessage.slice(0, 30) + '...' : firstMessage
+    : '新对话'
   return prisma.chatSession.create({
-    data: { userId, accountBookId: bookId },
+    data: { userId, accountBookId: bookId, title },
   })
 }
 

@@ -131,8 +131,9 @@ export function ChatWindow() {
       : undefined
 
     if (!currentSessionId) {
-      createSession({ accountBookId: currentBookId }).then((res) => {
-        setSessions([{ id: res.session.id, title: '新对话', modelProvider: '', modelName: '', updatedAt: new Date().toISOString() }, ...sessions])
+      const title = msg.length > 30 ? msg.slice(0, 30) + '...' : msg
+      createSession({ accountBookId: currentBookId, title }).then((res) => {
+        setSessions([res.session, ...sessions])
         setCurrentSession(res.session.id)
         sendMessage(currentBookId, msg, parentId)
       })
@@ -149,8 +150,9 @@ export function ChatWindow() {
     const parentId = idx > 0 ? messages[idx - 1].dbId || messages[idx - 1].id : undefined
 
     if (!currentSessionId) {
-      createSession({ accountBookId: currentBookId }).then((res) => {
-        setSessions([{ id: res.session.id, title: '新对话', modelProvider: '', modelName: '', updatedAt: new Date().toISOString() }, ...sessions])
+      const title = newText.length > 30 ? newText.slice(0, 30) + '...' : newText
+      createSession({ accountBookId: currentBookId, title }).then((res) => {
+        setSessions([res.session, ...sessions])
         setCurrentSession(res.session.id)
         sendMessage(currentBookId, newText, parentId)
       })
@@ -199,7 +201,7 @@ export function ChatWindow() {
     setImporting(true)
     try {
       const res = await importExportApi.uploadTempFile(file)
-      const sourceLabel: Record<string, string> = { alipay: '支付宝', wechat: '微信', csv: 'CSV', jd: '京东' }
+      const sourceLabel: Record<string, string> = { alipay: '支付宝', wechat: '微信', jd: '京东' }
       const src = pendingSourceRef.current
       const msg = `请导入${sourceLabel[src] || src}账单文件\nfileId: ${res.fileId}\nsource: ${src}\n文件名: ${res.filename}`
       handleSend(msg)
@@ -300,7 +302,7 @@ export function ChatWindow() {
               disabled={isCurrentStreaming || importing}
             />
             {isCurrentStreaming ? (
-              <Button variant="outline" size="icon" className="shrink-0" onClick={() => stopStreaming()}>
+              <Button variant="outline" size="icon" className="shrink-0 stop-btn-streaming" onClick={() => stopStreaming()}>
                 <StopCircle size={18} />
               </Button>
             ) : (
@@ -315,7 +317,6 @@ export function ChatWindow() {
                     <DropdownMenuItem onClick={() => handleImportClick('alipay')}>支付宝</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => handleImportClick('wechat')}>微信</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => handleImportClick('jd')}>京东</DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleImportClick('csv')}>其他 CSV</DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
                 <Button size="icon" className="shrink-0" onClick={() => handleSend()} disabled={!input.trim() || !currentBookId || importing}>

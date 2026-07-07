@@ -9,7 +9,7 @@ export const saveImportMappingTool: ToolDef = {
     type: 'object',
     properties: {
       mappingType: { type: 'string', enum: ['account', 'category'], description: '映射类型' },
-      source: { type: 'string', description: '来源标识(alipay|wechat|csv|jd)' },
+      source: { type: 'string', description: '来源标识(alipay|wechat|jd)' },
       mappings: {
         type: 'array',
         description: '要保存的映射规则列表',
