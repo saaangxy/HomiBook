@@ -281,14 +281,19 @@ async function buildChatMessages(sessionId: string, pendingToolCallId: string, p
       const tcList = msg.toolCalls ? JSON.parse(msg.toolCalls) : []
       const contentParts: any[] = []
       if (msg.content) contentParts.push({ type: 'text', text: msg.content })
+      const completedResults: any[] = []
       for (const tc of tcList) {
+        const isPendingConfirm = tc.toolCallId === pendingToolCallId
+        const hasResult = tc.result != null && tc.status !== 'confirming' && tc.status !== 'suggesting'
+        // 跳过无结果的工具调用（被中断的并发工具），避免 AI SDK MissingToolResultsError
+        if (!isPendingConfirm && !hasResult) continue
         contentParts.push({ type: 'tool-call', toolCallId: tc.toolCallId, toolName: tc.toolName, input: tc.args })
+        if (!isPendingConfirm && hasResult) {
+          completedResults.push(tc)
+        }
       }
       messages.push({ role: 'assistant', content: contentParts })
 
-      const completedResults = tcList.filter((tc: any) =>
-        tc.toolCallId !== pendingToolCallId && tc.result != null && tc.status !== 'confirming' && tc.status !== 'suggesting',
-      )
       if (completedResults.length > 0) {
         messages.push({
           role: 'tool',
