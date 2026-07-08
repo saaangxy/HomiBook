@@ -3,6 +3,7 @@ import { useChatStore } from '@/stores/chat'
 import { useBookStore } from '@/stores/book'
 import { fetchSessions, fetchMessages, createSession, updateSession, deleteSession as deleteSessionApi } from '@/api/chat'
 import { importExportApi } from '@/api/import-export'
+import { recordApi } from '@/api/record'
 import { MessageBubble } from './MessageBubble'
 import { SessionList } from './SessionList'
 import { Button } from '@/components/ui/button'
@@ -11,7 +12,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Send, StopCircle, Upload } from 'lucide-react'
+import { Send, StopCircle, Upload, Image, X } from 'lucide-react'
 import { parseContentIntoBlocks, type MessageBlock } from '@/stores/chat'
 
 export function ChatWindow() {
@@ -40,6 +41,28 @@ export function ChatWindow() {
   )
   const streamingSessionIds = streamingSessionIdsStr ? streamingSessionIdsStr.split(',') : []
 
+  // ---- 小票图片上传 ----
+  const [pendingImages, setPendingImages] = useState<{ file: File; preview: string }[]>([])
+  const [uploadingImages, setUploadingImages] = useState(false)
+  const imageInputRef = useRef<HTMLInputElement>(null)
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    if (!files.length) return
+    const newImages = files.map((file) => ({
+      file,
+      preview: URL.createObjectURL(file),
+    }))
+    setPendingImages((prev) => [...prev, ...newImages])
+    if (imageInputRef.current) imageInputRef.current.value = ''
+  }
+
+  const removeImage = (index: number) => {
+    setPendingImages((prev) => {
+      URL.revokeObjectURL(prev[index].preview)
+      return prev.filter((_, i) => i !== index)
+    })
+  }
 
   // 初始化加载会话列表
   useEffect(() => {
@@ -121,28 +144,48 @@ export function ChatWindow() {
     }
   }
 
-  const handleSend = (text?: string) => {
+  const handleSend = async (text?: string) => {
     const msg = (text || input).trim()
-    if (!msg || !currentBookId || isCurrentStreaming) return
+    if ((!msg && pendingImages.length === 0) || !currentBookId || isCurrentStreaming) return
     setInput('')
 
     const parentId = messages.length > 0
       ? messages[messages.length - 1].dbId || messages[messages.length - 1].id
       : undefined
 
+    // 上传待发送的小票图片
+    let attachments: { id: string; url: string; originalFilename: string }[] | undefined
+    let attachmentIds: string[] | undefined
+    if (pendingImages.length > 0) {
+      setUploadingImages(true)
+      try {
+        const results = await Promise.all(
+          pendingImages.map((img) => recordApi.uploadAttachment(img.file)),
+        )
+        attachments = results.map((r) => ({ id: r.id, url: r.url, originalFilename: r.originalFilename }))
+        attachmentIds = results.map((r) => r.id)
+        // 清理预览 URL
+        pendingImages.forEach((img) => URL.revokeObjectURL(img.preview))
+        setPendingImages([])
+      } catch {
+        // 上传失败时仍发送消息（无附件）
+      }
+      setUploadingImages(false)
+    }
+
     if (!currentSessionId) {
       const title = msg.length > 30 ? msg.slice(0, 30) + '...' : msg
       createSession({ accountBookId: currentBookId, title }).then((res) => {
         setSessions([res.session, ...sessions])
         setCurrentSession(res.session.id)
-        sendMessage(currentBookId, msg, parentId)
+        sendMessage(currentBookId, msg, parentId, undefined, attachmentIds, attachments)
       })
       return
     }
 
-    sendMessage(currentBookId, msg, parentId)
+    sendMessage(currentBookId, msg, parentId, undefined, attachmentIds, attachments)
 
-    // 首条消息时自动更新会话标题（parentId 为 undefined 或无历史消息均为首条）
+    // 首条消息时自动更新会话标题
     if ((!parentId || parentId === 'greeting') && currentSessionId) {
       const title = msg.length > 30 ? msg.slice(0, 30) + '...' : msg
       updateSession(currentSessionId, { title }).catch(() => {})
@@ -290,6 +333,22 @@ export function ChatWindow() {
 
         {/* 输入区 */}
         <div className="p-3 border-t">
+          {/* 已选图片预览 */}
+          {pendingImages.length > 0 && (
+            <div className="flex gap-2 mb-2 flex-wrap">
+              {pendingImages.map((img, i) => (
+                <div key={i} className="relative w-16 h-16 rounded-lg overflow-hidden border">
+                  <img src={img.preview} alt="" className="w-full h-full object-cover" />
+                  <button
+                    className="absolute top-0 right-0 w-5 h-5 bg-black/60 rounded-bl-lg flex items-center justify-center"
+                    onClick={() => removeImage(i)}
+                  >
+                    <X size={12} className="text-white" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           {/* 隐藏文件上传 */}
           <input
             ref={fileInputRef}
@@ -297,6 +356,14 @@ export function ChatWindow() {
             className="hidden"
             accept=".csv,.xls,.xlsx"
             onChange={handleFileChange}
+          />
+          <input
+            ref={imageInputRef}
+            type="file"
+            className="hidden"
+            accept="image/*"
+            multiple
+            onChange={handleImageSelect}
           />
           <div className="flex gap-2 items-end">
             <Textarea
@@ -306,7 +373,7 @@ export function ChatWindow() {
               placeholder="输入消息... (Enter 发送，Shift+Enter 换行)"
               rows={2}
               className="min-h-10 resize-none"
-              disabled={isCurrentStreaming || importing}
+              disabled={isCurrentStreaming || importing || uploadingImages}
             />
             {isCurrentStreaming ? (
               <Button variant="outline" size="icon" className="shrink-0 stop-btn-streaming" onClick={() => stopStreaming()}>
@@ -314,6 +381,16 @@ export function ChatWindow() {
               </Button>
             ) : (
               <>
+                <Button
+                  size="icon"
+                  variant="outline"
+                  className="shrink-0"
+                  disabled={!currentBookId || importing || uploadingImages}
+                  title="上传小票"
+                  onClick={() => imageInputRef.current?.click()}
+                >
+                  <Image size={18} />
+                </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button size="icon" variant="outline" className="shrink-0" disabled={!currentBookId || importing} title="导入账单">
@@ -326,7 +403,7 @@ export function ChatWindow() {
                     <DropdownMenuItem onClick={() => handleImportClick('jd')}>京东</DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
-                <Button size="icon" className="shrink-0" onClick={() => handleSend()} disabled={!input.trim() || !currentBookId || importing}>
+                <Button size="icon" className="shrink-0" onClick={() => handleSend()} disabled={(!input.trim() && pendingImages.length === 0) || !currentBookId || importing || uploadingImages}>
                   <Send size={18} />
                 </Button>
               </>

@@ -38,6 +38,8 @@ export interface UserAIConfig {
   temperature: number
   maxTokens: number
   maxSteps: number
+  visionProviderConfigId: string | null
+  visionModel: string
 }
 
 export interface UserProviderConfig {
@@ -307,7 +309,7 @@ async function parseSSEStream(
 
 // SSE 流式发送消息
 export function sendMessageStream(
-  params: { sessionId?: string; accountBookId: string; message: string; parentMessageId?: string; replaceAssistantDbId?: string },
+  params: { sessionId?: string; accountBookId: string; message: string; parentMessageId?: string; replaceAssistantDbId?: string; attachmentIds?: string[] },
   onEvent: (event: SSEEvent) => void,
   onDone: () => void,
 ): AbortController {

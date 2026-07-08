@@ -375,10 +375,20 @@ export async function chatRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.status(400).send({ message: parsed.error.issues[0].message })
 
     const userId = (req as any).user.id as string
-    const { sessionId: sid, accountBookId, message } = parsed.data
+    const { sessionId: sid, accountBookId, message, attachmentIds } = parsed.data
 
     try { await assertIsMember(accountBookId, userId) } catch (e: any) {
       return reply.status(e.statusCode || 403).send({ message: e.message })
+    }
+
+    // 处理附件：查询附件信息并附加到消息文本中供 AI 识别
+    let attachments: { id: string; url: string; originalFilename: string }[] = []
+    if (attachmentIds && attachmentIds.length > 0) {
+      const dbAttachments = await prisma.recordAttachment.findMany({
+        where: { id: { in: attachmentIds } },
+        select: { id: true, path: true, originalFilename: true },
+      })
+      attachments = dbAttachments.map(a => ({ id: a.id, url: a.path, originalFilename: a.originalFilename }))
     }
 
     // 获取或创建会话
@@ -445,9 +455,16 @@ export async function chatRoutes(app: FastifyInstance) {
       }
       history.push(...chain)
     }
-    history.push({ role: 'user', content: message })
 
-    // 保存用户消息
+    // 拼接附件信息到消息文本（供 AI 识别和技能检测）
+    const fullMessage = attachments.length > 0
+      ? message + '\n\n[附件信息]\n' + attachments.map(a => `attachmentId: ${a.id}\n文件名: ${a.originalFilename}`).join('\n')
+      : message
+
+    // 发送给 AI 的消息包含附件信息（如 attachmentId），数据库只存用户原文
+    history.push({ role: 'user', content: fullMessage })
+
+    // 保存用户消息（仅用户输入的文本，不含系统附加的附件信息）
     const userMsgDb = await prisma.chatMessage.create({
       data: { sessionId: session.id, role: 'user', content: message, parentMessageId: parentId },
     })
@@ -460,7 +477,7 @@ export async function chatRoutes(app: FastifyInstance) {
     const bookName = book?.name || accountBookId
 
     // 构建 system prompt（根据用户消息检测并注入技能提示词）
-    const activeSkills = detectSkills(message)
+    const activeSkills = detectSkills(fullMessage)
     const skillsPrompt = buildSkillsPrompt(activeSkills)
     const systemPrompt = buildSystemPrompt(prefs, accountBookId, bookName, memories, skillsPrompt)
 
@@ -1081,6 +1098,8 @@ async function loadAIConfig(userId: string) {
     temperature: prefs?.temperature ?? 0.7,
     maxTokens: prefs?.maxTokens ?? 4096,
     maxSteps: prefs?.maxSteps ?? 10,
+    visionProviderConfigId: prefs?.visionProviderConfigId || null,
+    visionModel: prefs?.visionModel || '',
   }
 }
 

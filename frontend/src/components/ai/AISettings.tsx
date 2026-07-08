@@ -45,6 +45,8 @@ export function AIAssistantSettings() {
   const [language, setLanguage] = useState('zh-CN')
   const [autoConfirm, setAutoConfirm] = useState(false)
   const [maxSteps, setMaxSteps] = useState(10)
+  const [visionConfigId, setVisionConfigId] = useState<string | null>(null)
+  const [visionModel, setVisionModel] = useState('')
 
   // ---------- 模型配置列表 ----------
   const [configs, setConfigs] = useState<UserProviderConfig[]>([])
@@ -88,6 +90,8 @@ export function AIAssistantSettings() {
       setLanguage(prefs.language)
       setAutoConfirm(prefs.autoConfirmCreate)
       setMaxSteps(prefs.maxSteps ?? 10)
+      setVisionConfigId(prefs.visionProviderConfigId)
+      setVisionModel(prefs.visionModel)
       setProviders(providerList)
       setConfigs(configList)
     } catch {
@@ -111,6 +115,8 @@ export function AIAssistantSettings() {
         language,
         autoConfirmCreate: autoConfirm,
         maxSteps,
+        visionProviderConfigId: visionConfigId,
+        visionModel,
       })
       setSuccess('助手配置已保存')
     } catch (err: any) {
@@ -324,6 +330,34 @@ export function AIAssistantSettings() {
                 模型: {complexModel}
               </div>
             )}
+          </div>
+
+          {/* 视觉模型 */}
+          <div className="space-y-2">
+            <Label className="text-xs">视觉模型（OCR 小票识别）</Label>
+            <Select
+              value={visionConfigId || '__none__'}
+              onValueChange={(v) => {
+                const id = v === '__none__' ? null : v
+                setVisionConfigId(id)
+                setVisionModel(getFirstModel(id))
+              }}
+            >
+              <SelectTrigger><SelectValue placeholder="选择视觉模型配置（可选）" /></SelectTrigger>
+              <SelectContent>
+                {configs.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name || getProviderLabel(c.provider)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {visionConfigId && (
+              <div className="text-xs text-muted-foreground px-1">
+                模型: {visionModel}
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">用于识别小票/收据图片，未配置时回退到简单任务模型</p>
           </div>
         </div>
       </div>

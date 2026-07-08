@@ -410,6 +410,9 @@ model UserAIConfig {
   maxTokens         Int     @default(4096)
   maxSteps          Int     @default(10)
 
+  visionProviderConfigId String?
+  visionModel            String  @default("")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

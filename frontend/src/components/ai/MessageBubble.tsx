@@ -183,6 +183,20 @@ export function MessageBubble({ message, onRetry, onEditSubmit, versions, onSwit
                 </div>
               ))
             )}
+            {/* 附件图片展示 */}
+            {message.attachments && message.attachments.length > 0 && (
+              <div className="flex gap-1.5 flex-wrap">
+                {message.attachments.map((att) => (
+                  <a key={att.id} href={att.url} target="_blank" rel="noopener noreferrer">
+                    <img
+                      src={att.url}
+                      alt={att.originalFilename}
+                      className="w-20 h-20 object-cover rounded-lg border hover:opacity-80 transition-opacity"
+                    />
+                  </a>
+                ))}
+              </div>
+            )}
           </>
         ) : (
           <div className="space-y-2 min-w-0 w-full">

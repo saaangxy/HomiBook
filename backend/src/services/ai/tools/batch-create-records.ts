@@ -16,6 +16,11 @@ interface RecordInput {
   tags?: string[]
 }
 
+interface BatchCreateArgs {
+  records: RecordInput[]
+  attachmentIds?: string[]
+}
+
 export const batchCreateRecordsTool: ToolDef = {
   name: 'batch_create_records',
   description: '批量创建多条收支流水记录。敏感操作，需要用户确认。records 数组每项包含：type(INCOME|EXPENSE|TRANSFER)、amount(金额>0)、date(YYYY-MM-DD)、accountId、categoryCode(可选)、remark(可选)、payer(可选)、tags(可选)',
@@ -42,12 +47,13 @@ export const batchCreateRecordsTool: ToolDef = {
           required: ['type', 'amount', 'date', 'accountId'],
         },
       },
+      attachmentIds: { type: 'array', items: { type: 'string' }, description: '关联的附件 ID 列表（小票图片等）' },
     },
     required: ['records'],
   },
   requireConfirm: true,
 
-  async execute(args: { records: RecordInput[] }, ctx: ToolContext): Promise<ToolResult> {
+  async execute(args: BatchCreateArgs, ctx: ToolContext): Promise<ToolResult> {
     await assertIsMember(ctx.accountBookId, ctx.userId)
 
     if (!args.records || !Array.isArray(args.records) || args.records.length === 0) {
@@ -126,6 +132,14 @@ export const batchCreateRecordsTool: ToolDef = {
           }),
         ),
       )
+
+      // 关联附件到第一条记录
+      if (args.attachmentIds && args.attachmentIds.length > 0 && created.length > 0) {
+        await prisma.recordAttachment.updateMany({
+          where: { id: { in: args.attachmentIds } },
+          data: { recordId: created[0].id },
+        })
+      }
 
       return desensitize({
         created: created.length,

@@ -19,6 +19,7 @@ export const createRecordTool: ToolDef = {
       fromAccountId: { type: 'string', description: '转账源账户 ID（TRANSFER 类型必填）' },
       toAccountId: { type: 'string', description: '转账目标账户 ID（TRANSFER 类型必填）' },
       tags: { type: 'array', items: { type: 'string' }, description: '标签列表' },
+      attachmentIds: { type: 'array', items: { type: 'string' }, description: '关联的附件 ID 列表（小票图片等）' },
     },
     required: ['type', 'amount', 'date', 'accountId'],
   },
@@ -78,6 +79,14 @@ export const createRecordTool: ToolDef = {
         },
         include: { account: { select: { name: true } } },
       })
+
+      // 关联附件
+      if (args.attachmentIds && args.attachmentIds.length > 0) {
+        await prisma.recordAttachment.updateMany({
+          where: { id: { in: args.attachmentIds } },
+          data: { recordId: record.id },
+        })
+      }
 
       return desensitize({
         id: record.id,

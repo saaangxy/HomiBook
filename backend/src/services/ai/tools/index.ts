@@ -15,6 +15,7 @@ import { queryImportMappingsTool } from './query-import-mappings.js'
 import { saveImportMappingTool } from './save-import-mapping.js'
 import { previewImportTool } from './preview-import.js'
 import { confirmImportTool } from './confirm-import.js'
+import { ocrReceiptTool } from './ocr-receipt.js'
 
 // 所有可用工具注册
 export const ALL_TOOLS: ToolDef[] = [
@@ -34,6 +35,7 @@ export const ALL_TOOLS: ToolDef[] = [
   saveImportMappingTool,
   previewImportTool,
   confirmImportTool,
+  ocrReceiptTool,
 ]
 
 // ---- 用户导入覆盖数据存储 ----

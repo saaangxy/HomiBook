@@ -16,6 +16,7 @@ export interface Message {
   role: 'user' | 'assistant'
   blocks: MessageBlock[]
   isStreaming?: boolean
+  attachments?: { id: string; url: string; originalFilename: string }[]
   usage?: {
     inputTokens: number
     outputTokens: number
@@ -66,7 +67,7 @@ interface ChatState {
   setMessages: (messages: Message[]) => void
   setError: (error: string | null) => void
 
-  sendMessage: (accountBookId: string, message: string, parentMessageId?: string, replaceAssistantDbId?: string) => void
+  sendMessage: (accountBookId: string, message: string, parentMessageId?: string, replaceAssistantDbId?: string, attachmentIds?: string[], attachments?: { id: string; url: string; originalFilename: string }[]) => void
   confirmAndContinue: (accountBookId: string, toolCallId: string, approved: boolean, data?: Record<string, unknown>) => void
   respondToSuggestion: (accountBookId: string, toolCallId: string, values: Record<string, string> | null) => void
   retryMessage: (assistantMsgId: string) => void
@@ -594,7 +595,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
       return { messages: msgs, allMessages: allMsgs }
     }),
 
-  sendMessage: (accountBookId, message, parentMessageId, replaceAssistantDbId) => {
+  sendMessage: (accountBookId, message, parentMessageId, replaceAssistantDbId, attachmentIds, attachments) => {
     const state = get()
     const sid = state.currentSessionId
     if (!sid) return
@@ -605,6 +606,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
       role: 'user',
       blocks: [{ id: nextId(), type: 'text', content: message }],
       parentMessageId,
+      attachments: attachments || undefined,
     }
     const assistantMsg: Message = {
       id: nextId(),
@@ -723,7 +725,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
     })
 
     const controller = sendMessageStream(
-      { sessionId: sid, accountBookId, message, parentMessageId, replaceAssistantDbId },
+      { sessionId: sid, accountBookId, message, parentMessageId, replaceAssistantDbId, attachmentIds },
       handleEvent,
       handleDone,
     )

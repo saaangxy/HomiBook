@@ -7,6 +7,7 @@ export const sendMessageSchema = z.object({
   message: z.string().min(1).max(5000),
   parentMessageId: z.string().optional(),
   replaceAssistantDbId: z.string().optional(),
+  attachmentIds: z.array(z.string()).optional(),
 })
 
 // 创建会话
@@ -72,6 +73,8 @@ export const updateAIConfigSchema = z.object({
   temperature: z.number().min(0).max(2).optional(),
   maxTokens: z.number().min(1).max(1000000).optional(),
   maxSteps: z.number().min(1).max(100).optional(),
+  visionProviderConfigId: z.string().nullable().optional(),
+  visionModel: z.string().optional(),
 })
 
 // 供应商配置
