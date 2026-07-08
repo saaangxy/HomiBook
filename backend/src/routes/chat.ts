@@ -9,6 +9,7 @@ import { logToolCall } from '../services/ai/audit.js'
 import { ALL_TOOLS, storeImportOverrides, peekImportOverrides, consumeImportOverrides } from '../services/ai/tools/index.js'
 import { buildConfirmPreview } from '../services/ai/confirm-preview.js'
 import { sendMessageSchema, createSessionSchema, updateSessionSchema, confirmActionSchema, respondSuggestionSchema, updateAIConfigSchema, createProviderConfigSchema, updateProviderConfigSchema } from '../schemas/chat.js'
+import { detectSkills, buildSkillsPrompt, extractUserMessageForSkills } from '../services/ai/skills/index.js'
 
 // ---- 共享流式响应函数：供 /send 和 /confirm 复用 ----
 
@@ -347,7 +348,11 @@ async function continueWithLLM(reply: any, sessionId: string, accountBookId: str
   const book = await prisma.accountBook.findUnique({ where: { id: accountBookId }, select: { name: true } })
   const bookName = book?.name || accountBookId
   const memories = await searchMemories(userId, '', 5)
-  const systemPrompt = buildSystemPrompt(prefs, accountBookId, bookName, memories)
+  // 从对话历史中检测技能（导入流程跨多轮对话需要保留技能提示词）
+  const userMessageForSkills = extractUserMessageForSkills(messages)
+  const activeSkills = detectSkills(userMessageForSkills)
+  const skillsPrompt = buildSkillsPrompt(activeSkills)
+  const systemPrompt = buildSystemPrompt(prefs, accountBookId, bookName, memories, skillsPrompt)
 
   await streamAssistantResponse({
     reply, sessionId, accountBookId, userId, systemPrompt, messages,
@@ -454,8 +459,10 @@ export async function chatRoutes(app: FastifyInstance) {
     })
     const bookName = book?.name || accountBookId
 
-    // 构建 system prompt
-    const systemPrompt = buildSystemPrompt(prefs, accountBookId, bookName, memories)
+    // 构建 system prompt（根据用户消息检测并注入技能提示词）
+    const activeSkills = detectSkills(message)
+    const skillsPrompt = buildSkillsPrompt(activeSkills)
+    const systemPrompt = buildSystemPrompt(prefs, accountBookId, bookName, memories, skillsPrompt)
 
     // 模型路由
     let route
@@ -1205,12 +1212,12 @@ function splitResultBatches(result: any, batchSize: number): any[] {
   return batches
 }
 
-function buildSystemPrompt(prefs: any, bookId: string, bookName: string, memories: any[]): string {
+function buildSystemPrompt(prefs: any, bookId: string, bookName: string, memories: any[], skillsPrompt?: string): string {
   const memoryContext = memories.length > 0
     ? `\n\n## 用户长期记忆（供参考）\n${memories.map((m: any, i: number) => `${i + 1}. ${m.content}`).join('\n')}\n`
     : ''
 
-  return `你是 Homibook 家庭记账本的 AI 助手。当前账本为「${bookName}」(ID: ${bookId})。
+  let prompt = `你是 Homibook 家庭记账本的 AI 助手。当前账本为「${bookName}」(ID: ${bookId})。
 
 ## 时间
 今天是${new Date().toISOString().slice(0, 10)}。
@@ -1232,35 +1239,23 @@ function buildSystemPrompt(prefs: any, bookId: string, bookName: string, memorie
 - 确认导入流水 → 调用 confirm_import（传入 fileId、source 和映射规则，一次性完成导入）
 - 保存导入映射规则 → 调用 save_import_mapping（仅在用户明确要求时调用，日常导入无需调用）
 
-## 导入流水数据（严格按以下顺序调用工具）
-当用户发送导入账单消息（包含 fileId 和 source 参数）时，你必须立即按以下顺序调用工具，禁止用文字描述或模拟结果：
-
-1. 调用 preview_import(fileId, source, mode="analyze") 解析文件获取未匹配数据
-2. 分析预览结果中的 unmatchedAccounts、unmatchedCategories 和 allDictItems：
-   - 为每个未匹配账户生成 accountResolutions：已有候选(candidates) → action="existing" + targetAccountId；无候选 → action="create" + 推断的 targetAccountName + accountType
-   - 为每个未匹配分类生成 categoryResolutions：根据源分类名和 allDictItems 中的分类编码/标签进行语义匹配，选择 targetCategoryCode；如有明显交易方特征可加 payerContains/descriptionContains 过滤
-3. 调用 preview_import(fileId, source, mode="preview", { accountResolutions, categoryResolutions }) 展示交互卡片供用户确认(工具内会进行确认,不需要询问)
-4. 用户确认后，直接调用 confirm_import(fileId, source, { accountResolutions, categoryResolutions }) 确认导入,不要输出任何文本
-5. 导入完成后用简短文字总结导入记录数和创建账户数
-
-注意：
-- 不要调用 save_import_mapping 工具——映射规则由 confirm_import 随导入一起保存
-- 不要凭空描述导入预览的统计数字和记录内容——这些数据来自工具返回结果
-- accountResolutions 中 action="create" 时的 accountType 必须是以下之一：BANK_DEBIT、CREDIT_CARD、ALIPAY、WECHAT、INVESTMENT、CASH、RECHARGE_CARD、OTHER
-- categoryResolutions 的 targetCategoryCode 必须从 allDictItems 中选取，不可臆造编码
-- 如果步骤4中反复匹配失败（超过10%的记录仍无法匹配），告知用户具体哪些分类无法匹配并请求用户指导
-
 ## 核心规则（必须遵守）
 - 当用户请求执行上述操作时，你必须直接调用对应的函数工具，而不是在文字中描述"正在调用"或"将要调用"
 - 直接调用工具进行操作,需要用户确认时工具内部会处理,不要再额外确认一次
 - 禁止在回复中使用 <tool_call>、<invoke> 等 XML 标签来描述工具调用——直接使用 Function Calling 机制调用工具
 - 不要在回复中写出工具调用的参数或过程，直接执行工具后用结果回复用户
 - 不要用文字模拟工具的执行结果——必须通过函数调用获取真实数据
-- 当用户意图明确但缺少具体参数时（如"记一笔麦当劳50元"但未指定账户），调用 suggest_options 让用户选择，不要直接在文字中追问
+- 当用户意图明确但缺少具体参数时，调用 suggest_options 让用户选择，不要直接在文字中追问
 - suggest_options 的 options 应基于已查询的真实数据（如已查到的账户列表），而非凭空列举
 - 先澄清再执行操作
 - 涉及创建、修改、删除操作需要用户确认
 - 回答简洁准确，金额保留两位小数
-- ${prefs.language === 'en' ? 'Reply in English' : '使用中文回复'}
-${memoryContext}`
+- ${prefs.language === 'en' ? 'Reply in English' : '使用中文回复'}`
+
+  // 注入技能提示词（如导入流水工作流），仅在功能触发时出现
+  if (skillsPrompt) {
+    prompt += '\n\n' + skillsPrompt
+  }
+  prompt += memoryContext
+  return prompt
 }
