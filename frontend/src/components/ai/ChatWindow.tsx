@@ -92,7 +92,7 @@ export function ChatWindow() {
       const parsed = msgs.map((m) => {
         const blocks: MessageBlock[] = m.role === 'assistant'
           ? parseContentIntoBlocks(m.content || '', m.toolCalls)
-          : [{ id: `hist-0`, type: 'text' as const, content: m.content || '' }]
+          : (m.content?.trim() ? [{ id: `hist-0`, type: 'text' as const, content: m.content }] : [])
         return {
           id: m.id,
           dbId: m.id,

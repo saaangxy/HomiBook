@@ -174,14 +174,16 @@ export function MessageBubble({ message, onRetry, onEditSubmit, versions, onSwit
                 </div>
               </>
             ) : (
-              message.blocks.map((block) => (
+              message.blocks.map((block) => {
+                if (block.type === 'text' && !block.content.trim()) return null
+                return (
                 <div
                   key={block.id}
                   className="bg-primary text-primary-foreground rounded-2xl rounded-tr-md px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words max-w-full"
                 >
                   {block.type === 'text' ? block.content : ''}
                 </div>
-              ))
+              )})
             )}
             {/* 附件图片展示 */}
             {message.attachments && message.attachments.length > 0 && (

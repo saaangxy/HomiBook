@@ -415,7 +415,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
     const userMsg: Message = {
       id: nextId(),
       role: 'user',
-      blocks: [{ id: nextId(), type: 'text', content: message }],
+      blocks: message.trim() ? [{ id: nextId(), type: 'text', content: message }] : [],
       parentMessageId,
       attachments: attachments || undefined,
     }

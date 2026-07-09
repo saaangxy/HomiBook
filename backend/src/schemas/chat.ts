@@ -4,10 +4,13 @@ import { z } from 'zod'
 export const sendMessageSchema = z.object({
   sessionId: z.string().optional(),
   accountBookId: z.string(),
-  message: z.string().min(1).max(5000),
+  message: z.string().max(5000).default(''),
   parentMessageId: z.string().optional(),
   replaceAssistantDbId: z.string().optional(),
   attachmentIds: z.array(z.string()).optional(),
+}).refine((data) => data.message.trim().length > 0 || (data.attachmentIds && data.attachmentIds.length > 0), {
+  message: '消息内容或附件至少需要提供一个',
+  path: ['message'],
 })
 
 // 创建会话
