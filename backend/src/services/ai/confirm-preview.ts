@@ -250,6 +250,20 @@ async function buildUpdatePreview(args: any, accountBookId: string): Promise<str
     }
   }
 
+  // 附件变更
+  const attRemoveCount = args.removeAttachmentIds?.length || 0
+  const attAddCount = args.addAttachmentIds?.length || 0
+  const hasAttReplace = Array.isArray(args.attachmentIds)
+  if (attRemoveCount > 0) {
+    fields.push({ label: '附件', before: '-', after: `删除 ${attRemoveCount} 个` })
+  }
+  if (attAddCount > 0) {
+    fields.push({ label: '附件', before: '-', after: `追加 ${attAddCount} 个` })
+  }
+  if (hasAttReplace) {
+    fields.push({ label: '附件', before: '-', after: `替换为 ${args.attachmentIds.length} 个` })
+  }
+
   if (fields.length === 0) {
     return JSON.stringify({
       type: 'generic',

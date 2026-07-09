@@ -2,6 +2,8 @@ import { prisma } from '../../../app.js'
 import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 import { resolveAccountId } from './helpers.js'
+import fs from 'fs'
+import path from 'path'
 
 export const updateRecordTool: ToolDef = {
   name: 'update_record',
@@ -19,6 +21,9 @@ export const updateRecordTool: ToolDef = {
       payer: { type: 'string', description: '交易对方' },
       fromAccountId: { type: 'string', description: '转账源账户 ID' },
       toAccountId: { type: 'string', description: '转账目标账户 ID' },
+      attachmentIds: { type: 'array', items: { type: 'string' }, description: '替换全部附件：传入新的附件 ID 列表，将删除旧附件并关联新附件' },
+      addAttachmentIds: { type: 'array', items: { type: 'string' }, description: '追加附件：保留现有附件，额外关联这些附件 ID' },
+      removeAttachmentIds: { type: 'array', items: { type: 'string' }, description: '删除指定附件：从附件列表中移除这些 ID' },
     },
     required: ['recordId'],
   },
@@ -53,7 +58,55 @@ export const updateRecordTool: ToolDef = {
       }
     }
 
+    // 附件操作
+    const attOps: Array<() => Promise<void>> = []
+    const uploadsDir = path.join(process.cwd(), 'uploads')
+
+    if (args.attachmentIds !== undefined) {
+      attOps.push(async () => {
+        const oldAtts = await prisma.recordAttachment.findMany({ where: { recordId: args.recordId } })
+        for (const att of oldAtts) {
+          const filePath = path.join(uploadsDir, path.basename(att.path))
+          if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+        }
+        if (oldAtts.length > 0) {
+          await prisma.recordAttachment.deleteMany({ where: { recordId: args.recordId } })
+        }
+        if (args.attachmentIds.length > 0) {
+          await prisma.recordAttachment.updateMany({
+            where: { id: { in: args.attachmentIds as string[] } },
+            data: { recordId: args.recordId },
+          })
+        }
+      })
+    } else {
+      if (args.removeAttachmentIds?.length > 0) {
+        attOps.push(async () => {
+          const toRemove = await prisma.recordAttachment.findMany({
+            where: { id: { in: args.removeAttachmentIds as string[] }, recordId: args.recordId },
+          })
+          for (const att of toRemove) {
+            const filePath = path.join(uploadsDir, path.basename(att.path))
+            if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+          }
+          await prisma.recordAttachment.deleteMany({
+            where: { id: { in: args.removeAttachmentIds as string[] }, recordId: args.recordId },
+          })
+        })
+      }
+      if (args.addAttachmentIds?.length > 0) {
+        attOps.push(async () => {
+          await prisma.recordAttachment.updateMany({
+            where: { id: { in: args.addAttachmentIds as string[] } },
+            data: { recordId: args.recordId },
+          })
+        })
+      }
+    }
+
     return retryable(async () => {
+      for (const op of attOps) await op()
+
       const data: Record<string, unknown> = {}
       if (args.type) data.type = args.type
       if (args.amount != null) data.amount = Number(args.amount)

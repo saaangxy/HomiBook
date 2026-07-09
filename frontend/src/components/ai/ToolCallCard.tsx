@@ -30,6 +30,7 @@ const toolLabels: Record<string, string> = {
   query_import_mappings: '查询映射',
   save_import_mapping: '保存映射',
   confirm_import: '确认导入',
+  ocr_receipt: '图片识别',
 }
 
 // ---- ConfirmPreview 类型 ----
@@ -404,17 +405,20 @@ function SuggestionView({
               {q.question}
             </p>
             <div className="flex flex-wrap gap-1.5">
-              {q.options.map((opt) => (
+              {q.options.map((opt) => {
+                const label = typeof opt === 'string' ? opt : (opt?.label || opt?.name || opt?.description || JSON.stringify(opt))
+                const value = typeof opt === 'string' ? opt : (opt?.value || opt?.code || label)
+                return (
                 <Button
-                  key={opt}
+                  key={value}
                   size="sm"
-                  variant={sel === opt ? 'default' : 'outline'}
+                  variant={sel === value ? 'default' : 'outline'}
                   className="text-xs h-7"
-                  onClick={() => setSelectedOption((prev) => ({ ...prev, [q.field]: opt }))}
+                  onClick={() => setSelectedOption((prev) => ({ ...prev, [q.field]: value }))}
                 >
-                  {opt}
+                  {label}
                 </Button>
-              ))}
+              )})}
             </div>
             {q.allowCustom && (
               <div className="flex items-center gap-2 mt-1">
