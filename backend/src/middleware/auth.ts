@@ -54,6 +54,17 @@ export async function authenticate(
     .catch(() => {})
 }
 
+// 账本成员校验：确保用户属于指定账本
+export async function assertIsMember(bookId: string, userId: string) {
+  const book = await prisma.accountBook.findUnique({ where: { id: bookId } })
+  if (!book) throw Object.assign(new Error('账本不存在'), { statusCode: 404 })
+  if (book.ownerId === userId) return
+  const member = await prisma.accountBookMember.findUnique({
+    where: { accountBookId_userId: { accountBookId: bookId, userId } },
+  })
+  if (!member) throw Object.assign(new Error('无权访问该账本'), { statusCode: 403 })
+}
+
 // 管理员权限中间件
 export async function requireAdmin(
   request: FastifyRequest,

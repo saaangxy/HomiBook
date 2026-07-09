@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../app.js'
-import { authenticate } from '../middleware/auth.js'
+import { authenticate, assertIsMember } from '../middleware/auth.js'
 import { zSchema } from '../lib/schema-helpers.js'
 import {
   createAccountSchema,
@@ -9,17 +9,6 @@ import {
   createAdjustmentSchema,
   balanceHistorySchema,
 } from '../schemas/account.js'
-
-async function assertIsMember(bookId: string, userId: string) {
-  const member = await prisma.accountBookMember.findUnique({
-    where: { accountBookId_userId: { accountBookId: bookId, userId } },
-  })
-  const book = await prisma.accountBook.findUnique({ where: { id: bookId } })
-  const isOwner = book?.ownerId === userId
-  if (!member && !isOwner) {
-    throw Object.assign(new Error('无权访问该账本'), { statusCode: 403 })
-  }
-}
 
 async function assertCanManageAccount(accountId: string, userId: string) {
   const account = await prisma.account.findUnique({ where: { id: accountId } })

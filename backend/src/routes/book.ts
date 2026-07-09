@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { prisma } from '../app.js'
-import { authenticate } from '../middleware/auth.js'
+import { authenticate, assertIsMember } from '../middleware/auth.js'
 import {
   createBookSchema,
   updateBookSchema,
@@ -50,16 +50,6 @@ async function assertCanManage(bookId: string, userId: string) {
     throw Object.assign(new Error('只有归属人或管理员可以执行此操作'), { statusCode: 403 })
   }
   return book
-}
-
-async function assertIsMember(bookId: string, userId: string) {
-  const member = await prisma.accountBookMember.findUnique({
-    where: { accountBookId_userId: { accountBookId: bookId, userId } },
-  })
-  if (!member) {
-    throw Object.assign(new Error('你不是该账本的成员'), { statusCode: 403 })
-  }
-  return member
 }
 
 export async function bookRoutes(app: FastifyInstance) {

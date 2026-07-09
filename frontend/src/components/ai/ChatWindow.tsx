@@ -13,7 +13,8 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Send, StopCircle, Upload, Image, X } from 'lucide-react'
-import { parseContentIntoBlocks, type MessageBlock } from '@/stores/chat'
+import { parseContentIntoBlocks } from '@/stores/chat-content-parser'
+import { type MessageBlock } from '@/stores/chat'
 
 export function ChatWindow() {
   const [input, setInput] = useState('')

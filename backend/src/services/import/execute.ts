@@ -1,4 +1,4 @@
-import { refreshAccountBalance } from '../../routes/account.js'
+import { refreshAccountBalance } from '../record.js'
 
 // ---- 类型 ----
 

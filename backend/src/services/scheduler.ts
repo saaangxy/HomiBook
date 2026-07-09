@@ -1,40 +1,27 @@
 import cron from 'node-cron'
 import { prisma } from '../app.js'
-import { getNextTriggerTime, getCurrentPeriod, ensureFixedTag } from './recurring.js'
+import { getNextTriggerTime, ensureFixedTag } from './recurring.js'
 
-let task: cron.ScheduledTask | null = null
-
-export function startScheduler() {
-  if (task) return
-
-  // 每分钟检查一次
-  task = cron.schedule('* * * * *', async () => {
-    try {
-      const now = new Date()
-      const due = await prisma.recurringTransaction.findMany({
-        where: {
-          active: true,
-          nextGenerateAt: { lte: now },
-        },
-      })
-
-      for (const rt of due) {
-        await generateRecord(rt)
-      }
-    } catch (e) {
-      console.error('[Scheduler] 执行失败:', e)
-    }
-  })
-
-  console.log('[Scheduler] 固定收支调度器已启动')
+interface CronLike {
+  schedule(cronExpression: string, fn: () => void): { stop(): void }
 }
 
-export function stopScheduler() {
-  task?.stop()
-  task = null
+interface PrismaLike {
+  recurringTransaction: {
+    findMany(args: any): Promise<any[]>
+    update(args: any): Promise<any>
+  }
+  repaymentPlan: {
+    findFirst(args: any): Promise<any>
+    update(args: any): Promise<any>
+  }
+  record: {
+    create(args: any): Promise<any>
+  }
+  $transaction<T>(fn: (tx: any) => Promise<T>): Promise<T>
 }
 
-async function generateRecord(rt: {
+interface RecurringTxParams {
   id: string
   accountBookId: string
   type: string
@@ -55,14 +42,44 @@ async function generateRecord(rt: {
   loanStartDate: Date | null
   loanTermMonths: number | null
   loanMonthlyPayment: number | null
-}) {
+}
+
+let task: { stop(): void } | null = null
+
+export function startScheduler(client: PrismaLike = prisma, cronLib: CronLike = cron) {
+  if (task) return
+
+  task = cronLib.schedule('* * * * *', async () => {
+    try {
+      const now = new Date()
+      const due = await client.recurringTransaction.findMany({
+        where: { active: true, nextGenerateAt: { lte: now } },
+      })
+
+      for (const rt of due) {
+        await generateRecord(rt, client)
+      }
+    } catch (e) {
+      console.error('[Scheduler] 执行失败:', e)
+    }
+  })
+
+  console.log('[Scheduler] 固定收支调度器已启动')
+}
+
+export function stopScheduler() {
+  task?.stop()
+  task = null
+}
+
+export async function generateRecord(rt: RecurringTxParams, client: PrismaLike = prisma) {
   const now = new Date()
   let amount = rt.amount
   let remark = rt.remark || ''
 
   // 贷款类型：获取当前期还款计划
   if (rt.recurringType === 'LOAN' && rt.loanInterestMethod && rt.loanStartDate && rt.loanTermMonths) {
-    const planItem = await prisma.repaymentPlan.findFirst({
+    const planItem = await client.repaymentPlan.findFirst({
       where: {
         recurringTransactionId: rt.id,
         status: 'PENDING',
@@ -75,53 +92,50 @@ async function generateRecord(rt: {
       amount = planItem.totalPayment
       remark = `${remark}\n本金: ${planItem.principal.toFixed(2)} | 利息: ${planItem.interest.toFixed(2)}`
 
-      // 更新计划项
-      const tags = ensureFixedTag(JSON.parse(rt.tags))
-      const record = await prisma.record.create({
-        data: {
-          accountBookId: rt.accountBookId,
-          type: rt.type,
-          amount: amount,
-          date: now,
-          remark: remark.trim(),
-          tags: JSON.stringify(tags),
-          accountId: rt.accountId,
-          categoryCode: rt.categoryCode,
-          payer: rt.payer,
-          ownerId: rt.ownerId,
-        },
-      })
+      // 原子事务：创建记录 + 更新计划 + 更新定期交易
+      await client.$transaction(async (tx) => {
+        const tags = ensureFixedTag(JSON.parse(rt.tags))
+        const record = await tx.record.create({
+          data: {
+            accountBookId: rt.accountBookId,
+            type: rt.type,
+            amount,
+            date: now,
+            remark: remark.trim(),
+            tags: JSON.stringify(tags),
+            accountId: rt.accountId,
+            categoryCode: rt.categoryCode,
+            payer: rt.payer,
+            ownerId: rt.ownerId,
+          },
+        })
 
-      await prisma.repaymentPlan.update({
-        where: { id: planItem.id },
-        data: {
-          status: 'GENERATED',
-          generatedRecordId: record.id,
-        },
-      })
+        await tx.repaymentPlan.update({
+          where: { id: planItem.id },
+          data: { status: 'GENERATED', generatedRecordId: record.id },
+        })
 
-      // 更新剩余本金
-      await prisma.recurringTransaction.update({
-        where: { id: rt.id },
-        data: {
-          loanRemainingAmount: planItem.remainingPrincipal,
-          lastGeneratedAt: now,
-          nextGenerateAt: getNextTriggerTime(rt.cron, now),
-        },
+        await tx.recurringTransaction.update({
+          where: { id: rt.id },
+          data: {
+            loanRemainingAmount: planItem.remainingPrincipal,
+            lastGeneratedAt: now,
+            nextGenerateAt: getNextTriggerTime(rt.cron, now),
+          },
+        })
       })
       return
     }
-    // 没有待生成计划项，则使用标准金额
   }
 
   // 周期类型：直接生成流水
   const isTransfer = rt.type === 'TRANSFER'
   const tags = ensureFixedTag(JSON.parse(rt.tags))
-  await prisma.record.create({
+  await client.record.create({
     data: {
       accountBookId: rt.accountBookId,
       type: rt.type,
-      amount: amount,
+      amount,
       date: now,
       remark: remark || undefined,
       tags: JSON.stringify(tags),
@@ -134,7 +148,7 @@ async function generateRecord(rt: {
     },
   })
 
-  await prisma.recurringTransaction.update({
+  await client.recurringTransaction.update({
     where: { id: rt.id },
     data: {
       lastGeneratedAt: now,

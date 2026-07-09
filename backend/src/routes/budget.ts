@@ -1,6 +1,6 @@
 import type {FastifyInstance} from 'fastify'
 import {prisma} from '../app.js'
-import {authenticate} from '../middleware/auth.js'
+import {authenticate, assertIsMember} from '../middleware/auth.js'
 import {z} from 'zod'
 import {zSchema} from '../lib/schema-helpers.js'
 import {
@@ -13,34 +13,7 @@ import {
   listBudgetsQuerySchema,
   updateBudgetSchema,
 } from '../schemas/budget.js'
-
-function parseTags(tags: string): string[] {
-  try {
-    const parsed = JSON.parse(tags)
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
-}
-
-function mapBudget(b: any) {
-  return {
-    ...b,
-    tags: parseTags(b.tags),
-    startDate: b.startDate ? (b.startDate instanceof Date ? b.startDate.toISOString() : b.startDate) : null,
-    endDate: b.endDate ? (b.endDate instanceof Date ? b.endDate.toISOString() : b.endDate) : null,
-  }
-}
-
-async function assertIsMember(bookId: string, userId: string) {
-  const book = await prisma.accountBook.findUnique({ where: { id: bookId } })
-  if (!book) throw Object.assign(new Error('账本不存在'), { statusCode: 404 })
-  if (book.ownerId === userId) return
-  const member = await prisma.accountBookMember.findUnique({
-    where: { accountBookId_userId: { accountBookId: bookId, userId } },
-  })
-  if (!member) throw Object.assign(new Error('无权访问该账本'), { statusCode: 403 })
-}
+import { mapBudget, buildFreeBudgetDateFilter, computeActualAmount } from '../services/budget.js'
 
 export async function budgetRoutes(app: FastifyInstance) {
   app.addHook('onRequest', authenticate)
@@ -107,44 +80,11 @@ export async function budgetRoutes(app: FastifyInstance) {
       orderBy: [{ month: 'asc' }, { name: 'asc' }],
     })
 
-    // 查询收支分类字典
-    const expenseDicts = await prisma.dictionary.findMany({
-      where: { group: 'transaction_category_expense' },
-      select: { code: true },
-    })
-    const expenseCodes = new Set(expenseDicts.map(d => d.code))
-    const incomeDicts = await prisma.dictionary.findMany({
-      where: { group: 'transaction_category_income' },
-      select: { code: true },
-    })
-    const incomeCodes = new Set(incomeDicts.map(d => d.code))
-
     // 计算每个预算的实际金额
-    return await Promise.all(budgets.map(async (budget) => {
-      let actualAmount = 0
-      if (budget.categoryCode) {
-        const budgetStartDate = new Date(Date.UTC(budget.year, budget.month - 1, 1))
-        const budgetEndDate = new Date(Date.UTC(budget.year, budget.month, 0, 23, 59, 59, 999))
-
-        let recordType: string | undefined
-        if (expenseCodes.has(budget.categoryCode)) recordType = 'EXPENSE'
-        else if (incomeCodes.has(budget.categoryCode)) recordType = 'INCOME'
-
-        const where: any = {
-          accountBookId: bookId,
-          date: {gte: budgetStartDate, lte: budgetEndDate},
-          categoryCode: budget.categoryCode,
-        }
-        if (recordType) where.type = recordType
-
-        const agg = await prisma.record.aggregate({
-          where,
-          _sum: {amount: true},
-        })
-        actualAmount = agg._sum.amount ?? 0
-      }
-      return {...mapBudget(budget), actualAmount}
-    }))
+    return await Promise.all(budgets.map(async (budget) => ({
+      ...mapBudget(budget),
+      actualAmount: await computeActualAmount(budget, bookId),
+    })))
   })
 
   // 自由预算列表
@@ -167,78 +107,19 @@ export async function budgetRoutes(app: FastifyInstance) {
     if (name?.trim()) where.name = { contains: name.trim() }
 
     // 按查询参数过滤自由预算的日期范围
-    if (startDate || endDate) {
-      const sd = startDate ? new Date(startDate) : null
-      const ed = endDate ? new Date(endDate) : null
-      const overlapConditions: any[] = [
-        { startDate: null, endDate: null },
-      ]
-
-      if (sd && ed) {
-        overlapConditions.push(
-          { startDate: { lte: ed }, endDate: { gte: sd } },
-          { startDate: { lte: ed }, endDate: null },
-          { startDate: null, endDate: { gte: sd } },
-        )
-      } else if (sd) {
-        overlapConditions.push(
-          { endDate: { gte: sd } },
-          { endDate: null },
-        )
-      } else if (ed) {
-        overlapConditions.push(
-          { startDate: { lte: ed } },
-          { startDate: null },
-        )
-      }
-
-      where.OR = overlapConditions
-    }
+    const overlapConditions = buildFreeBudgetDateFilter(startDate, endDate)
+    if (overlapConditions) where.OR = overlapConditions
 
     const budgets = await prisma.budget.findMany({
       where,
       orderBy: { name: 'asc' },
     })
 
-    // 计算每个预算的实际金额（按标签 + 预算自身日期范围）
-    return await Promise.all(budgets.map(async (budget) => {
-      let actualAmount = 0
-      let budgetTags: string[] = []
-      try {
-        const parsed = JSON.parse(budget.tags)
-        if (Array.isArray(parsed)) budgetTags = parsed.filter((t: any) => typeof t === 'string' && t.trim())
-      } catch { /* ignore */
-      }
-
-      if (budgetTags.length > 0) {
-        const tagConditions = budgetTags.map((tag) => ({
-          tags: {contains: tag},
-        }))
-
-        const recordWhere: any = {
-          accountBookId: bookId,
-          type: 'EXPENSE',
-          OR: tagConditions,
-        }
-
-        if (budget.startDate || budget.endDate) {
-          recordWhere.date = {}
-          if (budget.startDate) recordWhere.date.gte = new Date(budget.startDate)
-          if (budget.endDate) {
-            const e = new Date(budget.endDate)
-            e.setHours(23, 59, 59, 999)
-            recordWhere.date.lte = e
-          }
-        }
-
-        const agg = await prisma.record.aggregate({
-          where: recordWhere,
-          _sum: {amount: true},
-        })
-        actualAmount = agg._sum.amount ?? 0
-      }
-      return {...mapBudget(budget), actualAmount}
-    }))
+    // 计算每个预算的实际金额
+    return await Promise.all(budgets.map(async (budget) => ({
+      ...mapBudget(budget),
+      actualAmount: await computeActualAmount(budget, bookId),
+    })))
   })
 
   // 获取可用标签列表

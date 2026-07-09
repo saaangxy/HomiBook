@@ -1,6 +1,6 @@
 import type {FastifyInstance} from 'fastify'
 import {prisma} from '../app.js'
-import {authenticate} from '../middleware/auth.js'
+import {authenticate, assertIsMember} from '../middleware/auth.js'
 import {z} from 'zod'
 import {zSchema} from '../lib/schema-helpers.js'
 import {createRecurringSchema, listRecurringSchema, updateRecurringSchema,} from '../schemas/recurring.js'
@@ -11,16 +11,6 @@ import {
   generateEqualPrincipalPlan,
   getNextTriggerTime,
 } from '../services/recurring.js'
-
-async function assertIsMember(bookId: string, userId: string) {
-  const book = await prisma.accountBook.findUnique({ where: { id: bookId } })
-  if (!book) throw Object.assign(new Error('账本不存在'), { statusCode: 404 })
-  if (book.ownerId === userId) return
-  const member = await prisma.accountBookMember.findUnique({
-    where: { accountBookId_userId: { accountBookId: bookId, userId } },
-  })
-  if (!member) throw Object.assign(new Error('无权访问该账本'), { statusCode: 403 })
-}
 
 export async function recurringRoutes(app: FastifyInstance) {
   app.addHook('onRequest', authenticate)

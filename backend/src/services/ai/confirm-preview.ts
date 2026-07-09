@@ -1,5 +1,5 @@
 import { prisma } from '../../app.js'
-import { parseAlipayCSV, parseWechatXlsx, parseJdCSV } from '../../routes/import-export.js'
+import { parseAlipayCSV, parseWechatXlsx, parseJdCSV } from '../import/parsers.js'
 import { applyAccountMappings, applyCategoryMappings, matchAccountByName, type ParsedRow } from '../import/shared.js'
 import fs from 'fs'
 import path from 'path'
