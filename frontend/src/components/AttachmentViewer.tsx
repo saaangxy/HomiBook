@@ -62,7 +62,10 @@ async function downloadFile(url: string, filename: string) {
 
 export function AttachmentViewer({ open, onOpenChange, attachments }: AttachmentViewerProps) {
   const [previewImage, setPreviewImage] = useState<string | null>(null)
-  const [zoom, setZoom] = useState(1)
+  const [{ zoom, panX, panY }, setTransform] = useState({ zoom: 1, panX: 0, panY: 0 })
+  const [isDragging, setIsDragging] = useState(false)
+  const isDraggingRef = useRef(false)
+  const dragRef = useRef({ startX: 0, startY: 0, startPanX: 0, startPanY: 0 })
   const imageAreaRef = useRef<HTMLDivElement>(null)
   const previewingRef = useRef(false)
   const ZOOM_MIN = 0.25
@@ -73,12 +76,12 @@ export function AttachmentViewer({ open, onOpenChange, attachments }: Attachment
   previewingRef.current = isPreviewing
 
   useEffect(() => {
-    setZoom(1)
+    setTransform({ zoom: 1, panX: 0, panY: 0 })
   }, [previewImage])
 
   const closePreview = useCallback(() => {
     setPreviewImage(null)
-    setZoom(1)
+    setTransform({ zoom: 1, panX: 0, panY: 0 })
   }, [])
 
   // 拦截关闭：预览模式先关预览，不关 Dialog
@@ -90,10 +93,47 @@ export function AttachmentViewer({ open, onOpenChange, attachments }: Attachment
     onOpenChange(willOpen)
   }, [onOpenChange, closePreview])
 
-  // 原生 wheel 事件，passive: false 让 preventDefault 生效
+  // 原生 wheel 事件，以鼠标位置为中心缩放
   const handleWheel = useCallback((e: WheelEvent) => {
     e.preventDefault()
-    setZoom((z) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z - e.deltaY * 0.002)))
+    const el = imageAreaRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const mx = e.clientX - rect.left - rect.width / 2
+    const my = e.clientY - rect.top - rect.height / 2
+    setTransform((prev) => {
+      const factor = 1 - e.deltaY * 0.002
+      const newZoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, prev.zoom * factor))
+      const scale = newZoom / prev.zoom
+      return {
+        zoom: newZoom,
+        panX: mx - (mx - prev.panX) * scale,
+        panY: my - (my - prev.panY) * scale,
+      }
+    })
+  }, [])
+
+  // 拖拽平移
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (zoom <= 1) return
+    dragRef.current = { startX: e.clientX, startY: e.clientY, startPanX: panX, startPanY: panY }
+    isDraggingRef.current = true
+    setIsDragging(true)
+    e.preventDefault()
+  }, [zoom, panX, panY])
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isDraggingRef.current) return
+    setTransform((prev) => ({
+      ...prev,
+      panX: dragRef.current.startPanX + (e.clientX - dragRef.current.startX),
+      panY: dragRef.current.startPanY + (e.clientY - dragRef.current.startY),
+    }))
+  }, [])
+
+  const handleMouseUp = useCallback(() => {
+    isDraggingRef.current = false
+    setIsDragging(false)
   }, [])
 
   useEffect(() => {
@@ -143,21 +183,21 @@ export function AttachmentViewer({ open, onOpenChange, attachments }: Attachment
               </span>
               <button
                 className="h-8 w-8 flex items-center justify-center rounded-lg text-white/80 hover:text-white hover:bg-white/10 disabled:opacity-30"
-                onClick={() => setZoom((z) => Math.min(ZOOM_MAX, z + ZOOM_STEP))}
+                onClick={() => setTransform((prev) => ({ ...prev, zoom: Math.min(ZOOM_MAX, prev.zoom + ZOOM_STEP) }))}
                 disabled={zoom >= ZOOM_MAX}
               >
                 <ZoomIn size={16} />
               </button>
               <button
                 className="h-8 w-8 flex items-center justify-center rounded-lg text-white/80 hover:text-white hover:bg-white/10 disabled:opacity-30"
-                onClick={() => setZoom((z) => Math.max(ZOOM_MIN, z - ZOOM_STEP))}
+                onClick={() => setTransform((prev) => ({ ...prev, zoom: Math.max(ZOOM_MIN, prev.zoom - ZOOM_STEP) }))}
                 disabled={zoom <= ZOOM_MIN}
               >
                 <ZoomOut size={16} />
               </button>
               <button
                 className="h-8 w-8 flex items-center justify-center rounded-lg text-white/80 hover:text-white hover:bg-white/10 disabled:opacity-30"
-                onClick={() => setZoom(1)}
+                onClick={() => setTransform({ zoom: 1, panX: 0, panY: 0 })}
                 disabled={zoom === 1}
               >
                 <RotateCcw size={14} />
@@ -184,12 +224,19 @@ export function AttachmentViewer({ open, onOpenChange, attachments }: Attachment
               ref={imageAreaRef}
               className="flex-1 flex items-center justify-center overflow-hidden p-12"
               onClick={(e) => e.stopPropagation()}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseUp}
             >
               <img
                 src={previewImage!}
                 alt="预览"
                 className="max-h-full max-w-full object-contain rounded-lg select-none"
-                style={{ transform: `scale(${zoom})`, cursor: zoom !== 1 ? 'grab' : 'default' }}
+                style={{
+                  transform: `scale(${zoom}) translate(${panX / zoom}px, ${panY / zoom}px)`,
+                  cursor: zoom > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default',
+                }}
                 draggable={false}
               />
             </div>
