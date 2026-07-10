@@ -232,11 +232,11 @@ export function AttachmentViewer({ open, onOpenChange, attachments }: Attachment
               <img
                 src={previewImage!}
                 alt="预览"
-                className="max-h-full max-w-full object-contain rounded-lg select-none"
-                style={{
-                  transform: `scale(${zoom}) translate(${panX / zoom}px, ${panY / zoom}px)`,
-                  cursor: zoom > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default',
-                }}
+                className="max-h-[85vh] max-w-[90vw] object-contain rounded-lg select-none"
+                style={zoom !== 1
+                  ? { transform: `scale(${zoom}) translate(${panX / zoom}px, ${panY / zoom}px)`, cursor: isDragging ? 'grabbing' : 'grab' }
+                  : { cursor: 'default' }
+                }
                 draggable={false}
               />
             </div>
