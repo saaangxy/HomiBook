@@ -10,3 +10,5 @@
 /.mcp.json
 /.claude/
 /backend/dist/
+/backend/uploads/
+/example/

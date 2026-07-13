@@ -16,20 +16,74 @@ import { saveImportMappingTool } from './save-import-mapping.js'
 import { previewImportTool } from './preview-import.js'
 import { confirmImportTool } from './confirm-import.js'
 import { ocrReceiptTool } from './ocr-receipt.js'
+// 固定收支/贷款
+import { queryRecurringTool } from './query-recurring.js'
+import { createRecurringTool } from './create-recurring.js'
+import { updateRecurringTool } from './update-recurring.js'
+import { deleteRecurringTool } from './delete-recurring.js'
+import { toggleRecurringTool } from './toggle-recurring.js'
+import { loanPreviewTool } from './loan-preview.js'
+import { queryRepaymentPlanTool } from './query-repayment-plan.js'
+// 账户管理
+import { createAccountTool } from './create-account.js'
+import { updateAccountTool } from './update-account.js'
+import { deleteAccountTool } from './delete-account.js'
+import { adjustBalanceTool } from './adjust-balance.js'
+import { queryBalanceHistoryTool } from './query-balance-history.js'
+// 预算
+import { deleteBudgetTool } from './delete-budget.js'
+import { copyBudgetsTool } from './copy-budgets.js'
+import { batchCreateBudgetsTool } from './batch-create-budgets.js'
+// 管理
+import { switchBookTool } from './switch-book.js'
+import { queryMembersTool } from './query-members.js'
+import { createBookTool } from './create-book.js'
+// 流水
+import { cloneRecordTool } from './clone-record.js'
+import { detectDuplicatesTool } from './detect-duplicates.js'
+import { batchDeleteRecordsTool } from './batch-delete-records.js'
 
 // 所有可用工具注册
 export const ALL_TOOLS: ToolDef[] = [
+  // 查询
   queryRecordsTool,
   queryBudgetsTool,
   queryAccountsTool,
   getStatsTool,
   queryCategoriesTool,
+  // 流水操作
   createRecordTool,
   updateRecordTool,
   deleteRecordTool,
-  setBudgetTool,
   batchCreateRecordsTool,
   batchUpdateRecordsTool,
+  cloneRecordTool,
+  detectDuplicatesTool,
+  batchDeleteRecordsTool,
+  // 预算
+  setBudgetTool,
+  deleteBudgetTool,
+  batchCreateBudgetsTool,
+  copyBudgetsTool,
+  // 固定收支/贷款
+  queryRecurringTool,
+  createRecurringTool,
+  updateRecurringTool,
+  deleteRecurringTool,
+  toggleRecurringTool,
+  loanPreviewTool,
+  queryRepaymentPlanTool,
+  // 账户管理
+  createAccountTool,
+  updateAccountTool,
+  deleteAccountTool,
+  adjustBalanceTool,
+  queryBalanceHistoryTool,
+  // 管理
+  switchBookTool,
+  queryMembersTool,
+  createBookTool,
+  // 导入
   suggestOptionsTool,
   queryImportMappingsTool,
   saveImportMappingTool,
