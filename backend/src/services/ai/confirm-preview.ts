@@ -108,6 +108,10 @@ export async function buildConfirmPreview(
   switch (toolName) {
     case 'delete_record':
       return buildDeletePreview(args, accountBookId)
+    case 'batch_delete_records':
+      return buildBatchDeletePreview(args, accountBookId)
+    case 'clone_record':
+      return buildClonePreview(args, accountBookId)
     case 'create_record':
       return buildCreatePreview(args, accountBookId)
     case 'update_record':
@@ -118,6 +122,14 @@ export async function buildConfirmPreview(
       return buildBatchUpdatePreview(args, accountBookId)
     case 'set_budget':
       return buildBudgetPreview(args)
+    case 'delete_recurring':
+      return buildDeleteRecurringPreview(args, accountBookId)
+    case 'toggle_recurring':
+      return buildToggleRecurringPreview(args, accountBookId)
+    case 'delete_account':
+      return buildDeleteAccountPreview(args, accountBookId)
+    case 'delete_budget':
+      return buildDeleteBudgetPreview(args, accountBookId)
     case 'save_import_mapping':
       return buildSaveImportMappingPreview(args)
     case 'confirm_import':
@@ -130,8 +142,9 @@ export async function buildConfirmPreview(
 // ---- 各工具预览构建 ----
 
 async function buildDeletePreview(args: any, accountBookId: string): Promise<string> {
+  const recordId = args.id || args.recordId
   const record = await prisma.record.findUnique({
-    where: { id: args.recordId },
+    where: { id: recordId },
     include: {
       account: { select: { name: true } },
       fromAccount: { select: { name: true } },
@@ -140,12 +153,7 @@ async function buildDeletePreview(args: any, accountBookId: string): Promise<str
   })
 
   if (!record) {
-    return JSON.stringify({
-      type: 'generic',
-      title: '删除流水记录',
-      description: `无法找到记录 ${args.recordId}`,
-      text: `记录 ID: ${args.recordId}\n状态: 未找到`,
-    } satisfies ConfirmPreview)
+    return buildGenericPreview('delete_record', { error: `记录不存在: ${recordId}` })
   }
 
   const categoryMap = await getCategoryLabelMap([record.categoryCode || ''].filter(Boolean))
@@ -154,6 +162,89 @@ async function buildDeletePreview(args: any, accountBookId: string): Promise<str
     type: 'records-table',
     title: '确认删除以下流水记录',
     description: '此操作不可撤销，账户余额将相应调整',
+    columns: ['ID', '日期', '类型', '账户', '分类', '金额', '备注'],
+    rows: recordToRow({
+      id: record.id,
+      type: record.type,
+      amount: record.amount,
+      date: record.date,
+      accountName: record.account.name,
+      fromAccountName: record.fromAccount?.name,
+      toAccountName: record.toAccount?.name,
+      categoryLabel: categoryMap.get(record.categoryCode || ''),
+      remark: record.remark,
+    }),
+  }
+  return JSON.stringify(preview)
+}
+
+async function buildBatchDeletePreview(args: any, accountBookId: string): Promise<string> {
+  const ids: string[] = args.ids || []
+  if (ids.length === 0) {
+    return buildGenericPreview('batch_delete_records', { error: '未提供记录 ID' })
+  }
+
+  const records = await prisma.record.findMany({
+    where: { id: { in: ids } },
+    include: {
+      account: { select: { name: true } },
+      fromAccount: { select: { name: true } },
+      toAccount: { select: { name: true } },
+    },
+    orderBy: { date: 'desc' },
+  })
+
+  if (records.length === 0) {
+    return buildGenericPreview('batch_delete_records', { error: '未找到匹配的记录' })
+  }
+
+  const codes = [...new Set(records.map((r) => r.categoryCode).filter(Boolean))] as string[]
+  const categoryMap = await getCategoryLabelMap(codes)
+
+  const notFound = ids.filter((id) => !records.some((r) => r.id === id))
+
+  const preview: ConfirmPreview = {
+    type: 'records-table',
+    title: `确认批量删除 ${records.length} 条流水记录`,
+    description: `此操作不可撤销，账户余额将相应调整${notFound.length > 0 ? `\n未找到的记录: ${notFound.join(', ')}` : ''}`,
+    columns: ['ID', '日期', '类型', '账户', '分类', '金额', '备注'],
+    rows: records.map((r) =>
+      recordToRow({
+        id: r.id,
+        type: r.type,
+        amount: r.amount,
+        date: r.date,
+        accountName: r.account.name,
+        fromAccountName: r.fromAccount?.name,
+        toAccountName: r.toAccount?.name,
+        categoryLabel: categoryMap.get(r.categoryCode || ''),
+        remark: r.remark,
+      })
+    ).flat(),
+  }
+  return JSON.stringify(preview)
+}
+
+async function buildClonePreview(args: any, accountBookId: string): Promise<string> {
+  const record = await prisma.record.findUnique({
+    where: { id: args.id },
+    include: {
+      account: { select: { name: true } },
+      fromAccount: { select: { name: true } },
+      toAccount: { select: { name: true } },
+    },
+  })
+
+  if (!record) {
+    return buildGenericPreview('clone_record', { error: `记录不存在: ${args.id}` })
+  }
+
+  const categoryMap = await getCategoryLabelMap([record.categoryCode || ''].filter(Boolean))
+
+  const preview: ConfirmPreview = {
+    type: 'records-table',
+    title: '确认克隆以下流水记录',
+    description: '将复制记录的所有字段，归属人设为当前用户',
     columns: ['ID', '日期', '类型', '账户', '分类', '金额', '备注'],
     rows: recordToRow({
       id: record.id,
@@ -678,10 +769,125 @@ async function buildConfirmImportPreview(args: any, accountBookId: string): Prom
   return JSON.stringify(preview)
 }
 
+async function buildDeleteRecurringPreview(args: any, _bookId: string): Promise<string> {
+  const rt = await prisma.recurringTransaction.findUnique({
+    where: { id: args.id },
+    include: {
+      account: { select: { name: true } },
+      toAccount: { select: { name: true } },
+    },
+  })
+  if (!rt) return buildGenericPreview('delete_recurring', { error: `记录不存在: ${args.id}` })
+
+  const typeLabel = rt.type === 'INCOME' ? '收入' : rt.type === 'EXPENSE' ? '支出' : '转账'
+  const fields: { label: string; value: string }[] = [
+    { label: '名称', value: rt.name },
+    { label: '类型', value: typeLabel },
+    { label: '金额', value: rt.amount.toFixed(2) },
+    { label: '账户', value: rt.account?.name || rt.accountId },
+    { label: '触发规则', value: rt.cron },
+    { label: '周期类型', value: rt.recurringType === 'LOAN' ? '贷款' : '定期' },
+    { label: '状态', value: rt.active ? '启用' : '停用' },
+  ]
+  if (rt.toAccount) fields.push({ label: '目标账户', value: rt.toAccount.name })
+  if (rt.categoryCode) {
+    const catMap = await getCategoryLabelMap([rt.categoryCode])
+    fields.push({ label: '分类', value: catMap.get(rt.categoryCode) || rt.categoryCode })
+  }
+  if (rt.remark) fields.push({ label: '备注', value: rt.remark })
+  if (rt.recurringType === 'LOAN') {
+    fields.push({ label: '贷款总额', value: (rt.loanTotalAmount || 0).toFixed(2) })
+    fields.push({ label: '剩余本金', value: (rt.loanRemainingAmount || 0).toFixed(2) })
+    fields.push({ label: '还款方式', value: rt.loanInterestMethod === 'EQUAL_PRINCIPAL' ? '等额本金' : '等额本息' })
+  }
+
+  const preview: ConfirmPreview = {
+    type: 'budget-card',
+    title: '确认删除固定收支',
+    description: rt.recurringType === 'LOAN' ? '将同时删除关联的还款计划' : undefined,
+    budgetFields: fields,
+  }
+  return JSON.stringify(preview)
+}
+
+async function buildToggleRecurringPreview(args: any, _bookId: string): Promise<string> {
+  const rt = await prisma.recurringTransaction.findUnique({
+    where: { id: args.id },
+    include: { account: { select: { name: true } } },
+  })
+  if (!rt) return buildGenericPreview('toggle_recurring', { error: `记录不存在: ${args.id}` })
+
+  const newStatus = !rt.active
+  const preview: ConfirmPreview = {
+    type: 'budget-card',
+    title: `确认${newStatus ? '启用' : '停用'}固定收支`,
+    budgetFields: [
+      { label: '名称', value: rt.name },
+      { label: '金额', value: rt.amount.toFixed(2) },
+      { label: '账户', value: rt.account?.name || rt.accountId },
+      { label: '当前状态', value: rt.active ? '已启用' : '已停用' },
+      { label: '变更后', value: newStatus ? '启用' : '停用' },
+    ],
+  }
+  return JSON.stringify(preview)
+}
+
+async function buildDeleteAccountPreview(args: any, _bookId: string): Promise<string> {
+  const account = await prisma.account.findUnique({ where: { id: args.id } })
+  if (!account) return buildGenericPreview('delete_account', { error: `账户不存在: ${args.id}` })
+
+  const preview: ConfirmPreview = {
+    type: 'budget-card',
+    title: '确认删除账户',
+    description: '将同时删除该账户的余额调整记录',
+    budgetFields: [
+      { label: '名称', value: account.name },
+      { label: '类型', value: account.type },
+      { label: '当前余额', value: account.balance.toFixed(2) },
+      { label: '货币', value: account.currency },
+      ...(account.accountNo ? [{ label: '账号', value: account.accountNo }] as { label: string; value: string }[] : []),
+      ...(account.bankName ? [{ label: '银行', value: account.bankName }] : []),
+    ],
+  }
+  return JSON.stringify(preview)
+}
+
+async function buildDeleteBudgetPreview(args: any, _bookId: string): Promise<string> {
+  const budget = await prisma.budget.findUnique({ where: { id: args.id } })
+  if (!budget) return buildGenericPreview('delete_budget', { error: `预算不存在: ${args.id}` })
+
+  const typeLabel = budget.type === 'FIXED' ? '月度固定预算' : '自由预算'
+  const period = budget.type === 'FREE'
+    ? `${budget.startDate?.toISOString().slice(0, 10) || '?'} ~ ${budget.endDate?.toISOString().slice(0, 10) || '?'}`
+    : `${budget.year}年${String(budget.month).padStart(2, '0')}月`
+
+  let categoryLabel = ''
+  if (budget.categoryCode) {
+    const catMap = await getCategoryLabelMap([budget.categoryCode])
+    categoryLabel = catMap.get(budget.categoryCode) || budget.categoryCode
+  }
+
+  const fields: { label: string; value: string }[] = [
+    { label: '名称', value: budget.name },
+    { label: '类型', value: typeLabel },
+    { label: '周期', value: period },
+    { label: '金额', value: budget.amount.toFixed(2) },
+  ]
+  if (categoryLabel) fields.push({ label: '关联分类', value: categoryLabel })
+  if (budget.remark) fields.push({ label: '备注', value: budget.remark })
+
+  const preview: ConfirmPreview = {
+    type: 'budget-card',
+    title: '确认删除预算',
+    budgetFields: fields,
+  }
+  return JSON.stringify(preview)
+}
+
 function buildGenericPreview(toolName: string, args: any): string {
   const preview: ConfirmPreview = {
     type: 'generic',
-    title: `确认执行: ${toolName}`,
+    title: ``,
     text: JSON.stringify(args, null, 2),
   }
   return JSON.stringify(preview)
