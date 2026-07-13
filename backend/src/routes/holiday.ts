@@ -11,6 +11,22 @@ export async function holidayRoutes(app: FastifyInstance) {
       tags: ['节假日'],
       summary: '查询节假日列表',
       querystring: zSchema(z.object({ year: z.coerce.number().int().optional() })),
+      response: {
+        200: {
+          type: 'array',
+          description: '节假日列表',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', description: '节假日ID' },
+              date: { type: 'string', description: '日期' },
+              name: { type: 'string', description: '节假日名称' },
+              isWorkday: { type: 'boolean', description: '是否为工作日' },
+              createdAt: { type: 'string', description: '创建时间' },
+            },
+          },
+        },
+      },
     },
   }, async (req) => {
     const { year } = req.query as { year?: string }

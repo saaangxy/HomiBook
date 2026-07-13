@@ -404,6 +404,32 @@ export async function importExportRoutes(app: FastifyInstance) {
     schema: {
       description: '获取导入分类映射列表',
       tags: ['导入导出'],
+      response: {
+        200: {
+          type: 'object',
+          description: '分类映射列表',
+          properties: {
+            mappings: {
+              type: 'array',
+              description: '分类映射列表',
+              items: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string', description: '映射ID' },
+                  source: { type: 'string', description: '来源' },
+                  sourceCategory: { type: 'string', description: '源分类名' },
+                  payerContains: { type: 'string', description: '交易方匹配条件' },
+                  descriptionContains: { type: 'string', description: '描述匹配条件' },
+                  recordType: { type: 'string', description: '记录类型匹配条件' },
+                  targetCategoryCode: { type: 'string', description: '目标分类编码' },
+                  createdAt: { type: 'string', description: '创建时间' },
+                  updatedAt: { type: 'string', description: '更新时间' },
+                },
+              },
+            },
+          },
+        },
+      },
     },
   }, async (req) => {
     const { source } = req.query as { source?: string }
@@ -463,6 +489,31 @@ export async function importExportRoutes(app: FastifyInstance) {
     schema: {
       description: '获取导入账户映射列表',
       tags: ['导入导出'],
+      response: {
+        200: {
+          type: 'object',
+          description: '账户映射列表',
+          properties: {
+            mappings: {
+              type: 'array',
+              description: '账户映射列表',
+              items: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string', description: '映射ID' },
+                  source: { type: 'string', description: '来源' },
+                  sourceAccountName: { type: 'string', description: '源账户名' },
+                  payerContains: { type: 'string', description: '交易方匹配条件' },
+                  descriptionContains: { type: 'string', description: '描述匹配条件' },
+                  targetAccountName: { type: 'string', description: '目标账户名' },
+                  createdAt: { type: 'string', description: '创建时间' },
+                  updatedAt: { type: 'string', description: '更新时间' },
+                },
+              },
+            },
+          },
+        },
+      },
     },
   }, async (req) => {
     const { source } = req.query as { source?: string }
@@ -521,6 +572,9 @@ export async function importExportRoutes(app: FastifyInstance) {
     schema: {
       description: '导出流水记录为CSV文件',
       tags: ['导入导出'],
+      response: {
+        200: { type: 'string' },
+      },
     },
   }, async (req, reply) => {
     const payload = req.user as { id: string }

@@ -98,6 +98,34 @@ export async function accountRoutes(app: FastifyInstance) {
       description: '获取账本下所有账户，含实时计算余额',
       tags: ['账户'],
       querystring: zSchema(z.object({ bookId: z.string() })),
+      response: {
+        200: {
+          type: 'array',
+          description: '账户列表',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', description: '账户ID' },
+              name: { type: 'string', description: '账户名称' },
+              type: { type: 'string', description: '账户类型' },
+              currency: { type: 'string', description: '货币代码' },
+              initialBalance: { type: 'number', description: '初始余额' },
+              balance: { type: 'number', description: '数据库余额' },
+              balanceAt: { type: 'string', description: '余额时间' },
+              accountNo: { type: 'string', description: '账号' },
+              bankName: { type: 'string', description: '银行名称' },
+              visibility: { type: 'string', description: '可见性' },
+              status: { type: 'string', description: '状态' },
+              accountBookId: { type: 'string', description: '所属账本ID' },
+              ownerId: { type: 'string', description: '归属人ID' },
+              computedBalance: { type: 'number', description: '实时计算余额' },
+              ownerName: { type: 'string', description: '归属人名称' },
+              createdAt: { type: 'string', description: '创建时间' },
+              updatedAt: { type: 'string', description: '更新时间' },
+            },
+          },
+        },
+      },
     },
   }, async (req, reply) => {
     const { bookId } = req.query as { bookId?: string }
@@ -192,6 +220,30 @@ export async function accountRoutes(app: FastifyInstance) {
       description: '获取账户余额历史变化，按月或按日',
       tags: ['账户'],
       querystring: zSchema(balanceHistorySchema),
+      response: {
+        200: {
+          type: 'array',
+          description: '余额历史列表',
+          items: {
+            type: 'object',
+            properties: {
+              accountId: { type: 'string', description: '账户ID' },
+              accountName: { type: 'string', description: '账户名称' },
+              balances: {
+                type: 'array',
+                description: '余额明细',
+                items: {
+                  type: 'object',
+                  properties: {
+                    date: { type: 'string', description: '日期' },
+                    balance: { type: 'number', description: '余额' },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
     },
   }, async (req, reply) => {
     const parsed = balanceHistorySchema.safeParse(req.query)
@@ -341,6 +393,31 @@ export async function accountRoutes(app: FastifyInstance) {
       description: '获取单个账户详情及实时余额',
       tags: ['账户'],
       params: zSchema(z.object({ id: z.string() })),
+      response: {
+        200: {
+          type: 'object',
+          description: '账户详情',
+          properties: {
+            id: { type: 'string', description: '账户ID' },
+            name: { type: 'string', description: '账户名称' },
+            type: { type: 'string', description: '账户类型' },
+            currency: { type: 'string', description: '货币代码' },
+            initialBalance: { type: 'number', description: '初始余额' },
+            balance: { type: 'number', description: '数据库余额' },
+            balanceAt: { type: 'string', description: '余额时间' },
+            accountNo: { type: 'string', description: '账号' },
+            bankName: { type: 'string', description: '银行名称' },
+            visibility: { type: 'string', description: '可见性' },
+            status: { type: 'string', description: '状态' },
+            accountBookId: { type: 'string', description: '所属账本ID' },
+            ownerId: { type: 'string', description: '归属人ID' },
+            computedBalance: { type: 'number', description: '实时计算余额' },
+            ownerName: { type: 'string', description: '归属人名称' },
+            createdAt: { type: 'string', description: '创建时间' },
+            updatedAt: { type: 'string', description: '更新时间' },
+          },
+        },
+      },
     },
   }, async (req, reply) => {
     const userId = (req as any).user.id as string
@@ -446,6 +523,25 @@ export async function accountRoutes(app: FastifyInstance) {
       description: '获取账户的余额调整历史',
       tags: ['账户'],
       params: zSchema(z.object({ id: z.string() })),
+      response: {
+        200: {
+          type: 'array',
+          description: '余额调整历史列表',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', description: '调整记录ID' },
+              accountId: { type: 'string', description: '账户ID' },
+              date: { type: 'string', description: '调整日期' },
+              amount: { type: 'number', description: '调整金额' },
+              balanceBefore: { type: 'number', description: '调整前余额' },
+              balanceAfter: { type: 'number', description: '调整后余额' },
+              remark: { type: 'string', description: '备注' },
+              createdAt: { type: 'string', description: '创建时间' },
+            },
+          },
+        },
+      },
     },
   }, async (req, reply) => {
     const userId = (req as any).user.id as string

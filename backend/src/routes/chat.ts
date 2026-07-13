@@ -10,6 +10,8 @@ import { ALL_TOOLS, storeImportOverrides, peekImportOverrides, consumeImportOver
 import { buildConfirmPreview } from '../services/ai/confirm-preview.js'
 import { sendMessageSchema, createSessionSchema, updateSessionSchema, confirmActionSchema, respondSuggestionSchema, updateAIConfigSchema, createProviderConfigSchema, updateProviderConfigSchema } from '../schemas/chat.js'
 import { detectSkills, buildSkillsPrompt, extractUserMessageForSkills } from '../services/ai/skills/index.js'
+import { zSchema } from '../lib/schema-helpers.js'
+import { z } from 'zod'
 
 // ---- 共享流式响应函数：供 /send 和 /confirm 复用 ----
 
@@ -366,7 +368,61 @@ async function continueWithLLM(reply: any, sessionId: string, accountBookId: str
   })
 }
 
+interface RouteDoc {
+  summary: string
+  description?: string
+  response200?: Record<string, unknown>
+  bodySchema?: any
+  paramsSchema?: any
+  querystringSchema?: any
+}
+
+const SID_PARAMS = z.object({ id: z.string().describe('会话ID') })
+const PID_PARAMS = z.object({ id: z.string().describe('配置ID') })
+const MSG_PARAMS = z.object({ id: z.string().describe('会话ID') })
+const PROVIDER_PARAMS = z.object({ provider: z.string().describe('供应商类型') })
+
+const ROUTE_DOC: Record<string, RouteDoc> = {
+  'POST /send': { summary: '发送消息', description: '发送消息给AI，SSE流式返回响应', bodySchema: sendMessageSchema, response200: { type: 'object', properties: { assistantMessageId: { type: 'string', description: '助手消息ID' }, userMessageId: { type: 'string', description: '用户消息ID' } } } },
+  'GET /sessions': { summary: '获取会话列表', response200: { type: 'object', properties: { sessions: { type: 'array', description: '会话列表', items: { type: 'object', properties: { id: { type: 'string', description: '会话ID' }, title: { type: 'string', description: '会话标题' }, modelProvider: { type: 'string', description: '模型供应商' }, modelName: { type: 'string', description: '模型名称' }, updatedAt: { type: 'string', description: '更新时间' } } } } } } },
+  'POST /sessions': { summary: '创建新会话', description: '创建新的AI对话会话', bodySchema: createSessionSchema, response200: { type: 'object', properties: { session: { type: 'object', description: '会话对象' } } } },
+  'PATCH /sessions/:id': { summary: '更新会话', description: '修改会话标题、状态或模型配置', bodySchema: updateSessionSchema, paramsSchema: SID_PARAMS },
+  'POST /sessions/:id/generate-title': { summary: '生成会话标题', description: 'AI自动为会话生成标题', paramsSchema: SID_PARAMS },
+  'DELETE /sessions/:id': { summary: '删除会话', paramsSchema: SID_PARAMS },
+  'GET /sessions/:id/messages': { summary: '获取会话消息', description: '获取指定会话的所有消息记录', paramsSchema: MSG_PARAMS, response200: { type: 'object', properties: { messages: { type: 'array', description: '消息列表', items: { type: 'object' } } } } },
+  'POST /confirm': { summary: '确认工具操作', description: '用户确认或拒绝AI工具调用（如创建/修改/删除记录）', bodySchema: confirmActionSchema },
+  'POST /respond-suggestion': { summary: '响应选项建议', description: '用户选择AI提供的选项（如选择账户、分类）', bodySchema: respondSuggestionSchema },
+  'GET /provider-configs': { summary: '获取供应商配置列表', response200: { type: 'object', properties: { configs: { type: 'array', description: '配置列表', items: { type: 'object', properties: { id: { type: 'string', description: '配置ID' }, name: { type: 'string', description: '配置名称' }, provider: { type: 'string', description: '供应商类型' }, models: { type: 'string', description: '模型列表' }, sortOrder: { type: 'number', description: '排序' } } } } } } },
+  'POST /provider-configs': { summary: '创建供应商配置', description: '添加新的AI模型供应商配置', bodySchema: createProviderConfigSchema },
+  'PUT /provider-configs/:id': { summary: '更新供应商配置', bodySchema: updateProviderConfigSchema, paramsSchema: PID_PARAMS },
+  'DELETE /provider-configs/:id': { summary: '删除供应商配置', paramsSchema: PID_PARAMS },
+  'POST /provider-configs/:id/copy': { summary: '复制供应商配置', description: '复制现有配置为新的供应商配置', paramsSchema: PID_PARAMS },
+  'GET /ai-config': { summary: '获取AI配置', description: '获取当前用户的AI模型和对话配置', response200: { type: 'object', properties: { simpleProviderConfigId: { type: 'string', description: '简单任务供应商配置ID' }, simpleModel: { type: 'string', description: '简单任务模型' }, complexProviderConfigId: { type: 'string', description: '复杂任务供应商配置ID' }, complexModel: { type: 'string', description: '复杂任务模型' }, autoConfirmCreate: { type: 'boolean', description: '自动确认创建' }, language: { type: 'string', description: '回复语言' }, temperature: { type: 'number', description: '温度参数' }, maxTokens: { type: 'number', description: '最大输出token' }, maxSteps: { type: 'number', description: '最大步数' }, visionProviderConfigId: { type: 'string', description: '视觉供应商配置ID' }, visionModel: { type: 'string', description: '视觉模型' } } } },
+  'PUT /ai-config': { summary: '更新AI配置', description: '更新用户的AI模型选择和行为偏好', bodySchema: updateAIConfigSchema },
+  'GET /providers': { summary: '获取可用供应商', description: '获取系统支持的所有AI供应商列表', response200: { type: 'object', properties: { providers: { type: 'array', description: '供应商列表', items: { type: 'object' } } } } },
+  'GET /providers/models': { summary: '获取供应商模型列表', querystringSchema: PROVIDER_PARAMS, response200: { type: 'object', properties: { models: { type: 'array', description: '模型名称列表', items: { type: 'string' } } } } },
+  'GET /providers/status': { summary: '检查供应商连接状态' },
+  'POST /providers/key': { summary: '设置供应商API密钥', bodySchema: z.object({ provider: z.string().describe('供应商类型'), apiKey: z.string().describe('API密钥') }) },
+  'DELETE /providers/key': { summary: '删除供应商API密钥', bodySchema: z.object({ provider: z.string().describe('供应商类型') }) },
+  'GET /providers/baseurl': { summary: '获取供应商BaseURL', querystringSchema: PROVIDER_PARAMS, response200: { type: 'object', properties: { baseURL: { type: 'string', description: 'API基础URL' } } } },
+  'POST /providers/baseurl': { summary: '设置供应商BaseURL', bodySchema: z.object({ provider: z.string().describe('供应商类型'), baseURL: z.string().describe('API基础URL') }) },
+}
+
 export async function chatRoutes(app: FastifyInstance) {
+  app.addHook('onRoute', (opts) => {
+    const key = `${opts.method} ${opts.url}`.replace(/\/api\/chat\//, '/')
+    const doc = ROUTE_DOC[key]
+    opts.schema = {
+      ...(opts.schema || {}),
+      tags: ['AI 助手'],
+      summary: doc?.summary || opts.schema?.summary,
+      ...(doc?.description ? { description: doc.description } : {}),
+      ...(doc?.bodySchema ? { body: zSchema(doc.bodySchema) } : {}),
+      ...(doc?.paramsSchema ? { params: zSchema(doc.paramsSchema) } : {}),
+      ...(doc?.querystringSchema ? { querystring: zSchema(doc.querystringSchema) } : {}),
+      ...(doc?.response200 ? { response: { 200: doc.response200 } } : {}),
+    }
+  })
   app.addHook('onRequest', authenticate)
 
   // SSE 流式发送消息

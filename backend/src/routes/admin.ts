@@ -33,6 +33,30 @@ export async function adminRoutes(app: FastifyInstance) {
     schema: {
       description: '获取所有用户列表',
       tags: ['管理'],
+      response: {
+        200: {
+          type: 'object',
+          description: '用户列表',
+          properties: {
+            users: {
+              type: 'array',
+              description: '用户列表',
+              items: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string', description: '用户ID' },
+                  email: { type: 'string', description: '邮箱' },
+                  username: { type: 'string', description: '账号' },
+                  nickname: { type: 'string', description: '昵称' },
+                  role: { type: 'string', description: '角色' },
+                  status: { type: 'string', description: '状态' },
+                  createdAt: { type: 'string', description: '创建时间' },
+                },
+              },
+            },
+          },
+        },
+      },
     },
   }, async (req, reply) => {
     const users = await prisma.user.findMany({

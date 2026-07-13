@@ -15,6 +15,24 @@ export async function apiKeyRoutes(app: FastifyInstance) {
     schema: {
       description: '获取所有 API Key 列表',
       tags: ['API Key'],
+      response: {
+        200: {
+          type: 'array',
+          description: 'API Key列表',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', description: 'API Key ID' },
+              userId: { type: 'string', description: '所属用户ID' },
+              userName: { type: 'string', description: '所属用户名' },
+              name: { type: 'string', description: 'API Key名称' },
+              prefix: { type: 'string', description: '密钥前缀' },
+              lastUsedAt: { type: 'string', description: '最后使用时间' },
+              createdAt: { type: 'string', description: '创建时间' },
+            },
+          },
+        },
+      },
     },
   }, async () => {
     const keys = await prisma.apiKey.findMany({

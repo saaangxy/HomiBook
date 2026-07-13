@@ -100,6 +100,23 @@ export async function authRoutes(app: FastifyInstance) {
     schema: {
       description: '获取当前登录用户的详细信息',
       tags: ['认证'],
+      response: {
+        200: {
+          type: 'object',
+          description: '当前用户信息',
+          properties: {
+            id: { type: 'string', description: '用户ID' },
+            username: { type: 'string', description: '账号' },
+            email: { type: 'string', description: '邮箱' },
+            nickname: { type: 'string', description: '昵称' },
+            role: { type: 'string', description: '角色' },
+            theme: { type: 'string', description: '主题' },
+            status: { type: 'string', description: '状态' },
+            createdAt: { type: 'string', description: '创建时间' },
+            updatedAt: { type: 'string', description: '更新时间' },
+          },
+        },
+      },
     },
     onRequest: [authenticate],
   }, async (req) => {

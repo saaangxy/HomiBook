@@ -24,6 +24,31 @@ export async function budgetRoutes(app: FastifyInstance) {
       tags: ['预算'],
       summary: '查询预算列表',
       querystring: zSchema(listBudgetsQuerySchema),
+      response: {
+        200: {
+          type: 'array',
+          description: '预算列表',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', description: '预算ID' },
+              accountBookId: { type: 'string', description: '所属账本ID' },
+              name: { type: 'string', description: '预算名称' },
+              type: { type: 'string', description: '预算类型' },
+              year: { type: 'number', description: '年份' },
+              month: { type: 'number', description: '月份' },
+              amount: { type: 'number', description: '预算金额' },
+              categoryCode: { type: 'string', description: '分类编码' },
+              tags: { type: 'array', items: { type: 'string' }, description: '标签' },
+              startDate: { type: 'string', description: '开始日期' },
+              endDate: { type: 'string', description: '结束日期' },
+              remark: { type: 'string', description: '备注' },
+              createdAt: { type: 'string', description: '创建时间' },
+              updatedAt: { type: 'string', description: '更新时间' },
+            },
+          },
+        },
+      },
     },
   }, async (req, reply) => {
     const query = listBudgetsQuerySchema.safeParse(req.query)
@@ -60,6 +85,32 @@ export async function budgetRoutes(app: FastifyInstance) {
       tags: ['预算'],
       summary: '固定预算列表（含实际金额）',
       querystring: zSchema(fixedBudgetsQuerySchema),
+      response: {
+        200: {
+          type: 'array',
+          description: '固定预算列表',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', description: '预算ID' },
+              accountBookId: { type: 'string', description: '所属账本ID' },
+              name: { type: 'string', description: '预算名称' },
+              type: { type: 'string', description: '预算类型' },
+              year: { type: 'number', description: '年份' },
+              month: { type: 'number', description: '月份' },
+              amount: { type: 'number', description: '预算金额' },
+              categoryCode: { type: 'string', description: '分类编码' },
+              tags: { type: 'array', items: { type: 'string' }, description: '标签' },
+              startDate: { type: 'string', description: '开始日期' },
+              endDate: { type: 'string', description: '结束日期' },
+              remark: { type: 'string', description: '备注' },
+              actualAmount: { type: 'number', description: '实际金额' },
+              createdAt: { type: 'string', description: '创建时间' },
+              updatedAt: { type: 'string', description: '更新时间' },
+            },
+          },
+        },
+      },
     },
   }, async (req, reply) => {
     const query = fixedBudgetsQuerySchema.safeParse(req.query)
@@ -93,6 +144,32 @@ export async function budgetRoutes(app: FastifyInstance) {
       tags: ['预算'],
       summary: '自由预算列表（含实际金额）',
       querystring: zSchema(freeBudgetsQuerySchema),
+      response: {
+        200: {
+          type: 'array',
+          description: '自由预算列表',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', description: '预算ID' },
+              accountBookId: { type: 'string', description: '所属账本ID' },
+              name: { type: 'string', description: '预算名称' },
+              type: { type: 'string', description: '预算类型' },
+              year: { type: 'number', description: '年份' },
+              month: { type: 'number', description: '月份' },
+              amount: { type: 'number', description: '预算金额' },
+              categoryCode: { type: 'string', description: '分类编码' },
+              tags: { type: 'array', items: { type: 'string' }, description: '标签' },
+              startDate: { type: 'string', description: '开始日期' },
+              endDate: { type: 'string', description: '结束日期' },
+              remark: { type: 'string', description: '备注' },
+              actualAmount: { type: 'number', description: '实际金额' },
+              createdAt: { type: 'string', description: '创建时间' },
+              updatedAt: { type: 'string', description: '更新时间' },
+            },
+          },
+        },
+      },
     },
   }, async (req, reply) => {
     const query = freeBudgetsQuerySchema.safeParse(req.query)
@@ -128,6 +205,12 @@ export async function budgetRoutes(app: FastifyInstance) {
       tags: ['预算'],
       summary: '获取所有预算的标签',
       querystring: zSchema(z.object({ bookId: z.string() })),
+      response: {
+        200: {
+          type: 'array',
+          items: { type: 'string' },
+        },
+      },
     },
   }, async (req, reply) => {
     const { bookId } = req.query as { bookId?: string }

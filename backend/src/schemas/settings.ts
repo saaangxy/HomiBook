@@ -1,22 +1,22 @@
 import { z } from 'zod'
 
 export const updateConfigSchema = z.object({
-  registrationOpen: z.boolean().optional(),
-  defaultCurrency: z.string().optional(),
-  amountHighlightThreshold: z.number().optional(),
-  holidayApiUrl: z.string().optional(),
-  defaultTheme: z.string().optional(),
+  registrationOpen: z.boolean().optional().describe('是否开放注册'),
+  defaultCurrency: z.string().optional().describe('默认货币'),
+  amountHighlightThreshold: z.number().optional().describe('金额高亮阈值'),
+  holidayApiUrl: z.string().optional().describe('节假日API地址'),
+  defaultTheme: z.string().optional().describe('默认主题'),
 })
 
 export const createDictionarySchema = z.object({
-  group: z.string().min(1, '分组不能为空'),
-  code: z.string().min(1, '编码不能为空'),
-  label: z.string().min(1, '名称不能为空'),
-  order: z.number().int().optional().default(0),
+  group: z.string().min(1, '分组不能为空').describe('字典分组'),
+  code: z.string().min(1, '编码不能为空').describe('字典编码'),
+  label: z.string().min(1, '名称不能为空').describe('字典名称'),
+  order: z.number().int().optional().default(0).describe('排序'),
 })
 
 export const updateDictionarySchema = z.object({
-  code: z.string().min(1).optional(),
-  label: z.string().min(1).optional(),
-  order: z.number().int().optional(),
+  code: z.string().min(1).optional().describe('字典编码'),
+  label: z.string().min(1).optional().describe('字典名称'),
+  order: z.number().int().optional().describe('排序'),
 })

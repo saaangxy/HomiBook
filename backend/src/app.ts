@@ -53,6 +53,9 @@ export async function buildApp() {
   const uploadsDir = path.join(process.cwd(), 'uploads')
   if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true })
   app.register(async (instance) => {
+    instance.addHook('onRoute', (opts) => {
+      opts.schema = { ...(opts.schema || {}), tags: ['文件服务'] }
+    })
     instance.get('/uploads/:filename', async (req, reply) => {
       const filename = path.basename((req.params as any).filename)
       const filePath = path.join(uploadsDir, filename)
