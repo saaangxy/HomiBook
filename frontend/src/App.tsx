@@ -26,6 +26,17 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const { token, user } = useAuthStore()
+  if (!token) {
+    return <Navigate to="/login" replace />
+  }
+  if (user?.role !== 'ADMIN') {
+    return <Navigate to="/" replace />
+  }
+  return <>{children}</>
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -50,7 +61,7 @@ function App() {
               <Route path="accounts" element={<AccountsPage />} />
               <Route path="budgets" element={<BudgetsPage />} />
               <Route path="recurring" element={<RecurringTransactionsPage />} />
-              <Route path="settings" element={<SettingsPage />} />
+              <Route path="settings" element={<AdminRoute><SettingsPage /></AdminRoute>} />
               <Route path="admin/users" element={<UsersPage />} />
             </Route>
           </Routes>

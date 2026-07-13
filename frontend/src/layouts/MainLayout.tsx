@@ -44,7 +44,7 @@ const allNavItems = [
   { path: '/recurring', label: '固定收支', icon: Repeat },
   { path: '/books', label: '账本管理', icon: Book },
   { path: '/admin/users', label: '用户管理', icon: Users, adminOnly: true },
-  { path: '/settings', label: '设置', icon: Settings },
+  { path: '/settings', label: '设置', icon: Settings, adminOnly: true },
 ]
 
 function NavItems() {
