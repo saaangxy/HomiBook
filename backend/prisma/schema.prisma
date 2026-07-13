@@ -50,6 +50,7 @@ model AccountBook {
   budgets     Budget[]
   recurringTransactions RecurringTransaction[]
   chatSessions         ChatSession[]
+  chatMessages         ChatMessage[]
 }
 
 // 账本成员
@@ -336,17 +337,19 @@ model ChatSession {
 
 // AI 聊天消息
 model ChatMessage {
-  id            String      @id @default(uuid())
-  sessionId     String
-  session       ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  role          String
-  content       String
-  toolCalls     String?
-  tokenCount    Int         @default(0)
-  modelProvider String?
-  modelName     String?
+  id              String       @id @default(uuid())
+  sessionId       String
+  session         ChatSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  accountBookId   String?
+  accountBook     AccountBook? @relation(fields: [accountBookId], references: [id], onDelete: SetNull)
+  role            String
+  content         String
+  toolCalls       String?
+  tokenCount      Int          @default(0)
+  modelProvider   String?
+  modelName       String?
   parentMessageId String?
-  createdAt       DateTime    @default(now())
+  createdAt       DateTime     @default(now())
 
   @@index([sessionId, createdAt])
 }

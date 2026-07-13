@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils'
-import type { ToolCallEntry } from '@/stores/chat'
+import type { ToolCallEntry, SuggestionOption } from '@/stores/chat'
 import { useChatStore } from '@/stores/chat'
 import { useBookStore } from '@/stores/book'
 import { Button } from '@/components/ui/button'
@@ -31,6 +31,27 @@ const toolLabels: Record<string, string> = {
   save_import_mapping: '保存映射',
   confirm_import: '确认导入',
   ocr_receipt: '图片识别',
+  switch_book: '切换账本',
+  query_recurring: '查询固定收支',
+  create_recurring: '创建固定收支',
+  update_recurring: '更新固定收支',
+  delete_recurring: '删除固定收支',
+  toggle_recurring: '启用/停用',
+  loan_preview: '贷款计算',
+  query_repayment_plan: '还款计划',
+  create_account: '创建账户',
+  update_account: '更新账户',
+  delete_account: '删除账户',
+  adjust_balance: '余额调整',
+  query_balance_history: '余额历史',
+  delete_budget: '删除预算',
+  copy_budgets: '复制预算',
+  batch_create_budgets: '批量创建预算',
+  query_members: '查询成员',
+  create_book: '创建账本',
+  clone_record: '克隆记录',
+  detect_duplicates: '检测重复',
+  batch_delete_records: '批量删除',
 }
 
 // ---- ConfirmPreview 类型 ----
@@ -95,6 +116,13 @@ export function ToolCallCard({ toolCall }: Props) {
         return { effectiveStatus: 'suggesting' as const, effectiveSuggestion: { questions }, isExpired: true, expiredMessage: undefined }
       }
     }
+    // switch_book 有 result 带 books → 实际在等待用户选择
+    if (toolCall.toolName === 'switch_book') {
+      const books = (toolCall.result as any)?.books
+      if (books?.length > 0) {
+        return { effectiveStatus: 'switching' as const, effectiveSuggestion: undefined, isExpired: true, expiredMessage: '切换操作已过期，请重新发起' }
+      }
+    }
     // 有 result → 实际已执行成功
     if (toolCall.result != null) return { effectiveStatus: 'success' as const, effectiveSuggestion: undefined, isExpired: false, expiredMessage: undefined }
     // 有 preview → 等待确认
@@ -141,6 +169,7 @@ export function ToolCallCard({ toolCall }: Props) {
       isImportPending && 'border-amber-200 bg-amber-50/50',
       effectiveStatus === 'success' && !isImportPending && 'border-green-200 bg-green-50/50',
       effectiveStatus === 'suggesting' && 'border-violet-200 bg-violet-50/50',
+      effectiveStatus === 'switching' && 'border-emerald-200 bg-emerald-50/50',
     )}>
       {/* 可点击头部 */}
       <button
@@ -153,6 +182,7 @@ export function ToolCallCard({ toolCall }: Props) {
         {effectiveStatus === 'error' && <XCircle size={14} className="text-red-500" />}
         {effectiveStatus === 'confirming' && <HelpCircle size={14} className="text-amber-500" />}
         {effectiveStatus === 'suggesting' && <MessageSquareMore size={14} className="text-violet-500" />}
+        {effectiveStatus === 'switching' && <HelpCircle size={14} className="text-emerald-500" />}
         <Wrench size={14} className="text-muted-foreground" />
         <span className="font-medium">{toolLabels[toolCall.toolName] || toolCall.toolName}</span>
         {toolCall.durationMs != null && (
@@ -232,7 +262,7 @@ export function ToolCallCard({ toolCall }: Props) {
       {/* 确认按钮 —— 始终可见 */}
       {(effectiveStatus === 'confirming' || (isExpired && toolCall.preview)) && (
         <>
-          <ConfirmPreviewView preview={toolCall.preview} onConfirm={handleConfirm} confirming={confirming} />
+          <ConfirmPreviewView preview={toolCall.preview} toolName={toolCall.toolName} onConfirm={handleConfirm} confirming={confirming} />
           {confirmError && (
             <div className="flex items-center gap-1.5 text-red-600 text-xs mt-1">
               <XCircle size={12} />
@@ -250,6 +280,14 @@ export function ToolCallCard({ toolCall }: Props) {
           expired={isExpired}
         />
       )}
+
+      {/* 切换账本 UI —— 始终可见 */}
+      {effectiveStatus === 'switching' && (
+        <SwitchBookView
+          toolCallId={toolCall.toolCallId}
+          expired={isExpired}
+        />
+      )}
     </div>
   )
 }
@@ -258,10 +296,12 @@ export function ToolCallCard({ toolCall }: Props) {
 
 function ConfirmPreviewView({
   preview: rawPreview,
+  toolName,
   onConfirm,
   confirming,
 }: {
   preview?: string
+  toolName?: string
   onConfirm: (approved: boolean) => void
   confirming: boolean
 }) {
@@ -337,9 +377,9 @@ function ConfirmPreviewView({
         </div>
       )}
 
-      {/* generic 或解析失败回退 */}
+      {/* generic 或解析失败：JSON 渲染为表格 */}
       {(!preview || preview.type === 'generic') && (
-        <pre className="text-xs bg-background rounded p-1.5 max-h-24 overflow-auto">{rawPreview || ''}</pre>
+        <GenericPreview raw={rawPreview || ''} toolName={toolName} />
       )}
 
       <div className="flex gap-2">
@@ -356,7 +396,7 @@ function ConfirmPreviewView({
 
 // ---- 建议选择组件 ----
 
-type QuestionDef = { question: string; field: string; options: string[]; allowCustom: boolean }
+type QuestionDef = { question: string; field: string; options: (string | SuggestionOption)[]; allowCustom: boolean }
 
 function SuggestionView({
   suggestion,
@@ -475,6 +515,191 @@ function SuggestionView({
       </div>
     </div>
   )
+}
+
+function SwitchBookView({
+  toolCallId,
+  expired,
+}: {
+  toolCallId: string
+  expired?: boolean
+}) {
+  const [bookId, setBookId] = useState<string>('')
+  const submittingRef = useRef(false)
+
+  // 从 toolCall result 获取账本列表
+  const parentMsg = useChatStore.getState().messages.find(m =>
+    m.role === 'assistant' && m.blocks.some(b =>
+      b.type === 'tool-call' && b.toolCallId === toolCallId
+    )
+  )
+  const toolBlock = parentMsg?.blocks.find(b => b.type === 'tool-call' && b.toolCallId === toolCallId)
+  const books: { id: string; name: string; role: string; memberCount: number; isCurrent: boolean }[] =
+    (toolBlock?.type === 'tool-call' ? (toolBlock.result as any)?.books : undefined) || []
+
+  const handleSwitch = () => {
+    if (!bookId || submittingRef.current) return
+    submittingRef.current = true
+    const { currentBookId: cid } = useBookStore.getState()
+    if (!cid) return
+    // 更新前端账本状态
+    useBookStore.getState().setCurrentBook(bookId)
+    // 通知后端切换
+    useChatStore.getState().switchBook(cid, toolCallId, bookId)
+  }
+
+  return (
+    <div className="mt-2 space-y-3">
+      <p className="text-sm font-medium">选择要切换的账本：</p>
+      <div className="flex flex-wrap gap-2">
+        {books.map((book) => (
+          <button
+            key={book.id}
+            className={`px-3 py-2 rounded-lg border text-sm text-left transition-colors ${
+              bookId === book.id
+                ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500'
+                : book.isCurrent
+                  ? 'border-emerald-200 bg-emerald-50/30'
+                  : 'border-gray-200 hover:border-emerald-300 bg-white'
+            }`}
+            onClick={() => setBookId(book.id)}
+            disabled={expired}
+          >
+            <div className="font-medium">{book.name}</div>
+            <div className="text-xs text-muted-foreground">
+              {book.role === 'owner' ? '归属人' : book.role === 'admin' ? '管理员' : '成员'}
+              {book.isCurrent && <span className="text-emerald-600 ml-1">· 当前</span>}
+            </div>
+            <div className="text-xs text-muted-foreground">{book.memberCount} 位成员</div>
+          </button>
+        ))}
+      </div>
+      {expired && (
+        <div className="flex items-center gap-1.5 text-amber-600 text-xs">
+          <AlertTriangle size={12} />
+          <span>切换操作已过期，请在聊天输入框中直接说明要切换的账本</span>
+        </div>
+      )}
+      <div className="flex gap-2">
+        <Button
+          size="sm"
+          variant="default"
+          disabled={!bookId || expired}
+          onClick={handleSwitch}
+        >
+          切换到此账本
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function toTableData(raw: string): { keys: string[]; rows: Record<string, string>[] } | null {
+  try {
+    // generic 类型的确认预览，实际数据在 text 字段中
+    const outer = JSON.parse(raw)
+    const inner = outer?.text ? (typeof outer.text === 'string' ? JSON.parse(outer.text) : outer.text) : outer
+
+    if (Array.isArray(inner) && inner.length > 0 && typeof inner[0] === 'object' && inner[0] !== null) {
+      const keys = Object.keys(inner[0])
+      const rows = inner.map((item: any) => {
+        const row: Record<string, string> = {}
+        for (const k of keys) {
+          const v = item[k]
+          row[k] = typeof v === 'object' ? JSON.stringify(v) : String(v ?? '')
+        }
+        return row
+      })
+      return { keys, rows }
+    }
+    if (typeof inner === 'object' && inner !== null && !Array.isArray(inner)) {
+      const keys = Object.keys(inner)
+      const rows = [Object.fromEntries(keys.map(k => [k, typeof inner[k] === 'object' ? JSON.stringify(inner[k]) : String(inner[k] ?? '')]))]
+      return { keys, rows }
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+function GenericPreview({ raw, toolName }: { raw: string; toolName?: string }) {
+  const table = useMemo(() => toTableData(raw), [raw])
+
+  if (!table) {
+    return <pre className="text-xs bg-background rounded p-1.5 max-h-24 overflow-auto">{raw}</pre>
+  }
+
+  return (
+    <div className="rounded border overflow-hidden max-h-48 overflow-auto">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            {table.keys.map((key) => (
+              <TableHead key={key} className="text-[11px] px-1.5 py-1 whitespace-nowrap">{fieldLabel(key, toolName)}</TableHead>
+            ))}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {table.rows.map((row, ri) => (
+            <TableRow key={ri}>
+              {table.keys.map((key) => (
+                <TableCell key={key} className="px-1.5 py-1 text-[11px] max-w-[200px] truncate">
+                  {row[key]}
+                </TableCell>
+              ))}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
+// 字段名称映射（英文 key → 中文描述）
+const FIELD_LABELS: Record<string, string> = {
+  name: '名称',
+  type: '类型',
+  amount: '金额',
+  date: '日期',
+  remark: '备注',
+  payer: '交易方',
+  tags: '标签',
+  cron: '触发时间',
+  active: '启用',
+  id: 'ID',
+  ids: 'ID 列表',
+  recurringType: '周期类型',
+  accountId: '账户',
+  toAccountId: '目标账户',
+  categoryCode: '分类编码',
+  loanTotalAmount: '贷款总额',
+  loanInterestRate: '年利率',
+  loanInterestMethod: '还款方式',
+  loanStartDate: '开始日期',
+  loanTermMonths: '期数',
+  currency: '货币',
+  initialBalance: '初始余额',
+  accountNo: '账号',
+  bankName: '银行名称',
+  visibility: '可见性',
+  status: '状态',
+  balanceAfter: '调整后余额',
+  year: '年份',
+  month: '月份',
+  months: '月份列表',
+  startDate: '开始日期',
+  endDate: '结束日期',
+  sourceYear: '源年份',
+  sourceMonth: '源月份',
+  targetMonths: '目标月份',
+  bookId: '账本',
+  ownerId: '归属人',
+  generateAll: '生成全部',
+}
+
+function fieldLabel(key: string, _toolName?: string): string {
+  return FIELD_LABELS[key] || key
 }
 
 function FallbackJson({ data }: { data: any }) {

@@ -74,6 +74,7 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
   const saveMessageSnapshot = async () => {
     const snapData = {
       sessionId,
+      accountBookId,
       role: 'assistant' as const,
       content: fullText,
       modelProvider: provider,
@@ -102,6 +103,19 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
         toolCallEntries.push({ toolCallId, toolName: tool.name, args, status: 'pending', textOffset: fullText.length })
         activeToolCount++
         try {
+          // ---- switch_book：展示账本列表，暂停等待用户选择切换 ----
+          if (tool.name === 'switch_book') {
+            const result = await tool.execute(args, { userId, accountBookId })
+            const data = (result as any)?.data || {}
+            sendSSE('tool-switch-book', { toolCallId, books: data.books || [], currentBookId: data.currentBookId })
+            const entry = toolCallEntries.find(e => e.toolCallId === toolCallId)
+            if (entry) Object.assign(entry, { result, status: 'switching' })
+            await saveMessageSnapshot()
+            pendingState.abort = { toolCallId, toolName: tool.name, args }
+            abortController.abort()
+            return { __pending: true, toolCallId }
+          }
+
           // ---- suggest_options：关闭流等待用户选择 ----
           if (tool.name === 'suggest_options') {
             const questions: { question: string; field: string; options: string[]; allowCustom: boolean }[] = (args.questions || []).map((q: any) => ({
@@ -220,6 +234,10 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
 
     const abort = pendingState.abort
     if (abort) {
+      if (abort.toolName === 'switch_book') {
+        sendSSE('finish', { pendingSwitchBook: { toolCallId: abort.toolCallId }, assistantMessageId: msgState.dbId, userMessageId: parentMessageId })
+        return { assistantMessageId: msgState.dbId, pendingSwitchBook: abort }
+      }
       sendSSE('finish', { pendingConfirmation: { toolCallId: abort.toolCallId, toolName: abort.toolName }, assistantMessageId: msgState.dbId, userMessageId: parentMessageId })
       return { assistantMessageId: msgState.dbId, pendingConfirmation: abort }
     }
@@ -253,17 +271,16 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
 // ---- 共享辅助：查找并验证待处理工具消息 ----
 
 interface PendingToolMsg {
-  message: { id: string; toolCalls: string | null; sessionId: string; parentMessageId: string | null; modelProvider: string | null; modelName: string | null }
+  message: { id: string; toolCalls: string | null; sessionId: string; accountBookId: string | null; parentMessageId: string | null; modelProvider: string | null; modelName: string | null }
   entry: any
   toolCalls: any[]
-  session: { accountBookId: string | null; id: string }
   accountBookId: string
 }
 
 async function findPendingToolMessage(toolCallId: string, userId: string): Promise<{ success: true; data: PendingToolMsg } | { success: false; status: number; message: string }> {
   const message = await prisma.chatMessage.findFirst({
     where: { toolCalls: { contains: toolCallId } },
-    select: { id: true, toolCalls: true, sessionId: true, parentMessageId: true, modelProvider: true, modelName: true },
+    select: { id: true, toolCalls: true, sessionId: true, accountBookId: true, parentMessageId: true, modelProvider: true, modelName: true },
   })
   if (!message) return { success: false, status: 404, message: '确认已过期或不存在' }
 
@@ -272,16 +289,13 @@ async function findPendingToolMessage(toolCallId: string, userId: string): Promi
   const entry = toolCalls.find((tc: any) => tc.toolCallId === toolCallId)
   if (!entry) return { success: false, status: 404, message: '确认已过期或不存在' }
 
-  const session = await prisma.chatSession.findUnique({
-    where: { id: message.sessionId },
-    select: { accountBookId: true, id: true },
-  })
-  if (!session?.accountBookId) return { success: false, status: 404, message: '会话不存在' }
-  try { await assertIsMember(session.accountBookId, userId) } catch (e: any) {
+  const accountBookId = message.accountBookId
+  if (!accountBookId) return { success: false, status: 404, message: '会话不存在' }
+  try { await assertIsMember(accountBookId, userId) } catch (e: any) {
     return { success: false, status: e.statusCode || 403, message: e.message }
   }
 
-  return { success: true, data: { message, entry, toolCalls, session, accountBookId: session.accountBookId } }
+  return { success: true, data: { message, entry, toolCalls, accountBookId } }
 }
 
 // ---- 共享辅助：构建 AI SDK CoreMessage 数组 ----
@@ -479,6 +493,10 @@ const ROUTE_DOC: Record<string, RouteDoc> = {
     description: '用户选择AI提供的选项（如选择账户、分类）',
     bodySchema: respondSuggestionSchema
   },
+  'POST /switch-book': {
+    summary: '切换账本',
+    description: '用户选择要切换的目标账本，AI将以新账本上下文继续对话',
+  },
   'GET /provider-configs': {
     summary: '获取供应商配置列表',
     swaggerResponse: {200: {type: 'array', description: '供应商配置列表', items: {type: 'object'}}}
@@ -604,7 +622,7 @@ export async function chatRoutes(app: FastifyInstance) {
     }
 
     // 获取或创建会话
-    const session = await getOrCreateSession(sid, userId, accountBookId, message)
+    const session = await getOrCreateSession(sid, userId, message)
 
     // 加载用户配置
     const prefs = await loadAIConfig(userId)
@@ -678,7 +696,7 @@ export async function chatRoutes(app: FastifyInstance) {
 
     // 保存用户消息（仅用户输入的文本，不含系统附加的附件信息）
     const userMsgDb = await prisma.chatMessage.create({
-      data: { sessionId: session.id, role: 'user', content: message, parentMessageId: parentId },
+      data: { sessionId: session.id, accountBookId, role: 'user', content: message, parentMessageId: parentId },
     })
 
     // 查询账本名称用于提示词
@@ -739,12 +757,17 @@ export async function chatRoutes(app: FastifyInstance) {
     })
   })
 
-  // 会话列表
+  // 会话列表（支持按账本筛选）
   app.get('/sessions', async (req) => {
     const userId = (req as any).user.id as string
+    const { accountBookId } = req.query as { accountBookId?: string }
+
+    const where: Record<string, unknown> = { userId, status: 'active' }
+    if (accountBookId) where.accountBookId = accountBookId
+
     const sessions = await prisma.chatSession.findMany({
-      where: { userId, status: 'active' },
-      select: { id: true, title: true, modelProvider: true, modelName: true, updatedAt: true },
+      where,
+      select: { id: true, title: true, accountBookId: true, modelProvider: true, modelName: true, updatedAt: true },
       orderBy: { updatedAt: 'desc' },
     })
     return { sessions }
@@ -756,10 +779,10 @@ export async function chatRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.status(400).send({ message: parsed.error.issues[0].message })
 
     const userId = (req as any).user.id as string
-    const { title, modelProvider, modelName, accountBookId } = parsed.data
+    const { title, modelProvider, modelName } = parsed.data
 
     const session = await prisma.chatSession.create({
-      data: { userId, accountBookId, title: title || '新对话', modelProvider, modelName },
+      data: { userId, title: title || '新对话', modelProvider, modelName },
     })
     return { session }
   })
@@ -956,7 +979,7 @@ export async function chatRoutes(app: FastifyInstance) {
       toolResult = await tool.execute(entry.args || {}, ctx)
     }
 
-    logToolCall({ userId, sessionId: found.data.session.id, action: 'confirm', toolName: entry.toolName, input: entry.args, output: toolResult })
+    logToolCall({ userId, sessionId: found.data.message.sessionId, action: 'confirm', toolName: entry.toolName, input: entry.args, output: toolResult })
 
     const reviewDurationMs = Date.now() - reExecStart
     const initialSSEEvents = [
@@ -1023,6 +1046,46 @@ export async function chatRoutes(app: FastifyInstance) {
 
     const messages = await buildChatMessages(message.sessionId, toolCallId, entry.toolName, toolResult)
     await continueWithLLM(reply, message.sessionId, accountBookId, userId, message, messages, initialSSEEvents)
+  })
+
+  // 切换账本（SSE 流式继续对话，使用新账本上下文）
+  app.post('/switch-book', async (req, reply) => {
+    const { toolCallId, bookId } = (req.body || {}) as { toolCallId?: string; bookId?: string }
+    if (!toolCallId || !bookId) return reply.status(400).send({ message: '缺少 toolCallId 或 bookId' })
+
+    const userId = (req as any).user.id as string
+
+    const found = await findPendingToolMessage(toolCallId, userId)
+    if (!found.success) return reply.status(found.status).send({ message: found.message })
+    const { message, entry, toolCalls } = found.data
+
+    // 验证新账本权限
+    try { await assertIsMember(bookId, userId) } catch (e: any) {
+      return reply.status(e.statusCode || 403).send({ message: e.message })
+    }
+
+    const book = await prisma.accountBook.findUnique({ where: { id: bookId }, select: { name: true } })
+    const bookName = book?.name || bookId
+
+    // 构建切换结果
+    const toolResult = { success: true, data: { switched: true, bookId, bookName } }
+    const initialSSEEvents = [
+      { event: 'tool-result', data: { toolCallId, toolName: entry.toolName, result: toolResult, durationMs: 0, status: 'success' } },
+    ]
+
+    // 更新 DB 快照中该工具调用的结果
+    const doneEntry = toolCalls.find((tc: any) => tc.toolCallId === toolCallId)
+    if (doneEntry) {
+      doneEntry.status = 'success'
+      doneEntry.result = toolResult
+      await prisma.chatMessage.update({
+        where: { id: message.id },
+        data: { toolCalls: JSON.stringify(toolCalls) },
+      }).catch(() => {})
+    }
+
+    const messages = await buildChatMessages(message.sessionId, toolCallId, entry.toolName, toolResult)
+    await continueWithLLM(reply, message.sessionId, bookId, userId, message, messages, initialSSEEvents)
   })
 
   // === 供应商配置 CRUD ===
@@ -1285,7 +1348,7 @@ export async function chatRoutes(app: FastifyInstance) {
 }
 
 // 辅助函数
-async function getOrCreateSession(sid: string | undefined, userId: string, bookId: string, firstMessage?: string) {
+async function getOrCreateSession(sid: string | undefined, userId: string, firstMessage?: string) {
   if (sid) {
     const existing = await prisma.chatSession.findUnique({ where: { id: sid } })
     if (existing && existing.userId === userId) return existing
@@ -1294,7 +1357,7 @@ async function getOrCreateSession(sid: string | undefined, userId: string, bookI
     ? firstMessage.length > 30 ? firstMessage.slice(0, 30) + '...' : firstMessage
     : '新对话'
   return prisma.chatSession.create({
-    data: { userId, accountBookId: bookId, title },
+    data: { userId, title },
   })
 }
 
@@ -1448,7 +1511,7 @@ function buildSystemPrompt(prefs: any, bookId: string, bookName: string, memorie
     ? `\n\n## 用户长期记忆（供参考）\n${memories.map((m: any, i: number) => `${i + 1}. ${m.content}`).join('\n')}\n`
     : ''
 
-  let prompt = `你是 Homibook 家庭记账本的 AI 助手。当前账本为「${bookName}」(ID: ${bookId})。
+  let prompt = `你是 Homibook 家庭记账本的 AI 助手。当前操作的账本为「${bookName}」(ID: ${bookId})。本会话支持跨账本操作，用户可通过 switch_book 查看并切换账本。
 
 ## 时间
 今天是${new Date().toISOString().slice(0, 10)}。
@@ -1469,6 +1532,7 @@ function buildSystemPrompt(prefs: any, bookId: string, bookName: string, memorie
 - 预览导入流水文件(预览) → 调用 preview_import（mode="preview"，传入映射规则，展示交互卡片供用户确认调整，返回全部记录及映射后的分类名称）
 - 确认导入流水 → 调用 confirm_import（传入 fileId、source 和映射规则，一次性完成导入）
 - 保存导入映射规则 → 调用 save_import_mapping（仅在用户明确要求时调用，日常导入无需调用）
+	- 查看和切换账本 → 调用 switch_book
 
 ## 核心规则（必须遵守）
 - 当用户请求执行上述操作时，你必须直接调用对应的函数工具，而不是在文字中描述"正在调用"或"将要调用"

@@ -1,5 +1,13 @@
 import { api } from './http'
 
+interface SuggestionOption {
+  label?: string
+  name?: string
+  value?: string
+  code?: string
+  description?: string
+}
+
 const BASE = '/api/chat'
 
 export interface ChatSession {
@@ -63,9 +71,18 @@ export type SSEEvent =
   | { type: 'tool-call'; toolCallId: string; toolName: string; args: unknown }
   | { type: 'tool-result'; toolCallId: string; toolName: string; result: unknown; durationMs: number; status: string; error?: string; merge?: { action?: 'append'; batch?: number; total: number } }
   | { type: 'tool-confirm-required'; toolCallId: string; toolName: string; preview: string }
-  | { type: 'tool-suggest-required'; toolCallId: string; toolName: string; questions: { question: string; field: string; options: string[]; allowCustom: boolean }[] }
-  | { type: 'finish'; usage?: unknown; userMessageId: string; assistantMessageId: string; pendingConfirmation?: { toolCallId: string; toolName: string }; pendingSuggestion?: { toolCallId: string } }
+  | { type: 'tool-suggest-required'; toolCallId: string; toolName: string; questions: { question: string; field: string; options: (string | SuggestionOption)[]; allowCustom: boolean }[] }
+  | { type: 'tool-switch-book'; toolCallId: string; books: BookOption[]; currentBookId: string }
+  | { type: 'finish'; usage?: unknown; userMessageId: string; assistantMessageId: string; pendingConfirmation?: { toolCallId: string; toolName: string }; pendingSuggestion?: { toolCallId: string }; pendingSwitchBook?: { toolCallId: string } }
   | { type: 'error'; message: string }
+
+export interface BookOption {
+  id: string
+  name: string
+  role: string
+  memberCount: number
+  isCurrent: boolean
+}
 
 // GET APIs
 export async function fetchSessions() {
@@ -195,6 +212,48 @@ export function respondSuggestionStream(
             onEvent({ type: 'tool-result', toolCallId: params.toolCallId, toolName: '', result: { error: '用户取消了选择' }, durationMs: 0, status: 'error' })
           }
         } catch { /* ignore */ }
+        onDone()
+      }
+    })
+    .catch((err) => {
+      if (err.name !== 'AbortError') {
+        onEvent({ type: 'error', message: err.message || '网络错误' })
+      }
+      onDone()
+    })
+
+  return controller
+}
+
+export function switchBookStream(
+  params: { toolCallId: string; bookId: string },
+  onEvent: (event: SSEEvent) => void,
+  onDone: () => void,
+): AbortController {
+  const controller = new AbortController()
+  const token = getToken()
+
+  fetch(`${BASE}/switch-book`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(params),
+    signal: controller.signal,
+  })
+    .then(async (response) => {
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ message: '切换失败' }))
+        onEvent({ type: 'error', message: err.message || `HTTP ${response.status}` })
+        onDone()
+        return
+      }
+
+      const contentType = response.headers.get('Content-Type') || ''
+      if (contentType.includes('text/event-stream')) {
+        parseSSEStream(response, onEvent, onDone, controller.signal)
+      } else {
         onDone()
       }
     })

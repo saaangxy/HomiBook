@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { SSEEvent } from '../api/chat'
-import { sendMessageStream, confirmActionStream, respondSuggestionStream } from '../api/chat'
+import { sendMessageStream, confirmActionStream, respondSuggestionStream, switchBookStream } from '../api/chat'
 import { processTextDelta, type DeltaState } from './chat-content-parser'
 import { buildActivePath, collectDescendantIds } from './chat-branch-utils'
 
@@ -27,15 +27,23 @@ export interface Message {
   }
 }
 
+export interface SuggestionOption {
+  label?: string
+  name?: string
+  value?: string
+  code?: string
+  description?: string
+}
+
 export interface ToolCallEntry {
   toolCallId: string
   toolName: string
   args?: unknown
   result?: unknown
   durationMs?: number
-  status: 'pending' | 'success' | 'error' | 'confirming' | 'suggesting'
+  status: 'pending' | 'success' | 'error' | 'confirming' | 'suggesting' | 'switching'
   preview?: string
-  suggestion?: { questions: { question: string; field: string; options: string[]; allowCustom: boolean }[] }
+  suggestion?: { questions: { question: string; field: string; options: (string | SuggestionOption)[]; allowCustom: boolean }[] }
 }
 
 export interface ChatSession {
@@ -72,6 +80,7 @@ interface ChatState {
   sendMessage: (accountBookId: string, message: string, parentMessageId?: string, replaceAssistantDbId?: string, attachmentIds?: string[], attachments?: { id: string; url: string; originalFilename: string }[]) => void
   confirmAndContinue: (accountBookId: string, toolCallId: string, approved: boolean, data?: Record<string, unknown>) => void
   respondToSuggestion: (accountBookId: string, toolCallId: string, values: Record<string, string> | null) => void
+  switchBook: (accountBookId: string, toolCallId: string, bookId: string) => void
   retryMessage: (assistantMsgId: string) => void
   selectBranch: (parentMessageId: string, childMessageId: string) => void
   stopStreaming: (sessionId?: string) => void
@@ -190,6 +199,17 @@ function makeSSEHandler(
           blocks: msg.blocks.map((b) =>
             b.type === 'tool-call' && b.toolCallId === event.toolCallId
               ? { ...b, status: 'suggesting' as const, suggestion: { questions: event.questions } }
+              : b,
+          ),
+        }))
+        break
+
+      case 'tool-switch-book':
+        updateMsg((msg) => ({
+          ...msg,
+          blocks: msg.blocks.map((b) =>
+            b.type === 'tool-call' && b.toolCallId === event.toolCallId
+              ? { ...b, status: 'switching' as const, result: { books: event.books, currentBookId: event.currentBookId } }
               : b,
           ),
         }))
@@ -613,6 +633,29 @@ export const useChatStore = create<ChatState>()((set, get) => {
       parentDbId, parentId,
       (handleEvent, handleDone) => respondSuggestionStream(
         { toolCallId, values, accountBookId, sessionId: sid },
+        handleEvent, handleDone,
+      ),
+    )
+  },
+
+  switchBook: (toolCallId, bookId) => {
+    const state = get()
+    const sid = state.currentSessionId
+    if (!sid) return
+
+    const parentMsg = state.messages.find(m =>
+      m.role === 'assistant' && m.blocks.some(b =>
+        b.type === 'tool-call' && b.toolCallId === toolCallId
+      )
+    )
+    const parentDbId = parentMsg?.dbId
+    if (!parentDbId) return
+    const parentId = parentMsg!.id
+
+    startContinuationStream(
+      parentDbId, parentId,
+      (handleEvent, handleDone) => switchBookStream(
+        { toolCallId, bookId },
         handleEvent, handleDone,
       ),
     )
