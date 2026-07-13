@@ -21,7 +21,9 @@ export async function recurringRoutes(app: FastifyInstance) {
       tags: ['固定收支'],
       summary: '获取固定收支/贷款列表',
       querystring: zSchema(listRecurringSchema),
-      response: {
+    },
+    config: {
+      swaggerResponse: {
         200: {
           type: 'array',
           description: '固定收支列表',
@@ -135,7 +137,9 @@ export async function recurringRoutes(app: FastifyInstance) {
       tags: ['固定收支'],
       summary: '获取还款计划',
       params: zSchema(z.object({ id: z.string() })),
-      response: {
+    },
+    config: {
+      swaggerResponse: {
         200: {
           type: 'array',
           description: '还款计划列表',
@@ -179,7 +183,9 @@ export async function recurringRoutes(app: FastifyInstance) {
       tags: ['固定收支'],
       summary: '获取固定收支详情',
       params: zSchema(z.object({ id: z.string() })),
-      response: {
+    },
+    config: {
+      swaggerResponse: {
         200: {
           type: 'object',
           description: '固定收支详情',

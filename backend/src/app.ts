@@ -33,6 +33,8 @@ export async function buildApp() {
   })
 
   // Swagger OpenAPI 文档（自动从路由 schema 生成规范）
+  // transform 回调：从 routeOptions.config.swaggerResponse 注入返回值文档
+  // 因为 Fastify 会将 schema.response 用于 JSON 序列化，可能导致数据损坏
   await app.register(swagger, {
     openapi: {
       info: {
@@ -41,6 +43,13 @@ export async function buildApp() {
         version: '1.0.0',
       },
       servers: [{ url: 'http://localhost:3002' }],
+    },
+    transform: ({ schema, url, route }) => {
+      const swaggerResponse = (route as any)?.config?.swaggerResponse
+      if (swaggerResponse && !schema.response) {
+        schema.response = swaggerResponse
+      }
+      return { schema, url }
     },
   })
 

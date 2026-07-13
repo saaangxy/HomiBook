@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Spinner } from '@/components/ui/spinner'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import {
   Globe,
   Check,
@@ -429,7 +429,7 @@ export function AIAssistantSettings() {
           </div>
         ) : (
           <div className="space-y-2">
-            {configs.map((config) => (
+            {Array.isArray(configs) && configs.map((config) => (
               <div key={config.id} className="flex items-center gap-3 p-3 border rounded-lg">
                 <Circle
                   size={10}
@@ -465,6 +465,7 @@ export function AIAssistantSettings() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{editingConfig ? '编辑模型配置' : '新增模型配置'}</DialogTitle>
+            <DialogDescription>配置 AI 模型供应商的连接信息，包括 API Key、端点地址和模型列表</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3 max-h-[60vh] overflow-auto">
             {formError && (

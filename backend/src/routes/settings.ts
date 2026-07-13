@@ -12,8 +12,10 @@ export async function settingsRoutes(app: FastifyInstance) {
     app.get('/public', {
         schema: {
             description: '获取公开配置（注册开关、默认主题）',
-            tags: ['设置'],
-            response: {
+            tags: ['设置']
+        },
+        config: {
+            swaggerResponse: {
                 200: {
                     type: 'object',
                     description: '公开配置',
@@ -48,8 +50,10 @@ export async function settingsRoutes(app: FastifyInstance) {
             schema: {
                 description: '获取字典数据',
                 tags: ['设置'],
-                params: zSchema(z.object({group: z.string()})),
-                response: {
+                params: zSchema(z.object({group: z.string()}))
+            },
+            config: {
+                swaggerResponse: {
                     200: {
                         type: 'array',
                         description: '字典项列表',
@@ -85,9 +89,16 @@ export async function settingsRoutes(app: FastifyInstance) {
             adminChild.get('/config', {
                 schema: {
                     description: '获取所有系统配置',
-                    tags: ['设置'],
-                    response: {200: {type: 'object'}}
-                }
+                    tags: ['设置']
+                },
+                config: {
+                    swaggerResponse: {
+                        200: {
+                            type: 'object',
+                            description: '系统配置键值对',
+                        },
+                    },
+                },
             }, async () => {
                 const configs = await prisma.systemConfig.findMany()
                 const result: Record<string, unknown> = {}
@@ -199,8 +210,10 @@ export async function settingsRoutes(app: FastifyInstance) {
             adminChild.get('/attachments/orphans', {
                 schema: {
                     description: '获取孤立附件列表',
-                    tags: ['设置'],
-                    response: {
+                    tags: ['设置']
+                },
+                config: {
+                    swaggerResponse: {
                         200: {
                             type: 'array',
                             description: '孤立附件列表',

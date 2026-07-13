@@ -15,7 +15,9 @@ export async function apiKeyRoutes(app: FastifyInstance) {
     schema: {
       description: '获取所有 API Key 列表',
       tags: ['API Key'],
-      response: {
+    },
+    config: {
+      swaggerResponse: {
         200: {
           type: 'array',
           description: 'API Key列表',

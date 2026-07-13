@@ -404,7 +404,9 @@ export async function importExportRoutes(app: FastifyInstance) {
     schema: {
       description: '获取导入分类映射列表',
       tags: ['导入导出'],
-      response: {
+    },
+    config: {
+      swaggerResponse: {
         200: {
           type: 'object',
           description: '分类映射列表',
@@ -489,7 +491,9 @@ export async function importExportRoutes(app: FastifyInstance) {
     schema: {
       description: '获取导入账户映射列表',
       tags: ['导入导出'],
-      response: {
+    },
+    config: {
+      swaggerResponse: {
         200: {
           type: 'object',
           description: '账户映射列表',
@@ -572,9 +576,6 @@ export async function importExportRoutes(app: FastifyInstance) {
     schema: {
       description: '导出流水记录为CSV文件',
       tags: ['导入导出'],
-      response: {
-        200: { type: 'string' },
-      },
     },
   }, async (req, reply) => {
     const payload = req.user as { id: string }

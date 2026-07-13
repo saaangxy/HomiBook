@@ -35,9 +35,12 @@ export async function recordRoutes(app: FastifyInstance) {
             description: '分页查询记录列表，支持多条件筛选',
             tags: ['记录'],
             querystring: zSchema(listRecordsSchema),
-            response: {
+        },
+        config: {
+            swaggerResponse: {
                 200: {
                     type: 'object',
+                    description: '分页记录列表',
                     properties: {
                         records: {type: 'array', description: '记录列表', items: {type: 'object'}},
                         total: {type: 'number', description: '总记录数'},
@@ -90,16 +93,19 @@ export async function recordRoutes(app: FastifyInstance) {
             description: '记录汇总统计（收入/支出/转账/净收入）',
             tags: ['记录'],
             querystring: zSchema(listRecordsSchema),
-            response: {
+        },
+        config: {
+            swaggerResponse: {
                 200: {
                     type: 'object',
+                    description: '收支汇总',
                     properties: {
-                        income: {type: 'number'},
-                        expense: {type: 'number'},
-                        transfer: {type: 'number'},
-                        netIncome: {type: 'number'}
-                    }
-                }
+                        income: { type: 'number', description: '总收入' },
+                        expense: { type: 'number', description: '总支出' },
+                        transfer: { type: 'number', description: '总转账金额' },
+                        netIncome: { type: 'number', description: '净收入（收入-支出）' },
+                    },
+                },
             },
         },
     }, async (req, reply) => {
@@ -153,7 +159,15 @@ export async function recordRoutes(app: FastifyInstance) {
             description: '获取账本下所有记录的标签',
             tags: ['记录'],
             querystring: zSchema(z.object({bookId: z.string()})),
-            response: {200: {type: 'array', items: {type: 'string'}}},
+        },
+        config: {
+            swaggerResponse: {
+                200: {
+                    type: 'array',
+                    description: '标签列表',
+                    items: { type: 'string' },
+                },
+            },
         },
     }, async (req, reply) => {
         const {bookId} = req.query as { bookId?: string }
@@ -193,20 +207,23 @@ export async function recordRoutes(app: FastifyInstance) {
             description: '获取月视图每日汇总',
             tags: ['记录'],
             querystring: zSchema(calendarQuerySchema),
-            response: {
+        },
+        config: {
+            swaggerResponse: {
                 200: {
                     type: 'array',
+                    description: '每日汇总列表',
                     items: {
                         type: 'object',
                         properties: {
-                            date: {type: 'string'},
-                            income: {type: 'number'},
-                            expense: {type: 'number'},
-                            transfer: {type: 'number'},
-                            count: {type: 'number'}
-                        }
-                    }
-                }
+                            date: { type: 'string', description: '日期 (YYYY-MM-DD)' },
+                            income: { type: 'number', description: '当日收入' },
+                            expense: { type: 'number', description: '当日支出' },
+                            transfer: { type: 'number', description: '当日转账金额' },
+                            count: { type: 'number', description: '当日记录数量' },
+                        },
+                    },
+                },
             },
         },
     }, async (req, reply) => {
@@ -263,19 +280,22 @@ export async function recordRoutes(app: FastifyInstance) {
             description: '分类汇总（饼图数据）',
             tags: ['记录'],
             querystring: zSchema(categorySummarySchema),
-            response: {
+        },
+        config: {
+            swaggerResponse: {
                 200: {
                     type: 'array',
+                    description: '分类汇总列表',
                     items: {
                         type: 'object',
                         properties: {
-                            categoryCode: {type: 'string'},
-                            categoryName: {type: 'string'},
-                            amount: {type: 'number'},
-                            type: {type: 'string'}
-                        }
-                    }
-                }
+                            categoryCode: { type: ['string', 'null'], description: '分类编码' },
+                            categoryName: { type: 'string', description: '分类名称' },
+                            amount: { type: 'number', description: '金额' },
+                            type: { type: 'string', description: '类型' },
+                        },
+                    },
+                },
             },
         },
     }, async (req, reply) => {
@@ -341,14 +361,21 @@ export async function recordRoutes(app: FastifyInstance) {
             description: '月度收支趋势',
             tags: ['记录'],
             querystring: zSchema(monthlyTrendSchema),
-            response: {
+        },
+        config: {
+            swaggerResponse: {
                 200: {
                     type: 'array',
+                    description: '月度趋势数据列表',
                     items: {
                         type: 'object',
-                        properties: {month: {type: 'string'}, income: {type: 'number'}, expense: {type: 'number'}}
-                    }
-                }
+                        properties: {
+                            month: { type: 'string', description: '月份 (YYYY-MM)' },
+                            income: { type: 'number', description: '当月收入' },
+                            expense: { type: 'number', description: '当月支出' },
+                        },
+                    },
+                },
             },
         },
     }, async (req, reply) => {
@@ -404,24 +431,28 @@ export async function recordRoutes(app: FastifyInstance) {
             description: '分类趋势（按时间维度）',
             tags: ['记录'],
             querystring: zSchema(categoryTrendSchema),
-            response: {
+        },
+        config: {
+            swaggerResponse: {
                 200: {
                     type: 'object',
+                    description: '分类趋势数据',
                     properties: {
-                        periods: {type: 'array', items: {type: 'string'}},
+                        periods: { type: 'array', description: '时间周期列表', items: { type: 'string' } },
                         categories: {
                             type: 'array',
+                            description: '分类数据列表',
                             items: {
                                 type: 'object',
                                 properties: {
-                                    code: {type: 'string'},
-                                    name: {type: 'string'},
-                                    data: {type: 'array', items: {type: 'number'}}
-                                }
-                            }
-                        }
-                    }
-                }
+                                    code: { type: ['string', 'null'], description: '分类编码' },
+                                    name: { type: 'string', description: '分类名称' },
+                                    data: { type: 'array', description: '各时间周期的金额', items: { type: 'number' } },
+                                },
+                            },
+                        },
+                    },
+                },
             },
         },
     }, async (req, reply) => {
@@ -519,14 +550,21 @@ export async function recordRoutes(app: FastifyInstance) {
             description: '按维度分组汇总',
             tags: ['记录'],
             querystring: zSchema(groupSummarySchema),
-            response: {
+        },
+        config: {
+            swaggerResponse: {
                 200: {
                     type: 'array',
+                    description: '分组汇总列表',
                     items: {
                         type: 'object',
-                        properties: {key: {type: 'string'}, label: {type: 'string'}, amount: {type: 'number'}}
-                    }
-                }
+                        properties: {
+                            key: { type: 'string', description: '分组键' },
+                            label: { type: 'string', description: '分组标签' },
+                            amount: { type: 'number', description: '分组金额' },
+                        },
+                    },
+                },
             },
         },
     }, async (req, reply) => {

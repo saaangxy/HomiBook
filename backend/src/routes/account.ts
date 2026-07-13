@@ -98,7 +98,9 @@ export async function accountRoutes(app: FastifyInstance) {
       description: '获取账本下所有账户，含实时计算余额',
       tags: ['账户'],
       querystring: zSchema(z.object({ bookId: z.string() })),
-      response: {
+    },
+    config: {
+      swaggerResponse: {
         200: {
           type: 'array',
           description: '账户列表',
@@ -220,7 +222,9 @@ export async function accountRoutes(app: FastifyInstance) {
       description: '获取账户余额历史变化，按月或按日',
       tags: ['账户'],
       querystring: zSchema(balanceHistorySchema),
-      response: {
+    },
+    config: {
+      swaggerResponse: {
         200: {
           type: 'array',
           description: '余额历史列表',
@@ -393,7 +397,9 @@ export async function accountRoutes(app: FastifyInstance) {
       description: '获取单个账户详情及实时余额',
       tags: ['账户'],
       params: zSchema(z.object({ id: z.string() })),
-      response: {
+    },
+    config: {
+      swaggerResponse: {
         200: {
           type: 'object',
           description: '账户详情',
@@ -523,7 +529,9 @@ export async function accountRoutes(app: FastifyInstance) {
       description: '获取账户的余额调整历史',
       tags: ['账户'],
       params: zSchema(z.object({ id: z.string() })),
-      response: {
+    },
+    config: {
+      swaggerResponse: {
         200: {
           type: 'array',
           description: '余额调整历史列表',

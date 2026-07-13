@@ -24,7 +24,9 @@ export async function budgetRoutes(app: FastifyInstance) {
       tags: ['预算'],
       summary: '查询预算列表',
       querystring: zSchema(listBudgetsQuerySchema),
-      response: {
+    },
+    config: {
+      swaggerResponse: {
         200: {
           type: 'array',
           description: '预算列表',
@@ -85,7 +87,9 @@ export async function budgetRoutes(app: FastifyInstance) {
       tags: ['预算'],
       summary: '固定预算列表（含实际金额）',
       querystring: zSchema(fixedBudgetsQuerySchema),
-      response: {
+    },
+    config: {
+      swaggerResponse: {
         200: {
           type: 'array',
           description: '固定预算列表',
@@ -144,7 +148,9 @@ export async function budgetRoutes(app: FastifyInstance) {
       tags: ['预算'],
       summary: '自由预算列表（含实际金额）',
       querystring: zSchema(freeBudgetsQuerySchema),
-      response: {
+    },
+    config: {
+      swaggerResponse: {
         200: {
           type: 'array',
           description: '自由预算列表',
@@ -205,9 +211,12 @@ export async function budgetRoutes(app: FastifyInstance) {
       tags: ['预算'],
       summary: '获取所有预算的标签',
       querystring: zSchema(z.object({ bookId: z.string() })),
-      response: {
+    },
+    config: {
+      swaggerResponse: {
         200: {
           type: 'array',
+          description: '标签列表',
           items: { type: 'string' },
         },
       },

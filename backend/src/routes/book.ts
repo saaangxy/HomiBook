@@ -61,8 +61,10 @@ export async function bookRoutes(app: FastifyInstance) {
         schema: {
             description: '根据分享码查询账本信息',
             tags: ['账本'],
-            params: zSchema(z.object({code: z.string()})),
-            response: {
+            params: zSchema(z.object({code: z.string()}))
+        },
+        config: {
+            swaggerResponse: {
                 200: {
                     type: 'object',
                     description: '分享码信息',
@@ -169,8 +171,10 @@ export async function bookRoutes(app: FastifyInstance) {
     app.get('/', {
         schema: {
             description: '获取当前用户的所有账本',
-            tags: ['账本'],
-            response: {
+            tags: ['账本']
+        },
+        config: {
+            swaggerResponse: {
                 200: {
                     type: 'array',
                     description: '账本列表',
@@ -264,8 +268,10 @@ export async function bookRoutes(app: FastifyInstance) {
         schema: {
             description: '获取账本详情',
             tags: ['账本'],
-            params: zSchema(z.object({id: z.string()})),
-            response: {
+            params: zSchema(z.object({id: z.string()}))
+        },
+        config: {
+            swaggerResponse: {
                 200: {
                     type: 'object',
                     description: '账本详情',
@@ -395,8 +401,10 @@ export async function bookRoutes(app: FastifyInstance) {
         schema: {
             description: '获取账本成员列表',
             tags: ['账本'],
-            params: zSchema(z.object({id: z.string()})),
-            response: {
+            params: zSchema(z.object({id: z.string()}))
+        },
+        config: {
+            swaggerResponse: {
                 200: {
                     type: 'array',
                     description: '成员列表',
@@ -622,8 +630,10 @@ export async function bookRoutes(app: FastifyInstance) {
         schema: {
             description: '获取账本分享码列表',
             tags: ['账本'],
-            params: zSchema(z.object({id: z.string()})),
-            response: {
+            params: zSchema(z.object({id: z.string()}))
+        },
+        config: {
+            swaggerResponse: {
                 200: {
                     type: 'array',
                     description: '分享码列表',

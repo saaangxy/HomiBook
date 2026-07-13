@@ -100,7 +100,9 @@ export async function authRoutes(app: FastifyInstance) {
     schema: {
       description: '获取当前登录用户的详细信息',
       tags: ['认证'],
-      response: {
+    },
+    config: {
+      swaggerResponse: {
         200: {
           type: 'object',
           description: '当前用户信息',

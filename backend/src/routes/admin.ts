@@ -33,7 +33,9 @@ export async function adminRoutes(app: FastifyInstance) {
     schema: {
       description: '获取所有用户列表',
       tags: ['管理'],
-      response: {
+    },
+    config: {
+      swaggerResponse: {
         200: {
           type: 'object',
           description: '用户列表',
@@ -231,7 +233,20 @@ export async function adminRoutes(app: FastifyInstance) {
       }
     }
 
-    await prisma.user.delete({ where: { id } })
+    // 删除关联数据（部分关系未设级联删除，需按依赖顺序清理）
+    await prisma.$transaction(async (tx) => {
+      // 记录和定期交易：ownerId 必填，转移给操作者
+      await tx.record.updateMany({ where: { ownerId: id }, data: { ownerId: payload.id } })
+      await tx.recurringTransaction.updateMany({ where: { ownerId: id }, data: { ownerId: payload.id } })
+      // 成员关系
+      await tx.accountBookMember.deleteMany({ where: { userId: id } })
+      // 账本（级联删除 budgets/records）
+      await tx.accountBook.deleteMany({ where: { ownerId: id } })
+      // 账户
+      await tx.account.deleteMany({ where: { ownerId: id } })
+      // 删除用户（其余有 onDelete: Cascade 的表自动清理）
+      await tx.user.delete({ where: { id } })
+    })
     return { success: true }
   })
 }
