@@ -908,19 +908,26 @@ export async function chatRoutes(app: FastifyInstance) {
     if (!found.success) return reply.status(found.status).send({ message: found.message })
     const { message, entry, toolCalls, accountBookId } = found.data
 
-    // 用户拒绝 → 更新快照状态，不启动新 SSE
+    // 用户拒绝 → 更新DB快照 → 以工具错误结果继续SSE流，让LLM知晓
     if (!approved) {
       const rejectEntry = toolCalls.find((tc: any) => tc.toolCallId === toolCallId)
+      const toolResult = { success: false, error: '用户拒绝了此操作', retryable: false }
       if (rejectEntry) {
         rejectEntry.status = 'error'
-        rejectEntry.result = { error: '用户拒绝了此操作' }
+        rejectEntry.result = toolResult
         await prisma.chatMessage.update({
           where: { id: message.id },
           data: { toolCalls: JSON.stringify(toolCalls) },
         }).catch(() => {})
       }
       logToolCall({ userId, action: 'reject', toolName: entry.toolName })
-      return { success: true, approved: false }
+
+      const initialSSEEvents = [
+        { event: 'tool-result', data: { toolCallId, toolName: entry.toolName, result: toolResult, durationMs: 0, status: 'error' } },
+      ]
+      const messages = await buildChatMessages(message.sessionId, toolCallId, entry.toolName, toolResult)
+      await continueWithLLM(reply, message.sessionId, accountBookId, userId, message, messages, initialSSEEvents)
+      return
     }
 
     // ---- 执行工具获取结果 ----

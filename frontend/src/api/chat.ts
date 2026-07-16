@@ -157,13 +157,6 @@ export function confirmActionStream(
       if (contentType.includes('text/event-stream')) {
         parseSSEStream(response, onEvent, onDone, controller.signal)
       } else {
-        // JSON 响应（拒绝操作等）
-        try {
-          const json = await response.json()
-          if (json.approved === false) {
-            onEvent({ type: 'tool-result', toolCallId: params.toolCallId, toolName: '', result: { error: '用户拒绝了此操作' }, durationMs: 0, status: 'error' })
-          }
-        } catch { /* ignore */ }
         onDone()
       }
     })

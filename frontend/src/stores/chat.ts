@@ -578,24 +578,11 @@ export const useChatStore = create<ChatState>()((set, get) => {
     if (!parentDbId) return
     const parentId = parentMsg!.id
 
-    // 拒绝：本地更新状态，API 调用更新 DB（fire-and-forget）
-    if (!approved) {
-      get().updateStreamMessage(sid, parentId, (msg) => ({
-        ...msg,
-        blocks: msg.blocks.map((b) =>
-          b.type === 'tool-call' && b.toolCallId === toolCallId
-            ? { ...b, status: 'error' as const, result: { error: '用户拒绝了此操作' } }
-            : b,
-        ),
-      }))
-      confirmActionStream({ toolCallId, approved: false, accountBookId, sessionId: sid, data }, () => {}, () => {})
-      return
-    }
-
+    // 拒接/确认都通过 SSE 继续对话，让 LLM 知晓操作结果
     startContinuationStream(
       parentDbId, parentId,
       (handleEvent, handleDone) => confirmActionStream(
-        { toolCallId, approved: true, accountBookId, sessionId: sid, data },
+        { toolCallId, approved, accountBookId, sessionId: sid, data },
         handleEvent, handleDone,
       ),
     )
