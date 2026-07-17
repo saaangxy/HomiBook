@@ -578,11 +578,35 @@ export const useChatStore = create<ChatState>()((set, get) => {
     if (!parentDbId) return
     const parentId = parentMsg!.id
 
-    // 拒接/确认都通过 SSE 继续对话，让 LLM 知晓操作结果
+    // 标记当前块为已决定（清除 preview 避免 effectiveStatus 误判为过期确认）
+    const newDecidedStatus = approved ? 'pending' as const : 'error' as const
+    get().updateStreamMessage(sid, parentId, (msg) => ({
+      ...msg,
+      blocks: msg.blocks.map((b) =>
+        b.type === 'tool-call' && b.toolCallId === toolCallId
+          ? { ...b, status: newDecidedStatus, preview: undefined, result: approved ? undefined : ({ error: '用户拒绝了此操作' } as any) }
+          : b,
+      ),
+    }))
+
+    // 检查同一消息中所有确认块是否都已决定
+    const updatedMsg = get().messages.find(m => m.id === parentId)
+    const allConfirming = (updatedMsg?.blocks.filter(b => b.type === 'tool-call') || []) as Extract<MessageBlock, { type: 'tool-call' }>[]
+    const stillConfirming = allConfirming.filter(b => b.status === 'confirming')
+
+    if (stillConfirming.length > 0) return // 等待其他块决定
+
+    // 全部决定，收集 decisions
+    const decisions = allConfirming.map(b => ({
+      toolCallId: b.toolCallId,
+      approved: b.status !== 'error',
+      ...(data ? { data } : {}),
+    }))
+
     startContinuationStream(
       parentDbId, parentId,
       (handleEvent, handleDone) => confirmActionStream(
-        { toolCallId, approved, accountBookId, sessionId: sid, data },
+        { decisions, accountBookId, sessionId: sid },
         handleEvent, handleDone,
       ),
     )

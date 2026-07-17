@@ -29,34 +29,13 @@ export const updateSessionSchema = z.object({
   status: z.enum(['active', 'archived']).optional().describe('会话状态'),
 })
 
-// 确认/拒绝操作
+// 确认/拒绝操作（始终批量）
 export const confirmActionSchema = z.object({
-  toolCallId: z.string().describe('工具调用ID'),
-  approved: z.boolean().describe('是否批准'),
-  data: z.object({
-    fileId: z.string().optional().describe('临时文件ID'),
-    accountResolutions: z.array(z.object({
-      sourceAccountName: z.string().describe('源账户名'),
-      action: z.enum(['existing', 'create']).describe('操作：existing=关联已有账户, create=创建新账户'),
-      targetAccountId: z.string().optional().describe('目标账户ID'),
-      targetAccountName: z.string().optional().describe('目标账户名称'),
-      accountType: z.string().optional().describe('账户类型'),
-    })).optional().describe('账户匹配方案'),
-    categoryResolutions: z.array(z.object({
-      sourceCategory: z.string().describe('源分类名'),
-      targetCategoryCode: z.string().describe('目标分类编码'),
-      recordType: z.string().optional().describe('记录类型'),
-      payerContains: z.string().optional().describe('交易对方匹配规则'),
-      descriptionContains: z.string().optional().describe('描述匹配规则'),
-    })).optional().describe('分类映射方案'),
-    unrecognizedResolutions: z.array(z.object({
-      rowIndex: z.number().describe('行号'),
-      type: z.string().describe('流水类型'),
-      accountId: z.string().describe('账户ID'),
-      categoryCode: z.string().describe('分类编码'),
-    })).optional().describe('无法识别记录的处理方案'),
-    ownerId: z.string().optional().describe('归属人ID'),
-  }).optional().describe('确认数据'),
+  decisions: z.array(z.object({
+    toolCallId: z.string().describe('工具调用ID'),
+    approved: z.boolean().describe('是否批准'),
+    data: z.object({}).passthrough().optional().describe('附加数据'),
+  })).min(1).describe('决策列表'),
 })
 
 // 回复建议

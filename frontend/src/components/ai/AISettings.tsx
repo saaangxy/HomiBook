@@ -22,6 +22,7 @@ import {
 import {
   fetchAIConfig, updateAIConfig, fetchProviders, fetchProviderModels,
   fetchProviderConfigs, createProviderConfig, updateProviderConfig, deleteProviderConfig, copyProviderConfig,
+  testProviderConnection,
   type ProviderInfo, type UserProviderConfig,
 } from '@/api/chat'
 
@@ -65,6 +66,10 @@ export function AIAssistantSettings() {
   const [formSaving, setFormSaving] = useState(false)
   const [formError, setFormError] = useState('')
   const [showKey, setShowKey] = useState(false)
+
+  // ---------- 弹窗：测试连接 ----------
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
 
   // ---------- 弹窗：模型获取 ----------
   const [formModelList, setFormModelList] = useState<string[]>([])
@@ -139,6 +144,7 @@ export function AIAssistantSettings() {
     setFormModelList([])
     setFormError('')
     setShowKey(false)
+    setTestResult(null)
     setDialogOpen(true)
   }
 
@@ -154,6 +160,7 @@ export function AIAssistantSettings() {
     setFormModelList([])
     setFormError('')
     setShowKey(false)
+    setTestResult(null)
     setDialogOpen(true)
   }
 
@@ -241,6 +248,31 @@ export function AIAssistantSettings() {
       setFormModelList(getDefaultModels(formProvider))
     } finally {
       setFormFetchingModels(false)
+    }
+  }
+
+  // 测试连接
+  const handleTestConnection = async () => {
+    setTesting(true)
+    setTestResult(null)
+    try {
+      const res = await testProviderConnection({
+        provider: formProvider,
+        apiKey: formApiKey,
+        baseURL: formBaseURL || getProviderDefaultBaseURL(formProvider),
+      })
+      setTestResult(res)
+      if (res.success && res.models?.length) {
+        setFormModelList(res.models)
+        setFormModelSuggestOpen(true)
+        if (!formModels) {
+          setFormModels(res.models[0])
+        }
+      }
+    } catch (err: any) {
+      setTestResult({ success: false, message: err.message || '测试请求失败' })
+    } finally {
+      setTesting(false)
     }
   }
 
@@ -473,6 +505,12 @@ export function AIAssistantSettings() {
                 <AlertDescription>{formError}</AlertDescription>
               </Alert>
             )}
+            {testResult && (
+              <Alert variant={testResult.success ? undefined : 'destructive'}>
+                {testResult.success ? <Check size={16} /> : null}
+                <AlertDescription>{testResult.message}</AlertDescription>
+              </Alert>
+            )}
             {/* 供应商类型 */}
             <div className="space-y-1.5">
               <Label className="text-xs">供应商</Label>
@@ -607,7 +645,10 @@ export function AIAssistantSettings() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>取消</Button>
-            <Button onClick={handleSaveConfig} disabled={formSaving}>
+            <Button variant="outline" onClick={handleTestConnection} disabled={testing}>
+              {testing ? <Spinner /> : '测试连接'}
+            </Button>
+            <Button onClick={handleSaveConfig} disabled={formSaving || testing}>
               {formSaving ? <Spinner /> : '保存'}
             </Button>
           </DialogFooter>

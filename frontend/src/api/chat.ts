@@ -73,7 +73,7 @@ export type SSEEvent =
   | { type: 'tool-confirm-required'; toolCallId: string; toolName: string; preview: string }
   | { type: 'tool-suggest-required'; toolCallId: string; toolName: string; questions: { question: string; field: string; options: (string | SuggestionOption)[]; allowCustom: boolean }[] }
   | { type: 'tool-switch-book'; toolCallId: string; books: BookOption[]; currentBookId: string }
-  | { type: 'finish'; usage?: unknown; userMessageId: string; assistantMessageId: string; pendingConfirmation?: { toolCallId: string; toolName: string }; pendingSuggestion?: { toolCallId: string }; pendingSwitchBook?: { toolCallId: string } }
+  | { type: 'finish'; usage?: unknown; userMessageId: string; assistantMessageId: string; pendingConfirmation?: { toolCallId: string; toolName: string }; pendingConfirmations?: { toolCallId: string; toolName: string }[]; pendingSuggestion?: { toolCallId: string }; pendingSwitchBook?: { toolCallId: string } }
   | { type: 'error'; message: string }
 
 export interface BookOption {
@@ -129,7 +129,7 @@ export async function deleteSession(id: string) {
 }
 
 export function confirmActionStream(
-  params: { toolCallId: string; approved: boolean; accountBookId: string; sessionId?: string; data?: Record<string, unknown> },
+  params: { decisions: { toolCallId: string; approved: boolean; data?: Record<string, unknown> }[]; accountBookId: string; sessionId?: string },
   onEvent: (event: SSEEvent) => void,
   onDone: () => void,
 ): AbortController {
@@ -305,6 +305,10 @@ export async function fetchProviderBaseURL(provider: string) {
 
 export async function saveProviderBaseURL(provider: string, baseURL: string) {
   return api.post<{ success: boolean; baseURL: string; isCustom: boolean }>(`${BASE}/providers/baseurl`, { provider, baseURL })
+}
+
+export async function testProviderConnection(data: { provider: string; apiKey: string; baseURL: string }) {
+  return api.post<{ success: boolean; message: string; models?: string[] }>(`${BASE}/providers/test`, data)
 }
 
 // 共享 SSE 流解析

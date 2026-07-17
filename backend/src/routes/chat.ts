@@ -68,7 +68,7 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
   const toolCallEntries: any[] = []
   let fullText = ''
   let activeToolCount = 0
-  const pendingState = { abort: null as { toolCallId: string; toolName: string; args: any } | null, suggestion: null as { toolCallId: string; questions: any[] } | null }
+  const pendingState = { confirmations: [] as { toolCallId: string; toolName: string; args: any }[], suggestion: null as { toolCallId: string; questions: any[] } | null }
 
   const msgState = { dbId: null as string | null }
   const saveMessageSnapshot = async () => {
@@ -111,8 +111,7 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
             const entry = toolCallEntries.find(e => e.toolCallId === toolCallId)
             if (entry) Object.assign(entry, { result, status: 'switching' })
             await saveMessageSnapshot()
-            pendingState.abort = { toolCallId, toolName: tool.name, args }
-            abortController.abort()
+            pendingState.confirmations.push({ toolCallId, toolName: tool.name, args })
             return { __pending: true, toolCallId }
           }
 
@@ -126,7 +125,6 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
             if (entry) Object.assign(entry, { status: 'suggesting', suggestion: { questions } })
             await saveMessageSnapshot()
             pendingState.suggestion = { toolCallId, questions }
-            abortController.abort()
             return { __pending: true, toolCallId }
           }
 
@@ -148,8 +146,7 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
             const entry = toolCallEntries.find(e => e.toolCallId === toolCallId)
             if (entry) Object.assign(entry, { status: 'confirming', preview })
             await saveMessageSnapshot()
-            pendingState.abort = { toolCallId, toolName: tool.name, args }
-            abortController.abort()
+            pendingState.confirmations.push({ toolCallId, toolName: tool.name, args })
             return { __pending: true, toolCallId }
           }
 
@@ -173,8 +170,7 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
             const entry = toolCallEntries.find(e => e.toolCallId === toolCallId)
             if (entry) Object.assign(entry, { result, durationMs, status })
             await saveMessageSnapshot()
-            pendingState.abort = { toolCallId, toolName: tool.name, args }
-            abortController.abort()
+            pendingState.confirmations.push({ toolCallId, toolName: tool.name, args })
             return result
           }
 
@@ -183,8 +179,7 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
             const entry = toolCallEntries.find(e => e.toolCallId === toolCallId)
             if (entry) Object.assign(entry, { result, durationMs, status })
             await saveMessageSnapshot()
-            pendingState.abort = { toolCallId, toolName: tool.name, args }
-            abortController.abort()
+            pendingState.confirmations.push({ toolCallId, toolName: tool.name, args })
             return result
           }
 
@@ -219,27 +214,53 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
       maxOutputTokens: maxTokens,
       stopWhen: stepCountIs(maxSteps),
       abortSignal: abortController.signal,
+      onStepFinish: () => {
+        // 所有 tool 的 execute() 已执行完、tool-result 已全部 enqueue
+        // 此时 controller 空闲，安全调用 abort 阻止下一步 LLM 调用
+        if (pendingState.confirmations.length > 0 || pendingState.suggestion) {
+          abortController.abort()
+        }
+      },
     })
 
     for await (const part of result.fullStream) {
-      if (pendingState.abort || pendingState.suggestion) continue
       if (part.type === 'text-delta') {
         fullText += part.text
         sendSSE('text-delta', { delta: part.text })
+      } else if (part.type === 'error') {
+        // AI SDK 把 API 错误作为流内 error part 发出，不会走 throw
+        const errPart = part as { type: 'error'; error: unknown }
+        const err = errPart.error as any
+        const body = err?.responseBody
+        let msg = ''
+        if (body) {
+          try {
+            const p = typeof body === 'string' ? JSON.parse(body) : body
+            msg = p?.error?.message || p?.message || ''
+          } catch { /* ignore */ }
+        }
+        if (!msg) msg = err?.data?.error?.message || err?.message || String(err)
+        sendSSE('error', { message: msg || 'AI 服务异常' })
+        return { assistantMessageId: msgState.dbId, usage: null }
       }
     }
 
     // 流结束 → 保存最终 assistant 消息（包含所有已执行工具的结果）
     await saveMessageSnapshot()
 
-    const abort = pendingState.abort
-    if (abort) {
-      if (abort.toolName === 'switch_book') {
-        sendSSE('finish', { pendingSwitchBook: { toolCallId: abort.toolCallId }, assistantMessageId: msgState.dbId, userMessageId: parentMessageId })
-        return { assistantMessageId: msgState.dbId, pendingSwitchBook: abort }
-      }
-      sendSSE('finish', { pendingConfirmation: { toolCallId: abort.toolCallId, toolName: abort.toolName }, assistantMessageId: msgState.dbId, userMessageId: parentMessageId })
-      return { assistantMessageId: msgState.dbId, pendingConfirmation: abort }
+    const confirmations = pendingState.confirmations
+    if (confirmations.length > 0) {
+      const switchBookConf = confirmations.find(c => c.toolName === 'switch_book')
+      const otherConfs = confirmations.filter(c => c.toolName !== 'switch_book')
+      const pendingConfirmations = otherConfs.map(c => ({ toolCallId: c.toolCallId, toolName: c.toolName }))
+
+      sendSSE('finish', {
+        ...(switchBookConf ? { pendingSwitchBook: { toolCallId: switchBookConf.toolCallId } } : {}),
+        ...(pendingConfirmations.length > 0 ? { pendingConfirmations } : {}),
+        assistantMessageId: msgState.dbId,
+        userMessageId: parentMessageId,
+      })
+      return { assistantMessageId: msgState.dbId, pendingSwitchBook: switchBookConf, pendingConfirmations }
     }
     const suggestion = pendingState.suggestion
     if (suggestion) {
@@ -300,7 +321,7 @@ async function findPendingToolMessage(toolCallId: string, userId: string): Promi
 
 // ---- 共享辅助：构建 AI SDK CoreMessage 数组 ----
 
-async function buildChatMessages(sessionId: string, pendingToolCallId: string, pendingToolName: string, pendingToolResult: unknown) {
+async function buildChatMessages(sessionId: string, pendingToolResults: { toolCallId: string; toolName: string; result: unknown }[]) {
   const dbMessages = await prisma.chatMessage.findMany({
     where: { sessionId },
     orderBy: { createdAt: 'asc' },
@@ -308,6 +329,7 @@ async function buildChatMessages(sessionId: string, pendingToolCallId: string, p
     take: 100,
   })
 
+  const pendingIds = new Set(pendingToolResults.map(p => p.toolCallId))
   const messages: any[] = []
   for (const msg of dbMessages) {
     if (msg.role === 'user') {
@@ -318,7 +340,7 @@ async function buildChatMessages(sessionId: string, pendingToolCallId: string, p
       if (msg.content) contentParts.push({ type: 'text', text: msg.content })
       const completedResults: any[] = []
       for (const tc of tcList) {
-        const isPendingConfirm = tc.toolCallId === pendingToolCallId
+        const isPendingConfirm = pendingIds.has(tc.toolCallId)
         const hasResult = tc.result != null && tc.status !== 'confirming' && tc.status !== 'suggesting'
         // 跳过无结果的工具调用（被中断的并发工具），避免 AI SDK MissingToolResultsError
         if (!isPendingConfirm && !hasResult) continue
@@ -343,10 +365,17 @@ async function buildChatMessages(sessionId: string, pendingToolCallId: string, p
     }
   }
 
-  messages.push({
-    role: 'tool',
-    content: [{ type: 'tool-result', toolCallId: pendingToolCallId, toolName: pendingToolName, output: { type: 'json', value: pendingToolResult } }],
-  })
+  if (pendingToolResults.length > 0) {
+    messages.push({
+      role: 'tool',
+      content: pendingToolResults.map(p => ({
+        type: 'tool-result',
+        toolCallId: p.toolCallId,
+        toolName: p.toolName,
+        output: { type: 'json', value: p.result },
+      })),
+    })
+  }
 
   return messages
 }
@@ -885,127 +914,101 @@ export async function chatRoutes(app: FastifyInstance) {
     return { messages }
   })
 
-  // 确认操作 → 从DB加载 → 执行工具 → SSE流式继续对话
+  // 确认操作 → 始终批量处理（decisions 数组）
   app.post('/confirm', async (req, reply) => {
     const parsed = confirmActionSchema.safeParse(req.body)
     if (!parsed.success) return reply.status(400).send({ message: parsed.error.issues[0].message })
+    const { decisions } = parsed.data
 
-    const { toolCallId, approved, data } = parsed.data
     const userId = (req as any).user.id as string
 
+    // 所有 decisions 必须属于同一条消息
+    const firstDecision = decisions[0]
+    const found = await findPendingToolMessage(firstDecision.toolCallId, userId)
+    if (!found.success) return reply.status(found.status).send({ message: found.message })
+    const { message, toolCalls, accountBookId } = found.data
+
     // 存储用户修改后的导入映射数据
-    if (data?.fileId) {
-      const existing = peekImportOverrides(data.fileId) || {}
-      storeImportOverrides(data.fileId, {
-        accountResolutions: data.accountResolutions ?? existing.accountResolutions,
-        categoryResolutions: data.categoryResolutions ?? existing.categoryResolutions,
-        unrecognizedResolutions: data.unrecognizedResolutions ?? existing.unrecognizedResolutions,
-        ownerId: data.ownerId ?? existing.ownerId,
+    const firstData = decisions[0].data as Record<string, unknown> | undefined
+    if (firstData?.fileId) {
+      const existing = peekImportOverrides(firstData.fileId as string) || {}
+      storeImportOverrides(firstData.fileId as string, {
+        accountResolutions: (firstData.accountResolutions ?? existing.accountResolutions) as any,
+        categoryResolutions: (firstData.categoryResolutions ?? existing.categoryResolutions) as any,
+        unrecognizedResolutions: (firstData.unrecognizedResolutions ?? existing.unrecognizedResolutions) as any,
+        ownerId: (firstData.ownerId ?? existing.ownerId) as any,
       })
     }
 
-    const found = await findPendingToolMessage(toolCallId, userId)
-    if (!found.success) return reply.status(found.status).send({ message: found.message })
-    const { message, entry, toolCalls, accountBookId } = found.data
+    const initialSSEEvents: { event: string; data: any }[] = []
+    const pendingToolResults: { toolCallId: string; toolName: string; result: unknown }[] = []
 
-    // 用户拒绝 → 更新DB快照 → 以工具错误结果继续SSE流，让LLM知晓
-    if (!approved) {
-      const rejectEntry = toolCalls.find((tc: any) => tc.toolCallId === toolCallId)
-      const toolResult = { success: false, error: '用户拒绝了此操作', retryable: false }
-      if (rejectEntry) {
-        rejectEntry.status = 'error'
-        rejectEntry.result = toolResult
-        await prisma.chatMessage.update({
-          where: { id: message.id },
-          data: { toolCalls: JSON.stringify(toolCalls) },
-        }).catch(() => {})
+    for (const { toolCallId, approved } of decisions) {
+      const entry = toolCalls.find((tc: any) => tc.toolCallId === toolCallId)
+      if (!entry) continue
+
+      if (!approved) {
+        const toolResult = { success: false, error: '用户拒绝了此操作', retryable: false }
+        entry.status = 'error'
+        entry.result = toolResult
+        initialSSEEvents.push({ event: 'tool-result', data: { toolCallId, toolName: entry.toolName, result: toolResult, durationMs: 0, status: 'error' } })
+        pendingToolResults.push({ toolCallId, toolName: entry.toolName, result: toolResult })
+        logToolCall({ userId, action: 'reject', toolName: entry.toolName })
+        continue
       }
-      logToolCall({ userId, action: 'reject', toolName: entry.toolName })
 
-      const initialSSEEvents = [
-        { event: 'tool-result', data: { toolCallId, toolName: entry.toolName, result: toolResult, durationMs: 0, status: 'error' } },
-      ]
-      const messages = await buildChatMessages(message.sessionId, toolCallId, entry.toolName, toolResult)
-      await continueWithLLM(reply, message.sessionId, accountBookId, userId, message, messages, initialSSEEvents)
-      return
+      const tool = ALL_TOOLS.find(t => t.name === entry.toolName)
+      if (!tool) {
+        const toolResult = { success: false, error: '工具不存在', retryable: false }
+        entry.status = 'error'
+        entry.result = toolResult
+        initialSSEEvents.push({ event: 'tool-result', data: { toolCallId, toolName: entry.toolName, result: toolResult, durationMs: 0, status: 'error' } })
+        pendingToolResults.push({ toolCallId, toolName: entry.toolName, result: toolResult })
+        continue
+      }
+
+      const ctx = { userId, accountBookId }
+      let toolResult: any
+      try {
+        if (entry.toolName === 'preview_import') {
+          const args = entry.args || {}
+          const fileId = args.fileId as string
+          const userOverrides = peekImportOverrides(fileId)
+          const mergedArgs = { ...args, accountResolutions: userOverrides?.accountResolutions ?? args.accountResolutions, categoryResolutions: userOverrides?.categoryResolutions ?? args.categoryResolutions }
+          toolResult = await tool.execute(mergedArgs, ctx)
+          const reData = toolResult.data || {}
+          toolResult = {
+            success: true, retryable: false,
+            data: { mode: 'review', source: reData.source, records: reData.records ? (reData.records as any[]).map((r: any) => ({ type: r.type, categoryCode: r.categoryCode, categoryLabel: r.categoryLabel, mappedCategoryCode: r.mappedCategoryCode, mappedCategoryLabel: r.mappedCategoryLabel, payer: r.payer, remark: r.remark })) : [], unrecognizedRecords: reData.unrecognizedRecords ? (reData.unrecognizedRecords as any[]).map((r: any) => ({ type: r.type, categoryCode: r.categoryCode, categoryLabel: r.categoryLabel, mappedCategoryCode: r.mappedCategoryCode, mappedCategoryLabel: r.mappedCategoryLabel, payer: r.payer, remark: r.remark })) : [], unmatchedAccounts: reData.unmatchedAccounts || [], unmatchedCategories: reData.unmatchedCategories || [], stats: reData.stats, message: '请检查以上映射结果是否正确。' },
+          }
+        } else if (entry.toolName === 'confirm_import') {
+          const args = entry.args || {}
+          const fileId = args.fileId as string
+          const userOverrides = peekImportOverrides(fileId)
+          const mergedArgs: any = { ...args, _execute: true }
+          if (userOverrides?.ownerId) mergedArgs.ownerId = userOverrides.ownerId
+          toolResult = await tool.execute(mergedArgs, ctx)
+        } else {
+          toolResult = await tool.execute(entry.args || {}, ctx)
+        }
+      } catch (err: any) {
+        toolResult = { success: false, error: err.message, retryable: false }
+      }
+
+      entry.status = toolResult.success ? 'success' : 'error'
+      entry.result = toolResult
+      initialSSEEvents.push({ event: 'tool-result', data: { toolCallId, toolName: entry.toolName, result: toolResult, durationMs: 0, status: entry.status } })
+      pendingToolResults.push({ toolCallId, toolName: entry.toolName, result: toolResult })
+      logToolCall({ userId, sessionId: message.sessionId, action: 'confirm', toolName: entry.toolName, input: entry.args, output: toolResult })
     }
 
-    // ---- 执行工具获取结果 ----
-    const tool = ALL_TOOLS.find(t => t.name === entry.toolName)
-    if (!tool) return reply.status(404).send({ message: '工具不存在' })
+    // 统一写入 DB
+    await prisma.chatMessage.update({
+      where: { id: message.id },
+      data: { toolCalls: JSON.stringify(toolCalls) },
+    }).catch(() => {})
 
-    const ctx = { userId, accountBookId }
-    let toolResult: any
-    const reExecStart = Date.now()
-
-    if (entry.toolName === 'preview_import') {
-      const args = entry.args || {}
-      const fileId = args.fileId as string
-      const userOverrides = peekImportOverrides(fileId)
-      const mergedArgs = {
-        ...args,
-        accountResolutions: userOverrides?.accountResolutions ?? args.accountResolutions,
-        categoryResolutions: userOverrides?.categoryResolutions ?? args.categoryResolutions,
-      }
-      const reResult = await tool.execute(mergedArgs, ctx) as any
-
-      // 构建供 LLM 检查的简化数据（只返回关键字段，压缩上下文长度）
-      const buildReviewRecords = (records: any[]) => records.map((r: any) => ({
-        type: r.type,
-        categoryCode: r.categoryCode,
-        categoryLabel: r.categoryLabel,
-        mappedCategoryCode: r.mappedCategoryCode,
-        mappedCategoryLabel: r.mappedCategoryLabel,
-        payer: r.payer,
-        remark: r.remark,
-      }))
-
-      const reData = reResult.data || {}
-      toolResult = {
-        success: true,
-        retryable: false,
-        data: {
-          mode: 'review',
-          source: reData.source,
-          records: reData.records ? buildReviewRecords(reData.records) : [],
-          unrecognizedRecords: reData.unrecognizedRecords ? buildReviewRecords(reData.unrecognizedRecords) : [],
-          unmatchedAccounts: reData.unmatchedAccounts || [],
-          unmatchedCategories: reData.unmatchedCategories || [],
-          stats: reData.stats,
-          message: '请检查以上映射结果是否正确。确认无误后调用 confirm_import 工具导入，如有个别错误请告知用户。',
-        },
-      }
-    } else if (entry.toolName === 'confirm_import') {
-      const args = entry.args || {}
-      const fileId = args.fileId as string
-      const userOverrides = peekImportOverrides(fileId)
-      const mergedArgs: any = { ...args, _execute: true }
-      if (userOverrides?.ownerId) mergedArgs.ownerId = userOverrides.ownerId
-      toolResult = await tool.execute(mergedArgs, ctx)
-    } else {
-      toolResult = await tool.execute(entry.args || {}, ctx)
-    }
-
-    logToolCall({ userId, sessionId: found.data.message.sessionId, action: 'confirm', toolName: entry.toolName, input: entry.args, output: toolResult })
-
-    const reviewDurationMs = Date.now() - reExecStart
-    const initialSSEEvents = [
-      { event: 'tool-result', data: { toolCallId, toolName: entry.toolName, result: toolResult, durationMs: reviewDurationMs, status: toolResult.success ? 'success' : 'error' } },
-    ]
-
-    toolResult.data = { ...toolResult.data, confirmed: true }
-    // 更新 DB 快照中该工具调用的结果
-    const doneEntry = toolCalls.find((tc: any) => tc.toolCallId === toolCallId)
-    if (doneEntry) {
-      doneEntry.status = toolResult.success ? 'success' : 'error'
-      doneEntry.result = toolResult
-      await prisma.chatMessage.update({
-        where: { id: message.id },
-        data: { toolCalls: JSON.stringify(toolCalls) },
-      }).catch(() => {})
-    }
-
-    const messages = await buildChatMessages(message.sessionId, toolCallId, entry.toolName, toolResult)
+    const messages = await buildChatMessages(message.sessionId, pendingToolResults)
     await continueWithLLM(reply, message.sessionId, accountBookId, userId, message, messages, initialSSEEvents)
   })
 
@@ -1051,7 +1054,7 @@ export async function chatRoutes(app: FastifyInstance) {
       }).catch(() => {})
     }
 
-    const messages = await buildChatMessages(message.sessionId, toolCallId, entry.toolName, toolResult)
+    const messages = await buildChatMessages(message.sessionId, [{ toolCallId, toolName: entry.toolName, result: toolResult }])
     await continueWithLLM(reply, message.sessionId, accountBookId, userId, message, messages, initialSSEEvents)
   })
 
@@ -1091,7 +1094,7 @@ export async function chatRoutes(app: FastifyInstance) {
       }).catch(() => {})
     }
 
-    const messages = await buildChatMessages(message.sessionId, toolCallId, entry.toolName, toolResult)
+    const messages = await buildChatMessages(message.sessionId, [{ toolCallId, toolName: entry.toolName, result: toolResult }])
     await continueWithLLM(reply, message.sessionId, bookId, userId, message, messages, initialSSEEvents)
   })
 
@@ -1329,6 +1332,55 @@ export async function chatRoutes(app: FastifyInstance) {
     const stored = await loadStoredBaseURL(provider)
     const defaultURL = DEFAULT_BASE_URLS[provider as keyof typeof DEFAULT_BASE_URLS] || ''
     return { baseURL: stored || defaultURL, isCustom: !!stored }
+  })
+
+  // 测试供应商连接
+  app.post('/providers/test', async (req, reply) => {
+    const { provider, apiKey, baseURL } = req.body as { provider?: string; apiKey?: string; baseURL?: string }
+    if (!provider) return reply.status(400).send({ message: '缺少 provider 参数' })
+
+    const validProviders = ALL_PROVIDERS.map((p) => p.value)
+    if (!validProviders.includes(provider as any)) return reply.status(400).send({ message: '无效的供应商' })
+
+    const url = baseURL || DEFAULT_BASE_URLS[provider as keyof typeof DEFAULT_BASE_URLS] || ''
+    if (!url) return reply.status(400).send({ message: '无法获取 API 端点 URL，请手动填写' })
+
+    const key = apiKey || await loadApiKey(provider).catch(() => '')
+
+    try {
+      if (provider === 'ollama') {
+        const ollamaBase = url.replace(/\/v1\/?$/, '')
+        const res = await fetch(`${ollamaBase}/api/tags`, { signal: AbortSignal.timeout(10000) })
+        if (!res.ok) {
+          return { success: false, message: `Ollama 连接失败: HTTP ${res.status}` }
+        }
+        const data = (await res.json()) as { models?: { name: string }[] }
+        const models = (data.models || []).map((m) => m.name)
+        return { success: true, message: `连接成功，找到 ${models.length} 个模型`, models }
+      }
+
+      // OpenAI 兼容: GET {baseURL}/models
+      const modelsURL = url.replace(/\/$/, '') + '/models'
+      const res = await fetch(modelsURL, {
+        headers: {
+          Authorization: `Bearer ${key}`,
+          'Content-Type': 'application/json',
+        },
+        signal: AbortSignal.timeout(10000),
+      })
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '')
+        const hint = res.status === 401 ? 'API Key 无效' : res.status === 403 ? '权限不足' : res.status === 404 ? '端点不存在' : `HTTP ${res.status}`
+        return { success: false, message: `连接失败: ${hint}${errText ? ' - ' + errText.slice(0, 200) : ''}` }
+      }
+
+      const data = (await res.json()) as { data?: { id: string }[] }
+      const models = (data.data || []).map((m) => m.id)
+      return { success: true, message: `连接成功，找到 ${models.length} 个模型`, models }
+    } catch (err: any) {
+      return { success: false, message: `连接失败: ${err.message || '网络错误'}` }
+    }
   })
 
   // 保存供应商 baseURL

@@ -259,6 +259,9 @@ export function ToolCallCard({ toolCall }: Props) {
         </div>
       )}
 
+      {/* 批量确认计数器 */}
+      {effectiveStatus === 'confirming' && <BatchIndicator toolCallId={toolCall.toolCallId} />}
+
       {/* 确认按钮 —— 始终可见 */}
       {(effectiveStatus === 'confirming' || (isExpired && toolCall.preview)) && (
         <>
@@ -696,6 +699,22 @@ const FIELD_LABELS: Record<string, string> = {
   bookId: '账本',
   ownerId: '归属人',
   generateAll: '生成全部',
+}
+
+function BatchIndicator({ toolCallId }: { toolCallId: string }) {
+  const messages = useChatStore(s => s.messages)
+  const parentMsg = messages.find(m =>
+    m.role === 'assistant' && m.blocks.some(b =>
+      b.type === 'tool-call' && b.toolCallId === toolCallId
+    )
+  )
+  const remaining = parentMsg?.blocks.filter(b => b.type === 'tool-call' && b.status === 'confirming').length || 0
+  if (remaining <= 1) return null
+  return (
+    <div className="flex items-center gap-1.5 text-xs text-amber-600 mt-1">
+      <span>等待全部确认 · 剩余 {remaining} 个</span>
+    </div>
+  )
 }
 
 function fieldLabel(key: string, _toolName?: string): string {
