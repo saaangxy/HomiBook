@@ -416,7 +416,7 @@ export async function accountRoutes(app: FastifyInstance) {
     }
 
     const account = await prisma.account.update({
-      where: { id },
+      where: { id, deletedAt: null },
       data: parsed.data,
       include: { owner: { select: { id: true, nickname: true, email: true } } },
     })
@@ -430,10 +430,10 @@ export async function accountRoutes(app: FastifyInstance) {
     return sanitizeAccount(result, userId)
   })
 
-  // 删除账户
+  // 删除账户（软删除）
   app.delete('/:id', {
     schema: {
-      description: '删除账户及其余额调整记录',
+      description: '软删除账户，保留关联记录和余额调整历史',
       tags: ['账户'],
       params: zSchema(z.object({ id: z.string() })),
     },
@@ -447,8 +447,15 @@ export async function accountRoutes(app: FastifyInstance) {
       return reply.status(e.statusCode || 403).send({ message: e.message })
     }
 
-    await prisma.balanceAdjustment.deleteMany({ where: { accountId: id } })
-    await prisma.account.delete({ where: { id } })
+    const account = await prisma.account.findUnique({ where: { id } })
+    if (!account) {
+      return reply.status(404).send({ message: '账户不存在' })
+    }
+
+    await prisma.account.update({
+      where: { id },
+      data: { status: 'ARCHIVED', deletedAt: new Date() },
+    })
 
     return { success: true }
   })

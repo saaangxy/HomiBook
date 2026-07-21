@@ -1,4 +1,5 @@
 import { prisma } from '../../../app.js'
+import { Prisma } from '@prisma/client'
 import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
 import { ensureFixedTag, getNextTriggerTime } from '../../recurring.js'
 import type { ToolDef, ToolContext } from './types.js'
@@ -34,7 +35,7 @@ export const updateRecurringTool: ToolDef = {
         return { success: false, error: '无权访问该记录', retryable: false }
       }
 
-      const data: Record<string, unknown> = {}
+      const data: Prisma.RecurringTransactionUncheckedUpdateInput = {}
       if (args.name !== undefined) data.name = args.name
       if (args.amount !== undefined) data.amount = args.amount
       if (args.cron !== undefined) {

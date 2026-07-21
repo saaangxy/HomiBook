@@ -91,12 +91,12 @@ export async function adminRoutes(app: FastifyInstance) {
 
     const { username, email, password, nickname, role } = parsed.data
 
-    const existingEmail = await prisma.user.findUnique({ where: { email } })
+    const existingEmail = await prisma.user.findFirst({ where: { email } })
     if (existingEmail) {
       return reply.status(400).send({ message: '电子邮件已存在' })
     }
 
-    const existingUsername = await prisma.user.findUnique({ where: { username } })
+    const existingUsername = await prisma.user.findFirst({ where: { username } })
     if (existingUsername) {
       return reply.status(400).send({ message: '账号已存在' })
     }
@@ -157,7 +157,7 @@ export async function adminRoutes(app: FastifyInstance) {
     }
 
     const updated = await prisma.user.update({
-      where: { id },
+      where: { id, deletedAt: null },
       data: parsed.data,
       select: {
         id: true,
@@ -195,17 +195,17 @@ export async function adminRoutes(app: FastifyInstance) {
 
     const hashedPassword = await bcrypt.hash(parsed.data.password, 10)
     await prisma.user.update({
-      where: { id },
+      where: { id, deletedAt: null },
       data: { password: hashedPassword },
     })
 
     return { success: true }
   })
 
-  // 删除用户
+  // 删除用户（软删除）
   app.delete('/users/:id', {
     schema: {
-      description: '删除用户（不能删除自己）',
+      description: '软删除用户（不能删除自己）',
       tags: ['管理'],
       params: zSchema(z.object({ id: z.string() })),
     },
@@ -233,20 +233,7 @@ export async function adminRoutes(app: FastifyInstance) {
       }
     }
 
-    // 删除关联数据（部分关系未设级联删除，需按依赖顺序清理）
-    await prisma.$transaction(async (tx) => {
-      // 记录和定期交易：ownerId 必填，转移给操作者
-      await tx.record.updateMany({ where: { ownerId: id }, data: { ownerId: payload.id } })
-      await tx.recurringTransaction.updateMany({ where: { ownerId: id }, data: { ownerId: payload.id } })
-      // 成员关系
-      await tx.accountBookMember.deleteMany({ where: { userId: id } })
-      // 账本（级联删除 budgets/records）
-      await tx.accountBook.deleteMany({ where: { ownerId: id } })
-      // 账户
-      await tx.account.deleteMany({ where: { ownerId: id } })
-      // 删除用户（其余有 onDelete: Cascade 的表自动清理）
-      await tx.user.delete({ where: { id } })
-    })
+    await prisma.user.delete({ where: { id } })
     return { success: true }
   })
 }

@@ -33,11 +33,11 @@ export async function authenticate(
   const apiKey = await prisma.apiKey.findUnique({
     where: { hash },
     include: {
-      user: { select: { id: true, email: true, role: true, status: true } },
+      user: { select: { id: true, email: true, role: true, status: true, deletedAt: true } },
     },
   })
 
-  if (!apiKey || apiKey.user.status !== 'ACTIVE') {
+  if (!apiKey || apiKey.user.status !== 'ACTIVE' || apiKey.user.deletedAt) {
     return reply.status(401).send({ message: '未授权' })
   }
 

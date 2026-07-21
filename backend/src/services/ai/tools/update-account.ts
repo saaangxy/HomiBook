@@ -1,4 +1,5 @@
 import { prisma } from '../../../app.js'
+import { Prisma } from '@prisma/client'
 import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 import { computeAccountBalance } from '../../account.js'
@@ -39,7 +40,7 @@ export const updateAccountTool: ToolDef = {
         }
       }
 
-      const data: Record<string, unknown> = {}
+      const data: Prisma.AccountUpdateInput = {}
       if (args.name !== undefined) data.name = args.name
       if (args.type !== undefined) data.type = args.type
       if (args.currency !== undefined) data.currency = args.currency

@@ -1336,48 +1336,86 @@ export async function chatRoutes(app: FastifyInstance) {
 
   // 测试供应商连接
   app.post('/providers/test', async (req, reply) => {
-    const { provider, apiKey, baseURL } = req.body as { provider?: string; apiKey?: string; baseURL?: string }
+    const { provider, apiKey, baseURL, model, configId } = req.body as { provider?: string; apiKey?: string; baseURL?: string; model?: string; configId?: string }
     if (!provider) return reply.status(400).send({ message: '缺少 provider 参数' })
 
     const validProviders = ALL_PROVIDERS.map((p) => p.value)
     if (!validProviders.includes(provider as any)) return reply.status(400).send({ message: '无效的供应商' })
 
-    const url = baseURL || DEFAULT_BASE_URLS[provider as keyof typeof DEFAULT_BASE_URLS] || ''
+    const userId = (req as any).user.id as string
+
+    // apiKey 为空时，从已保存的 UserProviderConfig 读取（编辑场景：apiKey 被掩码为 ****）
+    let key = apiKey || ''
+    let savedBaseURL = ''
+    let savedModel = ''
+    if (!key && configId) {
+      const saved = await prisma.userProviderConfig.findFirst({ where: { id: configId, userId } })
+      if (saved) {
+        key = saved.apiKey
+        savedBaseURL = saved.baseURL
+        savedModel = saved.models
+      }
+    }
+    if (!key) key = await loadApiKey(provider).catch(() => '')
+
+    const url = baseURL || savedBaseURL || DEFAULT_BASE_URLS[provider as keyof typeof DEFAULT_BASE_URLS] || ''
     if (!url) return reply.status(400).send({ message: '无法获取 API 端点 URL，请手动填写' })
 
-    const key = apiKey || await loadApiKey(provider).catch(() => '')
+    const providerConfig = ALL_PROVIDERS.find((p) => p.value === provider)!
 
     try {
+      // 1. 确定用于聊天测试的模型名：优先用前端传入的 model，回退到已保存配置中的模型
+      let testModel = model?.trim() || savedModel || providerConfig.defaultModels[0] || ''
+      let discoveredModels: string[] = []
+
+      // Ollama: 通过 /api/tags 获取已安装模型（OpenAI 兼容端点不暴露模型列表）
       if (provider === 'ollama') {
         const ollamaBase = url.replace(/\/v1\/?$/, '')
-        const res = await fetch(`${ollamaBase}/api/tags`, { signal: AbortSignal.timeout(10000) })
-        if (!res.ok) {
-          return { success: false, message: `Ollama 连接失败: HTTP ${res.status}` }
+        const tagsRes = await fetch(`${ollamaBase}/api/tags`, { signal: AbortSignal.timeout(10000) })
+        if (!tagsRes.ok) {
+          return { success: false, message: `Ollama 连接失败: HTTP ${tagsRes.status}` }
         }
-        const data = (await res.json()) as { models?: { name: string }[] }
-        const models = (data.models || []).map((m) => m.name)
-        return { success: true, message: `连接成功，找到 ${models.length} 个模型`, models }
+        const tagsData = (await tagsRes.json()) as { models?: { name: string }[] }
+        discoveredModels = (tagsData.models || []).map((m) => m.name)
+        if (discoveredModels.length === 0) {
+          return { success: false, message: 'Ollama 未安装任何模型，请先拉取模型' }
+        }
+        if (!testModel) testModel = discoveredModels[0]
       }
 
-      // OpenAI 兼容: GET {baseURL}/models
-      const modelsURL = url.replace(/\/$/, '') + '/models'
-      const res = await fetch(modelsURL, {
-        headers: {
-          Authorization: `Bearer ${key}`,
-          'Content-Type': 'application/json',
-        },
-        signal: AbortSignal.timeout(10000),
-      })
-
-      if (!res.ok) {
-        const errText = await res.text().catch(() => '')
-        const hint = res.status === 401 ? 'API Key 无效' : res.status === 403 ? '权限不足' : res.status === 404 ? '端点不存在' : `HTTP ${res.status}`
-        return { success: false, message: `连接失败: ${hint}${errText ? ' - ' + errText.slice(0, 200) : ''}` }
+      // Custom 等无默认模型的供应商且前端未传 model：尝试 /models 端点发现可用模型
+      if (!testModel) {
+        discoveredModels = await tryFetchModels(url, key, provider)
+        if (discoveredModels.length === 0) {
+          return { success: false, message: '无法获取模型列表，请确认 baseURL 和 apiKey 是否正确' }
+        }
+        testModel = discoveredModels[0]
       }
 
-      const data = (await res.json()) as { data?: { id: string }[] }
-      const models = (data.data || []).map((m) => m.id)
-      return { success: true, message: `连接成功，找到 ${models.length} 个模型`, models }
+      // 2. 连通性测试：调用聊天接口做简短测试
+      try {
+        const languageModel = createModel(provider as ProviderType, testModel, { apiKey: key, baseURL: url })
+        await generateText({
+          model: languageModel,
+          messages: [{ role: 'user', content: 'hi' }],
+          maxOutputTokens: 5,
+        })
+      } catch (err: any) {
+        return { success: false, message: `连接失败: ${err.message || '聊天接口调用失败'}` }
+      }
+
+      // 3. 连通成功，获取模型列表（已发现的直接用；否则尝试 /models 端点，失败返回空）
+      const models = discoveredModels.length > 0
+        ? discoveredModels
+        : await tryFetchModels(url, key, provider)
+
+      return {
+        success: true,
+        message: models.length > 0
+          ? `连接成功，找到 ${models.length} 个模型`
+          : '连接成功（模型列表接口不可用，请手动填写模型名）',
+        models,
+      }
     } catch (err: any) {
       return { success: false, message: `连接失败: ${err.message || '网络错误'}` }
     }
@@ -1462,6 +1500,37 @@ async function loadApiKey(provider: string): Promise<string> {
     return config?.value || ''
   } catch {
     return ''
+  }
+}
+
+/**
+ * 尝试获取模型列表，失败返回空数组。
+ * /models 端点并非所有服务商都支持（如 Anthropic），不支持时返回空列表，不报错。
+ */
+async function tryFetchModels(url: string, key: string, provider: string): Promise<string[]> {
+  try {
+    if (provider === 'ollama') {
+      const ollamaBase = url.replace(/\/v1\/?$/, '')
+      const res = await fetch(`${ollamaBase}/api/tags`, { signal: AbortSignal.timeout(10000) })
+      if (!res.ok) return []
+      const data = (await res.json()) as { models?: { name: string }[] }
+      return (data.models || []).map((m) => m.name)
+    }
+
+    // OpenAI 兼容: GET {baseURL}/models
+    const modelsURL = url.replace(/\/$/, '') + '/models'
+    const res = await fetch(modelsURL, {
+      headers: {
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/json',
+      },
+      signal: AbortSignal.timeout(10000),
+    })
+    if (!res.ok) return []
+    const data = (await res.json()) as { data?: { id: string }[] }
+    return (data.data || []).map((m) => m.id)
+  } catch {
+    return []
   }
 }
 

@@ -5,13 +5,13 @@ export class AuthService {
   // 注册
   async register(username: string, email: string, password: string, nickname?: string) {
     // 检查邮箱是否已存在
-    const existingEmail = await prisma.user.findUnique({ where: { email } })
+    const existingEmail = await prisma.user.findFirst({ where: { email } })
     if (existingEmail) {
       throw Object.assign(new Error('电子邮件已存在'), { statusCode: 400 })
     }
 
     // 检查用户名是否已存在
-    const existingUsername = await prisma.user.findUnique({ where: { username } })
+    const existingUsername = await prisma.user.findFirst({ where: { username } })
     if (existingUsername) {
       throw Object.assign(new Error('账号已存在'), { statusCode: 400 })
     }

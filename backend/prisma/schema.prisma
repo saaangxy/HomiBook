@@ -20,6 +20,7 @@ model User {
   theme     String   @default("dark")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  deletedAt DateTime?
 
   ownedBooks           AccountBook[] @relation("BookOwner")
   memberships          AccountBookMember[]
@@ -85,6 +86,7 @@ model Account {
   status          String      @default("ACTIVE")
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
+  deletedAt       DateTime?
 
   records              Record[]
   recordsFrom          Record[]    @relation("FromAccount")

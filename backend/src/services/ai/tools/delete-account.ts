@@ -24,8 +24,10 @@ export const deleteAccountTool: ToolDef = {
         return { success: false, error: '无权删除该账户', retryable: false }
       }
 
-      await prisma.balanceAdjustment.deleteMany({ where: { accountId: args.id } })
-      await prisma.account.delete({ where: { id: args.id } })
+      await prisma.account.update({
+        where: { id: args.id },
+        data: { status: 'ARCHIVED', deletedAt: new Date() },
+      })
 
       return desensitize({ deleted: true })
     }, 'delete_account')

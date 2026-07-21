@@ -4,11 +4,11 @@ import jwt from '@fastify/jwt'
 import multipart from '@fastify/multipart'
 import swagger from '@fastify/swagger'
 import scalar from '@scalar/fastify-api-reference'
-import { PrismaClient } from '@prisma/client'
 import path from 'path'
 import fs from 'fs'
+import { prisma, rawPrisma } from './lib/prisma.js'
 
-export const prisma = new PrismaClient()
+export { prisma, rawPrisma }
 
 export async function buildApp() {
   const app = Fastify({

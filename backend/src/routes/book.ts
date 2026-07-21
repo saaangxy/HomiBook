@@ -1,5 +1,5 @@
 import type {FastifyInstance} from 'fastify'
-import {prisma} from '../app.js'
+import {prisma, rawPrisma} from '../app.js'
 import {authenticate, assertIsMember} from '../middleware/auth.js'
 import {
     createBookSchema,
@@ -381,14 +381,14 @@ export async function bookRoutes(app: FastifyInstance) {
 
         // 手动级联删除（SQLite 不支持 onDelete: Cascade）
         // 顺序：Record → BalanceAdjustment → Account → ShareCode → Budget → AccountBookMember → AccountBook
-        await prisma.$transaction([
-            prisma.record.deleteMany({where: {accountBookId: id}}),
-            prisma.balanceAdjustment.deleteMany({where: {account: {accountBookId: id}}}),
-            prisma.account.deleteMany({where: {accountBookId: id}}),
-            prisma.shareCode.deleteMany({where: {accountBookId: id}}),
-            prisma.budget.deleteMany({where: {accountBookId: id}}),
-            prisma.accountBookMember.deleteMany({where: {accountBookId: id}}),
-            prisma.accountBook.delete({where: {id}}),
+        await rawPrisma.$transaction([
+            rawPrisma.record.deleteMany({where: {accountBookId: id}}),
+            rawPrisma.balanceAdjustment.deleteMany({where: {account: {accountBookId: id}}}),
+            rawPrisma.account.deleteMany({where: {accountBookId: id}}),
+            rawPrisma.shareCode.deleteMany({where: {accountBookId: id}}),
+            rawPrisma.budget.deleteMany({where: {accountBookId: id}}),
+            rawPrisma.accountBookMember.deleteMany({where: {accountBookId: id}}),
+            rawPrisma.accountBook.delete({where: {id}}),
         ])
 
         return {success: true}
@@ -468,7 +468,7 @@ export async function bookRoutes(app: FastifyInstance) {
 
         await assertCanManage(id, payload.id)
 
-        const targetUser = await prisma.user.findUnique({where: {email: parsed.data.email}})
+        const targetUser = await prisma.user.findFirst({where: {email: parsed.data.email}})
         if (!targetUser) {
             return reply.status(404).send({message: '该邮箱未注册'})
         }

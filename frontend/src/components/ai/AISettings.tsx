@@ -260,6 +260,8 @@ export function AIAssistantSettings() {
         provider: formProvider,
         apiKey: formApiKey,
         baseURL: formBaseURL || getProviderDefaultBaseURL(formProvider),
+        model: formModels || undefined,
+        configId: editingConfig?.id,
       })
       setTestResult(res)
       if (res.success && res.models?.length) {
