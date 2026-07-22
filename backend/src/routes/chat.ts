@@ -875,11 +875,16 @@ export async function chatRoutes(app: FastifyInstance) {
         model: modelInstance,
         system: '你是一个标题生成助手。根据对话内容生成一个简短的标题（20个字以内），只返回标题文本，不要加引号或额外说明。',
         prompt: `请为以下对话生成一个简短的标题（20个字以内）：\n\n${conversationText}`,
-        maxOutputTokens: 100,
+        maxOutputTokens: 500,
         temperature: 0.3,
       })
 
-      const title = result.text.trim().slice(0, 30)
+      // 剥离推理模型的 <think>...</think> 思考块（含未闭合的截断情况）
+      const title = result.text
+        .replace(/<think>[\s\S]*?<\/think>/g, '')
+        .replace(/<think>[\s\S]*$/g, '')
+        .trim()
+        .slice(0, 30)
       if (title) {
         await prisma.chatSession.update({ where: { id }, data: { title } })
         return { title }

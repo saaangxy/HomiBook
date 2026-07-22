@@ -7,7 +7,7 @@ const PROMPT = `## 图片记账（小票/收据识别）
 ### 识别流程
 1. 对于每个 attachmentId，调用 ocr_receipt(attachmentId) 工具识别图片内容
 2. 直接调用 create_record 或 batch_create_records 创建流水记录,工具内部会提供给用户确认,不要额外询问
-   - 将识别数据的rawText字段完整存入备注(remark)字段
+   - 将识别结果中的'rawText'字段完整存入备注(remark)字段
    - 传入 attachmentIds 将小票关联到流水
 3. 如果识别结果的日期、金额、分类等有误，请按用户指示修改后再记账
 
