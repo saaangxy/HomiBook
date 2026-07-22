@@ -393,7 +393,7 @@ async function continueWithLLM(reply: any, sessionId: string, accountBookId: str
 
   const providerConfigs = await prisma.userProviderConfig.findMany({ where: { userId } })
   const activeConfig = providerConfigs.find(c => c.provider === provider)
-  const apiKey = activeConfig?.apiKey || (await loadApiKey(provider))
+  const apiKey = activeConfig?.apiKey || ''
   const baseURL = activeConfig?.baseURL || (await loadBaseURL(provider))
 
   const book = await prisma.accountBook.findUnique({ where: { id: accountBookId }, select: { name: true } })
@@ -578,15 +578,6 @@ const ROUTE_DOC: Record<string, RouteDoc> = {
       }
     }
   },
-  'GET /providers/status': {summary: '检查供应商连接状态'},
-  'POST /providers/key': {
-    summary: '设置供应商API密钥',
-    bodySchema: z.object({provider: z.string().describe('供应商类型'), apiKey: z.string().describe('API密钥')})
-  },
-  'DELETE /providers/key': {
-    summary: '删除供应商API密钥',
-    bodySchema: z.object({provider: z.string().describe('供应商类型')})
-  },
   'GET /providers/baseurl': {
     summary: '获取供应商BaseURL',
     querystringSchema: PROVIDER_PARAMS,
@@ -743,7 +734,7 @@ export async function chatRoutes(app: FastifyInstance) {
     // 模型路由
     let route
     if (hasSimple) {
-      const simpleApiKey = simpleConfig?.apiKey || (await loadApiKey(simpleProvider))
+      const simpleApiKey = simpleConfig?.apiKey || ''
       route = await routeIntent(message, simpleProvider as ProviderType, prefs.simpleModel, complexProvider as ProviderType, prefs.complexModel, { apiKey: simpleApiKey })
     } else {
       // 简单模型未配置，直接用关键词判断是否需要复杂模型
@@ -762,7 +753,7 @@ export async function chatRoutes(app: FastifyInstance) {
     }
 
     const activeConfig = route.provider === simpleProvider ? simpleConfig : complexConfig
-    const apiKey = activeConfig?.apiKey || (await loadApiKey(route.provider))
+    const apiKey = activeConfig?.apiKey || ''
     const baseURL = activeConfig?.baseURL || (await loadBaseURL(route.provider))
 
     const messages = [...history]
@@ -811,7 +802,7 @@ export async function chatRoutes(app: FastifyInstance) {
     const { title, modelProvider, modelName } = parsed.data
 
     const session = await prisma.chatSession.create({
-      data: { userId, title: title || '新对话', modelProvider, modelName },
+      data: { userId, title: title || '', modelProvider, modelName },
     })
     return { session }
   })
@@ -844,7 +835,7 @@ export async function chatRoutes(app: FastifyInstance) {
       where: { sessionId: id },
       orderBy: { createdAt: 'asc' },
       take: 6,
-      select: { role: true, content: true },
+      select: { role: true, content: true, toolCalls: true },
     })
 
     if (messages.length === 0) return { title: session.title }
@@ -857,12 +848,26 @@ export async function chatRoutes(app: FastifyInstance) {
     const model = prefs.simpleModel || ''
     if (!provider || !model) return { title: session.title }
 
-    const apiKey = await loadApiKey(provider)
+    const apiKey = simpleConfig?.apiKey || ''
     const baseURL = simpleConfig?.baseURL || DEFAULT_BASE_URLS[provider as ProviderType] || ''
 
-    const conversationText = messages.map(m =>
-      `${m.role === 'user' ? '用户' : '助手'}: ${(m.content || '').slice(0, 200)}`
-    ).join('\n')
+    const conversationText = messages.map(m => {
+      const content = (m.content || '').trim()
+      const label = m.role === 'user' ? '用户' : '助手'
+      // 纯图片/附件消息 content 为空，标注为图片消息让 LLM 理解上下文
+      let text = content || '[图片消息]'
+      // 助手消息补充工具调用名（content 只含纯文本，工具名能反映操作意图）
+      if (m.role === 'assistant' && m.toolCalls) {
+        try {
+          const calls = JSON.parse(m.toolCalls) as { toolName?: string }[]
+          const toolNames = calls.map(c => c.toolName).filter(Boolean)
+          if (toolNames.length > 0) {
+            text = `[工具: ${toolNames.join(', ')}] ${text}`
+          }
+        } catch { /* ignore */ }
+      }
+      return `${label}: ${text}`
+    }).join('\n').slice(0, 800)
 
     try {
       const modelInstance = createModel(provider as ProviderType, model, { apiKey, baseURL })
@@ -879,7 +884,8 @@ export async function chatRoutes(app: FastifyInstance) {
         await prisma.chatSession.update({ where: { id }, data: { title } })
         return { title }
       }
-    } catch {
+    } catch (e){
+      console.log(e)
       // 标题生成失败，保持原标题
     }
 
@@ -1208,24 +1214,28 @@ export async function chatRoutes(app: FastifyInstance) {
 
   // 动态获取供应商模型列表（代理调用供应商 /v1/models）
   app.get('/providers/models', async (req, reply) => {
-    const { provider, baseURL: customBaseURL } = req.query as { provider?: string; baseURL?: string }
+    const { provider, baseURL: customBaseURL, apiKey: directApiKey, configId } = req.query as { provider?: string; baseURL?: string; apiKey?: string; configId?: string }
 
     if (!provider) return reply.status(400).send({ message: '缺少 provider 参数' })
 
     const providerConfig = ALL_PROVIDERS.find((p) => p.value === provider)
     if (!providerConfig) return reply.status(400).send({ message: '无效的供应商' })
 
-    // 获取 API Key
-    const apiKey = await loadApiKey(provider)
+    const userId = (req as any).user.id as string
+
+    // 获取 API Key：优先前端直传，其次从已保存的 UserProviderConfig 读取
+    let apiKey = directApiKey || ''
+    let savedBaseURL = ''
+    if (!apiKey && configId) {
+      const saved = await prisma.userProviderConfig.findFirst({ where: { id: configId, userId } })
+      if (saved) {
+        apiKey = saved.apiKey
+        savedBaseURL = saved.baseURL
+      }
+    }
 
     // 获取 baseURL
-    let baseURL = customBaseURL || DEFAULT_BASE_URLS[provider as keyof typeof DEFAULT_BASE_URLS] || ''
-    if (!baseURL) {
-      try {
-        const cfg = await prisma.systemConfig.findUnique({ where: { key: `ai_baseurl_${provider}` } })
-        baseURL = cfg?.value || ''
-      } catch { baseURL = '' }
-    }
+    const baseURL = customBaseURL || savedBaseURL || DEFAULT_BASE_URLS[provider as keyof typeof DEFAULT_BASE_URLS] || ''
     if (!baseURL) {
       return { models: providerConfig.defaultModels }
     }
@@ -1265,65 +1275,6 @@ export async function chatRoutes(app: FastifyInstance) {
     }
   })
 
-  // 供应商 API Key 状态（只返回是否已配置）
-  app.get('/providers/status', async () => {
-    const configs = await prisma.systemConfig.findMany({
-      where: { key: { startsWith: 'ai_key_' } },
-    })
-    const keyMap = new Map(configs.map((c) => [c.key.replace('ai_key_', ''), true]))
-
-    const envKeys: Record<string, string> = {
-      openai: process.env.OPENAI_API_KEY || '',
-      anthropic: process.env.ANTHROPIC_API_KEY || '',
-      deepseek: process.env.DEEPSEEK_API_KEY || '',
-      qwen: process.env.QWEN_API_KEY || '',
-      zhipu: process.env.ZHIPU_API_KEY || '',
-      gemini: process.env.GEMINI_API_KEY || '',
-      moonshot: process.env.MOONSHOT_API_KEY || '',
-      baichuan: process.env.BAICHUAN_API_KEY || '',
-      yi: process.env.YI_API_KEY || '',
-      bytedance: process.env.BYTEDANCE_API_KEY || '',
-      hunyuan: process.env.HUNYUAN_API_KEY || '',
-      minimax: process.env.MINIMAX_API_KEY || '',
-      ollama: process.env.OLLAMA_API_KEY || 'ollama',
-    }
-
-    const status: Record<string, boolean> = {}
-    for (const p of ALL_PROVIDERS) {
-      status[p.value] = !!(keyMap.get(p.value) || envKeys[p.value] || (p.value === 'ollama'))
-    }
-    return status
-  })
-
-  // 保存供应商 API Key
-  app.post('/providers/key', async (req, reply) => {
-    const { provider, apiKey } = req.body as { provider?: string; apiKey?: string }
-    if (!provider || !apiKey) return reply.status(400).send({ message: '缺少参数' })
-
-    const validProviders = ALL_PROVIDERS.map((p) => p.value)
-    if (!validProviders.includes(provider as any)) return reply.status(400).send({ message: '无效的供应商' })
-
-    await prisma.systemConfig.upsert({
-      where: { key: `ai_key_${provider}` },
-      create: { key: `ai_key_${provider}`, value: apiKey },
-      update: { value: apiKey },
-    })
-    return { success: true, provider, configured: true }
-  })
-
-  // 删除供应商 API Key
-  app.delete('/providers/key', async (req, reply) => {
-    const { provider } = req.query as { provider?: string }
-    if (!provider) return reply.status(400).send({ message: '缺少参数' })
-
-    try {
-      await prisma.systemConfig.delete({ where: { key: `ai_key_${provider}` } })
-    } catch {
-      // 不存在也没关系
-    }
-    return { success: true, configured: false }
-  })
-
   // 获取供应商 baseURL（存储值或默认值）
   app.get('/providers/baseurl', async (req, reply) => {
     const { provider } = req.query as { provider?: string }
@@ -1356,7 +1307,6 @@ export async function chatRoutes(app: FastifyInstance) {
         savedModel = saved.models
       }
     }
-    if (!key) key = await loadApiKey(provider).catch(() => '')
 
     const url = baseURL || savedBaseURL || DEFAULT_BASE_URLS[provider as keyof typeof DEFAULT_BASE_URLS] || ''
     if (!url) return reply.status(400).send({ message: '无法获取 API 端点 URL，请手动填写' })
@@ -1452,7 +1402,7 @@ async function getOrCreateSession(sid: string | undefined, userId: string, first
   }
   const title = firstMessage
     ? firstMessage.length > 30 ? firstMessage.slice(0, 30) + '...' : firstMessage
-    : '新对话'
+    : ''
   return prisma.chatSession.create({
     data: { userId, title },
   })
@@ -1473,34 +1423,6 @@ async function loadAIConfig(userId: string) {
     maxSteps: prefs?.maxSteps ?? 10,
     visionProviderConfigId: prefs?.visionProviderConfigId || null,
     visionModel: prefs?.visionModel || '',
-  }
-}
-
-async function loadApiKey(provider: string): Promise<string> {
-  // 优先从环境变量读取
-  const envKeys: Record<string, string> = {
-    openai: process.env.OPENAI_API_KEY || '',
-    anthropic: process.env.ANTHROPIC_API_KEY || '',
-    deepseek: process.env.DEEPSEEK_API_KEY || '',
-    qwen: process.env.QWEN_API_KEY || '',
-    zhipu: process.env.ZHIPU_API_KEY || '',
-    gemini: process.env.GEMINI_API_KEY || '',
-    moonshot: process.env.MOONSHOT_API_KEY || '',
-    baichuan: process.env.BAICHUAN_API_KEY || '',
-    yi: process.env.YI_API_KEY || '',
-    bytedance: process.env.BYTEDANCE_API_KEY || '',
-    hunyuan: process.env.HUNYUAN_API_KEY || '',
-    minimax: process.env.MINIMAX_API_KEY || '',
-    ollama: process.env.OLLAMA_API_KEY || 'ollama',
-  }
-  if (envKeys[provider]) return envKeys[provider]
-
-  // 回退到 SystemConfig
-  try {
-    const config = await prisma.systemConfig.findUnique({ where: { key: `ai_key_${provider}` } })
-    return config?.value || ''
-  } catch {
-    return ''
   }
 }
 

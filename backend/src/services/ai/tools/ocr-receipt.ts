@@ -11,38 +11,19 @@ async function loadVisionConfig(userId: string) {
   if (prefs?.visionProviderConfigId && prefs?.visionModel) {
     const config = await prisma.userProviderConfig.findUnique({ where: { id: prefs.visionProviderConfigId } })
     if (config) {
-      const apiKey = config.apiKey || await loadApiKeyEnv(config.provider)
       const baseURL = config.baseURL || DEFAULT_BASE_URLS[config.provider as ProviderType] || ''
-      return { provider: config.provider, model: prefs.visionModel, apiKey, baseURL }
+      return { provider: config.provider, model: prefs.visionModel, apiKey: config.apiKey, baseURL }
     }
   }
   // 回退到简单任务模型
   if (prefs?.simpleProviderConfigId && prefs?.simpleModel) {
     const config = await prisma.userProviderConfig.findUnique({ where: { id: prefs.simpleProviderConfigId } })
     if (config) {
-      const apiKey = config.apiKey || await loadApiKeyEnv(config.provider)
       const baseURL = config.baseURL || DEFAULT_BASE_URLS[config.provider as ProviderType] || ''
-      return { provider: config.provider, model: prefs.simpleModel, apiKey, baseURL }
+      return { provider: config.provider, model: prefs.simpleModel, apiKey: config.apiKey, baseURL }
     }
   }
   return null
-}
-
-async function loadApiKeyEnv(provider: string): Promise<string> {
-  const envKeys: Record<string, string> = {
-    openai: process.env.OPENAI_API_KEY || '',
-    anthropic: process.env.ANTHROPIC_API_KEY || '',
-    deepseek: process.env.DEEPSEEK_API_KEY || '',
-    qwen: process.env.QWEN_API_KEY || '',
-    zhipu: process.env.ZHIPU_API_KEY || '',
-    gemini: process.env.GEMINI_API_KEY || '',
-    ollama: process.env.OLLAMA_API_KEY || 'ollama',
-  }
-  if (envKeys[provider]) return envKeys[provider]
-  try {
-    const config = await prisma.systemConfig.findUnique({ where: { key: `ai_key_${provider}` } })
-    return config?.value || ''
-  } catch { return '' }
 }
 
 export const ocrReceiptTool: ToolDef = {

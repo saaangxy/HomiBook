@@ -245,7 +245,7 @@ export function AIAssistantSettings() {
   const handleFormFetchModels = async () => {
     setFormFetchingModels(true)
     try {
-      const res = await fetchProviderModels(formProvider, formBaseURL || undefined)
+      const res = await fetchProviderModels(formProvider, formBaseURL || undefined, formApiKey || undefined, editingConfig?.id)
       setFormModelList(res.models)
     } catch {
       setFormModelList(getDefaultModels(formProvider))

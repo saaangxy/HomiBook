@@ -56,7 +56,7 @@ export function SessionList({ sessions, currentId, streamingSessionIds, onSelect
                   ) : (
                     <MessageSquare size={14} className="shrink-0 text-muted-foreground" />
                   )}
-                  <span className="truncate flex-1">{s.title}</span>
+                  <span className="truncate flex-1">{s.title || '新对话'}</span>
                   <Button
                     variant="ghost"
                     size="icon"

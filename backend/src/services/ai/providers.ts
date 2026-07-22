@@ -127,23 +127,6 @@ export const DEFAULT_BASE_URLS: Record<ProviderType, string> = {
   custom: '',
 }
 
-const ENV_API_KEYS: Record<string, string> = {
-  openai: process.env.OPENAI_API_KEY || '',
-  anthropic: process.env.ANTHROPIC_API_KEY || '',
-  deepseek: process.env.DEEPSEEK_API_KEY || '',
-  qwen: process.env.QWEN_API_KEY || '',
-  zhipu: process.env.ZHIPU_API_KEY || '',
-  gemini: process.env.GEMINI_API_KEY || '',
-  moonshot: process.env.MOONSHOT_API_KEY || '',
-  baichuan: process.env.BAICHUAN_API_KEY || '',
-  yi: process.env.YI_API_KEY || '',
-  bytedance: process.env.BYTEDANCE_API_KEY || '',
-  hunyuan: process.env.HUNYUAN_API_KEY || '',
-  minimax: process.env.MINIMAX_API_KEY || '',
-  ollama: 'ollama',
-  custom: '',
-}
-
 /**
  * 创建语言模型实例
  * Anthropic 使用 createAnthropic，其他均通过 OpenAI 兼容 API 接入
@@ -153,7 +136,7 @@ export function createModel(
   modelName: string,
   config: ProviderConfig,
 ): LanguageModelV3 {
-  const apiKey = config.apiKey || getDefaultApiKey(provider)
+  const apiKey = config.apiKey
   const baseURL = config.baseURL || DEFAULT_BASE_URLS[provider]
 
   if (provider === 'anthropic') {
@@ -170,8 +153,4 @@ export function createModel(
     baseURL: baseURL.replace(/\/v1\/?$/, '/v1'),
   })
   return openai.chat(modelName)
-}
-
-export function getDefaultApiKey(provider: ProviderType): string {
-  return ENV_API_KEYS[provider] || ''
 }

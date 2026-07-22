@@ -105,9 +105,11 @@ export async function fetchProviders() {
   return res.providers
 }
 
-export async function fetchProviderModels(provider: string, baseURL?: string) {
+export async function fetchProviderModels(provider: string, baseURL?: string, apiKey?: string, configId?: string) {
   const params = new URLSearchParams({ provider })
   if (baseURL) params.set('baseURL', baseURL)
+  if (apiKey) params.set('apiKey', apiKey)
+  if (configId) params.set('configId', configId)
   return api.get<{ models: string[] }>(`${BASE}/providers/models?${params}`)
 }
 
@@ -284,19 +286,6 @@ export async function deleteProviderConfig(id: string) {
 
 export async function copyProviderConfig(id: string) {
   return api.post<UserProviderConfig>(`${BASE}/provider-configs/${id}/copy`, {})
-}
-
-// Provider API key management
-export async function fetchProviderKeyStatus() {
-  return api.get<Record<string, boolean>>(`${BASE}/providers/status`)
-}
-
-export async function saveProviderKey(provider: string, apiKey: string) {
-  return api.post<{ success: boolean; provider: string; configured: boolean }>(`${BASE}/providers/key`, { provider, apiKey })
-}
-
-export async function deleteProviderKey(provider: string) {
-  return api.delete(`${BASE}/providers/key?provider=${encodeURIComponent(provider)}`)
 }
 
 // Provider baseURL management

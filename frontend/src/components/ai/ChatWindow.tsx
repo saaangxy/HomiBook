@@ -186,8 +186,8 @@ export function ChatWindow() {
 
     sendMessage(currentBookId, msg, parentId, undefined, attachmentIds, attachments)
 
-    // 首条消息时自动更新会话标题
-    if ((!parentId || parentId === 'greeting') && currentSessionId) {
+    // 首条消息且有文本时更新会话标题（纯图片由 AI 生成标题）
+    if ((!parentId || parentId === 'greeting') && currentSessionId && msg.trim()) {
       const title = msg.length > 30 ? msg.slice(0, 30) + '...' : msg
       updateSession(currentSessionId, { title }).catch(() => {})
       setSessions(sessions.map(s => s.id === currentSessionId ? { ...s, title } : s))
