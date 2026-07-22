@@ -46,6 +46,7 @@ export const respondSuggestionSchema = z.object({
 
 // 更新助手配置
 export const updateAIConfigSchema = z.object({
+  enabled: z.boolean().optional().describe('是否启用 AI 助手'),
   simpleProviderConfigId: z.string().nullable().optional().describe('简单任务供应商配置ID'),
   simpleModel: z.string().optional().describe('简单任务模型'),
   complexProviderConfigId: z.string().nullable().optional().describe('复杂任务供应商配置ID'),

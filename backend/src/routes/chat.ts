@@ -1461,6 +1461,7 @@ async function getOrCreateSession(sid: string | undefined, userId: string, first
 async function loadAIConfig(userId: string) {
   const prefs = await prisma.userAIConfig.findUnique({ where: { userId } })
   return {
+    enabled: prefs?.enabled ?? false,
     simpleProviderConfigId: prefs?.simpleProviderConfigId || null,
     simpleModel: prefs?.simpleModel || '',
     complexProviderConfigId: prefs?.complexProviderConfigId || null,

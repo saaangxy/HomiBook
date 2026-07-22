@@ -404,6 +404,8 @@ model UserAIConfig {
   userId    String   @unique
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  enabled   Boolean  @default(false)
+
   simpleProviderConfigId  String?
   simpleModel             String  @default("deepseek-chat")
   complexProviderConfigId String?

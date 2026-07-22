@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Card, CardContent } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Book, Wallet, ArrowUpCircle, ArrowDownCircle, TrendingUp, TrendingDown, AlertTriangle } from 'lucide-react'
+import { Book, Wallet, ArrowUpCircle, ArrowDownCircle, TrendingUp, TrendingDown, AlertTriangle, Bot, Settings } from 'lucide-react'
 import { useBookStore } from '../stores/book'
 import { recordApi, type RecordSummary } from '../api/record'
 import { accountApi } from '../api/account'
 import { budgetApi, type BudgetItem } from '../api/budget'
 import { ChatWindow } from '../components/ai/ChatWindow'
+import { fetchAIConfig } from '../api/chat'
 
 export function HomePage() {
   const { currentBookId, books } = useBookStore()
@@ -17,6 +19,17 @@ export function HomePage() {
   const [accountCount, setAccountCount] = useState(0)
   const [budgets, setBudgets] = useState<BudgetItem[]>([])
   const [loading, setLoading] = useState(false)
+  const [aiEnabled, setAiEnabled] = useState(false)
+  const [aiConfigured, setAiConfigured] = useState(false)
+
+  useEffect(() => {
+    fetchAIConfig()
+      .then((cfg) => {
+        setAiEnabled(cfg.enabled)
+        setAiConfigured(!!cfg.simpleProviderConfigId)
+      })
+      .catch(() => { /* ignore */ })
+  }, [])
 
   useEffect(() => {
     if (!currentBookId) return
@@ -157,10 +170,21 @@ export function HomePage() {
       </div>
 
       {/* AI 聊天 */}
-      {currentBookId && (
+      {currentBookId && aiEnabled && (
         <div>
           <h2 className="text-base font-semibold mb-3">AI 助手</h2>
-          <ChatWindow />
+          {aiConfigured ? (
+            <ChatWindow />
+          ) : (
+            <div className="p-5 bg-card border border-border rounded-xl text-center">
+              <Bot size={24} className="mx-auto mb-2 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground mb-3">AI 助手尚未配置模型，请先完成供应商配置</p>
+              <Link to="/settings" className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline">
+                <Settings size={14} />
+                前往配置
+              </Link>
+            </div>
+          )}
         </div>
       )}
     </div>

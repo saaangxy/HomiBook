@@ -37,6 +37,7 @@ export interface ProviderInfo {
 }
 
 export interface UserAIConfig {
+  enabled: boolean
   simpleProviderConfigId: string | null
   simpleModel: string
   complexProviderConfigId: string | null

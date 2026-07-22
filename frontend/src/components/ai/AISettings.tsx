@@ -39,6 +39,7 @@ export function AIAssistantSettings() {
   const [success, setSuccess] = useState('')
 
   // ---------- 助手配置 ----------
+  const [enabled, setEnabled] = useState(false)
   const [simpleConfigId, setSimpleConfigId] = useState<string | null>(null)
   const [simpleModel, setSimpleModel] = useState('')
   const [complexConfigId, setComplexConfigId] = useState<string | null>(null)
@@ -97,6 +98,7 @@ export function AIAssistantSettings() {
       setMaxSteps(prefs.maxSteps ?? 10)
       setVisionConfigId(prefs.visionProviderConfigId)
       setVisionModel(prefs.visionModel)
+      setEnabled(prefs.enabled)
       setProviders(providerList)
       setConfigs(configList)
     } catch {
@@ -113,6 +115,7 @@ export function AIAssistantSettings() {
     setSuccess('')
     try {
       await updateAIConfig({
+        enabled,
         simpleProviderConfigId: simpleConfigId,
         simpleModel,
         complexProviderConfigId: complexConfigId,
@@ -308,6 +311,21 @@ export function AIAssistantSettings() {
           <AlertDescription>{success}</AlertDescription>
         </Alert>
       )}
+
+      {/* ==================== 启用开关 ==================== */}
+      <div className="flex items-center gap-3 p-3 bg-card border border-border rounded-lg">
+        <div className="flex-1">
+          <Label className="text-xs font-medium">启用 AI 助手</Label>
+          <p className="text-xs text-muted-foreground mt-0.5">开启后首页显示聊天窗口，关闭则隐藏</p>
+        </div>
+        <Select value={enabled ? 'true' : 'false'} onValueChange={(v) => setEnabled(v === 'true')}>
+          <SelectTrigger className="w-24"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="false">关闭</SelectItem>
+            <SelectItem value="true">开启</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
 
       {/* ==================== 模型供应商配置 ==================== */}
       <div>
