@@ -102,7 +102,7 @@ type SSEStreamContext = {
   sid: string
   assistantMsgId: string
   parentMsgId?: string
-  isSecondExchange?: boolean
+  shouldGenerateTitle?: boolean
   get: () => ChatState
   set: (partial: Partial<ChatState> | ((s: ChatState) => Partial<ChatState>)) => void
   thinkState: { value: DeltaState }
@@ -269,8 +269,8 @@ function makeSSEHandler(
       })
     }
 
-    // 第二轮对话完成后异步生成标题
-    if (ctx.isSecondExchange) {
+    // 第二轮对话完成后，或首条消息为纯图片（无文本）时，异步生成标题
+    if (ctx.shouldGenerateTitle) {
       import('../api/chat').then(({ generateSessionTitle }) => {
         generateSessionTitle(ctx.sid).then(() => refreshSessions()).catch(() => refreshSessions())
       })
@@ -472,12 +472,13 @@ export const useChatStore = create<ChatState>()((set, get) => {
     })
 
     const existingUserMsgCount = state.allMessages.filter(m => m.role === 'user').length
-    const isSecondExchange = existingUserMsgCount === 1
+    // 第二轮对话，或首轮无文本（纯图片）时需要 AI 生成标题
+    const shouldGenerateTitle = existingUserMsgCount === 1 || (existingUserMsgCount === 0 && !message.trim())
 
     const ctx: SSEStreamContext = {
       sid, assistantMsgId,
       get, set,
-      isSecondExchange,
+      shouldGenerateTitle,
       thinkState: { value: 'text' },
       blockIdCounter: { value: 0 },
     }
