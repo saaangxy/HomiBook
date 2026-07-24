@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
-import { CardContent } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
   Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
@@ -298,13 +299,15 @@ export function RecurringTransactionsPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div>
       {error && (
-        <CardContent className="p-0"><div className="text-sm text-[#ef4444] bg-[#ef4444]/10 p-3 rounded-lg">{error}</div></CardContent>
+        <Alert variant="destructive" className="mb-6">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">固定收支</h2>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-xl font-bold">固定收支</h1>
         <Button onClick={openCreate} className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg h-8 text-xs">
           <Plus size={14} /> 新增固定收支
         </Button>
@@ -313,13 +316,15 @@ export function RecurringTransactionsPage() {
       {loading && list.length === 0 ? (
         <div className="py-12"><Spinner className="mx-auto" /></div>
       ) : list.length === 0 ? (
-        <CardContent className="flex flex-col items-center justify-center py-12 text-center gap-2">
-          <FileText size={40} className="opacity-30" />
-          <p className="text-sm text-muted-foreground">暂无固定收支</p>
-          <Button onClick={openCreate} variant="outline" className="text-xs h-8"><Plus size={14} /> 新增</Button>
-        </CardContent>
+        <Card className="rounded-2xl">
+          <CardContent className="flex flex-col items-center justify-center py-12 text-center gap-2">
+            <FileText size={40} className="opacity-30" />
+            <p className="text-sm text-muted-foreground">暂无固定收支</p>
+            <Button onClick={openCreate} variant="outline" className="text-xs h-8"><Plus size={14} /> 新增</Button>
+          </CardContent>
+        </Card>
       ) : (
-        <CardContent className="p-0">
+        <Card className="rounded-xl overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
@@ -336,7 +341,7 @@ export function RecurringTransactionsPage() {
             </TableHeader>
             <TableBody>
               {list.map((rt) => (
-                <TableRow key={rt.id} className={rt.active ? 'shadow-[inset_3px_0_0_#22c55e]' : 'shadow-[inset_3px_0_0_#6b7280]'}>
+                <TableRow key={rt.id} className={!rt.active ? 'opacity-50' : ''}>
                   <TableCell className="text-xs font-medium">{rt.name || '-'}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1.5">
@@ -389,7 +394,7 @@ export function RecurringTransactionsPage() {
               ))}
             </TableBody>
           </Table>
-        </CardContent>
+        </Card>
       )}
 
       {/* 创建/编辑弹窗 */}
