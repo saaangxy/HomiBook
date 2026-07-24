@@ -43,54 +43,84 @@ import { cloneRecordTool } from './clone-record.js'
 import { detectDuplicatesTool } from './detect-duplicates.js'
 import { batchDeleteRecordsTool } from './batch-delete-records.js'
 
-// 所有可用工具注册
-export const ALL_TOOLS: ToolDef[] = [
-  // 查询
-  queryRecordsTool,
-  queryBudgetsTool,
-  queryAccountsTool,
-  getStatsTool,
-  queryCategoriesTool,
-  // 流水操作
-  createRecordTool,
-  updateRecordTool,
-  deleteRecordTool,
-  batchCreateRecordsTool,
-  batchUpdateRecordsTool,
-  cloneRecordTool,
-  detectDuplicatesTool,
-  batchDeleteRecordsTool,
-  // 预算
-  setBudgetTool,
-  deleteBudgetTool,
-  batchCreateBudgetsTool,
-  copyBudgetsTool,
-  // 固定收支/贷款
-  queryRecurringTool,
-  createRecurringTool,
-  updateRecurringTool,
-  deleteRecurringTool,
-  toggleRecurringTool,
-  loanPreviewTool,
-  queryRepaymentPlanTool,
-  // 账户管理
-  createAccountTool,
-  updateAccountTool,
-  deleteAccountTool,
-  adjustBalanceTool,
-  queryBalanceHistoryTool,
-  // 管理
-  switchBookTool,
-  queryMembersTool,
-  createBookTool,
-  // 导入
-  suggestOptionsTool,
-  queryImportMappingsTool,
-  saveImportMappingTool,
-  previewImportTool,
-  confirmImportTool,
-  ocrReceiptTool,
+// 所有可用工具按分类分组
+export const TOOL_GROUPS: { label: string; tools: ToolDef[] }[] = [
+  {
+    label: '查询',
+    tools: [
+      queryRecordsTool,
+      queryBudgetsTool,
+      queryAccountsTool,
+      getStatsTool,
+      queryCategoriesTool,
+    ],
+  },
+  {
+    label: '流水操作',
+    tools: [
+      createRecordTool,
+      updateRecordTool,
+      deleteRecordTool,
+      batchCreateRecordsTool,
+      batchUpdateRecordsTool,
+      cloneRecordTool,
+      detectDuplicatesTool,
+      batchDeleteRecordsTool,
+    ],
+  },
+  {
+    label: '预算',
+    tools: [
+      setBudgetTool,
+      deleteBudgetTool,
+      batchCreateBudgetsTool,
+      copyBudgetsTool,
+    ],
+  },
+  {
+    label: '固定收支/贷款',
+    tools: [
+      queryRecurringTool,
+      createRecurringTool,
+      updateRecurringTool,
+      deleteRecurringTool,
+      toggleRecurringTool,
+      loanPreviewTool,
+      queryRepaymentPlanTool,
+    ],
+  },
+  {
+    label: '账户管理',
+    tools: [
+      createAccountTool,
+      updateAccountTool,
+      deleteAccountTool,
+      adjustBalanceTool,
+      queryBalanceHistoryTool,
+    ],
+  },
+  {
+    label: '管理',
+    tools: [
+      switchBookTool,
+      queryMembersTool,
+      createBookTool,
+    ],
+  },
+  {
+    label: '导入',
+    tools: [
+      suggestOptionsTool,
+      queryImportMappingsTool,
+      saveImportMappingTool,
+      previewImportTool,
+      confirmImportTool,
+      ocrReceiptTool,
+    ],
+  },
 ]
+
+export const ALL_TOOLS: ToolDef[] = TOOL_GROUPS.flatMap(g => g.tools)
 
 // ---- 用户导入覆盖数据存储 ----
 // 前端 ImportPreviewInteractive 组件中用户修改后的映射规则

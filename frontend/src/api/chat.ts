@@ -49,6 +49,7 @@ export interface UserAIConfig {
   maxSteps: number
   visionProviderConfigId: string | null
   visionModel: string
+  disabledTools: string[]
 }
 
 export interface UserProviderConfig {
@@ -103,6 +104,17 @@ export async function fetchAIConfig() {
 export async function fetchProviders() {
   const res = await api.get<{ providers: ProviderInfo[] }>(`${BASE}/providers`)
   return res.providers
+}
+
+export interface ToolInfo {
+  name: string
+  description: string
+  requireConfirm: boolean
+}
+
+export async function fetchTools() {
+  const res = await api.get<{ groups: { label: string; tools: ToolInfo[] }[] }>(`${BASE}/tools`)
+  return res.groups
 }
 
 export async function fetchProviderModels(provider: string, baseURL?: string, apiKey?: string, configId?: string) {

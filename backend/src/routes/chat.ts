@@ -6,7 +6,7 @@ import { createModel, ALL_PROVIDERS, DEFAULT_BASE_URLS, type ProviderType } from
 import { routeIntent, classifyWithKeywords } from '../services/ai/model-router.js'
 import { assertIsMember } from '../services/ai/security.js'
 import { logToolCall } from '../services/ai/audit.js'
-import { ALL_TOOLS, storeImportOverrides, peekImportOverrides, consumeImportOverrides } from '../services/ai/tools/index.js'
+import { ALL_TOOLS, TOOL_GROUPS, storeImportOverrides, peekImportOverrides, consumeImportOverrides } from '../services/ai/tools/index.js'
 import { buildConfirmPreview } from '../services/ai/confirm-preview.js'
 import { sendMessageSchema, createSessionSchema, updateSessionSchema, confirmActionSchema, respondSuggestionSchema, updateAIConfigSchema, createProviderConfigSchema, updateProviderConfigSchema } from '../schemas/chat.js'
 import { detectSkills, buildSkillsPrompt, extractUserMessageForSkills } from '../services/ai/skills/index.js'
@@ -37,11 +37,12 @@ interface StreamAssistantOptions {
   maxTokens: number
   maxSteps: number
   autoConfirmCreate: boolean
+  disabledTools: string[]
   initialSSEEvents?: { event: string; data: any }[]
 }
 
 async function streamAssistantResponse(opts: StreamAssistantOptions) {
-  const { reply, sessionId, accountBookId, userId, systemPrompt, messages, parentMessageId, provider, model, apiKey, baseURL, temperature, maxTokens, maxSteps, autoConfirmCreate } = opts
+  const { reply, sessionId, accountBookId, userId, systemPrompt, messages, parentMessageId, provider, model, apiKey, baseURL, temperature, maxTokens, maxSteps, autoConfirmCreate, disabledTools } = opts
 
   reply.raw.writeHead(200, {
     'Content-Type': 'text/event-stream',
@@ -90,9 +91,11 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
     }
   }
 
-  // 构建 AI SDK 工具
+  // 构建 AI SDK 工具（过滤已禁用的工具）
+  const disabledSet = new Set(disabledTools)
   const aiTools: Record<string, any> = {}
   for (const tool of ALL_TOOLS) {
+    if (disabledSet.has(tool.name)) continue
     aiTools[tool.name] = {
       description: tool.description,
       inputSchema: jsonSchema(tool.parameters as Record<string, unknown>),
@@ -403,7 +406,7 @@ async function continueWithLLM(reply: any, sessionId: string, accountBookId: str
   const userMessageForSkills = extractUserMessageForSkills(messages)
   const activeSkills = detectSkills(userMessageForSkills)
   const skillsPrompt = buildSkillsPrompt(activeSkills)
-  const systemPrompt = buildSystemPrompt(prefs, accountBookId, bookName, memories, skillsPrompt)
+  const systemPrompt = buildSystemPrompt(prefs, accountBookId, bookName, memories, skillsPrompt, prefs.disabledTools)
 
   await streamAssistantResponse({
     reply, sessionId, accountBookId, userId, systemPrompt, messages,
@@ -413,6 +416,7 @@ async function continueWithLLM(reply: any, sessionId: string, accountBookId: str
     maxTokens: activeConfig?.maxTokens ?? prefs.maxTokens,
     maxSteps: prefs.maxSteps,
     autoConfirmCreate: prefs.autoConfirmCreate,
+    disabledTools: prefs.disabledTools,
     initialSSEEvents,
   })
 }
@@ -555,6 +559,11 @@ const ROUTE_DOC: Record<string, RouteDoc> = {
     summary: '更新AI配置',
     description: '更新用户的AI模型选择和行为偏好',
     bodySchema: updateAIConfigSchema
+  },
+  'GET /tools': {
+    summary: '获取可用工具列表',
+    description: '获取AI助手所有可用工具，按分类分组',
+    swaggerResponse: {200: {type: 'object', description: '工具列表'}}
   },
   'GET /providers': {
     summary: '获取可用供应商',
@@ -729,7 +738,7 @@ export async function chatRoutes(app: FastifyInstance) {
     // 构建 system prompt（根据用户消息检测并注入技能提示词）
     const activeSkills = detectSkills(fullMessage)
     const skillsPrompt = buildSkillsPrompt(activeSkills)
-    const systemPrompt = buildSystemPrompt(prefs, accountBookId, bookName, memories, skillsPrompt)
+    const systemPrompt = buildSystemPrompt(prefs, accountBookId, bookName, memories, skillsPrompt, prefs.disabledTools)
 
     // 模型路由
     let route
@@ -774,6 +783,7 @@ export async function chatRoutes(app: FastifyInstance) {
       maxTokens: activeConfig?.maxTokens ?? prefs.maxTokens,
       maxSteps: prefs.maxSteps,
       autoConfirmCreate: prefs.autoConfirmCreate,
+      disabledTools: prefs.disabledTools,
     })
   })
 
@@ -1203,12 +1213,28 @@ export async function chatRoutes(app: FastifyInstance) {
 
     const userId = (req as any).user.id as string
 
+    const { disabledTools, ...rest } = parsed.data
+    const data: Record<string, unknown> = { ...rest }
+    if (disabledTools) {
+      data.disabledTools = JSON.stringify(disabledTools)
+    }
+
     await prisma.userAIConfig.upsert({
       where: { userId },
-      create: { userId, ...parsed.data },
-      update: parsed.data,
+      create: { userId, ...data },
+      update: data,
     })
     return { success: true }
+  })
+
+  // 获取可用工具列表
+  app.get('/tools', async () => {
+    return {
+      groups: TOOL_GROUPS.map(g => ({
+        label: g.label,
+        tools: g.tools.map(t => ({ name: t.name, description: t.description, requireConfirm: t.requireConfirm ?? false })),
+      })),
+    }
   })
 
   // 可用模型列表
@@ -1428,6 +1454,7 @@ async function loadAIConfig(userId: string) {
     maxSteps: prefs?.maxSteps ?? 10,
     visionProviderConfigId: prefs?.visionProviderConfigId || null,
     visionModel: prefs?.visionModel || '',
+    disabledTools: prefs?.disabledTools ? JSON.parse(prefs.disabledTools) : [],
   }
 }
 
@@ -1562,10 +1589,38 @@ function splitResultBatches(result: any, batchSize: number): any[] {
   return batches
 }
 
-function buildSystemPrompt(prefs: any, bookId: string, bookName: string, memories: any[], skillsPrompt?: string): string {
+// 系统提示词中的工具能力描述行，按工具名索引，禁用时整行移除
+const TOOL_PROMPT_LINES: { name: string; text: string }[] = [
+  { name: 'query_records', text: '- 查询和筛选流水记录 -> 调用 query_records' },
+  { name: 'query_accounts', text: '- 查看账户余额和变动 -> 调用 query_accounts' },
+  { name: 'query_budgets', text: '- 查询预算 -> 调用 query_budgets' },
+  { name: 'set_budget', text: '- 设定预算 -> 调用 set_budget' },
+  { name: 'get_stats', text: '- 生成统计分析报表 -> 调用 get_stats' },
+  { name: 'query_categories', text: '- 查看分类字典 -> 调用 query_categories' },
+  { name: 'create_record', text: '- 创建流水记录 -> 调用 create_record' },
+  { name: 'update_record', text: '- 修改流水记录 -> 调用 update_record' },
+  { name: 'delete_record', text: '- 删除流水记录 -> 调用 delete_record' },
+  { name: 'batch_create_records', text: '- 批量记账 -> 调用 batch_create_records（多条记录一次确认）' },
+  { name: 'batch_update_records', text: '- 批量修改流水 -> 调用 batch_update_records（多条记录一次确认）' },
+  { name: 'suggest_options', text: '- 向用户提问获取信息 -> 调用 suggest_options（用户操作意图明确但缺少具体参数时使用）' },
+  { name: 'query_import_mappings', text: '- 查询已有导入映射 -> 调用 query_import_mappings' },
+  { name: 'preview_import', text: '- 预览导入流水文件(分析) -> 调用 preview_import（mode="analyze"，仅返回未匹配数据供 AI 分析，不展示交互卡片）' },
+  { name: 'preview_import', text: '- 预览导入流水文件(预览) -> 调用 preview_import（mode="preview"，传入映射规则，展示交互卡片供用户确认调整，返回全部记录及映射后的分类名称）' },
+  { name: 'confirm_import', text: '- 确认导入流水 -> 调用 confirm_import（传入 fileId、source 和映射规则，一次性完成导入）' },
+  { name: 'save_import_mapping', text: '- 保存导入映射规则 -> 调用 save_import_mapping（仅在用户明确要求时调用，日常导入无需调用）' },
+  { name: 'switch_book', text: '- 查看和切换账本 -> 调用 switch_book' },
+]
+
+function buildSystemPrompt(prefs: any, bookId: string, bookName: string, memories: any[], skillsPrompt?: string, disabledTools: string[] = []): string {
   const memoryContext = memories.length > 0
     ? `\n\n## 用户长期记忆（供参考）\n${memories.map((m: any, i: number) => `${i + 1}. ${m.content}`).join('\n')}\n`
     : ''
+
+  const disabledSet = new Set(disabledTools)
+  const capabilityLines = TOOL_PROMPT_LINES
+    .filter(l => !disabledSet.has(l.name))
+    .map(l => l.text)
+    .join('\n')
 
   let prompt = `你是 Homibook 家庭记账本的 AI 助手。当前操作的账本为「${bookName}」(ID: ${bookId})。本会话支持跨账本操作，用户可通过 switch_book 查看并切换账本。
 
@@ -1574,21 +1629,7 @@ function buildSystemPrompt(prefs: any, bookId: string, bookName: string, memorie
 
 ## 能力
 你可以通过调用函数工具来完成以下操作：
-- 查询和筛选流水记录 → 调用 query_records
-- 查看账户余额和变动 → 调用 query_accounts
-- 查询和设定预算 → 调用 query_budgets / set_budget
-- 生成统计分析报表 → 调用 get_stats
-- 查看分类字典 → 调用 query_categories
-- 记账和修改流水 → 调用 create_record / update_record / delete_record
-- 批量记账 → 调用 batch_create_records（多条记录一次确认）
-- 批量修改流水 → 调用 batch_update_records（多条记录一次确认）
-- 向用户提问获取信息 → 调用 suggest_options（用户操作意图明确但缺少具体参数时使用）
-- 查询已有导入映射 → 调用 query_import_mappings
-- 预览导入流水文件(分析) → 调用 preview_import（mode="analyze"，仅返回未匹配数据供 AI 分析，不展示交互卡片）
-- 预览导入流水文件(预览) → 调用 preview_import（mode="preview"，传入映射规则，展示交互卡片供用户确认调整，返回全部记录及映射后的分类名称）
-- 确认导入流水 → 调用 confirm_import（传入 fileId、source 和映射规则，一次性完成导入）
-- 保存导入映射规则 → 调用 save_import_mapping（仅在用户明确要求时调用，日常导入无需调用）
-	- 查看和切换账本 → 调用 switch_book
+${capabilityLines}
 
 ## 核心规则（必须遵守）
 - 当用户请求执行上述操作时，你必须直接调用对应的函数工具，而不是在文字中描述"正在调用"或"将要调用"

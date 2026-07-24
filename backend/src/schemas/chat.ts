@@ -58,6 +58,7 @@ export const updateAIConfigSchema = z.object({
   maxSteps: z.number().min(1).max(100).optional().describe('最大工具调用步数'),
   visionProviderConfigId: z.string().nullable().optional().describe('视觉识别供应商配置ID'),
   visionModel: z.string().optional().describe('视觉识别模型'),
+  disabledTools: z.array(z.string()).optional().describe('已禁用的工具名称列表'),
 })
 
 // 供应商配置

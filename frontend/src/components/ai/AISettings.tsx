@@ -18,13 +18,15 @@ import {
   Pencil,
   Circle,
   Hash,
+  Wrench,
 } from 'lucide-react'
 import {
   fetchAIConfig, updateAIConfig, fetchProviders, fetchProviderModels,
   fetchProviderConfigs, createProviderConfig, updateProviderConfig, deleteProviderConfig, copyProviderConfig,
-  testProviderConnection,
-  type ProviderInfo, type UserProviderConfig,
+  testProviderConnection, fetchTools,
+  type ProviderInfo, type UserProviderConfig, type ToolInfo,
 } from '@/api/chat'
+import { Switch } from '@/components/ui/switch'
 
 const LANGUAGES = [
   { value: 'zh-CN', label: '简体中文' },
@@ -53,6 +55,10 @@ export function AIAssistantSettings() {
   // ---------- 模型配置列表 ----------
   const [configs, setConfigs] = useState<UserProviderConfig[]>([])
   const [providers, setProviders] = useState<ProviderInfo[]>([])
+
+  // ---------- 工具管理 ----------
+  const [toolGroups, setToolGroups] = useState<{ label: string; tools: ToolInfo[] }[]>([])
+  const [disabledTools, setDisabledTools] = useState<string[]>([])
 
   // ---------- 弹窗 ----------
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -84,10 +90,11 @@ export function AIAssistantSettings() {
   const loadAll = async () => {
     setLoading(true)
     try {
-      const [prefs, providerList, configList] = await Promise.all([
+      const [prefs, providerList, configList, toolGroupList] = await Promise.all([
         fetchAIConfig(),
         fetchProviders(),
         fetchProviderConfigs(),
+        fetchTools(),
       ])
       setSimpleConfigId(prefs.simpleProviderConfigId)
       setSimpleModel(prefs.simpleModel)
@@ -101,6 +108,8 @@ export function AIAssistantSettings() {
       setEnabled(prefs.enabled)
       setProviders(providerList)
       setConfigs(configList)
+      setToolGroups(toolGroupList)
+      setDisabledTools(prefs.disabledTools || [])
     } catch {
       // ignore
     } finally {
@@ -125,6 +134,7 @@ export function AIAssistantSettings() {
         maxSteps,
         visionProviderConfigId: visionConfigId,
         visionModel,
+        disabledTools,
       })
       setSuccess('助手配置已保存')
     } catch (err: any) {
@@ -461,6 +471,48 @@ export function AIAssistantSettings() {
       <Button onClick={handleSaveAIConfig} disabled={saving} className="w-full">
         {saving ? <Spinner /> : '保存配置'}
       </Button>
+
+      {/* ==================== 工具管理 ==================== */}
+      <div>
+        <div className="flex items-center gap-2 mb-4">
+          <Wrench size={16} className="text-muted-foreground" />
+          <span className="text-sm font-semibold">工具管理</span>
+        </div>
+        {toolGroups.length === 0 ? (
+          <div className="text-center py-6 text-sm text-muted-foreground border rounded-lg">
+            暂无工具
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {toolGroups.map((group) => (
+              <div key={group.label} className="space-y-2">
+                <div className="text-xs font-medium text-muted-foreground">{group.label}</div>
+                <div className="space-y-1">
+                  {group.tools.map((tool) => {
+                    const disabled = disabledTools.includes(tool.name)
+                    return (
+                      <div key={tool.name} className="flex items-center gap-3 p-2 border rounded-lg">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium truncate">{tool.name}</div>
+                          <div className="text-xs text-muted-foreground truncate">{tool.description}</div>
+                        </div>
+                        <Switch
+                          checked={!disabled}
+                          onCheckedChange={(checked) => {
+                            setDisabledTools((prev) =>
+                              checked ? prev.filter((n) => n !== tool.name) : [...prev, tool.name],
+                            )
+                          }}
+                        />
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* ==================== 模型配置列表 ==================== */}
       <div>
