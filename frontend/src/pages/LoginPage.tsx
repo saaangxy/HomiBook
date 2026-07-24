@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Book, Eye, EyeOff, Palette } from 'lucide-react'
+import { Book, Eye, EyeOff, Palette, AlertCircle } from 'lucide-react'
 import { authApi } from '../api/auth'
 import { settingsApi } from '../api/settings'
 import { useAuthStore } from '../stores/auth'
@@ -104,7 +104,8 @@ const styles = {
     flexDirection: 'column' as const,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: '0 60px',
+    padding: '16px 60px',
+    overflowY: 'auto' as const,
   },
   signUpContainer: {
     left: 0,
@@ -116,7 +117,7 @@ const styles = {
   },
   formTitle: {
     fontSize: '28px',
-    marginBottom: '28px',
+    marginBottom: '20px',
     color: 'hsl(var(--foreground))',
     fontWeight: 700,
     letterSpacing: '-0.5px',
@@ -124,16 +125,16 @@ const styles = {
   formSubtitle: {
     fontSize: '14px',
     color: 'hsl(var(--muted-foreground))',
-    marginBottom: '32px',
-    marginTop: '-20px',
+    marginBottom: '20px',
+    marginTop: '-12px',
   },
   input: {
     width: '100%',
-    margin: '12px 0',
-    padding: '16px 18px',
+    margin: '8px 0',
+    padding: '14px 16px',
     backgroundColor: 'hsl(var(--muted))',
     border: '1px solid hsl(var(--border))',
-    borderRadius: '14px',
+    borderRadius: '12px',
     fontSize: '15px',
     color: 'hsl(var(--foreground))',
     outline: 'none',
@@ -245,14 +246,14 @@ const styles = {
     borderColor: 'rgba(255, 255, 255, 1)',
   },
   errorText: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '6px',
     color: 'hsl(var(--destructive))',
     fontSize: '13px',
-    marginTop: '12px',
-    textAlign: 'center' as const,
-    backgroundColor: 'hsl(var(--destructive) / 0.1)',
-    padding: '12px 16px',
-    borderRadius: '10px',
-    border: '1px solid hsl(var(--destructive) / 0.2)',
+    marginTop: '8px',
+    marginBottom: '4px',
   },
 }
 
@@ -420,6 +421,12 @@ export function LoginPage() {
                 {showLoginPass ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
+            {error && (
+              <div style={styles.errorText}>
+                <AlertCircle size={14} />
+                <span>{error}</span>
+              </div>
+            )}
             <a
               href="#"
               style={{
@@ -431,7 +438,6 @@ export function LoginPage() {
             >
               忘记密码?
             </a>
-            {error && <div style={styles.errorText}>{error}</div>}
             <div style={styles.buttonWrapper}>
               <button
                 type="submit"
@@ -503,6 +509,12 @@ export function LoginPage() {
                 {showLoginPass ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
+            {error && (
+              <div style={styles.errorText}>
+                <AlertCircle size={14} />
+                <span>{error}</span>
+              </div>
+            )}
             <a
               href="#"
               style={{
@@ -514,7 +526,6 @@ export function LoginPage() {
             >
               忘记密码?
             </a>
-            {error && <div style={styles.errorText}>{error}</div>}
             <div style={styles.buttonWrapper}>
               <button
                 type="submit"
@@ -603,10 +614,15 @@ export function LoginPage() {
                 {showRegPass ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
+            {error && (
+              <div style={styles.errorText}>
+                <AlertCircle size={14} />
+                <span>{error}</span>
+              </div>
+            )}
             <div style={{ width: '100%' }}>
               <PasswordStrength password={registerPassword} />
             </div>
-            {error && <div style={styles.errorText}>{error}</div>}
             <div style={styles.buttonWrapper}>
               <button
                 type="submit"

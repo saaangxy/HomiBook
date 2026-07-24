@@ -32,10 +32,10 @@ export function PasswordStrength({ password }: PasswordStrengthProps) {
   const strength = getStrength(password)
 
   return (
-    <div className="mt-2 space-y-2">
+    <div className="space-y-1.5">
       {/* 强度条 */}
       <div className="flex items-center gap-2">
-        <div className="flex-1 h-1.5 rounded-full" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
+        <div className="flex-1 h-1 rounded-full" style={{ backgroundColor: 'hsl(var(--muted))' }}>
           <div
             className="h-full rounded-full transition-all duration-300"
             style={{ width: strength.width, backgroundColor: strength.color }}
@@ -47,15 +47,15 @@ export function PasswordStrength({ password }: PasswordStrengthProps) {
       </div>
 
       {/* 校验项 */}
-      <div className="space-y-0.5">
+      <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
         {checks.map((check) => (
-          <div key={check.label} className="flex items-center gap-1.5 text-xs">
+          <div key={check.label} className="flex items-center gap-1 text-xs">
             {check.met ? (
-              <Check size={12} style={{ color: '#22c55e' }} />
+              <Check size={11} style={{ color: '#22c55e' }} />
             ) : (
-              <X size={12} style={{ color: 'rgba(255,255,255,0.25)' }} />
+              <X size={11} style={{ color: 'hsl(var(--muted-foreground))' }} />
             )}
-            <span style={{ color: check.met ? '#22c55e' : 'rgba(255,255,255,0.35)' }}>
+            <span style={{ color: check.met ? '#22c55e' : 'hsl(var(--muted-foreground))' }}>
               {check.label}
             </span>
           </div>
