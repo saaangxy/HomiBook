@@ -34,6 +34,9 @@ export const updateRecordTool: ToolDef = {
     if (!existing) return { success: false, error: '记录不存在', retryable: false }
 
     await assertIsMember(existing.accountBookId, ctx.userId)
+    if (existing.accountBookId !== ctx.accountBookId) {
+      return { success: false, error: '无权操作该记录', retryable: false }
+    }
 
     // 解析账户标识符（支持 accountNo 或 UUID）
     let resolvedAccountId: string | null | undefined

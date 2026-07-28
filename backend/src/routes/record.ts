@@ -713,6 +713,23 @@ export async function recordRoutes(app: FastifyInstance) {
         const {ids, data} = req.body as { ids: string[]; data: Record<string, any> }
         if (!ids?.length) return reply.status(400).send({message: '请选择要更新的记录'})
 
+        const userId = (req as any).user.id as string
+
+        const records = await prisma.record.findMany({
+            where: {id: {in: ids}},
+            select: {accountBookId: true},
+        })
+        if (records.length === 0) return reply.status(404).send({message: '记录不存在'})
+
+        const bookIds = new Set(records.map(r => r.accountBookId))
+        for (const bookId of bookIds) {
+            try {
+                await assertIsMember(bookId, userId)
+            } catch (e: any) {
+                return reply.status(e.statusCode || 403).send({message: e.message})
+            }
+        }
+
         const parsed = updateRecordSchema.safeParse(data)
         if (!parsed.success) {
             return reply.status(400).send({message: parsed.error.issues[0].message})

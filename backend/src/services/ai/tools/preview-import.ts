@@ -1,5 +1,6 @@
 import type { ToolDef, ToolContext } from './types.js'
 import { prisma } from '../../../app.js'
+import { assertIsMember } from '../security.js'
 import { parseAlipayCSV, parseWechatXlsx, parseJdCSV } from '../../import/parsers.js'
 import { applyAccountMappings, applyCategoryMappings, matchAccountByName, inferAccount, type ParsedRow } from '../../import/shared.js'
 import fs from 'fs'
@@ -50,6 +51,7 @@ export const previewImportTool: ToolDef = {
   },
 
   async execute(args: any, ctx: ToolContext) {
+    await assertIsMember(ctx.accountBookId, ctx.userId)
     const { fileId, source, mode, accountResolutions, categoryResolutions } = args as {
       fileId: string
       source: 'alipay' | 'wechat' | 'jd'

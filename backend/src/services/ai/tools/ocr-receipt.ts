@@ -2,6 +2,7 @@ import { readFileSync, existsSync } from 'fs'
 import path from 'path'
 import type { ToolDef } from './types.js'
 import { prisma } from '../../../app.js'
+import { assertIsMember } from '../security.js'
 import { createModel, DEFAULT_BASE_URLS, type ProviderType } from '../providers.js'
 import { generateText } from 'ai'
 
@@ -41,12 +42,25 @@ export const ocrReceiptTool: ToolDef = {
     const { attachmentId } = args
     const { userId, accountBookId } = ctx
 
+    await assertIsMember(accountBookId, userId)
+
     // 1. 查询附件记录
     const attachment = await prisma.recordAttachment.findUnique({
       where: { id: attachmentId },
-      select: { id: true, path: true, originalFilename: true },
+      select: { id: true, path: true, originalFilename: true, recordId: true },
     })
     if (!attachment) return { success: false, error: '附件不存在', retryable: false }
+
+    // 如果附件已关联记录，验证记录属于当前账本
+    if (attachment.recordId) {
+      const record = await prisma.record.findUnique({
+        where: { id: attachment.recordId },
+        select: { accountBookId: true },
+      })
+      if (record?.accountBookId !== accountBookId) {
+        return { success: false, error: '无权访问该附件', retryable: false }
+      }
+    }
 
     // 2. 读取图片文件
     const filePath = path.join(process.cwd(), attachment.path.replace(/^\/api\//, ''))

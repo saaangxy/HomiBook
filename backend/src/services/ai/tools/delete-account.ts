@@ -1,6 +1,7 @@
 import { prisma } from '../../../app.js'
-import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
+import { retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
+import { assertCanManageAccount } from '../../account.js'
 
 export const deleteAccountTool: ToolDef = {
   name: 'delete_account',
@@ -15,11 +16,8 @@ export const deleteAccountTool: ToolDef = {
   requireConfirm: true,
 
   async execute(args: { id: string }, ctx: ToolContext): Promise<ToolResult> {
-    await assertIsMember(ctx.accountBookId, ctx.userId)
-
     return retryable(async () => {
-      const account = await prisma.account.findUnique({ where: { id: args.id } })
-      if (!account) return { success: false, error: '账户不存在', retryable: false }
+      const account = await assertCanManageAccount(args.id, ctx.userId)
       if (account.accountBookId !== ctx.accountBookId) {
         return { success: false, error: '无权删除该账户', retryable: false }
       }

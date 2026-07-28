@@ -19,6 +19,9 @@ export const deleteRecordTool: ToolDef = {
     if (!existing) return { success: false, error: '记录不存在', retryable: false }
 
     await assertIsMember(existing.accountBookId, ctx.userId)
+    if (existing.accountBookId !== ctx.accountBookId) {
+      return { success: false, error: '禁止跨账本操作记录，先切换账本', retryable: false }
+    }
 
     return retryable(async () => {
       await prisma.record.delete({ where: { id: args.recordId } })

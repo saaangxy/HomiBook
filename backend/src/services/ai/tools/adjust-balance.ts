@@ -1,6 +1,7 @@
 import { prisma } from '../../../app.js'
-import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
+import { retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
+import { assertCanManageAccount } from '../../account.js'
 
 export const adjustBalanceTool: ToolDef = {
   name: 'adjust_balance',
@@ -18,11 +19,8 @@ export const adjustBalanceTool: ToolDef = {
   requireConfirm: true,
 
   async execute(args: { accountId: string; date: string; balanceAfter: number; remark?: string }, ctx: ToolContext): Promise<ToolResult> {
-    await assertIsMember(ctx.accountBookId, ctx.userId)
-
     return retryable(async () => {
-      const account = await prisma.account.findUnique({ where: { id: args.accountId } })
-      if (!account) return { success: false, error: '账户不存在', retryable: false }
+      const account = await assertCanManageAccount(args.accountId, ctx.userId)
       if (account.accountBookId !== ctx.accountBookId) {
         return { success: false, error: '无权操作该账户', retryable: false }
       }

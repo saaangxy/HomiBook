@@ -1,5 +1,6 @@
 import type { ToolDef, ToolContext } from './types.js'
 import { prisma } from '../../../app.js'
+import { assertIsMember } from '../security.js'
 import { parseAlipayCSV, parseWechatXlsx, parseJdCSV } from '../../import/parsers.js'
 import { applyAccountMappings, applyCategoryMappings, matchAccountByName, inferAccount, type ParsedRow } from '../../import/shared.js'
 import { createAccountsInTx, saveCategoryMappingsInTx, saveAccountMappingsInTx, AccountResolver, batchCreateRecordsInTx, refreshBalances } from '../../import/execute.js'
@@ -52,6 +53,7 @@ export const confirmImportTool: ToolDef = {
   },
 
   async execute(args: any, ctx: ToolContext) {
+    await assertIsMember(ctx.accountBookId, ctx.userId)
     const { fileId, source, ownerId, accountResolutions, categoryResolutions, _execute } = args as {
       fileId: string
       source: 'alipay' | 'wechat' | 'jd'
