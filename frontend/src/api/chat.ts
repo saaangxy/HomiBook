@@ -117,6 +117,31 @@ export async function fetchTools() {
   return res.groups
 }
 
+// ---- 记忆管理 ----
+
+export interface UserMemory {
+  id: string
+  content: string
+  memoryType: string
+  importance: number
+  createdAt: string
+  updatedAt: string
+  accessCount: number
+}
+
+export async function fetchMemories() {
+  const res = await api.get<{ memories: UserMemory[] }>(`${BASE}/memories`)
+  return res.memories
+}
+
+export async function deleteMemory(id: string) {
+  return api.delete(`${BASE}/memories/${id}`)
+}
+
+export async function updateMemory(id: string, data: { content?: string; importance?: number }) {
+  return api.patch(`${BASE}/memories/${id}`, data)
+}
+
 export async function fetchProviderModels(provider: string, baseURL?: string, apiKey?: string, configId?: string) {
   const params = new URLSearchParams({ provider })
   if (baseURL) params.set('baseURL', baseURL)

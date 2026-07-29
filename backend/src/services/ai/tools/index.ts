@@ -42,6 +42,9 @@ import { createBookTool } from './create-book.js'
 import { cloneRecordTool } from './clone-record.js'
 import { detectDuplicatesTool } from './detect-duplicates.js'
 import { batchDeleteRecordsTool } from './batch-delete-records.js'
+// 记忆
+import { saveMemoryTool } from './save-memory.js'
+import { searchMemoryTool } from './search-memory.js'
 
 // 所有可用工具按分类分组
 export const TOOL_GROUPS: { label: string; tools: ToolDef[] }[] = [
@@ -116,6 +119,13 @@ export const TOOL_GROUPS: { label: string; tools: ToolDef[] }[] = [
       previewImportTool,
       confirmImportTool,
       ocrReceiptTool,
+    ],
+  },
+  {
+    label: '记忆',
+    tools: [
+      saveMemoryTool,
+      searchMemoryTool,
     ],
   },
 ]

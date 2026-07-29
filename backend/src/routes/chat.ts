@@ -10,6 +10,7 @@ import { ALL_TOOLS, TOOL_GROUPS, storeImportOverrides, peekImportOverrides, cons
 import { buildConfirmPreview } from '../services/ai/confirm-preview.js'
 import { sendMessageSchema, createSessionSchema, updateSessionSchema, confirmActionSchema, respondSuggestionSchema, updateAIConfigSchema, createProviderConfigSchema, updateProviderConfigSchema } from '../schemas/chat.js'
 import { detectSkills, buildSkillsPrompt, extractUserMessageForSkills } from '../services/ai/skills/index.js'
+import { loadMemoriesForPrompt, listMemories, deleteMemory, updateMemory } from '../services/ai/memory.js'
 import { zSchema } from '../lib/schema-helpers.js'
 import { z } from 'zod'
 
@@ -401,7 +402,9 @@ async function continueWithLLM(reply: any, sessionId: string, accountBookId: str
 
   const book = await prisma.accountBook.findUnique({ where: { id: accountBookId }, select: { name: true } })
   const bookName = book?.name || accountBookId
-  const memories = await searchMemories(userId, '', 5)
+  // 从历史中取最后一条用户消息做关键词匹配（修复原空查询 bug）
+  const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')
+  const memories = await loadMemoriesForPrompt(userId, lastUserMsg?.content || '', 5)
   // 从对话历史中检测技能（导入流程跨多轮对话需要保留技能提示词）
   const userMessageForSkills = extractUserMessageForSkills(messages)
   const activeSkills = detectSkills(userMessageForSkills)
@@ -675,7 +678,7 @@ export async function chatRoutes(app: FastifyInstance) {
     }
 
     // 检索长期记忆
-    const memories = await searchMemories(userId, message, 5)
+    const memories = await loadMemoriesForPrompt(userId, message, 8)
 
     // 加载会话所有消息（用于构建历史链）
     const allMessages = await prisma.chatMessage.findMany({
@@ -1237,6 +1240,36 @@ export async function chatRoutes(app: FastifyInstance) {
     }
   })
 
+  // ---- 记忆管理 ----
+
+  app.get('/memories', async (req) => {
+    const userId = (req as any).user.id as string
+    return { memories: await listMemories(userId) }
+  })
+
+  app.delete('/memories/:id', async (req, reply) => {
+    const userId = (req as any).user.id as string
+    const { id } = req.params as { id: string }
+    const deleted = await deleteMemory(userId, id)
+    if (!deleted) return reply.status(404).send({ message: '记忆不存在' })
+    return { success: true }
+  })
+
+  const updateMemorySchema = z.object({
+    content: z.string().min(1).optional(),
+    importance: z.number().min(0).max(1).optional(),
+  })
+
+  app.patch('/memories/:id', async (req, reply) => {
+    const userId = (req as any).user.id as string
+    const { id } = req.params as { id: string }
+    const parsed = updateMemorySchema.safeParse(req.body)
+    if (!parsed.success) return reply.status(400).send({ message: '参数错误' })
+    const result = await updateMemory(userId, id, parsed.data)
+    if (result.count === 0) return reply.status(404).send({ message: '记忆不存在' })
+    return { success: true }
+  })
+
   // 可用模型列表
   app.get('/providers', async () => {
     const { ALL_PROVIDERS } = await import('../services/ai/providers.js')
@@ -1507,56 +1540,6 @@ async function loadBaseURL(provider: string): Promise<string> {
   return DEFAULT_BASE_URLS[provider as keyof typeof DEFAULT_BASE_URLS] || ''
 }
 
-async function searchMemories(userId: string, query: string, limit: number) {
-  // 从查询中提取关键词（简单分词）
-  const terms = extractKeywords(query)
-  if (terms.length === 0) return []
-
-  const orConditions = terms.flatMap((t) => [
-    { keywords: { contains: t } },
-    { content: { contains: t } },
-  ])
-
-  const memories = await prisma.userMemory.findMany({
-    where: { userId, OR: orConditions },
-    orderBy: [{ importance: 'desc' }, { lastAccessedAt: 'desc' }],
-    take: limit,
-    select: { content: true, keywords: true },
-  })
-
-  // 更新访问记录
-  if (memories.length > 0) {
-    const ids = await prisma.userMemory.findMany({
-      where: { userId, OR: orConditions },
-      select: { id: true },
-      take: limit,
-    })
-    prisma.userMemory.updateMany({
-      where: { id: { in: ids.map((m) => m.id) } },
-      data: { accessCount: { increment: 1 }, lastAccessedAt: new Date() },
-    }).catch(() => {})
-  }
-
-  return memories
-}
-
-function extractKeywords(text: string): string[] {
-  // 简单中文分词：按标点和空格分割，过滤短词
-  const split = text.split(/[\s，。！？,\.!\?;；：:]+/).filter(Boolean)
-  const keywords: string[] = []
-  for (const seg of split) {
-    // 保留 >= 2 字符的片段
-    if (seg.length >= 2) keywords.push(seg)
-    // 也从连续的2-4字窗口提取
-    if (seg.length > 4) {
-      for (let i = 0; i <= seg.length - 2; i++) {
-        keywords.push(seg.slice(i, i + 2))
-      }
-    }
-  }
-  return [...new Set(keywords)].slice(0, 20)
-}
-
 /** 将 result.data 中超过 batchSize 的数组字段拆分，返回分批发货的 result 数组 */
 function splitResultBatches(result: any, batchSize: number): any[] {
   const data = result?.data
@@ -1609,11 +1592,14 @@ const TOOL_PROMPT_LINES: { name: string; text: string }[] = [
   { name: 'confirm_import', text: '- 确认导入流水 -> 调用 confirm_import（传入 fileId、source 和映射规则，一次性完成导入）' },
   { name: 'save_import_mapping', text: '- 保存导入映射规则 -> 调用 save_import_mapping（仅在用户明确要求时调用，日常导入无需调用）' },
   { name: 'switch_book', text: '- 查看和切换账本 -> 调用 switch_book' },
+  { name: 'save_memory', text: '- 保存用户长期记忆 -> 调用 save_memory（识别到用户消费习惯或记账偏好时，无需确认直接保存）' },
+  { name: 'search_memory', text: '- 搜索用户长期记忆 -> 调用 search_memory（需要回忆用户习惯或偏好时）' },
 ]
 
 function buildSystemPrompt(prefs: any, bookId: string, bookName: string, memories: any[], skillsPrompt?: string, disabledTools: string[] = []): string {
+  const typeLabels: Record<string, string> = { habit: '习惯', preference: '偏好', rule: '规则', fact: '事实' }
   const memoryContext = memories.length > 0
-    ? `\n\n## 用户长期记忆（供参考）\n${memories.map((m: any, i: number) => `${i + 1}. ${m.content}`).join('\n')}\n`
+    ? `\n\n## 用户长期记忆（供参考）\n${memories.map((m: any, i: number) => `${i + 1}. [${typeLabels[m.memoryType] || '记忆'}] ${m.content}`).join('\n')}\n`
     : ''
 
   const disabledSet = new Set(disabledTools)
@@ -1642,7 +1628,25 @@ ${capabilityLines}
 - 先澄清再执行操作
 - 涉及创建、修改、删除操作需要用户确认
 - 回答简洁准确，金额保留两位小数
-- ${prefs.language === 'en' ? 'Reply in English' : '使用中文回复'}`
+- ${prefs.language === 'en' ? 'Reply in English' : '使用中文回复'}
+
+## 记忆管理
+你可以通过 save_memory 工具保存用户的长期记忆，在后续对话中系统会自动检索相关记忆供你参考。需要回忆用户习惯或偏好时可调用 search_memory 主动搜索。
+
+记忆类型：
+- habit: 消费习惯（如"每月餐饮支出约2000元"、"偏好信用卡支付"）
+- preference: 记账偏好（如"外卖归入餐饮"、"金额精确到分"）
+- rule: 明确规则（如"转账不纳入统计"）
+- fact: 事实信息（如"工资日15号"）
+
+保存时机：
+- 用户明确表达偏好或要求记住时（"我总是..."、"请记住..."、"我喜欢..."）
+- 从对话中识别出稳定的消费或记账模式
+
+不要保存：
+- 可通过工具查询的信息（账户余额、预算、流水等）
+- 临时性、一次性的信息
+- 当前会话的上下文`
 
   // 注入技能提示词（如导入流水工作流），仅在功能触发时出现
   if (skillsPrompt) {
