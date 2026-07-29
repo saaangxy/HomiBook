@@ -45,6 +45,8 @@ import { batchDeleteRecordsTool } from './batch-delete-records.js'
 // 记忆
 import { saveMemoryTool } from './save-memory.js'
 import { searchMemoryTool } from './search-memory.js'
+import { deleteMemoryTool } from './delete-memory.js'
+import { listMemoriesTool } from './list-memories.js'
 
 // 所有可用工具按分类分组
 export const TOOL_GROUPS: { label: string; tools: ToolDef[] }[] = [
@@ -126,6 +128,8 @@ export const TOOL_GROUPS: { label: string; tools: ToolDef[] }[] = [
     tools: [
       saveMemoryTool,
       searchMemoryTool,
+      listMemoriesTool,
+      deleteMemoryTool,
     ],
   },
 ]

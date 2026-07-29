@@ -1592,8 +1592,10 @@ const TOOL_PROMPT_LINES: { name: string; text: string }[] = [
   { name: 'confirm_import', text: '- 确认导入流水 -> 调用 confirm_import（传入 fileId、source 和映射规则，一次性完成导入）' },
   { name: 'save_import_mapping', text: '- 保存导入映射规则 -> 调用 save_import_mapping（仅在用户明确要求时调用，日常导入无需调用）' },
   { name: 'switch_book', text: '- 查看和切换账本 -> 调用 switch_book' },
-  { name: 'save_memory', text: '- 保存用户长期记忆 -> 调用 save_memory（识别到用户消费习惯或记账偏好时，无需确认直接保存）' },
+  { name: 'save_memory', text: '- 保存/更新用户长期记忆 -> 调用 save_memory（识别到用户消费习惯或记账偏好时保存；传入 memoryId 可更新已有记忆）' },
   { name: 'search_memory', text: '- 搜索用户长期记忆 -> 调用 search_memory（需要回忆用户习惯或偏好时）' },
+  { name: 'list_memories', text: '- 查看全部长期记忆 -> 调用 list_memories（整理归纳记忆时使用）' },
+  { name: 'delete_memory', text: '- 删除过时记忆 -> 调用 delete_memory（记忆重复或不再有效时）' },
 ]
 
 function buildSystemPrompt(prefs: any, bookId: string, bookName: string, memories: any[], skillsPrompt?: string, disabledTools: string[] = []): string {
@@ -1646,7 +1648,12 @@ ${capabilityLines}
 不要保存：
 - 可通过工具查询的信息（账户余额、预算、流水等）
 - 临时性、一次性的信息
-- 当前会话的上下文`
+- 当前会话的上下文
+
+记忆整理与迭代：
+- 当发现多条相似记忆时，用 save_memory（传入 memoryId）合并更新其中一条，再用 delete_memory 删除多余的
+- 当用户情况变化时（如换了工作、涨薪），更新对应记忆而非新建
+- 可用 list_memories 查看全部记忆，检查是否有过时或重复的需要清理`
 
   // 注入技能提示词（如导入流水工作流），仅在功能触发时出现
   if (skillsPrompt) {

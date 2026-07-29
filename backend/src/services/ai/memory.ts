@@ -113,13 +113,26 @@ export async function searchMemoriesByKeyword(userId: string, query: string, lim
 }
 
 /**
- * 保存记忆（带简单去重：同 userId + 相同 content 不重复创建）
+ * 保存或更新记忆
+ * - 传入 memoryId 时更新指定记忆（整理归纳用）
+ * - 不传时创建新记忆（带去重：同 userId + 相同 content 不重复创建）
  */
-export async function saveMemory(userId: string, content: string, memoryType: string, importance?: number) {
+export async function saveMemory(userId: string, content: string, memoryType: string, importance?: number, memoryId?: string) {
   const effectiveImportance = importance ?? DEFAULT_IMPORTANCE[memoryType] ?? 0.5
   const keywords = extractKeywords(content).join(',')
 
-  // 查询同 userId + 相同 content 的记忆
+  // 按 ID 更新已有记忆
+  if (memoryId) {
+    const existing = await prisma.userMemory.findFirst({ where: { id: memoryId, userId } })
+    if (!existing) return { created: false, updated: false, memory: null }
+    const memory = await prisma.userMemory.update({
+      where: { id: memoryId },
+      data: { content, keywords, memoryType, importance: effectiveImportance },
+    })
+    return { created: false, updated: true, memory }
+  }
+
+  // 查询同 userId + 相同 content 的记忆（去重）
   const existing = await prisma.userMemory.findFirst({
     where: { userId, content },
   })
@@ -130,15 +143,15 @@ export async function saveMemory(userId: string, content: string, memoryType: st
         where: { id: existing.id },
         data: { importance: effectiveImportance },
       })
-      return { created: false, memory: updated }
+      return { created: false, updated: true, memory: updated }
     }
-    return { created: false, memory: existing }
+    return { created: false, updated: false, memory: existing }
   }
 
   const memory = await prisma.userMemory.create({
     data: { userId, content, keywords, memoryType, importance: effectiveImportance },
   })
-  return { created: true, memory }
+  return { created: true, updated: false, memory }
 }
 
 /**

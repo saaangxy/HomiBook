@@ -23,6 +23,7 @@ export const searchMemoryTool: ToolDef = {
       retryable: false,
       data: {
         memories: memories.map(m => ({
+          id: m.id,
           content: m.content,
           memoryType: m.memoryType,
           importance: m.importance,
