@@ -61,7 +61,7 @@ function App() {
               <Route path="accounts" element={<AccountsPage />} />
               <Route path="budgets" element={<BudgetsPage />} />
               <Route path="recurring" element={<RecurringTransactionsPage />} />
-              <Route path="settings" element={<AdminRoute><SettingsPage /></AdminRoute>} />
+              <Route path="settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
               <Route path="admin/users" element={<UsersPage />} />
             </Route>
           </Routes>

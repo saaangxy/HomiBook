@@ -49,10 +49,11 @@ import { holidayApi } from '@/api/holiday'
 import { ThemeSelector } from '@/components/ThemeSelector'
 import { importExportApi, type CategoryMapping, type AccountMapping } from '@/api/import-export'
 import { DictCombobox } from '@/components/DictCombobox'
-import { Plus, Pencil, Trash2, Settings, BookOpen, Check, FolderOpen, FileSearch, RefreshCw, Key, Copy, EyeOff, Link2, Wallet, Bot } from 'lucide-react'
+import { Plus, Pencil, Trash2, Settings, BookOpen, Check, FolderOpen, FileSearch, RefreshCw, Key, Copy, EyeOff, Link2, Wallet, Bot, Brain } from 'lucide-react'
 import { apikeyApi, type ApiKeyItem, type ApiKeyCreated } from '@/api/apikey'
 import { useAuthStore } from '@/stores/auth'
 import { AIAssistantSettings } from '@/components/ai/AISettings'
+import { AIMemorySettings } from '@/components/ai/AIMemorySettings'
 
 const DICT_GROUPS: { key: string; label: string }[] = [
   { key: 'account_type', label: '账户类型' },
@@ -154,8 +155,12 @@ export function SettingsPage() {
   const [accountMappingSubmitting, setAccountMappingSubmitting] = useState(false)
   const [accountMappingDeleteTarget, setAccountMappingDeleteTarget] = useState<AccountMapping | null>(null)
 
-  // 加载通用配置
+  // 加载通用配置（仅管理员）
   useEffect(() => {
+    if (!isAdmin) {
+      setConfigLoading(false)
+      return
+    }
     setConfigLoading(true)
     settingsApi.getConfig()
       .then((config) => {
@@ -167,7 +172,7 @@ export function SettingsPage() {
       })
       .catch(() => setConfigError('加载配置失败'))
       .finally(() => setConfigLoading(false))
-  }, [])
+  }, [isAdmin])
 
   // 加载字典
   const loadDict = useCallback(async (group: string) => {
@@ -182,7 +187,7 @@ export function SettingsPage() {
     }
   }, [])
 
-  useEffect(() => { loadDict(dictTab) }, [dictTab, loadDict])
+  useEffect(() => { if (isAdmin) loadDict(dictTab) }, [dictTab, loadDict, isAdmin])
 
   // 同步节假日
   const handleSyncHolidays = async () => {
@@ -515,6 +520,7 @@ export function SettingsPage() {
       )}
 
       <Accordion type="multiple" value={accordionValue} onValueChange={handleAccordionChange} className="space-y-4">
+        {isAdmin && (<>
         {/* 通用设置 */}
         <AccordionItem value="general" className="border rounded-xl px-5">
           <AccordionTrigger className="text-base font-semibold hover:no-underline">
@@ -689,7 +695,24 @@ export function SettingsPage() {
             </div>
           </AccordionContent>
         </AccordionItem>
+        </>)}
 
+        {/* AI 记忆 */}
+        <AccordionItem value="ai-memory" className="border rounded-xl px-5">
+          <AccordionTrigger className="text-base font-semibold hover:no-underline">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                <Brain size={16} className="text-primary" />
+              </div>
+              AI 记忆
+            </div>
+          </AccordionTrigger>
+          <AccordionContent className="pb-5 space-y-6">
+            <AIMemorySettings />
+          </AccordionContent>
+        </AccordionItem>
+
+        {isAdmin && (<>
         {/* AI 助手 */}
         <AccordionItem value="ai-assistant" className="border rounded-xl px-5">
           <AccordionTrigger className="text-base font-semibold hover:no-underline">
@@ -882,7 +905,6 @@ export function SettingsPage() {
           </AccordionContent>
         </AccordionItem>
 
-        {isAdmin && (<>
         {/* API Key 管理 */}
         <AccordionItem value="apikeys" className="border rounded-xl px-5">
           <AccordionTrigger className="text-base font-semibold hover:no-underline">
