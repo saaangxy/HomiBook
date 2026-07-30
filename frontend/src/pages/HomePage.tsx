@@ -122,7 +122,7 @@ export function HomePage() {
                 <Skeleton className="h-8 w-24 mb-1" />
               ) : (
                 <div className="text-[28px] font-bold leading-tight">
-                  ¥{summary ? (summary.income / 100).toLocaleString() : '0'}
+                  ¥{summary ? summary.income.toLocaleString() : '0'}
                 </div>
               )}
               <div className="text-[13px] text-muted-foreground mt-1">本月收入</div>
@@ -140,7 +140,7 @@ export function HomePage() {
                 <Skeleton className="h-8 w-24 mb-1" />
               ) : (
                 <div className="text-[28px] font-bold leading-tight">
-                  ¥{summary ? (summary.expense / 100).toLocaleString() : '0'}
+                  ¥{summary ? summary.expense.toLocaleString() : '0'}
                 </div>
               )}
               <div className="text-[13px] text-muted-foreground mt-1">本月支出</div>
@@ -160,7 +160,7 @@ export function HomePage() {
                 <Skeleton className="h-8 w-24 mb-1" />
               ) : (
                 <div className="text-[28px] font-bold leading-tight">
-                  ¥{summary ? ((summary.netIncome) / 100).toLocaleString() : '0'}
+                  ¥{summary ? summary.netIncome.toLocaleString() : '0'}
                 </div>
               )}
               <div className="text-[13px] text-muted-foreground mt-1">本月结余</div>
