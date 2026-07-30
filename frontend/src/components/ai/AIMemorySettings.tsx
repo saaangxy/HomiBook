@@ -5,6 +5,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Spinner } from '@/components/ui/spinner'
 import { Brain, Pencil, Trash2 } from 'lucide-react'
 import { fetchMemories, deleteMemory as deleteMemoryApi, updateMemory as updateMemoryApi, type UserMemory } from '@/api/chat'
+import { toast } from 'sonner'
 
 const MEMORY_TYPE_LABELS: Record<string, string> = {
   habit: '习惯',
@@ -37,6 +38,7 @@ export function AIMemorySettings() {
   const handleDeleteMemory = async (id: string) => {
     try {
       await deleteMemoryApi(id)
+      toast.success('记忆已删除')
       setMemories((prev) => prev.filter((m) => m.id !== id))
     } catch (err: any) {
       setError(err.message || '删除记忆失败')
@@ -58,6 +60,7 @@ export function AIMemorySettings() {
     }
     try {
       await updateMemoryApi(editingMemoryId, { content: editMemoryContent, importance })
+      toast.success('记忆已更新')
       setMemories((prev) => prev.map((m) =>
         m.id === editingMemoryId ? { ...m, content: editMemoryContent, importance } : m,
       ))

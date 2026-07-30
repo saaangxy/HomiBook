@@ -54,6 +54,7 @@ import { apikeyApi, type ApiKeyItem, type ApiKeyCreated } from '@/api/apikey'
 import { useAuthStore } from '@/stores/auth'
 import { AIAssistantSettings } from '@/components/ai/AISettings'
 import { AIMemorySettings } from '@/components/ai/AIMemorySettings'
+import { toast } from 'sonner'
 
 const DICT_GROUPS: { key: string; label: string }[] = [
   { key: 'account_type', label: '账户类型' },
@@ -84,7 +85,6 @@ export function SettingsPage() {
   const [configSaving, setConfigSaving] = useState(false)
   const [configError, setConfigError] = useState('')
   const [syncingHolidays, setSyncingHolidays] = useState(false)
-  const [syncResult, setSyncResult] = useState('')
 
   // 字典管理
   const [dictTab, setDictTab] = useState('account_type')
@@ -192,12 +192,11 @@ export function SettingsPage() {
   // 同步节假日
   const handleSyncHolidays = async () => {
     setSyncingHolidays(true)
-    setSyncResult('')
     try {
       const result = await holidayApi.sync()
-      setSyncResult(`同步完成，导入了 ${result.imported} 条节假日数据`)
+      toast.success(`同步完成，导入了 ${result.imported} 条节假日数据`)
     } catch (e: any) {
-      setSyncResult(`同步失败：${e.message}`)
+      toast.error(`同步失败：${e.message}`)
     } finally {
       setSyncingHolidays(false)
     }
@@ -209,6 +208,7 @@ export function SettingsPage() {
     setConfigError('')
     try {
       await settingsApi.updateConfig({ registrationOpen, defaultCurrency, amountHighlightThreshold, holidayApiUrl, defaultTheme })
+      toast.success('配置已保存')
     } catch (e: any) {
       setConfigError(e.message)
     } finally {
@@ -228,6 +228,7 @@ export function SettingsPage() {
         label: formLabel.trim(),
         order: parseInt(formOrder) || 0,
       })
+      toast.success('字典项已添加')
       setAddOpen(false)
       resetForm()
       loadDict(dictTab)
@@ -250,6 +251,7 @@ export function SettingsPage() {
         label: formLabel.trim(),
         order: parseInt(formOrder) || 0,
       })
+      toast.success('字典项已更新')
       setEditTarget(null)
       resetForm()
       loadDict(dictTab)
@@ -265,6 +267,7 @@ export function SettingsPage() {
     if (!deleteTarget) return
     try {
       await settingsApi.deleteDictionaryItem(deleteTarget.id)
+      toast.success('字典项已删除')
       setDeleteTarget(null)
       loadDict(dictTab)
     } catch (e: any) {
@@ -357,6 +360,7 @@ export function SettingsPage() {
     setApiKeyFormError('')
     try {
       const result = await apikeyApi.create({ name: apiKeyFormName.trim() })
+      toast.success('API Key 已创建')
       setCreatedKey(result)
       setCreateApiKeyOpen(false)
       resetApiKeyForm()
@@ -372,6 +376,7 @@ export function SettingsPage() {
     if (!deleteApiKeyTarget) return
     try {
       await apikeyApi.delete(deleteApiKeyTarget.id)
+      toast.success('API Key 已删除')
       setDeleteApiKeyTarget(null)
       loadApiKeys()
     } catch (e: any) {
@@ -418,6 +423,7 @@ export function SettingsPage() {
         recordType: mappingNewRecordType === '__all__' ? undefined : mappingNewRecordType || undefined,
         targetCategoryCode: mappingNewTargetCode,
       }])
+      toast.success(mappingEditTarget ? '分类映射已更新' : '分类映射已添加')
       setMappingAddOpen(false)
       setMappingEditTarget(null)
       setMappingNewSourceCategory('')
@@ -438,6 +444,7 @@ export function SettingsPage() {
     if (!mappingDeleteTarget) return
     try {
       await importExportApi.deleteMapping(mappingDeleteTarget.id)
+      toast.success('分类映射已删除')
       setMappingDeleteTarget(null)
       loadMappings(mappingSource)
     } catch (e: any) {
@@ -483,6 +490,7 @@ export function SettingsPage() {
         descriptionContains: accountMappingNewDescriptionContains.trim() || undefined,
         targetAccountName: accountMappingNewTargetName.trim(),
       }])
+      toast.success(accountMappingEditTarget ? '账户映射已更新' : '账户映射已添加')
       setAccountMappingAddOpen(false)
       setAccountMappingEditTarget(null)
       resetAccountMappingForm()
@@ -498,6 +506,7 @@ export function SettingsPage() {
     if (!accountMappingDeleteTarget) return
     try {
       await importExportApi.deleteAccountMapping(accountMappingDeleteTarget.id)
+      toast.success('账户映射已删除')
       setAccountMappingDeleteTarget(null)
       loadAccountMappings(accountMappingSource)
     } catch (e: any) {
@@ -656,11 +665,6 @@ export function SettingsPage() {
                     <RefreshCw size={14} className="mr-1" />
                     {syncingHolidays ? '同步中...' : '同步节假日'}
                   </Button>
-                  {syncResult && (
-                    <span className={`text-xs ${syncResult.includes('失败') ? 'text-[#ef4444]' : 'text-[#22c55e]'}`}>
-                      {syncResult}
-                    </span>
-                  )}
                 </div>
               </div>
 

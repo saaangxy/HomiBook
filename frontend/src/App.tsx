@@ -1,8 +1,9 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { Toaster } from '@/components/ui/sonner'
 import { ThemeProvider } from '@/components/ThemeProvider'
-import { MainLayout } from './layouts/MainLayout'
+import { MainLayout } from '@/layouts'
 import { LoginPage } from './pages/LoginPage'
 import { HomePage } from './pages/HomePage'
 import { StatsPage } from './pages/StatsPage'
@@ -62,10 +63,11 @@ function App() {
               <Route path="budgets" element={<BudgetsPage />} />
               <Route path="recurring" element={<RecurringTransactionsPage />} />
               <Route path="settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
-              <Route path="admin/users" element={<UsersPage />} />
+              <Route path="admin/users" element={<AdminRoute><UsersPage /></AdminRoute>} />
             </Route>
           </Routes>
           </BrowserRouter>
+        <Toaster />
         </TooltipProvider>
       </ThemeProvider>
     </QueryClientProvider>

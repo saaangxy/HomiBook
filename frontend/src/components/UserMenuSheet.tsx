@@ -20,6 +20,7 @@ import {
 import { User, Lock, FileText } from 'lucide-react'
 import { PasswordStrength } from './PasswordStrength'
 import { ThemeSelector } from './ThemeSelector'
+import { toast } from 'sonner'
 
 interface Props {
   children: ReactNode
@@ -50,8 +51,8 @@ function ProfileDialog({
     try {
       const updated = await authApi.updateProfile(nickname.trim())
       useAuthStore.getState().updateUser(updated)
-      setIsError(false)
-      setMsg('保存成功')
+      setMsg('')
+      toast.success('保存成功')
     } catch (e: any) {
       setIsError(true)
       setMsg(e.message)
@@ -158,8 +159,8 @@ function PasswordDialog({
     setMsg('')
     try {
       await authApi.changePassword(currentPassword, newPassword)
-      setIsError(false)
-      setMsg('密码修改成功')
+      setMsg('')
+      toast.success('密码修改成功')
       setCurrentPassword('')
       setNewPassword('')
       setConfirmPassword('')

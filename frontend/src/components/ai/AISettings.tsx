@@ -27,6 +27,8 @@ import {
   type ProviderInfo, type UserProviderConfig, type ToolInfo,
 } from '@/api/chat'
 import { Switch } from '@/components/ui/switch'
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
+import { toast } from 'sonner'
 
 const LANGUAGES = [
   { value: 'zh-CN', label: '简体中文' },
@@ -38,7 +40,6 @@ export function AIAssistantSettings() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
 
   // ---------- 助手配置 ----------
   const [enabled, setEnabled] = useState(false)
@@ -121,7 +122,6 @@ export function AIAssistantSettings() {
   const handleSaveAIConfig = async () => {
     setSaving(true)
     setError('')
-    setSuccess('')
     try {
       await updateAIConfig({
         enabled,
@@ -136,7 +136,7 @@ export function AIAssistantSettings() {
         visionModel,
         disabledTools,
       })
-      setSuccess('助手配置已保存')
+      toast.success('助手配置已保存')
     } catch (err: any) {
       setError(err.message || '保存失败')
     } finally {
@@ -183,7 +183,7 @@ export function AIAssistantSettings() {
       setConfigs((prev) => prev.filter((c) => c.id !== id))
       if (simpleConfigId === id) setSimpleConfigId(null)
       if (complexConfigId === id) setComplexConfigId(null)
-      setSuccess('模型配置已删除')
+      toast.success('模型配置已删除')
     } catch (err: any) {
       setError(err.message || '删除失败')
     }
@@ -193,7 +193,7 @@ export function AIAssistantSettings() {
     try {
       const newConfig = await copyProviderConfig(id)
       setConfigs((prev) => [...prev, newConfig])
-      setSuccess('模型配置已复制')
+      toast.success('模型配置已复制')
     } catch (err: any) {
       setError(err.message || '复制失败')
     }
@@ -220,7 +220,7 @@ export function AIAssistantSettings() {
         setConfigs((prev) => [...prev, created])
       }
       setDialogOpen(false)
-      setSuccess(editingConfig ? '模型配置已更新' : '模型配置已创建')
+      toast.success(editingConfig ? '模型配置已更新' : '模型配置已创建')
     } catch (err: any) {
       setFormError(err.message || '保存失败')
     } finally {
@@ -313,12 +313,6 @@ export function AIAssistantSettings() {
       {error && (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-      {success && (
-        <Alert>
-          <Check size={16} />
-          <AlertDescription>{success}</AlertDescription>
         </Alert>
       )}
 
@@ -424,145 +418,159 @@ export function AIAssistantSettings() {
         </div>
       </div>
 
-      {/* ==================== 对话设置 ==================== */}
-      <div>
-        <div className="flex items-center gap-2 mb-4">
-          <Globe size={16} className="text-muted-foreground" />
-          <span className="text-sm font-semibold">对话设置</span>
-        </div>
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label className="text-xs">回复语言</Label>
-            <Select value={language} onValueChange={setLanguage}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {LANGUAGES.map((l) => (
-                  <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>
+      {/* ==================== 二级手风琴 ==================== */}
+      <Accordion type="multiple" defaultValue={['chat-settings', 'provider-configs', 'tools']} className="space-y-3">
+        {/* 对话设置 */}
+        <AccordionItem value="chat-settings" className="border rounded-lg">
+          <AccordionTrigger className="px-4 py-3 text-sm font-semibold hover:no-underline">
+            <div className="flex items-center gap-2">
+              <Globe size={14} className="text-muted-foreground" />
+              对话设置
+            </div>
+          </AccordionTrigger>
+          <AccordionContent className="px-4 pb-4 pt-1">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-xs">回复语言</Label>
+                <Select value={language} onValueChange={setLanguage}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {LANGUAGES.map((l) => (
+                      <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs">自动确认记账</Label>
+                <Select value={autoConfirm ? 'true' : 'false'} onValueChange={(v) => setAutoConfirm(v === 'true')}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="false">关闭（推荐）</SelectItem>
+                    <SelectItem value="true">开启</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs">最大迭代次数</Label>
+                <Input
+                  type="number"
+                  value={maxSteps}
+                  onChange={(e) => setMaxSteps(Number(e.target.value))}
+                  min={1}
+                  max={100}
+                  className="text-xs"
+                />
+                <p className="text-xs text-muted-foreground">模型调用工具的最大轮次，默认 10</p>
+              </div>
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+
+        {/* 模型配置列表 */}
+        <AccordionItem value="provider-configs" className="border rounded-lg">
+          <AccordionTrigger className="px-4 py-3 text-sm font-semibold hover:no-underline">
+            <div className="flex items-center gap-2">
+              <Hash size={14} className="text-muted-foreground" />
+              模型配置列表
+            </div>
+          </AccordionTrigger>
+          <AccordionContent className="px-4 pb-4 pt-1">
+            <div className="flex justify-end mb-3">
+              <Button variant="outline" size="sm" onClick={openAddDialog}>
+                <Plus size={14} className="mr-1" />
+                新增
+              </Button>
+            </div>
+            {configs.length === 0 ? (
+              <div className="text-center py-6 text-sm text-muted-foreground border rounded-lg">
+                暂无模型配置，点击"新增"添加
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {Array.isArray(configs) && configs.map((config) => (
+                  <div key={config.id} className="flex items-center gap-3 p-3 border rounded-lg">
+                    <Circle
+                      size={10}
+                      className={config.apiKey ? 'text-green-500 fill-green-500' : 'text-muted-foreground'}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium truncate">
+                        {config.name || getProviderLabel(config.provider)}
+                      </div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        {getProviderLabel(config.provider)}
+                        {config.baseURL && ` · ${config.baseURL}`}
+                        {config.apiKey && ' · Key 已配置'}
+                      </div>
+                    </div>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => openEditDialog(config)}>
+                      <Pencil size={14} />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => handleCopyConfig(config.id)}>
+                      <Copy size={14} />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => handleDeleteConfig(config.id)}>
+                      <Trash2 size={14} />
+                    </Button>
+                  </div>
                 ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label className="text-xs">自动确认记账</Label>
-            <Select value={autoConfirm ? 'true' : 'false'} onValueChange={(v) => setAutoConfirm(v === 'true')}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="false">关闭（推荐）</SelectItem>
-                <SelectItem value="true">开启</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label className="text-xs">最大迭代次数</Label>
-            <Input
-              type="number"
-              value={maxSteps}
-              onChange={(e) => setMaxSteps(Number(e.target.value))}
-              min={1}
-              max={100}
-              className="text-xs"
-            />
-            <p className="text-xs text-muted-foreground">模型调用工具的最大轮次，默认 10</p>
-          </div>
-        </div>
-      </div>
+              </div>
+            )}
+          </AccordionContent>
+        </AccordionItem>
+
+        {/* 工具管理 */}
+        <AccordionItem value="tools" className="border rounded-lg">
+          <AccordionTrigger className="px-4 py-3 text-sm font-semibold hover:no-underline">
+            <div className="flex items-center gap-2">
+              <Wrench size={14} className="text-muted-foreground" />
+              工具管理
+            </div>
+          </AccordionTrigger>
+          <AccordionContent className="px-4 pb-4 pt-1">
+            {toolGroups.length === 0 ? (
+              <div className="text-center py-6 text-sm text-muted-foreground border rounded-lg">
+                暂无工具
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {toolGroups.map((group) => (
+                  <div key={group.label} className="space-y-2">
+                    <div className="text-xs font-medium text-muted-foreground">{group.label}</div>
+                    <div className="space-y-1">
+                      {group.tools.map((tool) => {
+                        const disabled = disabledTools.includes(tool.name)
+                        return (
+                          <div key={tool.name} className="flex items-center gap-3 p-2 border rounded-lg">
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-medium truncate">{tool.name}</div>
+                              <div className="text-xs text-muted-foreground truncate">{tool.description}</div>
+                            </div>
+                            <Switch
+                              checked={!disabled}
+                              onCheckedChange={(checked) => {
+                                setDisabledTools((prev) =>
+                                  checked ? prev.filter((n) => n !== tool.name) : [...prev, tool.name],
+                                )
+                              }}
+                            />
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
 
       {/* 保存助手配置 */}
       <Button onClick={handleSaveAIConfig} disabled={saving} className="w-full">
         {saving ? <Spinner /> : '保存配置'}
       </Button>
-
-      {/* ==================== 工具管理 ==================== */}
-      <div>
-        <div className="flex items-center gap-2 mb-4">
-          <Wrench size={16} className="text-muted-foreground" />
-          <span className="text-sm font-semibold">工具管理</span>
-        </div>
-        {toolGroups.length === 0 ? (
-          <div className="text-center py-6 text-sm text-muted-foreground border rounded-lg">
-            暂无工具
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {toolGroups.map((group) => (
-              <div key={group.label} className="space-y-2">
-                <div className="text-xs font-medium text-muted-foreground">{group.label}</div>
-                <div className="space-y-1">
-                  {group.tools.map((tool) => {
-                    const disabled = disabledTools.includes(tool.name)
-                    return (
-                      <div key={tool.name} className="flex items-center gap-3 p-2 border rounded-lg">
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium truncate">{tool.name}</div>
-                          <div className="text-xs text-muted-foreground truncate">{tool.description}</div>
-                        </div>
-                        <Switch
-                          checked={!disabled}
-                          onCheckedChange={(checked) => {
-                            setDisabledTools((prev) =>
-                              checked ? prev.filter((n) => n !== tool.name) : [...prev, tool.name],
-                            )
-                          }}
-                        />
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* ==================== 模型配置列表 ==================== */}
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <Hash size={16} className="text-muted-foreground" />
-            <span className="text-sm font-semibold">模型配置列表</span>
-          </div>
-          <Button variant="outline" size="sm" onClick={openAddDialog}>
-            <Plus size={14} className="mr-1" />
-            新增
-          </Button>
-        </div>
-
-        {configs.length === 0 ? (
-          <div className="text-center py-6 text-sm text-muted-foreground border rounded-lg">
-            暂无模型配置，点击"新增"添加
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {Array.isArray(configs) && configs.map((config) => (
-              <div key={config.id} className="flex items-center gap-3 p-3 border rounded-lg">
-                <Circle
-                  size={10}
-                  className={config.apiKey ? 'text-green-500 fill-green-500' : 'text-muted-foreground'}
-                />
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium truncate">
-                    {config.name || getProviderLabel(config.provider)}
-                  </div>
-                  <div className="text-xs text-muted-foreground truncate">
-                    {getProviderLabel(config.provider)}
-                    {config.baseURL && ` · ${config.baseURL}`}
-                    {config.apiKey && ' · Key 已配置'}
-                  </div>
-                </div>
-                <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => openEditDialog(config)}>
-                  <Pencil size={14} />
-                </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => handleCopyConfig(config.id)}>
-                  <Copy size={14} />
-                </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => handleDeleteConfig(config.id)}>
-                  <Trash2 size={14} />
-                </Button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
 
       {/* ==================== 弹窗：新增/编辑模型配置 ==================== */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
