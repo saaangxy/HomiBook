@@ -70,6 +70,7 @@ export const createProviderConfigSchema = z.object({
   models: z.string().optional().describe('可用模型列表，逗号分隔'),
   temperature: z.number().min(0).max(2).nullable().optional().describe('默认温度'),
   maxTokens: z.number().min(1).max(1000000).nullable().optional().describe('默认最大token'),
+  contextWindow: z.number().int().min(1024).max(10000000).nullable().optional().describe('模型上下文窗口大小（token）'),
 })
 
 export const updateProviderConfigSchema = z.object({
@@ -80,4 +81,5 @@ export const updateProviderConfigSchema = z.object({
   models: z.string().optional().describe('可用模型列表'),
   temperature: z.number().min(0).max(2).nullable().optional().describe('默认温度'),
   maxTokens: z.number().min(1).max(1000000).nullable().optional().describe('默认最大token'),
+  contextWindow: z.number().int().min(1024).max(10000000).nullable().optional().describe('模型上下文窗口大小（token）'),
 })

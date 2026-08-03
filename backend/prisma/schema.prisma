@@ -324,6 +324,8 @@ model ChatSession {
   accountBookId String?
   accountBook   AccountBook?  @relation(fields: [accountBookId], references: [id], onDelete: SetNull)
   title         String        @default("新对话")
+  summary              String?  // 已压缩旧消息的 LLM 摘要
+  summaryUpToMessageId String?  // 摘要覆盖到的最后一条消息 ID
   modelProvider String        @default("deepseek")
   modelName     String        @default("deepseek-chat")
   status        String        @default("active")
@@ -439,6 +441,7 @@ model UserProviderConfig {
   models      String   @default("")
   temperature Float?
   maxTokens   Int?
+  contextWindow Int? // 模型上下文窗口大小（token），留空用 provider 默认
   sortOrder   Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

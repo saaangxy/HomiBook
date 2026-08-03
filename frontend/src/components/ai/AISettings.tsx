@@ -70,6 +70,7 @@ export function AIAssistantSettings() {
   const [formBaseURL, setFormBaseURL] = useState('')
   const [formTemperature, setFormTemperature] = useState('')
   const [formMaxTokens, setFormMaxTokens] = useState('')
+  const [formContextWindow, setFormContextWindow] = useState('')
   const [formModels, setFormModels] = useState('')
   const [formSaving, setFormSaving] = useState(false)
   const [formError, setFormError] = useState('')
@@ -153,6 +154,7 @@ export function AIAssistantSettings() {
     setFormBaseURL('')
     setFormTemperature('')
     setFormMaxTokens('')
+    setFormContextWindow('')
     setFormModels('')
     setFormModelList([])
     setFormError('')
@@ -169,6 +171,7 @@ export function AIAssistantSettings() {
     setFormBaseURL(config.baseURL)
     setFormTemperature(config.temperature != null ? String(config.temperature) : '')
     setFormMaxTokens(config.maxTokens != null ? String(config.maxTokens) : '')
+    setFormContextWindow(config.contextWindow != null ? String(config.contextWindow) : '')
     setFormModels(config.models)
     setFormModelList([])
     setFormError('')
@@ -210,6 +213,7 @@ export function AIAssistantSettings() {
         baseURL: formBaseURL,
         temperature: formTemperature ? Number(formTemperature) : null,
         maxTokens: formMaxTokens ? Number(formMaxTokens) : null,
+        contextWindow: formContextWindow ? Number(formContextWindow) : null,
         models: formModels,
       }
       if (editingConfig) {
@@ -502,6 +506,7 @@ export function AIAssistantSettings() {
                         {getProviderLabel(config.provider)}
                         {config.baseURL && ` · ${config.baseURL}`}
                         {config.apiKey && ' · Key 已配置'}
+                        {config.contextWindow && ` · ${Math.round(config.contextWindow / 1024)}K上下文`}
                       </div>
                     </div>
                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => openEditDialog(config)}>
@@ -718,6 +723,18 @@ export function AIAssistantSettings() {
                   min={1}
                   max={1000000}
                   placeholder="4096"
+                  className="text-xs"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">上下文窗口（可选）</Label>
+                <Input
+                  type="number"
+                  value={formContextWindow}
+                  onChange={(e) => setFormContextWindow(e.target.value)}
+                  min={1024}
+                  max={10000000}
+                  placeholder="如 32768，留空使用默认"
                   className="text-xs"
                 />
               </div>

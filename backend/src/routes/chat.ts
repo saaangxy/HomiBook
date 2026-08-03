@@ -11,6 +11,8 @@ import { buildConfirmPreview } from '../services/ai/confirm-preview.js'
 import { sendMessageSchema, createSessionSchema, updateSessionSchema, confirmActionSchema, respondSuggestionSchema, updateAIConfigSchema, createProviderConfigSchema, updateProviderConfigSchema } from '../schemas/chat.js'
 import { detectSkills, buildSkillsPrompt, extractUserMessageForSkills } from '../services/ai/skills/index.js'
 import { loadMemoriesForPrompt, listMemories, deleteMemory, updateMemory } from '../services/ai/memory.js'
+import { estimateTokens } from '../services/ai/token-estimate.js'
+import { compressContext, computeHistoryBudget } from '../services/ai/context-compress.js'
 import { zSchema } from '../lib/schema-helpers.js'
 import { z } from 'zod'
 
@@ -74,6 +76,7 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
 
   const msgState = { dbId: null as string | null }
   const saveMessageSnapshot = async () => {
+    const toolCallsJson = toolCallEntries.length > 0 ? JSON.stringify(toolCallEntries) : null
     const snapData = {
       sessionId,
       accountBookId,
@@ -81,7 +84,8 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
       content: fullText,
       modelProvider: provider,
       modelName: model,
-      toolCalls: toolCallEntries.length > 0 ? JSON.stringify(toolCallEntries) : null,
+      toolCalls: toolCallsJson,
+      tokenCount: estimateTokens(fullText) + (toolCallsJson ? estimateTokens(toolCallsJson) : 0),
       parentMessageId,
     }
     if (msgState.dbId) {
@@ -325,19 +329,21 @@ async function findPendingToolMessage(toolCallId: string, userId: string): Promi
 
 // ---- 共享辅助：构建 AI SDK CoreMessage 数组 ----
 
-async function buildChatMessages(sessionId: string, pendingToolResults: { toolCallId: string; toolName: string; result: unknown }[]) {
+async function buildChatMessages(sessionId: string, pendingToolResults: { toolCallId: string; toolName: string; result: unknown }[]): Promise<{ messages: any[]; messageIds: string[] }> {
   const dbMessages = await prisma.chatMessage.findMany({
     where: { sessionId },
     orderBy: { createdAt: 'asc' },
-    select: { id: true, role: true, content: true, toolCalls: true, parentMessageId: true, modelProvider: true, modelName: true },
-    take: 100,
+    select: { id: true, role: true, content: true, toolCalls: true, parentMessageId: true, modelProvider: true, modelName: true, tokenCount: true },
+    take: 1000,
   })
 
   const pendingIds = new Set(pendingToolResults.map(p => p.toolCallId))
   const messages: any[] = []
+  const messageIds: string[] = []
   for (const msg of dbMessages) {
     if (msg.role === 'user') {
       messages.push({ role: 'user', content: msg.content })
+      messageIds.push(msg.id)
     } else if (msg.role === 'assistant') {
       const tcList = msg.toolCalls ? JSON.parse(msg.toolCalls) : []
       const contentParts: any[] = []
@@ -354,6 +360,7 @@ async function buildChatMessages(sessionId: string, pendingToolResults: { toolCa
         }
       }
       messages.push({ role: 'assistant', content: contentParts })
+      messageIds.push(msg.id)
 
       if (completedResults.length > 0) {
         messages.push({
@@ -365,6 +372,7 @@ async function buildChatMessages(sessionId: string, pendingToolResults: { toolCa
             output: { type: 'json', value: tc.result },
           })),
         })
+        messageIds.push(msg.id) // tool 消息复用 assistant 的 ID
       }
     }
   }
@@ -379,14 +387,15 @@ async function buildChatMessages(sessionId: string, pendingToolResults: { toolCa
         output: { type: 'json', value: p.result },
       })),
     })
+    messageIds.push('') // pending tool result 无对应 DB 消息
   }
 
-  return messages
+  return { messages, messageIds }
 }
 
 // ---- 共享辅助：加载 LLM 配置并启动 SSE 续写流 ----
 
-async function continueWithLLM(reply: any, sessionId: string, accountBookId: string, userId: string, message: { modelProvider: string | null; modelName: string | null; id: string }, messages: any[], initialSSEEvents?: { event: string; data: any }[]) {
+async function continueWithLLM(reply: any, sessionId: string, accountBookId: string, userId: string, message: { modelProvider: string | null; modelName: string | null; id: string }, messages: any[], messageIds: string[], initialSSEEvents?: { event: string; data: any }[]) {
   const prefs = await loadAIConfig(userId)
   const provider = message.modelProvider || ''
   const model = message.modelName || ''
@@ -411,12 +420,40 @@ async function continueWithLLM(reply: any, sessionId: string, accountBookId: str
   const skillsPrompt = buildSkillsPrompt(activeSkills)
   const systemPrompt = buildSystemPrompt(prefs, accountBookId, bookName, memories, skillsPrompt, prefs.disabledTools)
 
+  // 三级上下文压缩
+  const maxTokens = activeConfig?.maxTokens ?? prefs.maxTokens
+  const disabledSet = new Set(prefs.disabledTools)
+  const enabledTools: Record<string, any> = {}
+  for (const tool of ALL_TOOLS) {
+    if (disabledSet.has(tool.name)) continue
+    enabledTools[tool.name] = { description: tool.description, inputSchema: tool.parameters }
+  }
+  const historyBudget = computeHistoryBudget(activeConfig?.contextWindow, maxTokens, systemPrompt, enabledTools)
+  const session = await prisma.chatSession.findUnique({ where: { id: sessionId }, select: { summary: true, summaryUpToMessageId: true } })
+  const compressed = await compressContext({
+    messages,
+    messageIds,
+    historyBudget,
+    systemPrompt,
+    sessionSummary: session?.summary ?? null,
+    summaryUpToMessageId: session?.summaryUpToMessageId ?? null,
+    model: createModel(provider as ProviderType, model, { apiKey, baseURL }),
+  })
+
+  // 持久化摘要更新
+  if (compressed.newSummary !== null && compressed.newSummary !== session?.summary) {
+    await prisma.chatSession.update({
+      where: { id: sessionId },
+      data: { summary: compressed.newSummary, summaryUpToMessageId: compressed.newSummaryUpToMessageId },
+    }).catch(() => {})
+  }
+
   await streamAssistantResponse({
-    reply, sessionId, accountBookId, userId, systemPrompt, messages,
+    reply, sessionId, accountBookId, userId, systemPrompt: compressed.systemPrompt, messages: compressed.messages,
     parentMessageId: message.id,
     provider, model, apiKey, baseURL,
     temperature: activeConfig?.temperature ?? prefs.temperature,
-    maxTokens: activeConfig?.maxTokens ?? prefs.maxTokens,
+    maxTokens,
     maxSteps: prefs.maxSteps,
     autoConfirmCreate: prefs.autoConfirmCreate,
     disabledTools: prefs.disabledTools,
@@ -685,7 +722,7 @@ export async function chatRoutes(app: FastifyInstance) {
       where: { sessionId: session.id },
       orderBy: { createdAt: 'asc' },
       select: { id: true, role: true, content: true, parentMessageId: true },
-      take: 100,
+      take: 1000,
     })
 
     // 重试：删除被替换的助手消息及其所有后继（按 parentMessageId 链向下删除）
@@ -703,19 +740,23 @@ export async function chatRoutes(app: FastifyInstance) {
 
     // 构建消息历史：从 parentMessageId 沿链回溯到根
     const history: { role: 'user' | 'assistant'; content: string }[] = []
+    const historyIds: string[] = []
     const parentId = parsed.data.parentMessageId || null
     if (parentId) {
       const chain: { role: 'user' | 'assistant'; content: string }[] = []
+      const chainIds: string[] = []
       let currentId: string | null = parentId
       while (currentId) {
         const msg = allMessages.find((m) => m.id === currentId)
         if (!msg) break
         if (msg.role === 'user' || msg.role === 'assistant') {
           chain.unshift({ role: msg.role, content: msg.content })
+          chainIds.unshift(msg.id)
         }
         currentId = msg.parentMessageId
       }
       history.push(...chain)
+      historyIds.push(...chainIds)
     }
 
     // 拼接附件信息到消息文本（供 AI 识别和技能检测）
@@ -728,8 +769,9 @@ export async function chatRoutes(app: FastifyInstance) {
 
     // 保存用户消息（仅用户输入的文本，不含系统附加的附件信息）
     const userMsgDb = await prisma.chatMessage.create({
-      data: { sessionId: session.id, accountBookId, role: 'user', content: message, parentMessageId: parentId },
+      data: { sessionId: session.id, accountBookId, role: 'user', content: message, parentMessageId: parentId, tokenCount: estimateTokens(message) },
     })
+    historyIds.push(userMsgDb.id)
 
     // 查询账本名称用于提示词
     const book = await prisma.accountBook.findUnique({
@@ -769,21 +811,50 @@ export async function chatRoutes(app: FastifyInstance) {
     const baseURL = activeConfig?.baseURL || (await loadBaseURL(route.provider))
 
     const messages = [...history]
+    const messageIds = [...historyIds]
+
+    // 三级上下文压缩
+    const maxTokens = activeConfig?.maxTokens ?? prefs.maxTokens
+    const disabledSet = new Set(prefs.disabledTools)
+    const enabledTools: Record<string, any> = {}
+    for (const tool of ALL_TOOLS) {
+      if (disabledSet.has(tool.name)) continue
+      enabledTools[tool.name] = { description: tool.description, inputSchema: tool.parameters }
+    }
+    const historyBudget = computeHistoryBudget(activeConfig?.contextWindow, maxTokens, systemPrompt, enabledTools)
+    const sessionSummaryRow = await prisma.chatSession.findUnique({ where: { id: session.id }, select: { summary: true, summaryUpToMessageId: true } })
+    const compressed = await compressContext({
+      messages,
+      messageIds,
+      historyBudget,
+      systemPrompt,
+      sessionSummary: sessionSummaryRow?.summary ?? null,
+      summaryUpToMessageId: sessionSummaryRow?.summaryUpToMessageId ?? null,
+      model: createModel(route.provider as ProviderType, route.model, { apiKey, baseURL }),
+    })
+
+    // 持久化摘要更新
+    if (compressed.newSummary !== null && compressed.newSummary !== sessionSummaryRow?.summary) {
+      await prisma.chatSession.update({
+        where: { id: session.id },
+        data: { summary: compressed.newSummary, summaryUpToMessageId: compressed.newSummaryUpToMessageId },
+      }).catch(() => {})
+    }
 
     await streamAssistantResponse({
       reply,
       sessionId: session.id,
       accountBookId,
       userId,
-      systemPrompt,
-      messages,
+      systemPrompt: compressed.systemPrompt,
+      messages: compressed.messages,
       parentMessageId: userMsgDb.id,
       provider: route.provider,
       model: route.model,
       apiKey,
       baseURL,
       temperature: activeConfig?.temperature ?? prefs.temperature,
-      maxTokens: activeConfig?.maxTokens ?? prefs.maxTokens,
+      maxTokens,
       maxSteps: prefs.maxSteps,
       autoConfirmCreate: prefs.autoConfirmCreate,
       disabledTools: prefs.disabledTools,
@@ -1032,8 +1103,8 @@ export async function chatRoutes(app: FastifyInstance) {
       data: { toolCalls: JSON.stringify(toolCalls) },
     }).catch(() => {})
 
-    const messages = await buildChatMessages(message.sessionId, pendingToolResults)
-    await continueWithLLM(reply, message.sessionId, accountBookId, userId, message, messages, initialSSEEvents)
+    const { messages, messageIds } = await buildChatMessages(message.sessionId, pendingToolResults)
+    await continueWithLLM(reply, message.sessionId, accountBookId, userId, message, messages, messageIds, initialSSEEvents)
   })
 
   // 回复建议（用户选择或自定义输入）→ SSE 流式继续对话
@@ -1078,8 +1149,8 @@ export async function chatRoutes(app: FastifyInstance) {
       }).catch(() => {})
     }
 
-    const messages = await buildChatMessages(message.sessionId, [{ toolCallId, toolName: entry.toolName, result: toolResult }])
-    await continueWithLLM(reply, message.sessionId, accountBookId, userId, message, messages, initialSSEEvents)
+    const { messages, messageIds } = await buildChatMessages(message.sessionId, [{ toolCallId, toolName: entry.toolName, result: toolResult }])
+    await continueWithLLM(reply, message.sessionId, accountBookId, userId, message, messages, messageIds, initialSSEEvents)
   })
 
   // 切换账本（SSE 流式继续对话，使用新账本上下文）
@@ -1118,8 +1189,8 @@ export async function chatRoutes(app: FastifyInstance) {
       }).catch(() => {})
     }
 
-    const messages = await buildChatMessages(message.sessionId, [{ toolCallId, toolName: entry.toolName, result: toolResult }])
-    await continueWithLLM(reply, message.sessionId, bookId, userId, message, messages, initialSSEEvents)
+    const { messages, messageIds } = await buildChatMessages(message.sessionId, [{ toolCallId, toolName: entry.toolName, result: toolResult }])
+    await continueWithLLM(reply, message.sessionId, bookId, userId, message, messages, messageIds, initialSSEEvents)
   })
 
   // === 供应商配置 CRUD ===

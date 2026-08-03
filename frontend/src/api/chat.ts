@@ -62,6 +62,7 @@ export interface UserProviderConfig {
   models: string
   temperature: number | null
   maxTokens: number | null
+  contextWindow: number | null
   sortOrder: number
   createdAt: string
   updatedAt: string
