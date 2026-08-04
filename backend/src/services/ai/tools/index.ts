@@ -49,6 +49,7 @@ import { deleteMemoryTool } from './delete-memory.js'
 import { listMemoriesTool } from './list-memories.js'
 // 网络搜索
 import { webSearchTool } from './web-search.js'
+import { readWebpageTool } from './read-webpage.js'
 
 // 所有可用工具按分类分组
 export const TOOL_GROUPS: { label: string; tools: ToolDef[] }[] = [
@@ -138,6 +139,7 @@ export const TOOL_GROUPS: { label: string; tools: ToolDef[] }[] = [
     label: '网络搜索',
     tools: [
       webSearchTool,
+      readWebpageTool,
     ],
   },
 ]

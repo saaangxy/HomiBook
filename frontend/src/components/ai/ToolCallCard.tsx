@@ -5,7 +5,7 @@ import { useChatStore } from '@/stores/chat'
 import { useBookStore } from '@/stores/book'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Wrench, CheckCircle2, XCircle, Loader2, HelpCircle, ChevronDown, MessageSquareMore, AlertTriangle } from 'lucide-react'
+import { Wrench, CheckCircle2, XCircle, Loader2, HelpCircle, ChevronDown, MessageSquareMore, AlertTriangle, ExternalLink } from 'lucide-react'
 import { useState, useMemo, useRef } from 'react'
 import { ImportPreviewInteractive, type ImportPreviewData } from './ImportPreviewInteractive'
 import { ImportConfirmCard } from './ImportConfirmCard'
@@ -196,8 +196,48 @@ export function ToolCallCard({ toolCall }: Props) {
         </div>
       )}
 
-      {/* 其他工具结果（含 preview_import 分析模式）—— 折叠内 */}
-      {!isInteractivePreview && !isConfirmCard && showResult && expanded && (
+      {/* web_search 结果 */}
+      {toolCall.toolName === 'web_search' && showResult && expanded && (
+        <div className="mt-1.5 space-y-1.5">
+          {(() => {
+            const data = (toolCall.result as any)?.data
+            if (!data?.results?.length) return <span className="text-muted-foreground">无搜索结果</span>
+            return data.results.map((r: any, i: number) => (
+              <div key={i} className="border rounded-lg p-2 bg-background">
+                <a href={r.url} target="_blank" rel="noopener noreferrer" className="flex items-start gap-1 text-xs font-medium text-blue-600 hover:underline">
+                  <ExternalLink size={11} className="mt-0.5 shrink-0" />
+                  <span>{r.title}</span>
+                </a>
+                {r.snippet && <p className="text-[11px] text-muted-foreground mt-1 line-clamp-2">{r.snippet}</p>}
+              </div>
+            ))
+          })()}
+        </div>
+      )}
+
+      {/* read_webpage 结果 */}
+      {toolCall.toolName === 'read_webpage' && showResult && expanded && (
+        <div className="mt-1.5 space-y-1.5">
+          {(() => {
+            const data = (toolCall.result as any)?.data
+            if (!data) return <span className="text-muted-foreground">无内容</span>
+            return (
+              <>
+                <a href={data.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline">
+                  <ExternalLink size={11} className="shrink-0" />
+                  <span className="truncate">{data.title || data.url}</span>
+                </a>
+                <div className="text-[11px] text-muted-foreground bg-background rounded p-2 border max-h-40 overflow-y-auto whitespace-pre-wrap leading-relaxed">
+                  {data.content}
+                </div>
+              </>
+            )
+          })()}
+        </div>
+      )}
+
+      {/* 其他工具结果（含 preview_import 分析模式）-- 折叠内 */}
+      {!isInteractivePreview && !isConfirmCard && toolCall.toolName !== 'web_search' && toolCall.toolName !== 'read_webpage' && showResult && expanded && (
         <div className="mt-1.5">
           <span className="text-muted-foreground text-[10px] uppercase tracking-wide">结果</span>
           <div className="mt-0.5 text-muted-foreground">
