@@ -4,6 +4,8 @@ import type { ToolDef, ToolContext } from './types.js'
 
 export const queryMembersTool: ToolDef = {
   name: 'query_members',
+  displayName: '查询成员',
+  promptHint: '查看账本成员列表',
   description: '查询当前账本的成员列表。',
   parameters: {
     type: 'object',

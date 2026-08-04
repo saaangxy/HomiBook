@@ -6,6 +6,8 @@ import { computeAccountBalance, assertCanManageAccount } from '../../account.js'
 
 export const updateAccountTool: ToolDef = {
   name: 'update_account',
+  displayName: '修改账户',
+  promptHint: '需要用户确认',
   description: '更新账户元数据（名称、类型、可见性等）。',
   parameters: {
     type: 'object',

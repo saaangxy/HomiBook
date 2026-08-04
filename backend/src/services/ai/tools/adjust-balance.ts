@@ -5,6 +5,8 @@ import { assertCanManageAccount } from '../../account.js'
 
 export const adjustBalanceTool: ToolDef = {
   name: 'adjust_balance',
+  displayName: '调整余额',
+  promptHint: '需要用户确认',
   description: '手动调整账户余额。记录调整历史，并以调整后的余额为新基准。',
   parameters: {
     type: 'object',

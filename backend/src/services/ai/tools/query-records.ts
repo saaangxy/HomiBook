@@ -16,6 +16,8 @@ interface QueryRecordsArgs {
 
 export const queryRecordsTool: ToolDef = {
   name: 'query_records',
+  displayName: '查询流水',
+  promptHint: '支持按日期、金额、分类、账户、关键词等筛选',
   description: '查询流水记录。支持按关键词、类型、分类、账户、日期范围、金额范围筛选。',
   parameters: {
     type: 'object',

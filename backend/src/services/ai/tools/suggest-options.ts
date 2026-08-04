@@ -2,6 +2,8 @@ import type { ToolDef, ToolContext } from './types.js'
 
 export const suggestOptionsTool: ToolDef = {
   name: 'suggest_options',
+  displayName: '建议选项',
+  promptHint: '用户操作意图明确但缺少具体参数时使用',
   description: '当需要用户选择或补充信息时调用。可同时提出多个问题，一次收集所有缺失信息。向用户展示每个问题的选项列表并等待用户选择或输入，结果会作为工具返回值传给模型继续对话。',
   parameters: {
     type: 'object',

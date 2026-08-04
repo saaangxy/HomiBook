@@ -4,6 +4,8 @@ import { listMemories } from '../memory.js'
 
 export const listMemoriesTool: ToolDef = {
   name: 'list_memories',
+  displayName: '记忆列表',
+  promptHint: '整理归纳记忆时使用',
   description: '查看用户全部长期记忆。用于整理、归纳和检查记忆是否需要更新或删除。',
   requireConfirm: false,
   parameters: {

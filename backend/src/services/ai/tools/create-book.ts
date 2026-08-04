@@ -4,6 +4,8 @@ import type { ToolDef, ToolContext } from './types.js'
 
 export const createBookTool: ToolDef = {
   name: 'create_book',
+  displayName: '创建账本',
+  promptHint: '需要用户确认',
   description: '创建一个新账本。',
   parameters: {
     type: 'object',

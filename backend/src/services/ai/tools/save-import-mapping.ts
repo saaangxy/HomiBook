@@ -3,6 +3,8 @@ import { prisma } from '../../../app.js'
 
 export const saveImportMappingTool: ToolDef = {
   name: 'save_import_mapping',
+  displayName: '保存导入映射',
+  promptHint: '仅在用户明确要求时调用，日常导入无需调用',
   description: '创建或更新导入映射规则（账户映射或分类映射）。保存后的规则会在后续导入时自动应用。应在用户确认映射建议后调用。',
   requireConfirm: true,
   parameters: {

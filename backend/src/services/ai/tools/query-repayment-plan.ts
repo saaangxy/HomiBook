@@ -4,6 +4,8 @@ import type { ToolDef, ToolContext } from './types.js'
 
 export const queryRepaymentPlanTool: ToolDef = {
   name: 'query_repayment_plan',
+  displayName: '查询还款计划',
+  promptHint: '查看贷款还款计划明细',
   description: '查询贷款的还款计划明细。',
   parameters: {
     type: 'object',

@@ -111,6 +111,7 @@ export async function fetchProviders() {
 
 export interface ToolInfo {
   name: string
+  displayName: string
   description: string
   requireConfirm: boolean
 }
@@ -339,6 +340,16 @@ export async function saveProviderBaseURL(provider: string, baseURL: string) {
 
 export async function testProviderConnection(data: { provider: string; apiKey: string; baseURL: string; model?: string; configId?: string }) {
   return api.post<{ success: boolean; message: string; models?: string[] }>(`${BASE}/providers/test`, data)
+}
+
+// ---- 搜索引擎配置 ----
+export async function fetchSearchEngine() {
+  const res = await api.get<{ engine: string }>(`${BASE}/search-engine`)
+  return res.engine
+}
+
+export async function updateSearchEngine(engine: string) {
+  return api.post<{ success: boolean; engine: string }>(`${BASE}/search-engine`, { engine })
 }
 
 // 共享 SSE 流解析

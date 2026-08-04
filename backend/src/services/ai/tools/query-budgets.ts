@@ -9,6 +9,8 @@ interface QueryBudgetsArgs {
 
 export const queryBudgetsTool: ToolDef = {
   name: 'query_budgets',
+  displayName: '查询预算',
+  promptHint: '查看各分类预算执行情况',
   description: '查询预算信息。可指定年份和月份筛选。',
   parameters: {
     type: 'object',

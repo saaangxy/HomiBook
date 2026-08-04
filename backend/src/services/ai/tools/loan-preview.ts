@@ -16,6 +16,8 @@ interface LoanPreviewArgs {
 
 export const loanPreviewTool: ToolDef = {
   name: 'loan_preview',
+  displayName: '贷款预览',
+  promptHint: '预览贷款还款计划',
   description: '贷款计算预览。输入贷款总额、年利率、期数、开始日期、还款方式，返回月供和还款计划。',
   parameters: {
     type: 'object',

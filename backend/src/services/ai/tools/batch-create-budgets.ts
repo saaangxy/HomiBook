@@ -17,6 +17,8 @@ interface BatchCreateBudgetsArgs {
 
 export const batchCreateBudgetsTool: ToolDef = {
   name: 'batch_create_budgets',
+  displayName: '批量创建预算',
+  promptHint: '需要用户确认',
   description: '批量创建多月预算。在同一年内为多个月份创建相同配置的预算。',
   parameters: {
     type: 'object',

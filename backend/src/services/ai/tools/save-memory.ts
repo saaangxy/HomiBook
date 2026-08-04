@@ -4,6 +4,8 @@ import { saveMemory } from '../memory.js'
 
 export const saveMemoryTool: ToolDef = {
   name: 'save_memory',
+  displayName: '保存记忆',
+  promptHint: '识别到用户消费习惯或记账偏好时保存；传入 memoryId 可更新已有记忆',
   description: '保存或更新用户长期记忆。当用户表达消费习惯、记账偏好或明确要求记住某事时调用。传入 memoryId 可更新已有记忆（用于整理归纳）。非破坏性操作，无需用户确认。',
   requireConfirm: false,
   parameters: {

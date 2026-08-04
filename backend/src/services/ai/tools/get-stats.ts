@@ -14,6 +14,8 @@ interface GetStatsArgs {
 
 export const getStatsTool: ToolDef = {
   name: 'get_stats',
+  displayName: '统计概览',
+  promptHint: '生成统计分析报表',
   description: '获取统计分析数据。支持按月/分类/类型汇总。时间范围可用 startDate+endDate(YYYY-MM-DD) 或 year(+month)；type 筛选 INCOME/EXPENSE/TRANSFER；groupBy 指定汇总维度。',
   parameters: {
     type: 'object',

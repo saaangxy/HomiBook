@@ -5,6 +5,8 @@ import { refreshAccountBalance } from '../../account.js'
 
 export const cloneRecordTool: ToolDef = {
   name: 'clone_record',
+  displayName: '复制流水',
+  promptHint: '复制已有流水创建新记录',
   description: '克隆一条流水记录，复制其所有字段但归属人设为当前用户。',
   parameters: {
     type: 'object',

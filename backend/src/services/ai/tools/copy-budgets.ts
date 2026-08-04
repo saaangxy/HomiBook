@@ -10,6 +10,8 @@ interface CopyBudgetsArgs {
 
 export const copyBudgetsTool: ToolDef = {
   name: 'copy_budgets',
+  displayName: '复制预算',
+  promptHint: '将预算复制到其他月份',
   description: '将源月份的预算复制到目标月份（跳过已存在的同名预算）。',
   parameters: {
     type: 'object',

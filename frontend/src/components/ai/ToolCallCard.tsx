@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils'
+import { getToolDisplayName } from '@/lib/tool-names'
 import type { ToolCallEntry, SuggestionOption } from '@/stores/chat'
 import { useChatStore } from '@/stores/chat'
 import { useBookStore } from '@/stores/book'
@@ -11,47 +12,6 @@ import { ImportConfirmCard } from './ImportConfirmCard'
 
 interface Props {
   toolCall: ToolCallEntry
-}
-
-const toolLabels: Record<string, string> = {
-  query_records: '查询流水',
-  query_budgets: '查询预算',
-  query_accounts: '查询账户',
-  get_stats: '统计分析',
-  query_categories: '查询分类',
-  create_record: '创建记录',
-  update_record: '更新记录',
-  delete_record: '删除记录',
-  set_budget: '设置预算',
-  batch_create_records: '批量创建记录',
-  batch_update_records: '批量更新记录',
-  suggest_options: '补充信息',
-  preview_import: '导入预览',
-  query_import_mappings: '查询映射',
-  save_import_mapping: '保存映射',
-  confirm_import: '确认导入',
-  ocr_receipt: '图片识别',
-  switch_book: '切换账本',
-  query_recurring: '查询固定收支',
-  create_recurring: '创建固定收支',
-  update_recurring: '更新固定收支',
-  delete_recurring: '删除固定收支',
-  toggle_recurring: '启用/停用',
-  loan_preview: '贷款计算',
-  query_repayment_plan: '还款计划',
-  create_account: '创建账户',
-  update_account: '更新账户',
-  delete_account: '删除账户',
-  adjust_balance: '余额调整',
-  query_balance_history: '余额历史',
-  delete_budget: '删除预算',
-  copy_budgets: '复制预算',
-  batch_create_budgets: '批量创建预算',
-  query_members: '查询成员',
-  create_book: '创建账本',
-  clone_record: '克隆记录',
-  detect_duplicates: '检测重复',
-  batch_delete_records: '批量删除',
 }
 
 // ---- ConfirmPreview 类型 ----
@@ -184,7 +144,7 @@ export function ToolCallCard({ toolCall }: Props) {
         {effectiveStatus === 'suggesting' && <MessageSquareMore size={14} className="text-violet-500" />}
         {effectiveStatus === 'switching' && <HelpCircle size={14} className="text-emerald-500" />}
         <Wrench size={14} className="text-muted-foreground" />
-        <span className="font-medium">{toolLabels[toolCall.toolName] || toolCall.toolName}</span>
+        <span className="font-medium">{getToolDisplayName(toolCall.toolName)}</span>
         {toolCall.durationMs != null && (
           <span className="text-muted-foreground ml-auto">{toolCall.durationMs}ms</span>
         )}

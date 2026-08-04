@@ -3,6 +3,8 @@ import { prisma } from '../../../app.js'
 
 export const queryImportMappingsTool: ToolDef = {
   name: 'query_import_mappings',
+  displayName: '查询导入映射',
+  promptHint: '查看已有导入映射规则',
   description: '查询已有的导入映射规则（账户映射和分类映射）。用于了解当前自动匹配规则，帮助在导入流水时做出正确的映射建议。',
   parameters: {
     type: 'object',

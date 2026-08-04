@@ -10,6 +10,8 @@ interface QueryRecurringArgs {
 
 export const queryRecurringTool: ToolDef = {
   name: 'query_recurring',
+  displayName: '查询固定收支',
+  promptHint: '查看定期收支和贷款',
   description: '查询固定收支/贷款列表。支持按类型(PERIODIC/LOAN)和启用状态筛选。',
   parameters: {
     type: 'object',

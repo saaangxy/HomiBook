@@ -7,6 +7,8 @@ import path from 'path'
 
 export const updateRecordTool: ToolDef = {
   name: 'update_record',
+  displayName: '修改流水',
+  promptHint: '需要用户确认',
   description: '修改一条已有的流水记录。敏感操作，需要用户确认。',
   parameters: {
     type: 'object',

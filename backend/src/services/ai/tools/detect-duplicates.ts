@@ -14,6 +14,8 @@ interface DetectDuplicatesArgs {
 
 export const detectDuplicatesTool: ToolDef = {
   name: 'detect_duplicates',
+  displayName: '检测重复流水',
+  promptHint: '查找可能的重复记录',
   description: '按指定字段分组检测重复流水记录。',
   parameters: {
     type: 'object',

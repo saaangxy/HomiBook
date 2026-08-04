@@ -4,6 +4,8 @@ import type { ToolDef, ToolContext } from './types.js'
 
 export const queryCategoriesTool: ToolDef = {
   name: 'query_categories',
+  displayName: '查询分类',
+  promptHint: '查看收支分类字典',
   description: '查询系统中可用的收支分类字典。可用于确认分类编码后调用 create_record 或 query_records。',
   parameters: {
     type: 'object',

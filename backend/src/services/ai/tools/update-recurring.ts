@@ -6,6 +6,8 @@ import type { ToolDef, ToolContext } from './types.js'
 
 export const updateRecurringTool: ToolDef = {
   name: 'update_recurring',
+  displayName: '修改固定收支',
+  promptHint: '需要用户确认',
   description: '更新固定收支/贷款配置。参数同创建，所有字段均可选。',
   parameters: {
     type: 'object',

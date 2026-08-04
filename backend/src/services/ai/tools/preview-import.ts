@@ -8,6 +8,8 @@ import path from 'path'
 
 export const previewImportTool: ToolDef = {
   name: 'preview_import',
+  displayName: '预览导入',
+  promptHint: 'mode=analyze 仅返回未匹配数据供分析；mode=preview 传入映射规则展示交互卡片供确认',
   description: '解析上传的账单文件并预览导入数据。有两种模式：(1) 分析模式(mode=analyze)：获取解析结果供 AI 分析，只返回未匹配分类的记录，不展示交互卡片；(2) 预览模式(mode=preview)：传入 accountResolutions 和 categoryResolutions 映射规则，展示交互卡片供用户确认调整，返回全部记录及映射后的分类名称。应先用分析模式获取数据，AI 生成映射规则后，再用预览模式验证，最后调用 confirm_import 确认导入。',
   requireConfirm: false,
   parameters: {

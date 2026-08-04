@@ -5,6 +5,8 @@ import { resolveAccountId } from './helpers.js'
 
 export const createRecordTool: ToolDef = {
   name: 'create_record',
+  displayName: '创建流水',
+  promptHint: '需要用户确认',
   description: '创建一条新的收支流水记录。敏感操作，需要用户确认。参数：type(INCOME|EXPENSE|TRANSFER)、amount(金额)、date(日期YYYY-MM-DD)、accountId(账户ID)、categoryCode(分类编码)、remark(备注)、payer(交易方)、fromAccountId/toAccountId(转账专用)',
   parameters: {
     type: 'object',

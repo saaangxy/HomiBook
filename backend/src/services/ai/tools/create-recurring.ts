@@ -12,6 +12,8 @@ import { resolveAccountId } from './helpers.js'
 
 export const createRecurringTool: ToolDef = {
   name: 'create_recurring',
+  displayName: '创建固定收支',
+  promptHint: '需要用户确认',
   description: '创建固定收支或贷款。参数：name(名称)、type(INCOME|EXPENSE|TRANSFER)、amount(金额)、cron(触发表达式)、accountId(账户ID)、categoryCode(分类)、recurringType(PERIODIC|LOAN)、remark(备注)。贷款需额外填loanTotalAmount(贷款总额)、loanInterestRate(年利率)、loanInterestMethod(EQUAL_INSTALLMENT|EQUAL_PRINCIPAL)、loanStartDate(开始日期)、loanTermMonths(期数)。',
   parameters: {
     type: 'object',

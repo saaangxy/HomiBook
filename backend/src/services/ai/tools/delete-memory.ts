@@ -4,6 +4,8 @@ import { deleteMemory } from '../memory.js'
 
 export const deleteMemoryTool: ToolDef = {
   name: 'delete_memory',
+  displayName: '删除记忆',
+  promptHint: '记忆重复或不再有效时',
   description: '删除用户长期记忆。当记忆过时、错误或重复时调用。整理归纳记忆时用于清理冗余条目。',
   requireConfirm: false,
   parameters: {

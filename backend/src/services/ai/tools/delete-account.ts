@@ -5,6 +5,8 @@ import { assertCanManageAccount } from '../../account.js'
 
 export const deleteAccountTool: ToolDef = {
   name: 'delete_account',
+  displayName: '删除账户',
+  promptHint: '需要用户确认',
   description: '删除账户及其余额调整记录。',
   parameters: {
     type: 'object',

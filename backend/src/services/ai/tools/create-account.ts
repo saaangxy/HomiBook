@@ -4,6 +4,8 @@ import type { ToolDef, ToolContext } from './types.js'
 
 export const createAccountTool: ToolDef = {
   name: 'create_account',
+  displayName: '创建账户',
+  promptHint: '需要用户确认',
   description: '创建新账户。参数：name(名称)、type(账户类型，如CASH/BANK/CREDIT_CARD/ALIPAY/WECHAT/INVESTMENT/EBANK/OTHER)、currency(货币代码，默认CNY)、initialBalance(初始余额)、accountNo(账号)、bankName(银行名称)、visibility(PUBLIC|PRIVATE)。',
   parameters: {
     type: 'object',

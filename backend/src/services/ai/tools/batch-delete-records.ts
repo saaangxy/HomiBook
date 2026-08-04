@@ -7,6 +7,8 @@ import fs from 'fs'
 
 export const batchDeleteRecordsTool: ToolDef = {
   name: 'batch_delete_records',
+  displayName: '批量删除流水',
+  promptHint: '需要用户确认',
   description: '批量删除流水记录及关联附件。',
   parameters: {
     type: 'object',

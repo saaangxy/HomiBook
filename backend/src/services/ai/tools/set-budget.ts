@@ -4,6 +4,8 @@ import type { ToolDef, ToolContext } from './types.js'
 
 export const setBudgetTool: ToolDef = {
   name: 'set_budget',
+  displayName: '设置预算',
+  promptHint: '需要用户确认',
   description: '创建或更新预算。敏感操作，需要用户确认。type 为 FIXED(月度固定预算) 或 FREE(自由预算)。',
   parameters: {
     type: 'object',

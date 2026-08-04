@@ -5,6 +5,8 @@ import type { ToolDef, ToolContext } from './types.js'
 
 export const toggleRecurringTool: ToolDef = {
   name: 'toggle_recurring',
+  displayName: '启停固定收支',
+  promptHint: '启用或停用定期收支',
   description: '切换固定收支的启用/停用状态。',
   parameters: {
     type: 'object',

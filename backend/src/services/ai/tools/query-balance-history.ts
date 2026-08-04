@@ -11,6 +11,8 @@ interface BalanceHistoryArgs {
 
 export const queryBalanceHistoryTool: ToolDef = {
   name: 'query_balance_history',
+  displayName: '查询余额历史',
+  promptHint: '查看账户余额变动历史',
   description: '查询账户余额历史变化，支持按日或按月聚合。',
   parameters: {
     type: 'object',

@@ -4,6 +4,8 @@ import { searchMemoriesByKeyword } from '../memory.js'
 
 export const searchMemoryTool: ToolDef = {
   name: 'search_memory',
+  displayName: '搜索记忆',
+  promptHint: '需要回忆用户习惯或偏好时',
   description: '搜索用户长期记忆。当需要回忆用户的消费习惯、记账偏好或规则时调用。',
   requireConfirm: false,
   parameters: {

@@ -23,6 +23,8 @@ interface BatchCreateArgs {
 
 export const batchCreateRecordsTool: ToolDef = {
   name: 'batch_create_records',
+  displayName: '批量创建流水',
+  promptHint: '多条记录一次确认',
   description: '批量创建多条收支流水记录。敏感操作，需要用户确认。records 数组每项包含：type(INCOME|EXPENSE|TRANSFER)、amount(金额>0)、date(YYYY-MM-DD)、accountId、categoryCode(可选)、remark(可选)、payer(可选)、tags(可选)',
   parameters: {
     type: 'object',

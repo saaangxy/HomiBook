@@ -4,6 +4,8 @@ import type { ToolDef, ToolContext } from './types.js'
 
 export const queryAccountsTool: ToolDef = {
   name: 'query_accounts',
+  displayName: '查询账户',
+  promptHint: '查看账户余额和变动',
   description: '查询账户列表及其余额。',
   parameters: {
     type: 'object',

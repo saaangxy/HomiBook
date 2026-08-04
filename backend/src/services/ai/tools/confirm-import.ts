@@ -10,6 +10,8 @@ import path from 'path'
 
 export const confirmImportTool: ToolDef = {
   name: 'confirm_import',
+  displayName: '确认导入',
+  promptHint: '传入 fileId、source 和映射规则，一次性完成导入',
   description: '确认导入账单数据。传入 fileId、source 和经过用户确认的映射规则，展示导入预览后可执行导入。',
   requireConfirm: false,
   parameters: {

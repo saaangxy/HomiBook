@@ -20,11 +20,13 @@ import {
   Hash,
   Wrench,
   Zap,
+  Search,
 } from 'lucide-react'
 import {
   fetchAIConfig, updateAIConfig, fetchProviders, fetchProviderModels,
   fetchProviderConfigs, createProviderConfig, updateProviderConfig, deleteProviderConfig, copyProviderConfig,
   testProviderConnection, fetchTools,
+  fetchSearchEngine, updateSearchEngine,
   type ProviderInfo, type UserProviderConfig, type ToolInfo,
 } from '@/api/chat'
 import { Switch } from '@/components/ui/switch'
@@ -62,6 +64,9 @@ export function AIAssistantSettings() {
   const [toolGroups, setToolGroups] = useState<{ label: string; tools: ToolInfo[] }[]>([])
   const [disabledTools, setDisabledTools] = useState<string[]>([])
 
+  // ---------- 搜索引擎 ----------
+  const [searchEngine, setSearchEngine] = useState('bing')
+
   // ---------- 弹窗 ----------
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingConfig, setEditingConfig] = useState<UserProviderConfig | null>(null)
@@ -94,11 +99,12 @@ export function AIAssistantSettings() {
   const loadAll = async () => {
     setLoading(true)
     try {
-      const [prefs, providerList, configList, toolGroupList] = await Promise.all([
+      const [prefs, providerList, configList, toolGroupList, engine] = await Promise.all([
         fetchAIConfig(),
         fetchProviders(),
         fetchProviderConfigs(),
         fetchTools(),
+        fetchSearchEngine(),
       ])
       setSimpleConfigId(prefs.simpleProviderConfigId)
       setSimpleModel(prefs.simpleModel)
@@ -114,6 +120,7 @@ export function AIAssistantSettings() {
       setConfigs(configList)
       setToolGroups(toolGroupList)
       setDisabledTools(prefs.disabledTools || [])
+      setSearchEngine(engine)
     } catch {
       // ignore
     } finally {
@@ -567,6 +574,36 @@ export function AIAssistantSettings() {
           </AccordionContent>
         </AccordionItem>
 
+        {/* 网络搜索 */}
+        <AccordionItem value="search-engine" className="border rounded-lg">
+          <AccordionTrigger className="px-4 py-3 text-sm font-semibold hover:no-underline">
+            <div className="flex items-center gap-2">
+              <Search size={14} className="text-muted-foreground" />
+              网络搜索
+            </div>
+          </AccordionTrigger>
+          <AccordionContent className="px-4 pb-4 pt-1">
+            <div className="flex items-center gap-3">
+              <Label className="text-xs shrink-0">搜索引擎</Label>
+              <Select
+                value={searchEngine}
+                onValueChange={async (v) => {
+                  setSearchEngine(v)
+                  try { await updateSearchEngine(v) } catch { /* ignore */ }
+                }}
+              >
+                <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="bing">Bing</SelectItem>
+                  <SelectItem value="baidu">百度</SelectItem>
+                  <SelectItem value="google">Google</SelectItem>
+                </SelectContent>
+              </Select>
+              <span className="text-xs text-muted-foreground">AI 助手搜索信息时使用的引擎</span>
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+
         {/* 工具管理 */}
         <AccordionItem value="tools" className="border rounded-lg">
           <AccordionTrigger className="px-4 py-3 text-sm font-semibold hover:no-underline">
@@ -591,7 +628,7 @@ export function AIAssistantSettings() {
                         return (
                           <div key={tool.name} className="flex items-center gap-3 p-2 border rounded-lg">
                             <div className="flex-1 min-w-0">
-                              <div className="text-sm font-medium truncate">{tool.name}</div>
+                              <div className="text-sm font-medium truncate">{tool.displayName}</div>
                               <div className="text-xs text-muted-foreground truncate">{tool.description}</div>
                             </div>
                             <Switch

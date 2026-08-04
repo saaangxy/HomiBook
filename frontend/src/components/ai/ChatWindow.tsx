@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useChatStore } from '@/stores/chat'
 import { useBookStore } from '@/stores/book'
 import { fetchSessions, fetchMessages, createSession, updateSession, deleteSession as deleteSessionApi } from '@/api/chat'
+import { loadToolNames } from '@/lib/tool-names'
 import { importExportApi } from '@/api/import-export'
 import { recordApi } from '@/api/record'
 import { MessageBubble } from './MessageBubble'
@@ -65,9 +66,10 @@ export function ChatWindow() {
     })
   }
 
-  // 初始化加载会话列表
+  // 初始化加载会话列表 + 工具名称缓存
   useEffect(() => {
     loadSessions()
+    loadToolNames()
   }, [])
 
   const loadSessions = async () => {

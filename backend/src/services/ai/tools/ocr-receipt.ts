@@ -29,6 +29,8 @@ async function loadVisionConfig(userId: string) {
 
 export const ocrReceiptTool: ToolDef = {
   name: 'ocr_receipt',
+  displayName: '小票识别',
+  promptHint: '识别小票/收据图片中的金额、日期等信息',
   description: '识别小票/收据图片，提取金额、日期、交易方、分类等信息。传入 attachmentId 即可。',
   parameters: {
     type: 'object',

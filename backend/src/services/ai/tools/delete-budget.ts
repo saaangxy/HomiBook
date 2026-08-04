@@ -4,6 +4,8 @@ import type { ToolDef, ToolContext } from './types.js'
 
 export const deleteBudgetTool: ToolDef = {
   name: 'delete_budget',
+  displayName: '删除预算',
+  promptHint: '需要用户确认',
   description: '删除预算。',
   parameters: {
     type: 'object',

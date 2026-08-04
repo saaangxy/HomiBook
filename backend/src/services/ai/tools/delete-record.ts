@@ -4,6 +4,8 @@ import type { ToolDef, ToolContext } from './types.js'
 
 export const deleteRecordTool: ToolDef = {
   name: 'delete_record',
+  displayName: '删除流水',
+  promptHint: '需要用户确认',
   description: '删除一条流水记录。敏感操作，需要用户确认。',
   parameters: {
     type: 'object',

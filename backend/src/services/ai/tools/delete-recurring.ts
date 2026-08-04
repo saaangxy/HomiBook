@@ -4,6 +4,8 @@ import type { ToolDef, ToolContext } from './types.js'
 
 export const deleteRecurringTool: ToolDef = {
   name: 'delete_recurring',
+  displayName: '删除固定收支',
+  promptHint: '需要用户确认',
   description: '删除固定收支/贷款及关联的还款计划。',
   parameters: {
     type: 'object',

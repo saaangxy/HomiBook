@@ -18,6 +18,8 @@ interface UpdateInput {
 
 export const batchUpdateRecordsTool: ToolDef = {
   name: 'batch_update_records',
+  displayName: '批量修改流水',
+  promptHint: '多条记录一次确认',
   description: '批量修改多条流水记录。敏感操作，需要用户确认。updates 数组每项包含：recordId(必填)、以及要修改的字段：type、amount、date、accountId、categoryCode、remark、payer',
   parameters: {
     type: 'object',
