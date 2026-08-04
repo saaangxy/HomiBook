@@ -1,0 +1,50 @@
+# 家庭记账本 Docker 部署
+#
+# 外部访问入口：前端 Nginx（默认 http://<服务器IP>:8080）
+# 前端使用相对路径 /api，由 Nginx 反向代理到后端，无需配置 baseURL
+#
+# 可通过根目录 .env 文件覆盖端口/密钥，参见 .env.example
+
+services:
+  backend:
+    build: ./backend
+    container_name: homibook-backend
+    restart: unless-stopped
+    environment:
+      # 后端服务端口（容器内部 + 对外暴露），可通过 .env 的 BACKEND_PORT / BACKEND_EXPOSE_PORT 覆盖
+      PORT: ${BACKEND_PORT:-3002}
+      # SQLite 数据库持久化到卷
+      DATABASE_URL: file:/app/data/dev.db
+      # 生产环境务必在 .env 中设置
+      JWT_SECRET: ${JWT_SECRET:-homibook-secret-key-change-in-production}
+    volumes:
+      - homibook-data:/app/data        # SQLite 数据
+      - homibook-uploads:/app/uploads  # 上传的小票/账单文件
+    ports:
+      # 可选：直接从外部访问后端 API / docs（默认同端口，如不需要可注释掉）
+      - "${BACKEND_EXPOSE_PORT:-3002}:${BACKEND_PORT:-3002}"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:'+(process.env.PORT||3002)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  frontend:
+    build: ./frontend
+    container_name: homibook-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      # Nginx 代理目标（后端服务名 + 端口），由 nginx.conf.template 通过 envsubst 注入
+      BACKEND_HOST: backend
+      BACKEND_PORT: ${BACKEND_PORT:-3002}
+    ports:
+      # 外部访问前端入口，可通过 .env 的 FRONTEND_PORT 覆盖
+      - "${FRONTEND_PORT:-8080}:80"
+
+volumes:
+  homibook-data:
+  homibook-uploads:

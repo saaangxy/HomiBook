@@ -28,6 +28,7 @@
     "fastify": "^4.29.1",
     "iconv-lite": "^0.7.2",
     "node-cron": "^4.2.1",
+    "puppeteer": "^25.4.0",
     "xlsx": "^0.18.5",
     "zod": "^4.4.3",
     "zod-to-json-schema": "^3.25.2"

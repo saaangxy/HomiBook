@@ -1,6 +1,7 @@
 generator client {
   provider      = "prisma-client-js"
-  binaryTargets = ["linux-musl"]
+  // linux-musl 用于 Alpine；linux-debian-openssl-3.0.x 用于 Docker 部署的 Debian 运行镜像
+  binaryTargets = ["linux-musl", "linux-debian-openssl-3.0.x"]
 }
 
 datasource db {
