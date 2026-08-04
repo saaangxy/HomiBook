@@ -5,9 +5,9 @@
  * Tier 3: 最旧消息 LLM 摘要
  */
 
-import { generateText } from 'ai'
-import type { LanguageModelV3 } from '@ai-sdk/provider'
-import { estimateTokens, estimateMessagesTokens, estimateToolsTokens } from './token-estimate.js'
+import {generateText} from 'ai'
+import type {LanguageModelV3} from '@ai-sdk/provider'
+import {estimateMessagesTokens, estimateTokens, estimateToolsTokens} from './token-estimate.js'
 
 /** 计算历史消息的 token 预算 */
 export function computeHistoryBudget(
@@ -19,8 +19,10 @@ export function computeHistoryBudget(
   const window = contextWindow ?? 32768
   const safetyMargin = 500
   const summaryReserve = 300 // 为注入的摘要预留
-  const budget = window - maxTokens - estimateTokens(systemPrompt) - estimateToolsTokens(tools) - safetyMargin - summaryReserve
-  return Math.max(budget, 1024) // 至少保留 1024 token 给历史
+  const systemPromptTokens = estimateTokens(systemPrompt)
+  const toolsTokens = estimateToolsTokens(tools)
+  const budget = window - maxTokens - systemPromptTokens - toolsTokens - safetyMargin - summaryReserve
+  return  Math.max(budget, 1024) // 至少保留 1024 token 给历史
 }
 
 export interface CompressContextParams {
@@ -71,7 +73,11 @@ export async function compressContext(params: CompressContextParams): Promise<Co
   // 确定需要摘要的新消息（排除已被旧摘要覆盖的）
   const summaryStartIndex = findSummaryStartIndex(removedIds, summaryUpToMessageId)
   const messagesToSummarize = removedMessages.slice(summaryStartIndex)
-  const lastSummarizedId = removedIds[removedIds.length - 1] ?? currentSummaryUpToId
+  // 找最后一个非空 ID（跳过 pending tool result 的空占位）
+  let lastSummarizedId = currentSummaryUpToId
+  for (let i = removedIds.length - 1; i >= 0; i--) {
+    if (removedIds[i]) { lastSummarizedId = removedIds[i]; break }
+  }
 
   if (messagesToSummarize.length === 0) {
     // 没有新消息需要摘要（可能已被旧摘要覆盖），直接返回裁剪后的消息
@@ -79,15 +85,19 @@ export async function compressContext(params: CompressContextParams): Promise<Co
   }
 
   // 生成增量摘要
-  const newSummary = await generateSummary(model, currentSummary, messagesToSummarize).catch(() => null)
+  const newSummary = await generateSummary(model, currentSummary, messagesToSummarize).catch((err) => {
+    return null
+  })
 
   if (newSummary) {
     currentSummary = newSummary
     currentSummaryUpToId = lastSummarizedId
     promptWithSummary = systemPrompt + `\n\n## 之前对话摘要\n${newSummary}`
+  } else {
+    // 摘要失败时仅丢弃消息，不注入摘要
   }
-  // 容错：摘要失败时仅丢弃消息，不注入摘要
 
+  const keptTokens = estimateMessagesTokens(keptMessages)
   return { messages: keptMessages, systemPrompt: promptWithSummary, newSummary: currentSummary, newSummaryUpToMessageId: currentSummaryUpToId }
 }
 
@@ -105,8 +115,15 @@ function simplifyOldToolResults(messages: any[], budget: number): any[] {
     recentStart = i
   }
 
+  // 找到最后一条 user 消息：当前轮次的工具结果不精简（导入流程需要 preview_import 的完整数据）
+  let lastUserIdx = -1
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'user') { lastUserIdx = i; break }
+  }
+  const safeStart = lastUserIdx >= 0 ? Math.min(recentStart, lastUserIdx + 1) : recentStart
+
   return messages.map((msg, i) => {
-    if (i >= recentStart) return msg // 近期窗口内不精简
+    if (i >= safeStart) return msg // 近期窗口或当前轮次内不精简
     return simplifyMessageToolResults(msg)
   })
 }
@@ -127,26 +144,27 @@ function simplifyMessageToolResults(msg: any): any {
   }
 }
 
-/** 工具结果精简为简短描述 */
+/** 工具结果精简为简短描述（保留 success 字段，避免 LLM 误判工具失败） */
 function simplifyToolResult(output: any): any {
   if (output == null) return null
 
+  // 保留原始 success 状态，让 LLM 知道工具是否成功
+  const success = typeof output === 'object' && !Array.isArray(output) ? output?.success : undefined
+  const base: Record<string, unknown> = {}
+  if (success !== undefined) base.success = success
+
   if (Array.isArray(output)) {
-    const preview = output.slice(0, 2).map((item: any) => {
-      if (typeof item === 'object') return JSON.stringify(item).slice(0, 50)
-      return String(item).slice(0, 50)
-    }).join(', ')
-    return { _simplified: true, summary: `数组 ${output.length} 项`, preview }
+    return { ...base, summary: `已精简：数组 ${output.length} 项` }
   }
 
   if (typeof output === 'object') {
     const keys = Object.keys(output).slice(0, 5)
-    return { _simplified: true, summary: `对象，字段: ${keys.join(', ')}` }
+    return { ...base, summary: `已精简：原字段 ${keys.join(', ')}` }
   }
 
   const str = String(output)
   if (str.length <= 150) return output
-  return { _simplified: true, summary: str.slice(0, 150) + '...' }
+  return { ...base, summary: str.slice(0, 150) + '...' }
 }
 
 // ---- Tier 3: LLM 摘要裁剪 ----
@@ -191,8 +209,8 @@ function findSafeCutPoint(messages: any[], minCut: number): number {
     if (msg.role === 'user') return i
     if (msg.role === 'assistant' && !hasToolCall(msg)) return i
   }
-  // 极端情况：找不到安全点，保留全部（不裁剪）
-  return messages.length
+  // 极端情况：找不到安全点，保留全部（不裁剪），避免消息全丢
+  return 0
 }
 
 /** 检查 assistant 消息是否包含 tool-call */
@@ -202,6 +220,11 @@ function hasToolCall(msg: any): boolean {
 }
 
 // ---- 摘要生成 ----
+
+/** 移除 <think>...</think> 推理块（含未闭合的情况） */
+export function stripThinkTags(text: string): string {
+  return text.replace(/<think>[\s\S]*?(<\/think>|$)/gi, '').trim()
+}
 
 /**
  * 找到需要摘要的起始索引（排除已被旧摘要覆盖的消息）
@@ -219,10 +242,10 @@ async function generateSummary(model: LanguageModelV3, existingSummary: string |
   const messagesText = messages.map((m: any) => {
     const role = m.role
     const text = typeof m.content === 'string'
-      ? m.content
+      ? stripThinkTags(m.content)
       : Array.isArray(m.content)
         ? m.content.map((p: any) => {
-            if (p.type === 'text') return p.text
+            if (p.type === 'text') return stripThinkTags(p.text)
             if (p.type === 'tool-call') return `[调用工具 ${p.toolName}]`
             if (p.type === 'tool-result') return `[工具结果已精简]`
             return ''
@@ -244,5 +267,5 @@ async function generateSummary(model: LanguageModelV3, existingSummary: string |
     temperature: 0.3,
   })
 
-  return result.text.trim()
+  return stripThinkTags(result.text)
 }

@@ -580,12 +580,13 @@ export const useChatStore = create<ChatState>()((set, get) => {
     const parentId = parentMsg!.id
 
     // 标记当前块为已决定（清除 preview 避免 effectiveStatus 误判为过期确认）
+    // approved 时保留旧 result，避免 SSE tool-result 到达前被误判为"数据已过期"
     const newDecidedStatus = approved ? 'pending' as const : 'error' as const
     get().updateStreamMessage(sid, parentId, (msg) => ({
       ...msg,
       blocks: msg.blocks.map((b) =>
         b.type === 'tool-call' && b.toolCallId === toolCallId
-          ? { ...b, status: newDecidedStatus, preview: undefined, result: approved ? undefined : ({ error: '用户拒绝了此操作' } as any) }
+          ? { ...b, status: newDecidedStatus, preview: undefined, ...(approved ? {} : { result: { error: '用户拒绝了此操作' } as any }) }
           : b,
       ),
     }))

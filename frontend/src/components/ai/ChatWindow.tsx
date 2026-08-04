@@ -150,9 +150,11 @@ export function ChatWindow() {
     if ((!msg && pendingImages.length === 0) || !currentBookId || isCurrentStreaming) return
     setInput('')
 
-    const parentId = messages.length > 0
-      ? messages[messages.length - 1].dbId || messages[messages.length - 1].id
-      : undefined
+    // 向前找最后一个有 dbId 的消息，避免把临时 msg-* ID 当作 parentId 发给后端
+    let parentId: string | undefined
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].dbId) { parentId = messages[i].dbId; break }
+    }
 
     // 上传待发送的小票图片
     let attachments: { id: string; url: string; originalFilename: string }[] | undefined
@@ -198,7 +200,11 @@ export function ChatWindow() {
   const handleEditSubmit = (msgId: string, newText: string) => {
     if (!currentBookId || isCurrentStreaming) return
     const idx = messages.findIndex((m) => m.id === msgId)
-    const parentId = idx > 0 ? messages[idx - 1].dbId || messages[idx - 1].id : undefined
+    // 向前找最后一个有 dbId 的消息
+    let parentId: string | undefined
+    for (let i = idx - 1; i >= 0; i--) {
+      if (messages[i].dbId) { parentId = messages[i].dbId; break }
+    }
 
     if (!currentSessionId) {
       const title = newText.length > 30 ? newText.slice(0, 30) + '...' : newText
@@ -227,7 +233,11 @@ export function ChatWindow() {
     if (!text) return
 
     const assistantDbId = messages[idx].dbId || messages[idx].id
-    const parentId = idx > 1 ? messages[idx - 2]?.dbId || messages[idx - 2]?.id : undefined
+    // 向前找最后一个有 dbId 的消息（跳过被重试的助手消息和其前面的用户消息）
+    let parentId: string | undefined
+    for (let i = idx - 2; i >= 0; i--) {
+      if (messages[i].dbId) { parentId = messages[i].dbId; break }
+    }
 
     // 先清理本地状态
     retryMessage(assistantMsgId)

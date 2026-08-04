@@ -12,7 +12,7 @@ import { sendMessageSchema, createSessionSchema, updateSessionSchema, confirmAct
 import { detectSkills, buildSkillsPrompt, extractUserMessageForSkills } from '../services/ai/skills/index.js'
 import { loadMemoriesForPrompt, listMemories, deleteMemory, updateMemory } from '../services/ai/memory.js'
 import { estimateTokens } from '../services/ai/token-estimate.js'
-import { compressContext, computeHistoryBudget } from '../services/ai/context-compress.js'
+import { compressContext, computeHistoryBudget, stripThinkTags } from '../services/ai/context-compress.js'
 import { zSchema } from '../lib/schema-helpers.js'
 import { z } from 'zod'
 
@@ -347,7 +347,10 @@ async function buildChatMessages(sessionId: string, pendingToolResults: { toolCa
     } else if (msg.role === 'assistant') {
       const tcList = msg.toolCalls ? JSON.parse(msg.toolCalls) : []
       const contentParts: any[] = []
-      if (msg.content) contentParts.push({ type: 'text', text: msg.content })
+      if (msg.content) {
+        const cleanText = stripThinkTags(msg.content)
+        if (cleanText) contentParts.push({ type: 'text', text: cleanText })
+      }
       const completedResults: any[] = []
       for (const tc of tcList) {
         const isPendingConfirm = pendingIds.has(tc.toolCallId)

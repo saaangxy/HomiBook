@@ -10,9 +10,13 @@ export function buildActivePath(allMessages: Message[], branchSelections: Record
     if (m.dbId) byId.set(m.dbId, m)
   }
 
+  const inPath = new Set<string>()
+
   let current = allMessages.find((m) => !m.parentMessageId || !byId.has(m.parentMessageId))
   while (current) {
     path.push(current)
+    inPath.add(current.id)
+    if (current.dbId) inPath.add(current.dbId)
     const currentId = current.dbId || current.id
 
     const children = allMessages.filter((m) => m.parentMessageId === currentId)
@@ -22,6 +26,15 @@ export function buildActivePath(allMessages: Message[], branchSelections: Record
     current = selectedId
       ? children.find((c) => (c.dbId || c.id) === selectedId) || children[children.length - 1]
       : children[children.length - 1]
+  }
+
+  // 回退：parentMessageId 断链（如临时 ID 写入 DB）时，按 DB 顺序追加未渲染的孤儿消息
+  for (const m of allMessages) {
+    if (!inPath.has(m.id)) {
+      path.push(m)
+      inPath.add(m.id)
+      if (m.dbId) inPath.add(m.dbId)
+    }
   }
 
   return path
