@@ -13,8 +13,10 @@ services:
     environment:
       # 后端服务端口（容器内部 + 对外暴露），可通过 .env 的 BACKEND_PORT / BACKEND_EXPOSE_PORT 覆盖
       PORT: ${BACKEND_PORT:-3002}
-      # SQLite 数据库持久化到卷
-      DATABASE_URL: file:/app/data/dev.db
+      # 数据库类型: sqlite | mysql | postgresql
+      DATABASE_PROVIDER: ${DATABASE_PROVIDER:-sqlite}
+      # sqlite: 文件数据库（挂载卷持久化）；mysql/postgresql: 对应连接串
+      DATABASE_URL: ${DATABASE_URL:-file:/app/data/dev.db}
       # 生产环境务必在 .env 中设置
       JWT_SECRET: ${JWT_SECRET:-homibook-secret-key-change-in-production}
     volumes:
@@ -45,6 +47,43 @@ services:
       # 外部访问前端入口，可通过 .env 的 FRONTEND_PORT 覆盖
       - "${FRONTEND_PORT:-8080}:80"
 
+  # =====================================================
+  # 可选数据库服务（默认使用 SQLite，无需启用）
+  # 部署启用 MySQL:   在 .env 设置 DATABASE_PROVIDER=mysql 且 DATABASE_URL 指向本服务，
+  #               然后 docker compose --profile mysql up -d
+  # 部署启用 PostgreSQL: 同理设 DATABASE_PROVIDER=postgresql，然后 --profile postgres
+  # =====================================================
+  mysql:
+    image: mysql:8
+    profiles: ["mysql"]
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-homibook}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-homibook}
+      MYSQL_USER: ${MYSQL_USER:-homibook}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-homibook}
+    ports:
+      # 本地开发时后端跑在宿主机，需暴露端口；纯 Docker 部署可注释掉
+      - "3306:3306"
+    volumes:
+      - homibook-mysql:/var/lib/mysql
+
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["postgres"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-homibook}
+      POSTGRES_USER: ${POSTGRES_USER:-homibook}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-homibook}
+    ports:
+      # 本地开发时后端跑在宿主机，需暴露端口；纯 Docker 部署可注释掉
+      - "5432:5432"
+    volumes:
+      - homibook-postgres:/var/lib/postgresql/data
+
 volumes:
   homibook-data:
   homibook-uploads:
+  homibook-mysql:
+  homibook-postgres:

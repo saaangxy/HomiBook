@@ -6,9 +6,9 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate dev",
-    "db:push": "prisma db push"
+    "db:generate": "node prisma/run.mjs generate",
+    "db:migrate": "node prisma/run.mjs migrate dev",
+    "db:push": "node prisma/run.mjs db push"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.85",

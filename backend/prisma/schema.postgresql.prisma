@@ -6,7 +6,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -168,7 +168,7 @@ model ShareCode {
 model SystemConfig {
   id        String   @id @default(uuid())
   key       String   @unique
-  value     String
+  value     String @db.Text
   updatedAt DateTime @updatedAt
 }
 
@@ -281,11 +281,11 @@ model RepaymentPlan {
 // 导入账户映射 — 支持按交易方/商品说明细化条件
 model ImportAccountMapping {
   id                  String   @id @default(uuid())
-  source              String   // "alipay" | "wechat" | "csv" | "jd"
-  sourceAccountName   String   // CSV中的原始账户名，如"花呗"
-  payerContains       String   @default("") // 可选：交易方名称包含过滤
-  descriptionContains String   @default("") // 可选：商品说明包含过滤
-  targetAccountName   String   // 目标账户名称，如"支付宝"
+  source              String @db.VarChar(20)   // "alipay" | "wechat" | "csv" | "jd"
+  sourceAccountName   String @db.VarChar(100)   // CSV中的原始账户名，如"花呗"
+  payerContains       String @db.VarChar(100)   @default("") // 可选：交易方名称包含过滤
+  descriptionContains String @db.VarChar(100)   @default("") // 可选：商品说明包含过滤
+  targetAccountName   String @db.VarChar(100)   // 目标账户名称，如"支付宝"
   createdAt           DateTime @default(now())
 
   @@unique([source, sourceAccountName, payerContains, descriptionContains])
@@ -294,12 +294,12 @@ model ImportAccountMapping {
 // 导入分类映射 — 支持按交易方/商品说明细化条件
 model ImportCategoryMapping {
   id                  String   @id @default(uuid())
-  source              String   // "alipay" | "wechat" | "csv" | "jd"
-  sourceCategory      String   // CSV中的分类名，如"餐饮美食"
-  payerContains       String   @default("") // 可选：交易方名称包含过滤
-  descriptionContains String   @default("") // 可选：商品说明包含过滤
-  recordType          String   @default("") // INCOME | EXPENSE | TRANSFER，空表示不限类型
-  targetCategoryCode  String   // Dictionary.code，如"餐饮"
+  source              String @db.VarChar(20)   // "alipay" | "wechat" | "csv" | "jd"
+  sourceCategory      String @db.VarChar(100)   // CSV中的分类名，如"餐饮美食"
+  payerContains       String @db.VarChar(100)   @default("") // 可选：交易方名称包含过滤
+  descriptionContains String @db.VarChar(100)   @default("") // 可选：商品说明包含过滤
+  recordType          String @db.VarChar(20)   @default("") // INCOME | EXPENSE | TRANSFER，空表示不限类型
+  targetCategoryCode  String @db.VarChar(100)   // Dictionary.code，如"餐饮"
   createdAt           DateTime @default(now())
 
   @@unique([source, sourceCategory, payerContains, descriptionContains, recordType])
@@ -326,7 +326,7 @@ model ChatSession {
   accountBookId String?
   accountBook   AccountBook?  @relation(fields: [accountBookId], references: [id], onDelete: SetNull)
   title         String        @default("新对话")
-  summary              String?  // 已压缩旧消息的 LLM 摘要
+  summary              String? @db.Text  // 已压缩旧消息的 LLM 摘要
   summaryUpToMessageId String?  // 摘要覆盖到的最后一条消息 ID
   modelProvider String        @default("deepseek")
   modelName     String        @default("deepseek-chat")
@@ -349,8 +349,8 @@ model ChatMessage {
   accountBookId   String?
   accountBook     AccountBook? @relation(fields: [accountBookId], references: [id], onDelete: SetNull)
   role            String
-  content         String
-  toolCalls       String?
+  content         String @db.Text
+  toolCalls       String? @db.Text
   tokenCount      Int          @default(0)
   modelProvider   String?
   modelName       String?
@@ -367,7 +367,7 @@ model UserMemory {
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   sessionId      String?
   session        ChatSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
-  content        String
+  content        String @db.Text
   keywords       String?
   memoryType     String       @default("extracted")
   importance     Float        @default(0.5)
@@ -389,8 +389,8 @@ model AgentAuditLog {
   user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   action        String
   toolName      String?
-  input         String?
-  output        String?
+  input         String? @db.Text
+  output        String? @db.Text
   modelProvider String?
   modelName     String?
   durationMs    Int?
@@ -425,7 +425,7 @@ model UserAIConfig {
   visionProviderConfigId String?
   visionModel            String  @default("")
 
-  disabledTools String?
+  disabledTools String? @db.Text
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
