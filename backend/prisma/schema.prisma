@@ -442,6 +442,8 @@ model UserProviderConfig {
   temperature Float?
   maxTokens   Int?
   contextWindow Int? // 模型上下文窗口大小（token），留空用 provider 默认
+  testStatus   String   @default("untested") // untested | pass | fail
+  lastTestedAt DateTime?
   sortOrder   Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

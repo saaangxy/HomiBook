@@ -1451,6 +1451,17 @@ export async function chatRoutes(app: FastifyInstance) {
 
     const providerConfig = ALL_PROVIDERS.find((p) => p.value === provider)!
 
+    // 测试结果持久化：有 configId 时写回 testStatus
+    const finishTest = async (result: { success: boolean; message: string; models?: string[] }) => {
+      if (configId) {
+        await prisma.userProviderConfig.update({
+          where: { id: configId },
+          data: { testStatus: result.success ? 'pass' : 'fail', lastTestedAt: new Date() },
+        }).catch(() => {})
+      }
+      return result
+    }
+
     try {
       // 1. 确定用于聊天测试的模型名：优先用前端传入的 model，回退到已保存配置中的模型
       let testModel = model?.trim() || savedModel || providerConfig.defaultModels[0] || ''
@@ -1461,12 +1472,12 @@ export async function chatRoutes(app: FastifyInstance) {
         const ollamaBase = url.replace(/\/v1\/?$/, '')
         const tagsRes = await fetch(`${ollamaBase}/api/tags`, { signal: AbortSignal.timeout(10000) })
         if (!tagsRes.ok) {
-          return { success: false, message: `Ollama 连接失败: HTTP ${tagsRes.status}` }
+          return finishTest({ success: false, message: `Ollama 连接失败: HTTP ${tagsRes.status}` })
         }
         const tagsData = (await tagsRes.json()) as { models?: { name: string }[] }
         discoveredModels = (tagsData.models || []).map((m) => m.name)
         if (discoveredModels.length === 0) {
-          return { success: false, message: 'Ollama 未安装任何模型，请先拉取模型' }
+          return finishTest({ success: false, message: 'Ollama 未安装任何模型，请先拉取模型' })
         }
         if (!testModel) testModel = discoveredModels[0]
       }
@@ -1475,7 +1486,7 @@ export async function chatRoutes(app: FastifyInstance) {
       if (!testModel) {
         discoveredModels = await tryFetchModels(url, key, provider)
         if (discoveredModels.length === 0) {
-          return { success: false, message: '无法获取模型列表，请确认 baseURL 和 apiKey 是否正确' }
+          return finishTest({ success: false, message: '无法获取模型列表，请确认 baseURL 和 apiKey 是否正确' })
         }
         testModel = discoveredModels[0]
       }
@@ -1489,7 +1500,7 @@ export async function chatRoutes(app: FastifyInstance) {
           maxOutputTokens: 5,
         })
       } catch (err: any) {
-        return { success: false, message: `连接失败: ${err.message || '聊天接口调用失败'}` }
+        return finishTest({ success: false, message: `连接失败: ${err.message || '聊天接口调用失败'}` })
       }
 
       // 3. 连通成功，获取模型列表（已发现的直接用；否则尝试 /models 端点，失败返回空）
@@ -1497,15 +1508,15 @@ export async function chatRoutes(app: FastifyInstance) {
         ? discoveredModels
         : await tryFetchModels(url, key, provider)
 
-      return {
+      return finishTest({
         success: true,
         message: models.length > 0
           ? `连接成功，找到 ${models.length} 个模型`
           : '连接成功（模型列表接口不可用，请手动填写模型名）',
         models,
-      }
+      })
     } catch (err: any) {
-      return { success: false, message: `连接失败: ${err.message || '网络错误'}` }
+      return finishTest({ success: false, message: `连接失败: ${err.message || '网络错误'}` })
     }
   })
 

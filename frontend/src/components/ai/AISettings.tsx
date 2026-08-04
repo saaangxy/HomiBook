@@ -19,6 +19,7 @@ import {
   Circle,
   Hash,
   Wrench,
+  Zap,
 } from 'lucide-react'
 import {
   fetchAIConfig, updateAIConfig, fetchProviders, fetchProviderModels,
@@ -79,6 +80,7 @@ export function AIAssistantSettings() {
   // ---------- 弹窗：测试连接 ----------
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
+  const [testingId, setTestingId] = useState<string | null>(null)
 
   // ---------- 弹窗：模型获取 ----------
   const [formModelList, setFormModelList] = useState<string[]>([])
@@ -295,6 +297,39 @@ export function AIAssistantSettings() {
     }
   }
 
+  // 列表内测试连接（带 configId，后端读真实 apiKey 并持久化 testStatus）
+  const handleTestFromList = async (config: UserProviderConfig) => {
+    setTestingId(config.id)
+    try {
+      const res = await testProviderConnection({
+        provider: config.provider,
+        apiKey: '',
+        baseURL: config.baseURL,
+        model: config.models || undefined,
+        configId: config.id,
+      })
+      setConfigs(prev => prev.map(c =>
+        c.id === config.id
+          ? { ...c, testStatus: res.success ? 'pass' : 'fail', lastTestedAt: new Date().toISOString() }
+          : c
+      ))
+      if (res.success) {
+        toast.success(res.message)
+      } else {
+        toast.error(res.message)
+      }
+    } catch (err: any) {
+      setConfigs(prev => prev.map(c =>
+        c.id === config.id
+          ? { ...c, testStatus: 'fail', lastTestedAt: new Date().toISOString() }
+          : c
+      ))
+      toast.error(err?.message || '测试请求失败')
+    } finally {
+      setTestingId(null)
+    }
+  }
+
   // ==================== 辅助 ====================
   const getProviderLabel = (providerValue: string) => {
     return providers.find((p) => p.value === providerValue)?.label || providerValue
@@ -496,7 +531,11 @@ export function AIAssistantSettings() {
                   <div key={config.id} className="flex items-center gap-3 p-3 border rounded-lg">
                     <Circle
                       size={10}
-                      className={config.apiKey ? 'text-green-500 fill-green-500' : 'text-muted-foreground'}
+                      className={
+                        config.testStatus === 'pass' ? 'text-green-500 fill-green-500'
+                        : config.testStatus === 'fail' ? 'text-red-500 fill-red-500'
+                        : 'text-muted-foreground fill-muted-foreground'
+                      }
                     />
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium truncate">
@@ -509,6 +548,9 @@ export function AIAssistantSettings() {
                         {config.contextWindow && ` · ${Math.round(config.contextWindow / 1024)}K上下文`}
                       </div>
                     </div>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" disabled={testingId === config.id} onClick={() => handleTestFromList(config)} title="测试连接">
+                      {testingId === config.id ? <Spinner /> : <Zap size={14} />}
+                    </Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => openEditDialog(config)}>
                       <Pencil size={14} />
                     </Button>

@@ -63,6 +63,8 @@ export interface UserProviderConfig {
   temperature: number | null
   maxTokens: number | null
   contextWindow: number | null
+  testStatus: string // 'untested' | 'pass' | 'fail'
+  lastTestedAt: string | null
   sortOrder: number
   createdAt: string
   updatedAt: string
