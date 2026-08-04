@@ -436,7 +436,7 @@ export function AIAssistantSettings() {
 
           {/* 视觉模型 */}
           <div className="space-y-2">
-            <Label className="text-xs">视觉模型（OCR 小票识别）</Label>
+            <Label className="text-xs">视觉模型（OCR 图片识别）</Label>
             <Select
               value={visionConfigId || '__none__'}
               onValueChange={(v) => {

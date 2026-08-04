@@ -77,7 +77,7 @@ interface ChatState {
   setMessages: (messages: Message[]) => void
   setError: (error: string | null) => void
 
-  sendMessage: (accountBookId: string, message: string, parentMessageId?: string, replaceAssistantDbId?: string, attachmentIds?: string[], attachments?: { id: string; url: string; originalFilename: string }[]) => void
+  sendMessage: (accountBookId: string, message: string, parentMessageId?: string, replaceAssistantDbId?: string, attachmentIds?: string[], attachments?: { id: string; url: string; originalFilename: string }[], enableWebSearch?: boolean) => void
   confirmAndContinue: (accountBookId: string, toolCallId: string, approved: boolean, data?: Record<string, unknown>) => void
   respondToSuggestion: (accountBookId: string, toolCallId: string, values: Record<string, string> | null) => void
   switchBook: (accountBookId: string, toolCallId: string, bookId: string) => void
@@ -426,7 +426,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
       return { messages: msgs, allMessages: allMsgs }
     }),
 
-  sendMessage: (accountBookId, message, parentMessageId, replaceAssistantDbId, attachmentIds, attachments) => {
+  sendMessage: (accountBookId, message, parentMessageId, replaceAssistantDbId, attachmentIds, attachments, enableWebSearch) => {
     const state = get()
     const sid = state.currentSessionId
     if (!sid) return
@@ -557,7 +557,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
     })
 
     const controller = sendMessageStream(
-      { sessionId: sid, accountBookId, message, parentMessageId, replaceAssistantDbId, attachmentIds },
+      { sessionId: sid, accountBookId, message, parentMessageId, replaceAssistantDbId, attachmentIds, enableWebSearch },
       handleEvent,
       handleDone,
     )

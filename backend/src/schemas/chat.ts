@@ -8,6 +8,7 @@ export const sendMessageSchema = z.object({
   parentMessageId: z.string().optional().describe('父消息ID，用于构建对话链'),
   replaceAssistantDbId: z.string().optional().describe('重试时替换的助手消息ID'),
   attachmentIds: z.array(z.string()).optional().describe('附件ID列表（小票图片等）'),
+  enableWebSearch: z.boolean().optional().describe('是否启用网络搜索工具'),
 }).refine((data) => data.message.trim().length > 0 || (data.attachmentIds && data.attachmentIds.length > 0), {
   message: '消息内容或附件至少需要提供一个',
   path: ['message'],

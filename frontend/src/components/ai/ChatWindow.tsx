@@ -7,13 +7,14 @@ import { importExportApi } from '@/api/import-export'
 import { recordApi } from '@/api/record'
 import { MessageBubble } from './MessageBubble'
 import { SessionList } from './SessionList'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Send, StopCircle, Upload, Image, X } from 'lucide-react'
+import { Send, StopCircle, Upload, Image as ImageIcon, X, Globe } from 'lucide-react'
 import { parseContentIntoBlocks } from '@/stores/chat-content-parser'
 import { type MessageBlock } from '@/stores/chat'
 
@@ -47,6 +48,9 @@ export function ChatWindow() {
   const [pendingImages, setPendingImages] = useState<{ file: File; preview: string }[]>([])
   const [uploadingImages, setUploadingImages] = useState(false)
   const imageInputRef = useRef<HTMLInputElement>(null)
+
+  // ---- 网络搜索开关 ----
+  const [webSearchEnabled, setWebSearchEnabled] = useState(true)
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
@@ -183,12 +187,12 @@ export function ChatWindow() {
       createSession({ accountBookId: currentBookId, title }).then((res) => {
         setSessions([res.session, ...sessions])
         setCurrentSession(res.session.id)
-        sendMessage(currentBookId, msg, parentId, undefined, attachmentIds, attachments)
+        sendMessage(currentBookId, msg, parentId, undefined, attachmentIds, attachments, webSearchEnabled)
       })
       return
     }
 
-    sendMessage(currentBookId, msg, parentId, undefined, attachmentIds, attachments)
+    sendMessage(currentBookId, msg, parentId, undefined, attachmentIds, attachments, webSearchEnabled)
 
     // 首条消息且有文本时更新会话标题（纯图片由 AI 生成标题）
     if ((!parentId || parentId === 'greeting') && currentSessionId && msg.trim()) {
@@ -344,8 +348,8 @@ export function ChatWindow() {
           </div>
         </ScrollArea>
 
-        {/* 输入区 */}
-        <div className="p-3 border-t">
+        {/* 输入区：主流聊天布局（输入框在上，工具栏在下） */}
+        <div className="border-t p-3">
           {/* 已选图片预览 */}
           {pendingImages.length > 0 && (
             <div className="flex gap-2 mb-2 flex-wrap">
@@ -378,49 +382,77 @@ export function ChatWindow() {
             multiple
             onChange={handleImageSelect}
           />
-          <div className="flex gap-2 items-end">
+          {/* 输入框区域 */}
+          <div className="rounded-2xl border bg-background focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/20 transition-colors">
             <Textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="输入消息... (Enter 发送，Shift+Enter 换行)"
               rows={2}
-              className="min-h-10 resize-none"
+              className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0 resize-none px-4 py-3 min-h-[60px]"
               disabled={isCurrentStreaming || importing || uploadingImages}
             />
-            {isCurrentStreaming ? (
-              <Button variant="outline" size="icon" className="shrink-0 stop-btn-streaming" onClick={() => stopStreaming()}>
-                <StopCircle size={18} />
-              </Button>
-            ) : (
-              <>
+            {/* 工具栏：工具按钮在左，发送在右 */}
+            <div className="flex items-center justify-between px-3 pb-2">
+              <div className="flex items-center gap-1">
+                {/* 网络搜索开关 */}
+                <button
+                  type="button"
+                  className={cn(
+                    'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
+                    webSearchEnabled
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-muted-foreground hover:bg-muted',
+                  )}
+                  onClick={() => setWebSearchEnabled(v => !v)}
+                  title={webSearchEnabled ? '网络搜索已开启' : '网络搜索已关闭'}
+                >
+                  <Globe size={13} />
+                  {webSearchEnabled ? '联网搜索' : '联网搜索'}
+                </button>
+                {/* 上传小票 */}
                 <Button
                   size="icon"
-                  variant="outline"
-                  className="shrink-0"
+                  variant="ghost"
+                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
                   disabled={!currentBookId || importing || uploadingImages}
-                  title="上传小票"
+                  title="上传图片"
                   onClick={() => imageInputRef.current?.click()}
                 >
-                  <Image size={18} />
+                  <ImageIcon size={16} />
                 </Button>
+                {/* 导入账单 */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button size="icon" variant="outline" className="shrink-0" disabled={!currentBookId || importing} title="导入账单">
-                      <Upload size={18} />
+                    <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-foreground" disabled={!currentBookId || importing} title="导入账单">
+                      <Upload size={16} />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent side="top" align="end">
+                  <DropdownMenuContent side="top" align="start">
                     <DropdownMenuItem onClick={() => handleImportClick('alipay')}>支付宝</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => handleImportClick('wechat')}>微信</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => handleImportClick('jd')}>京东</DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
-                <Button size="icon" className="shrink-0" onClick={() => handleSend()} disabled={(!input.trim() && pendingImages.length === 0) || !currentBookId || importing || uploadingImages}>
-                  <Send size={18} />
+              </div>
+              {isCurrentStreaming ? (
+                <Button variant="ghost" size="sm" className="h-7 px-3 text-muted-foreground stop-btn-streaming" onClick={() => stopStreaming()}>
+                  <StopCircle size={15} className="mr-1" />
+                  停止
                 </Button>
-              </>
-            )}
+              ) : (
+                <Button
+                  size="icon"
+                  className="h-8 w-8 rounded-full"
+                  onClick={() => handleSend()}
+                  disabled={(!input.trim() && pendingImages.length === 0) || !currentBookId || importing || uploadingImages}
+                  title="发送"
+                >
+                  <Send size={15} />
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </div>

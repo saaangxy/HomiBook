@@ -677,7 +677,7 @@ export async function chatRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.status(400).send({ message: parsed.error.issues[0].message })
 
     const userId = (req as any).user.id as string
-    const { sessionId: sid, accountBookId, message, attachmentIds } = parsed.data
+    const { sessionId: sid, accountBookId, message, attachmentIds, enableWebSearch } = parsed.data
 
     try { await assertIsMember(accountBookId, userId) } catch (e: any) {
       return reply.status(e.statusCode || 403).send({ message: e.message })
@@ -784,9 +784,14 @@ export async function chatRoutes(app: FastifyInstance) {
     const bookName = book?.name || accountBookId
 
     // 构建 system prompt（根据用户消息检测并注入技能提示词）
+    // 网络搜索开关：关闭时将搜索工具加入禁用列表
+    const webSearchTools = ['web_search', 'read_webpage']
+    const effectiveDisabledTools = enableWebSearch === false
+      ? [...new Set([...(prefs.disabledTools || []), ...webSearchTools])]
+      : (prefs.disabledTools || [])
     const activeSkills = detectSkills(fullMessage)
     const skillsPrompt = buildSkillsPrompt(activeSkills)
-    const systemPrompt = buildSystemPrompt(prefs, accountBookId, bookName, memories, skillsPrompt, prefs.disabledTools)
+    const systemPrompt = buildSystemPrompt(prefs, accountBookId, bookName, memories, skillsPrompt, effectiveDisabledTools)
 
     // 模型路由
     let route
@@ -818,7 +823,7 @@ export async function chatRoutes(app: FastifyInstance) {
 
     // 三级上下文压缩
     const maxTokens = activeConfig?.maxTokens ?? prefs.maxTokens
-    const disabledSet = new Set(prefs.disabledTools)
+    const disabledSet = new Set(effectiveDisabledTools)
     const enabledTools: Record<string, any> = {}
     for (const tool of ALL_TOOLS) {
       if (disabledSet.has(tool.name)) continue
@@ -860,7 +865,7 @@ export async function chatRoutes(app: FastifyInstance) {
       maxTokens,
       maxSteps: prefs.maxSteps,
       autoConfirmCreate: prefs.autoConfirmCreate,
-      disabledTools: prefs.disabledTools,
+      disabledTools: effectiveDisabledTools,
     })
   })
 

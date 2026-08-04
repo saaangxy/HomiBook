@@ -406,7 +406,7 @@ async function parseSSEStream(
 
 // SSE 流式发送消息
 export function sendMessageStream(
-  params: { sessionId?: string; accountBookId: string; message: string; parentMessageId?: string; replaceAssistantDbId?: string; attachmentIds?: string[] },
+  params: { sessionId?: string; accountBookId: string; message: string; parentMessageId?: string; replaceAssistantDbId?: string; attachmentIds?: string[]; enableWebSearch?: boolean },
   onEvent: (event: SSEEvent) => void,
   onDone: () => void,
 ): AbortController {
