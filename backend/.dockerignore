@@ -1,7 +1,0 @@
-node_modules
-dist
-uploads
-prisma/dev.db
-prisma/dev.db-journal
-.env
-*.tsbuildinfo

@@ -1,0 +1,14 @@
+# 构建上下文排除项（根目录 Dockerfile 用）
+**/node_modules
+**/dist
+**/.env
+**/dev.db
+**/dev.db-journal
+**/*.tsbuildinfo
+backend/uploads
+.git
+.gitlab-ci.yml
+.github
+docker-compose*.yml
+Dockerfile
+**/.dockerignore

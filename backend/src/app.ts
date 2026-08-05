@@ -3,6 +3,7 @@ import cors from '@fastify/cors'
 import jwt from '@fastify/jwt'
 import multipart from '@fastify/multipart'
 import swagger from '@fastify/swagger'
+import fastifyStatic from '@fastify/static'
 import scalar from '@scalar/fastify-api-reference'
 import path from 'path'
 import fs from 'fs'
@@ -101,6 +102,19 @@ export async function buildApp() {
       message: error.message,
     })
   })
+
+  // 单容器部署：托管前端静态文件（public/ 目录存在时启用，开发环境不受影响）
+  const publicDir = path.join(process.cwd(), 'public')
+  if (fs.existsSync(publicDir)) {
+    await app.register(fastifyStatic, { root: publicDir, prefix: '/' })
+    // SPA 回退：非 API 路由返回 index.html，API 路由返回 JSON 404
+    app.setNotFoundHandler((req, reply) => {
+      if (req.url.startsWith('/api/') || req.url.startsWith('/docs') || req.url === '/health') {
+        return reply.status(404).send({ message: 'Not found' })
+      }
+      return reply.sendFile('index.html')
+    })
+  }
 
   return app
 }

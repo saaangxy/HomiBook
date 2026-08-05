@@ -1,57 +1,43 @@
-# 家庭记账本 Docker 部署
+# HomiBook 单容器部署（前端+后端合一，无需 Nginx）
 #
-# 外部访问入口：前端 Nginx（默认 http://<服务器IP>:8080）
-# 前端使用相对路径 /api，由 Nginx 反向代理到后端，无需配置 baseURL
+# 启动：docker compose up -d --build
+# 访问：http://<服务器IP>:8080
 #
-# 可通过根目录 .env 文件覆盖端口/密钥，参见 .env.example
+# 使用 DockerHub 预构建镜像（无需本地构建）：
+#   把 build: . 替换为 image: <你的DockerHub用户名>/homibook:latest
 
 services:
-  backend:
-    build: ./backend
-    container_name: homibook-backend
+  app:
+    build: .
+    # image: ${DOCKERHUB_USERNAME:-homibook}/homibook:latest  # 取消注释以用预构建镜像
+    container_name: homibook
     restart: unless-stopped
     environment:
-      # 后端服务端口（容器内部 + 对外暴露），可通过 .env 的 BACKEND_PORT / BACKEND_EXPOSE_PORT 覆盖
-      PORT: ${BACKEND_PORT:-3002}
+      # 服务端口（内部+对外）
+      PORT: ${PORT:-8080}
       # 数据库类型: sqlite | mysql | postgresql
       DATABASE_PROVIDER: ${DATABASE_PROVIDER:-sqlite}
-      # sqlite: 文件数据库（挂载卷持久化）；mysql/postgresql: 对应连接串
+      # sqlite: 文件数据库；mysql/postgresql: 对应连接串
       DATABASE_URL: ${DATABASE_URL:-file:/app/data/dev.db}
-      # 生产环境务必在 .env 中设置
+      # 务必在 .env 中修改
       JWT_SECRET: ${JWT_SECRET:-homibook-secret-key-change-in-production}
     volumes:
-      - homibook-data:/app/data        # SQLite 数据
+      - homibook-data:/app/data        # SQLite 数据库文件
       - homibook-uploads:/app/uploads  # 上传的小票/账单文件
     ports:
-      # 可选：直接从外部访问后端 API / docs（默认同端口，如不需要可注释掉）
-      - "${BACKEND_EXPOSE_PORT:-3002}:${BACKEND_PORT:-3002}"
+      - "${PORT:-8080}:${PORT:-8080}"
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:'+(process.env.PORT||3002)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:'+(process.env.PORT||8080)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 15s
 
-  frontend:
-    build: ./frontend
-    container_name: homibook-frontend
-    restart: unless-stopped
-    depends_on:
-      backend:
-        condition: service_healthy
-    environment:
-      # Nginx 代理目标（后端服务名 + 端口），由 nginx.conf.template 通过 envsubst 注入
-      BACKEND_HOST: backend
-      BACKEND_PORT: ${BACKEND_PORT:-3002}
-    ports:
-      # 外部访问前端入口，可通过 .env 的 FRONTEND_PORT 覆盖
-      - "${FRONTEND_PORT:-8080}:80"
-
   # =====================================================
-  # 可选数据库服务（默认使用 SQLite，无需启用）
-  # 部署启用 MySQL:   在 .env 设置 DATABASE_PROVIDER=mysql 且 DATABASE_URL 指向本服务，
-  #               然后 docker compose --profile mysql up -d
-  # 部署启用 PostgreSQL: 同理设 DATABASE_PROVIDER=postgresql，然后 --profile postgres
+  # 可选数据库服务（默认 SQLite，无需启用）
+  # 启用 MySQL:   .env 设 DATABASE_PROVIDER=mysql + DATABASE_URL 指向本服务，然后
+  #               docker compose --profile mysql up -d
+  # 启用 PostgreSQL: 同理设 DATABASE_PROVIDER=postgresql，然后 --profile postgres
   # =====================================================
   mysql:
     image: mysql:8
@@ -63,7 +49,6 @@ services:
       MYSQL_USER: ${MYSQL_USER:-homibook}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-homibook}
     ports:
-      # 本地开发时后端跑在宿主机，需暴露端口；纯 Docker 部署可注释掉
       - "3306:3306"
     volumes:
       - homibook-mysql:/var/lib/mysql
@@ -77,7 +62,6 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-homibook}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-homibook}
     ports:
-      # 本地开发时后端跑在宿主机，需暴露端口；纯 Docker 部署可注释掉
       - "5432:5432"
     volumes:
       - homibook-postgres:/var/lib/postgresql/data

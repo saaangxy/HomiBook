@@ -10,7 +10,7 @@
 | 前端 | React 19 + TypeScript、Vite 8、Shadcn/ui、Tailwind CSS 4、React Router DOM 7、Zustand |
 | AI | AI SDK（openai/anthropic 协议）、工具调用、Puppeteer 网页抓取 |
 | 数据库 | SQLite / MySQL / PostgreSQL（可通过环境变量切换） |
-| 部署 | Docker Compose + Nginx 反向代理 |
+| 部署 | Docker Compose 单容器（Fastify 托管前端静态文件） |
 
 ## 目录结构
 
@@ -137,7 +137,9 @@ npm run dev
 - 数据库相关命令：`npm run db:generate`、`npm run db:push`（仅开发）、`npm run db:migrate`（开发生成迁移）、`npm run db:deploy`（部署应用迁移）
 - 新增了长文本字段时，需在 `backend/prisma/generate-schemas.mjs` 的 `LONG_TEXT_FIELDS` 中补充
 
-## Docker 部署
+## Docker 部署（单容器）
+
+前端和后端打包在一个镜像中，由 Fastify 同时提供 API 和静态文件，无需 Nginx。
 
 ### 启动
 
@@ -148,15 +150,15 @@ docker compose up -d --build
 
 访问 http://\<服务器IP\>:8080 即可。
 
-**数据库表结构**：容器启动时后端自动执行 `migrate deploy` 应用已提交的迁移。
+**使用 DockerHub 预构建镜像**（无需本地构建）：把 `docker-compose.yml` 里的 `build: .` 改为 `image: <你的DockerHub用户名>/homibook:latest`。
+
+**数据库表结构**：容器启动时自动执行 `migrate deploy` 应用已提交的迁移。
 
 ### 环境变量（.env）
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `FRONTEND_PORT` | `8080` | 外部访问前端入口端口 |
-| `BACKEND_PORT` | `3002` | 后端服务端口 |
-| `BACKEND_EXPOSE_PORT` | `3002` | 后端对外暴露端口（调试用，可注释） |
+| `PORT` | `8080` | 服务端口（内部+对外） |
 | `JWT_SECRET` | 默认密钥 | **务必修改** |
 | `DATABASE_PROVIDER` | `sqlite` | `sqlite` / `mysql` / `postgresql` |
 | `DATABASE_URL` | `file:/app/data/dev.db` | 对应数据库连接串 |
