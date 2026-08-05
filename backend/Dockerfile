@@ -7,10 +7,14 @@ WORKDIR /app
 # Puppeteer 在运行镜像中通过 apt 安装系统 Chrome，这里跳过其自带浏览器下载
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 
+# 安装 openssl（Prisma 需检测 libssl 版本以选对引擎）
+RUN apt-get update && apt-get install -y --no-install-recommends openssl \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY package.json package-lock.json ./
 RUN npm ci
 
-# 生成 Prisma Client（含 linux-debian-openssl-3.0.x 引擎）
+# 生成 Prisma Client
 COPY prisma ./prisma
 RUN npx prisma generate
 
@@ -54,13 +58,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # 从构建阶段拷贝产物
-# node_modules 包含 devDependencies（prisma CLI），用于容器启动时 prisma db push
+# node_modules 包含 devDependencies（prisma CLI），用于容器启动时 migrate deploy
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/package.json ./package.json
 
-# 启动脚本：初始化数据库后启动服务
+# 启动脚本：应用迁移后启动服务
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x docker-entrypoint.sh
 
