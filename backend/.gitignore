@@ -4,6 +4,3 @@ node_modules
 
 /src/generated/prisma
 
-# 由 prisma/generate-schemas.mjs 生成的供应商专用 schema（勿手改）
-prisma/schema.mysql.prisma
-prisma/schema.postgresql.prisma

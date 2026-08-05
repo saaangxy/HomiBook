@@ -12,7 +12,7 @@
  *
  * 运行：node prisma/generate-schemas.mjs
  */
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -96,11 +96,16 @@ function addVarCharAnnotations(schema) {
 
 const base = readFileSync(join(__dirname, 'schema.prisma'), 'utf8')
 
+// 副本输出到独立子目录 prisma/<provider>/schema.prisma：
+// Prisma 的 migrations 目录固定在 schema 所在目录下，只有把各 provider 的
+// schema 放到不同目录，才能让 sqlite/mysql/postgresql 各自持有独立迁移历史。
 for (const provider of ['mysql', 'postgresql']) {
+  const dir = join(__dirname, provider)
+  mkdirSync(dir, { recursive: true })
   let schema = base.replace(/provider = "sqlite"/, `provider = "${provider}"`)
   schema = addTextAnnotations(schema)
   schema = addVarCharAnnotations(schema)
-  const outPath = join(__dirname, `schema.${provider}.prisma`)
+  const outPath = join(dir, 'schema.prisma')
   writeFileSync(outPath, schema)
   console.log(`[generate-schemas] 已生成 ${outPath}`)
 }

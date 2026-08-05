@@ -9,15 +9,16 @@ echo "[homibook] 数据库类型: ${DATABASE_PROVIDER}"
 echo "[homibook] 生成 Prisma Client..."
 node prisma/run.mjs generate
 
-echo "[homibook] 同步数据库结构 (prisma db push)..."
-# --accept-data-loss：本项目的开发流程用 db push 而非 migrations，
-# 容器每次启动幂等同步表结构，避免交互式确认导致挂起
+echo "[homibook] 应用数据库迁移 (prisma migrate deploy)..."
+# 正式版：migrate deploy 只按序应用 migrations 中未应用的迁移，绝不覆盖数据。
+# 注意：正式部署前必须在开发环境用 migrate dev 生成初始迁移并提交 git，
+# 否则 migrations 为空时不会建表、应用启动会因缺少表而失败。
 # mysql/postgresql 首次启动需要初始化时间，重试等待数据库就绪
 retries=0
-until node prisma/run.mjs db push --skip-generate --accept-data-loss; do
+until node prisma/run.mjs migrate deploy; do
   retries=$((retries + 1))
   if [ "$retries" -ge 10 ]; then
-    echo "[homibook] 数据库同步失败（已重试 10 次）"
+    echo "[homibook] 数据库迁移失败（已重试 10 次）"
     exit 1
   fi
   echo "[homibook] 数据库未就绪，5 秒后重试 ($retries/10)..."
