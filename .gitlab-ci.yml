@@ -29,7 +29,7 @@ sync-to-github:
     - if [ -n "$CI_COMMIT_TAG" ]; then git push -f github HEAD:refs/tags/$CI_COMMIT_TAG; fi
   rules:
     # main 分支同步 + tag 触发 release 构建
-#    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_TAG
     - if: $CI_COMMIT_BRANCH == $SYNC_BRANCH
       when: always
   retry:
