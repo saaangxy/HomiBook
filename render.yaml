@@ -17,8 +17,4 @@ services:
         value: sqlite
       - key: DATABASE_URL
         value: file:/app/data/dev.db
-    # SQLite 数据持久化磁盘（Render 免费版 1GB）
-    disk:
-      name: homibook-data
-      mountPath: /app/data
-      sizeGB: 1
+    # 免费版不支持磁盘：SQLite 数据为临时存储，实例重启/重建后重置
