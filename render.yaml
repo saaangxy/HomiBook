@@ -1,0 +1,24 @@
+# Render 部署配置（演示站）
+# 在 Render 中创建 Blueprint 时读取此文件，或手动创建 Web Service
+# 参考：https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: homibook-demo
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      # Render 自动注入 PORT，应用监听 $PORT
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_PROVIDER
+        value: sqlite
+      - key: DATABASE_URL
+        value: file:/app/data/dev.db
+    # SQLite 数据持久化磁盘（Render 免费版 1GB）
+    disk:
+      name: homibook-data
+      mountPath: /app/data
+      sizeGB: 1
