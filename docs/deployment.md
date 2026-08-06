@@ -9,6 +9,7 @@
 - [Docker Compose 部署](#docker-compose-部署)
   - [快速启动](#快速启动)
   - [环境变量（.env）](#环境变量env)
+  - [SQLite 说明](#sqlite-说明)
   - [使用已有数据库](#使用已有数据库)
   - [升级与回滚](#升级与回滚)
 - [常见问题](#常见问题)
@@ -51,6 +52,8 @@ IMAGE_TAG=v0.0.1 docker compose up -d
 | `DATABASE_URL` | `file:/app/data/dev.db` | 对应数据库连接串 |
 
 完整模板见项目根目录 [.env.example](../.env.example)。
+
+默认使用 SQLite，**适合个人 / 家庭记账**，无需额外部署数据库服务 简单可靠、零运维。
 
 ### 使用已有数据库
 

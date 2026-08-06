@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🌐 在线演示站
+    url: https://homibook-demo.onrender.com
+    about: 试用 HomiBook 演示环境（账号 admin / Ad123456）
+  - name: 📚 部署指南
+    url: https://github.com/saaangxy/HomiBook/blob/main/docs/deployment.md
+    about: 部署相关疑问，请先查阅部署指南

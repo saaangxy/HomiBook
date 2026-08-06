@@ -1,0 +1,196 @@
+name: 🐛 缺陷反馈
+description: 报告 HomiBook 中遇到的一个 Bug
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！请尽量提供完整信息，方便我们复现和修复。
+        **先排查**：清空浏览器缓存（或开无痕窗口）重试，确认不是旧缓存问题；查看浏览器控制台（F12 → Console）有无报错，一并贴出。
+
+  # ================= 环境信息 =================
+  - type: group
+    id: environment
+    attributes:
+      label: 环境信息
+      description: 你使用 HomiBook 的环境。信息越完整越容易定位问题。
+    fields:
+      - type: dropdown
+        id: deployment
+        attributes:
+          label: 部署方式
+          description: 你在哪种环境下使用？
+          options:
+            - 本地开发（npm run dev）
+            - Docker 部署
+            - 在线演示站（homibook-demo.onrender.com）
+        validations:
+          required: true
+
+      - type: input
+        id: version
+        attributes:
+          label: 版本号
+          description: 设置页面「关于」中展示的版本号，如 v0.0.1
+          placeholder: v0.0.1
+        validations:
+          required: true
+
+      - type: dropdown
+        id: version_source
+        attributes:
+          label: 版本来源
+          description: 该版本是从哪里来的？
+          options:
+            - DockerHub 镜像（saaangxy/homibook:latest）
+            - DockerHub 镜像（指定版本 tag）
+            - 源码自行构建
+            - 在线演示站（无需填写）
+        validations:
+          required: false
+
+      - type: dropdown
+        id: database
+        attributes:
+          label: 数据库类型
+          description: 部署时 `DATABASE_PROVIDER` 配置的值
+          options:
+            - SQLite（默认）
+            - MySQL
+            - PostgreSQL
+            - 不确定
+        validations:
+          required: true
+
+      - type: dropdown
+        id: db_connection
+        attributes:
+          label: 数据库连接方式
+          description: 数据是存在哪里的？
+          options:
+            - 容器内 SQLite（默认 file:/app/data/dev.db）
+            - 外部已有数据库（云数据库/远程实例）
+            - 本地开发环境
+            - 不确定
+        validations:
+          required: false
+
+  # ================= 运行环境 =================
+  - type: group
+    id: runtime
+    attributes:
+      label: 运行环境
+      description: 你访问应用时使用的设备与浏览器。
+    fields:
+      - type: dropdown
+        id: device
+        attributes:
+          label: 设备类型
+          options:
+            - 桌面电脑
+            - 手机 / 平板
+        validations:
+          required: false
+
+      - type: dropdown
+        id: os
+        attributes:
+          label: 操作系统
+          options:
+            - Windows
+            - macOS
+            - Linux
+            - Android / iOS
+        validations:
+          required: false
+
+      - type: input
+        id: browser
+        attributes:
+          label: 浏览器及版本
+          description: 例如 Chrome 126、Edge 126、Safari 17、微信内置浏览器等
+          placeholder: Chrome 126
+        validations:
+          required: false
+
+  # ================= 问题详情 =================
+  - type: group
+    id: detail
+    attributes:
+      label: 问题详情
+    fields:
+      - type: textarea
+        id: description
+        attributes:
+          label: 问题描述
+          description: 发生了什么？在哪里触发？
+          placeholder: 在「流水管理」页面，点击「新增流水」后页面空白
+        validations:
+          required: true
+
+      - type: textarea
+        id: repro
+        attributes:
+          label: 复现步骤
+          description: 尽量按顺序描述，附带具体数据更佳
+          placeholder: |
+            1. 打开「流水管理」
+            2. 点击右上角「新增流水」
+            3. 选择分类「餐饮」，金额填 25.5，点击保存
+            4. 页面报错 / 无反应
+        validations:
+          required: true
+
+      - type: textarea
+        id: expected
+        attributes:
+          label: 期望行为
+          description: 你认为应该发生什么？
+        validations:
+          required: false
+
+      - type: dropdown
+        id: frequency
+        attributes:
+          label: 发生频率
+          options:
+            - 每次必现
+            - 经常发生
+            - 偶尔发生
+            - 仅出现过一次
+        validations:
+          required: false
+
+  # ================= 排查信息 =================
+  - type: group
+    id: troubleshooting
+    attributes:
+      label: 排查信息
+      description: 以下信息能大幅加快定位速度，尽量提供。
+    fields:
+      - type: textarea
+        id: tried
+        attributes:
+          label: 尝试过的排查
+          description: 是否刷新、清缓存、换浏览器/设备后仍复现？
+        validations:
+          required: false
+
+      - type: textarea
+        id: logs
+        attributes:
+          label: 相关日志 / 截图
+          description: |
+            浏览器控制台（F12 → Console）报错、Network 面板请求状态、后端 Docker 日志、页面截图等。
+            截图请直接拖入本框；日志请用代码块包裹（``` 开头）。**敏感信息请打码**。
+          render: shell
+        validations:
+          required: false
+
+  - type: markdown
+    attributes:
+      value: |
+        > ⚠️ 提示：
+        > - 演示站数据为临时存储，重启后重置属正常现象，请勿据此反馈数据丢失。
+        > - 反馈登录/权限问题请附上账号角色（admin / 普通成员）。
