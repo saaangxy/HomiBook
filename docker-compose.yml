@@ -31,35 +31,35 @@ services:
   # 启用 MySQL:   .env 设 DATABASE_PROVIDER=mysql + DATABASE_URL 指向本服务，然后
   # 启用 PostgreSQL: 同理设 DATABASE_PROVIDER=postgresql
   # =====================================================
-  mysql:
-    image: mysql:8
-    profiles: ["mysql"]
-    restart: unless-stopped
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-homibook}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-homibook}
-      MYSQL_USER: ${MYSQL_USER:-homibook}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-homibook}
-    ports:
-      - "3306:3306"
-    volumes:
-      - homibook-mysql:/var/lib/mysql
+#  mysql:
+#    image: mysql:8
+#    profiles: ["mysql"]
+#    restart: unless-stopped
+#    environment:
+#      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-homibook}
+#      MYSQL_DATABASE: ${MYSQL_DATABASE:-homibook}
+#      MYSQL_USER: ${MYSQL_USER:-homibook}
+#      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-homibook}
+#    ports:
+#      - "3306:3306"
+#    volumes:
+#      - homibook-mysql:/var/lib/mysql
 
-  postgres:
-    image: postgres:16-alpine
-    profiles: ["postgres"]
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-homibook}
-      POSTGRES_USER: ${POSTGRES_USER:-homibook}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-homibook}
-    ports:
-      - "5432:5432"
-    volumes:
-      - homibook-postgres:/var/lib/postgresql/data
+#  postgres:
+#    image: postgres:16-alpine
+#    profiles: ["postgres"]
+#    restart: unless-stopped
+#    environment:
+#      POSTGRES_DB: ${POSTGRES_DB:-homibook}
+#      POSTGRES_USER: ${POSTGRES_USER:-homibook}
+#      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-homibook}
+#    ports:
+#      - "5432:5432"
+#    volumes:
+#      - homibook-postgres:/var/lib/postgresql/data
 
 volumes:
   homibook-data:
   homibook-uploads:
-  homibook-mysql:
-  homibook-postgres:
+#  homibook-mysql:
+#  homibook-postgres:
