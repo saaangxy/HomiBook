@@ -31,6 +31,7 @@
     "fastify": "^4.29.1",
     "iconv-lite": "^0.7.2",
     "node-cron": "^4.2.1",
+    "prisma": "^5.22.0",
     "puppeteer": "^25.4.0",
     "xlsx": "^0.18.5",
     "zod": "^4.4.3",
@@ -41,7 +42,6 @@
     "@types/busboy": "^1.5.4",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^25.7.0",
-    "prisma": "^5.22.0",
     "tsx": "^4.21.0",
     "typescript": "^6.0.3"
   }

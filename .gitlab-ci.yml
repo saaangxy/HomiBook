@@ -4,8 +4,7 @@ stages:
 variables:
   # 在 GitLab 项目的 Settings -> CI/CD -> Variables 中配置 GITHUB_TOKEN
   GITHUB_TOKEN: $GITHUB_TOKEN
-  SYNC_BRANCH: "main"
-  # 禁用浅克隆，拉取完整历史
+  # 禁用浅克隆，拉取完整历史（含 tag）
   GIT_DEPTH: 0
 
 sync-to-github:
@@ -22,13 +21,16 @@ sync-to-github:
   script:
     # 添加 GitHub 远程
     - git remote add github https://saaangxy:${GITHUB_TOKEN}@github.com/saaangxy/HomiBook.git
-    # 全量 fetch 所有分支
-    - git fetch --all
-    # 推送完整分支到 GitHub
-    - git lfs push --all github main || true
+    # 全量 fetch（含 tag）
+    - git fetch --all --tags
+    # 同步 main 分支
     - git push -f github HEAD:main
+    # 推送 release tag，触发 GitHub Actions 构建镜像
+    - git push github $CI_COMMIT_TAG
   rules:
-    - if: $CI_COMMIT_BRANCH == $SYNC_BRANCH
+    # 仅在推送 tag 时触发（release 流程）
+    - if: $CI_COMMIT_TAG
+#    - if: $CI_COMMIT_BRANCH == $SYNC_BRANCH
       when: always
   retry:
     max: 2

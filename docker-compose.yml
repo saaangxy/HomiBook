@@ -1,29 +1,22 @@
 # HomiBook 单容器部署（前端+后端合一，无需 Nginx）
 #
-# 启动：docker compose up -d --build
+# 镜像由 GitHub CI 构建并推送到 DockerHub，部署时直接拉取
+# 启动：docker compose up -d
 # 访问：http://<服务器IP>:8080
-#
-# 使用 DockerHub 预构建镜像（无需本地构建）：
-#   把 build: . 替换为 image: <你的DockerHub用户名>/homibook:latest
 
 services:
   app:
-    build: .
-    # image: ${DOCKERHUB_USERNAME:-homibook}/homibook:latest  # 取消注释以用预构建镜像
+    image: saaangxy/homibook:${IMAGE_TAG:-latest}
     container_name: homibook
     restart: unless-stopped
     environment:
-      # 服务端口（内部+对外）
       PORT: ${PORT:-8080}
-      # 数据库类型: sqlite | mysql | postgresql
       DATABASE_PROVIDER: ${DATABASE_PROVIDER:-sqlite}
-      # sqlite: 文件数据库；mysql/postgresql: 对应连接串
       DATABASE_URL: ${DATABASE_URL:-file:/app/data/dev.db}
-      # 务必在 .env 中修改
       JWT_SECRET: ${JWT_SECRET:-homibook-secret-key-change-in-production}
     volumes:
-      - homibook-data:/app/data        # SQLite 数据库文件
-      - homibook-uploads:/app/uploads  # 上传的小票/账单文件
+      - homibook-data:/app/data
+      - homibook-uploads:/app/uploads
     ports:
       - "${PORT:-8080}:${PORT:-8080}"
     healthcheck:
@@ -36,8 +29,7 @@ services:
   # =====================================================
   # 可选数据库服务（默认 SQLite，无需启用）
   # 启用 MySQL:   .env 设 DATABASE_PROVIDER=mysql + DATABASE_URL 指向本服务，然后
-  #               docker compose --profile mysql up -d
-  # 启用 PostgreSQL: 同理设 DATABASE_PROVIDER=postgresql，然后 --profile postgres
+  # 启用 PostgreSQL: 同理设 DATABASE_PROVIDER=postgresql
   # =====================================================
   mysql:
     image: mysql:8
