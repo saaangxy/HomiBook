@@ -49,7 +49,7 @@ import { holidayApi } from '@/api/holiday'
 import { ThemeSelector } from '@/components/ThemeSelector'
 import { importExportApi, type CategoryMapping, type AccountMapping } from '@/api/import-export'
 import { DictCombobox } from '@/components/DictCombobox'
-import { Plus, Pencil, Trash2, Settings, BookOpen, Check, FolderOpen, FileSearch, RefreshCw, Key, Copy, EyeOff, Link2, Wallet, Bot, Brain } from 'lucide-react'
+import { Plus, Pencil, Trash2, Settings, BookOpen, Check, FolderOpen, FileSearch, RefreshCw, Key, Copy, EyeOff, Link2, Wallet, Bot, Brain, Info, ExternalLink } from 'lucide-react'
 import { apikeyApi, type ApiKeyItem, type ApiKeyCreated } from '@/api/apikey'
 import { useAuthStore } from '@/stores/auth'
 import { AIAssistantSettings } from '@/components/ai/AISettings'
@@ -85,6 +85,12 @@ export function SettingsPage() {
   const [configSaving, setConfigSaving] = useState(false)
   const [configError, setConfigError] = useState('')
   const [syncingHolidays, setSyncingHolidays] = useState(false)
+
+  // 关于
+  const [appVersion, setAppVersion] = useState('')
+  useEffect(() => {
+    fetch('/api/version').then(r => r.json()).then(d => setAppVersion(d.version)).catch(() => {})
+  }, [])
 
   // 字典管理
   const [dictTab, setDictTab] = useState('account_type')
@@ -338,8 +344,8 @@ export function SettingsPage() {
     }
   }, [])
 
-  // 展开 API Key 面板时加载数据
-  const [accordionValue, setAccordionValue] = useState<string[]>([])
+  // 展开 API Key 面板时加载数据；about 默认展开
+  const [accordionValue, setAccordionValue] = useState<string[]>(['about'])
   const handleAccordionChange = (value: string[]) => {
     setAccordionValue(value)
     if (value.includes('apikeys')) {
@@ -1255,6 +1261,45 @@ export function SettingsPage() {
           </AccordionContent>
         </AccordionItem>
         </>)}
+        {/* 关于 */}
+        <AccordionItem value="about" className="border rounded-xl px-5">
+          <AccordionTrigger className="hover:no-underline">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                <Info size={16} className="text-primary" />
+              </div>
+              <span>关于</span>
+            </div>
+          </AccordionTrigger>
+          <AccordionContent>
+            <div className="py-4 space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">应用</span>
+                <span className="font-medium">HomiBook</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">版本</span>
+                <span className="font-medium">v{appVersion || '—'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">开发者</span>
+                <span className="font-medium">saaangxy</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">GitHub 仓库</span>
+                <a
+                  href="https://github.com/saaangxy/HomiBook"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-primary hover:underline inline-flex items-center gap-1"
+                >
+                  saaangxy/HomiBook
+                  <ExternalLink size={12} />
+                </a>
+              </div>
+            </div>
+          </AccordionContent>
+        </AccordionItem>
       </Accordion>
 
       {/* 添加字典弹窗 */}

@@ -58,9 +58,9 @@ Prisma Client 在 `generate` 时即与数据库类型**绑定**，且 schema 的
 
 所以切换数据库后**必须重新执行 `npm run db:generate`**，否则运行时会出现 provider 不匹配错误。
 
-### 正式版：DDL 变更走 Prisma Migrate
+### DDL 变更走 Prisma Migrate
 
-自正式版起，**表结构（DDL）变更必须通过迁移管理，禁止再用 `db push --accept-data-loss` 之类覆盖数据**。
+**表结构（DDL）变更必须通过迁移管理，禁止 `db push --accept-data-loss` 覆盖数据**。
 
 - **开发（单库）**：修改 `schema.prisma` 后执行 `npm run db:migrate`（`migrate dev`），生成迁移文件并应用到当前开发库
 - **开发（多库一键）**：执行 `npm run db:migrate:all -- --name <迁移名>`，脚本会先重新生成所有 schema 副本，再对每个配置了连接串的数据库（sqlite + 可选的 `MYSQL_DATABASE_URL` / `POSTGRES_DATABASE_URL`）各生成一份迁移，未配置的库自动跳过

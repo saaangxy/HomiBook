@@ -1,8 +1,8 @@
 {
   "name": "homibook",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "main": "index.js",
-  "repository": "https://gitlab.sang0722.com:8881/crespan/homibook.git",
-  "author": "houxiaoyi <xiaoyihou@outlook.com>",
+  "repository": "https://github.com/saaangxy/HomiBook.git",
+  "author": "saaangxy",
   "license": "MIT"
 }

@@ -13,6 +13,7 @@ import { importExportRoutes } from './routes/import-export.js'
 import { chatRoutes } from './routes/chat.js'
 import { seedDefaults } from './seed.js'
 import { startScheduler } from './services/scheduler.js'
+import { APP_VERSION } from './version.js'
 
 async function main() {
   const app = await buildApp()
@@ -39,6 +40,9 @@ async function main() {
 
   // 健康检查
   app.get('/health', async () => ({ status: 'ok' }))
+
+  // 版本信息
+  app.get('/api/version', async () => ({ version: APP_VERSION }))
 
   // 启动（端口可通过环境变量 PORT 配置，默认 3002）
   const PORT = Number(process.env.PORT) || 3002

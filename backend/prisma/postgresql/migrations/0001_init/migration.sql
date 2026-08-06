@@ -7,7 +7,7 @@ CREATE TABLE "User" (
     "name" TEXT,
     "role" TEXT NOT NULL DEFAULT 'USER',
     "status" TEXT NOT NULL DEFAULT 'ACTIVE',
-    "theme" TEXT NOT NULL DEFAULT 'dark',
+    "theme" TEXT NOT NULL DEFAULT 'system',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
@@ -529,3 +529,4 @@ ALTER TABLE "UserAIConfig" ADD CONSTRAINT "UserAIConfig_userId_fkey" FOREIGN KEY
 
 -- AddForeignKey
 ALTER TABLE "UserProviderConfig" ADD CONSTRAINT "UserProviderConfig_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+

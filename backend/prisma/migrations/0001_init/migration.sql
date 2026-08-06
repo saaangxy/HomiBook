@@ -7,7 +7,7 @@ CREATE TABLE "User" (
     "name" TEXT,
     "role" TEXT NOT NULL DEFAULT 'USER',
     "status" TEXT NOT NULL DEFAULT 'ACTIVE',
-    "theme" TEXT NOT NULL DEFAULT 'dark',
+    "theme" TEXT NOT NULL DEFAULT 'system',
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
     "deletedAt" DATETIME
