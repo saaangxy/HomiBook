@@ -29,7 +29,7 @@ RUN npm run build
 FROM node:22-slim AS prod-deps
 WORKDIR /app
 ENV PUPPETEER_CACHE_DIR=/app/node_modules/.cache/puppeteer
-RUN apt-get update && apt-get install -y --no-install-recommends openssl \
+RUN apt-get update && apt-get install -y --no-install-recommends openssl unzip \
     && rm -rf /var/lib/apt/lists/*
 COPY backend/package.json backend/package-lock.json ./
 COPY backend/prisma ./prisma
