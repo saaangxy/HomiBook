@@ -1,5 +1,5 @@
 import { prisma } from '../../../app.js'
-import { Prisma } from '@prisma/client'
+import type { Prisma } from '../../../generated/prisma/client.js'
 import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
 import { ensureFixedTag, getNextTriggerTime } from '../../recurring.js'
 import type { ToolDef, ToolContext } from './types.js'

@@ -1,4 +1,43 @@
-import { PrismaClient } from '@prisma/client'
+import { fileURLToPath } from 'node:url'
+import { dirname, isAbsolute, join } from 'node:path'
+import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
+import { PrismaMariaDb } from '@prisma/adapter-mariadb'
+import { PrismaPg } from '@prisma/adapter-pg'
+import { PrismaClient } from '../generated/prisma/client.js'
+
+// backend 根目录（源码 src/lib/prisma.ts 与编译产物 dist/lib/prisma.js 均向上两级即 backend/）
+const backendDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
+
+/**
+ * SQLite 相对路径以 backend 根为基准解析，避免受进程 cwd 影响
+ * （better-sqlite3 默认按 cwd 解析 `file:./...`，从项目根启动会连错库）。
+ */
+function resolveSqliteUrl(url: string): string {
+  if (url.startsWith('file:')) {
+    const body = url.slice('file:'.length)
+    return isAbsolute(body) ? url : `file:${join(backendDir, body)}`
+  }
+  return isAbsolute(url) ? url : join(backendDir, url)
+}
+
+/**
+ * 按 DATABASE_PROVIDER 选择 driver adapter（Prisma 7 驱动适配器方案）。
+ * - sqlite → @prisma/adapter-better-sqlite3（timestampFormat 用 unixepoch-ms 兼容旧引擎写入的日期格式）
+ * - mysql  → @prisma/adapter-mariadb（mariadb 驱动，支持 MySQL/MariaDB）
+ * - postgresql → @prisma/adapter-pg
+ */
+function createAdapter() {
+  const provider = (process.env.DATABASE_PROVIDER || 'sqlite').toLowerCase()
+  const url = process.env.DATABASE_URL || 'file:./prisma/dev.db'
+  switch (provider) {
+    case 'mysql':
+      return new PrismaMariaDb(url)
+    case 'postgresql':
+      return new PrismaPg(url)
+    default:
+      return new PrismaBetterSqlite3({ url: resolveSqliteUrl(url) }, { timestampFormat: 'unixepoch-ms' })
+  }
+}
 
 /**
  * 原始 PrismaClient，不应用软删除过滤。
@@ -15,7 +54,7 @@ import { PrismaClient } from '@prisma/client'
  *
  * 其他场景请使用 prisma。新增 rawPrisma 引用前请评估是否能用 prisma 替代。
  */
-export const rawPrisma = new PrismaClient()
+export const rawPrisma = new PrismaClient({ adapter: createAdapter() })
 
 type SoftDeleteModel = 'user' | 'account'
 
@@ -38,28 +77,22 @@ function softDeleteQuery(model: SoftDeleteModel) {
     },
     // 其余查询在 where 中注入 deletedAt: null
     async findFirst({ args, query }: any) {
-      args.where = { ...args.where, deletedAt: null }
-      return query(args)
+      return query({ ...args, where: { ...args.where, deletedAt: null } })
     },
     async findFirstOrThrow({ args, query }: any) {
-      args.where = { ...args.where, deletedAt: null }
-      return query(args)
+      return query({ ...args, where: { ...args.where, deletedAt: null } })
     },
     async findMany({ args, query }: any) {
-      args.where = { ...args.where, deletedAt: null }
-      return query(args)
+      return query({ ...args, where: { ...args.where, deletedAt: null } })
     },
     async count({ args, query }: any) {
-      args.where = { ...args.where, deletedAt: null }
-      return query(args)
+      return query({ ...args, where: { ...args.where, deletedAt: null } })
     },
     async aggregate({ args, query }: any) {
-      args.where = { ...args.where, deletedAt: null }
-      return query(args)
+      return query({ ...args, where: { ...args.where, deletedAt: null } })
     },
     async groupBy({ args, query }: any) {
-      args.where = { ...args.where, deletedAt: null }
-      return query(args)
+      return query({ ...args, where: { ...args.where, deletedAt: null } })
     },
     // delete/deleteMany 转为 update 设置 deletedAt
     async delete({ args }: any): Promise<any> {

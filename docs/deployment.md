@@ -72,7 +72,10 @@ DATABASE_URL=postgresql://<用户名>:<密码>@<主机>:<端口>/<数据库名>
 注意事项：
 
 - 连接串中的数据库需已创建，且账号具备建表权限（容器启动时会自动执行 `migrate deploy` 建表）
-- MySQL 连接如需禁用 SSL 校验，可在连接串追加 `?sslaccept=strict&sslverify=false` 等参数（按云厂商要求配置）
+- MySQL 连接参数采用 **mariadb 驱动**语法（Prisma 7 的 `@prisma/adapter-mariadb`）：
+  - 禁用 SSL：追加 `?ssl=0`（如 `mysql://.../homibook?ssl=0`）
+  - 允许服务端获取公钥（`caching_sha2_password` 认证）：追加 `&allowPublicKeyRetrieval=true`
+  - ⚠️ 不支持 mysql2 的 `useSSL` / `sslaccept` / `sslverify` 等参数（会被忽略）；若服务器强制 SSL 且证书不可信，需在 `backend/src/lib/prisma.ts` 的 mysql 分支为 adapter 传 `{ ssl: { rejectUnauthorized: false } }`
 - 数据库主机名需从容器内可访问：若数据库与容器在同一台机器，用宿主机 IP 而非 `localhost`
 
 ### 升级与回滚

@@ -50,27 +50,28 @@ yarn dev
 | 变量 | 说明 | 示例 |
 |---|---|---|
 | `DATABASE_PROVIDER` | 数据库类型 | `sqlite` / `mysql` / `postgresql` |
-| `DATABASE_URL` | 连接串 | `file:./dev.db` / `mysql://...` / `postgresql://...` |
+| `DATABASE_URL` | 连接串 | `file:./prisma/dev.db` / `mysql://...` / `postgresql://...` |
 
-### 为什么切换要重新生成 Client
+### 多数据库机制（Prisma 7 驱动适配器）
 
-Prisma Client 在 `generate` 时即与数据库类型**绑定**，且 schema 的 `provider` 必须是字面量。因此：
+Prisma 7 使用 **driver adapter**，Client 与数据库类型**解耦**（运行时按 `DATABASE_PROVIDER` 选择 adapter），不再像旧版那样在 generate 时绑定数据库：
 
-- 项目用一个 `schema.prisma`（SQLite）作为唯一源文件
-- `prisma/generate-schemas.mjs` 按需生成 `prisma/mysql/schema.prisma` / `prisma/postgresql/schema.prisma` 副本（自动处理 MySQL 的 `@db.Text` 长文本、`@db.VarChar` 复合索引限制）
-- `prisma/run.mjs` 是 npm scripts 的包装器，自动读取 `.env` 选择对应 schema
+- 项目用一个 `schema.prisma`（SQLite）作为唯一源文件，生成**一个** Prisma Client 到 `backend/src/generated/prisma`（已 gitignore）
+- `prisma.config.ts` 按 `DATABASE_PROVIDER` 选择 schema 副本与连接串，替代旧版 `--schema` 传参
+- `prisma/generate-schemas.mjs` 按需生成 `prisma/mysql/schema.prisma` / `prisma/postgresql/schema.prisma` 副本（迁移按 provider 生成 SQL 仍需字面量 provider；自动处理 MySQL 的 `@db.Text` 长文本、`@db.VarChar` 复合索引限制）
+- `prisma/run.mjs` 是 npm scripts 的包装器，自动读取 `.env`，非 sqlite 时先重新生成副本再转发命令
 
-所以切换数据库后**必须重新执行 `npm run db:generate`**，否则运行时会出现 provider 不匹配错误。
+切换数据库只需改 `.env` 后执行迁移/建表即可。
 
 ### SQLite（默认，开发首选）
 
 `backend/.env` 保持：
 
 ```env
-DATABASE_URL="file:./dev.db"
+DATABASE_URL="file:./prisma/dev.db"
 ```
 
-（`DATABASE_PROVIDER` 不写即默认 sqlite）
+（`DATABASE_PROVIDER` 不写即默认 sqlite。注意：相对路径以 `backend/` 为基准，指向 `backend/prisma/dev.db`）
 
 ### 切换到 MySQL
 1. 修改 `backend/.env`：
@@ -82,11 +83,10 @@ DATABASE_URL="file:./dev.db"
 
    如果用自己的 MySQL（如远程实例），把 `DATABASE_URL` 指向它即可。
 
-2. 重新生成 Client 并同步表结构：
+2. 同步表结构（run.mjs 会先自动重新生成 mysql schema 副本）：
 
    ```bash
-   npm run db:generate   # 终端应打印 [prisma] provider=mysql
-   npm run db:push       # 在 MySQL 中创建表
+   npm run db:push       # 在 MySQL 中创建表（仅限本地开发）
    npm run dev
    ```
 
@@ -103,10 +103,9 @@ DATABASE_URL=postgresql://homibook:homibook@localhost:5432/homibook
 
 ```bash
 # backend/.env 恢复为：
-# DATABASE_URL="file:./dev.db"
+# DATABASE_URL="file:./prisma/dev.db"
 # （删除/注释 DATABASE_PROVIDER 和 mysql 连接串两行）
 
-npm run db:generate
 npm run db:push
 npm run dev
 ```
@@ -125,11 +124,11 @@ npm run dev
 
 ### 注意事项
 
-- **切换后必须重跑 `db:generate`**：client 与数据库类型绑定，漏跑会报 provider 不匹配
 - **数据不会自动迁移**：切换数据库后表结构和数据都需自行处理。SQLite 与 MySQL 之间的数据不会自动同步
 - **`db:push` 仅限本地开发库快速同步**：正式环境（含 Docker 部署）一律走迁移（`db:deploy`），绝不可在正式库用 `db push --accept-data-loss`
-- 每个 `db:generate` / `db:push` / `db:migrate` 都会打印 `[prisma] provider=xxx schema=...`，可据此确认当前用的库
+- 每个 `db:generate` / `db:push` / `db:migrate` 都会打印 `[prisma] provider=xxx cmd=...`，可据此确认当前用的库
 - 新增了长文本字段时，需在 `backend/prisma/generate-schemas.mjs` 的 `LONG_TEXT_FIELDS` 中补充
+- Prisma 7 的 sqlite 相对路径以 `backend/` 为基准（`file:./prisma/dev.db`）；迁移配置集中在 `backend/prisma.config.ts`
 
 ## 常用 npm scripts
 
@@ -137,7 +136,7 @@ npm run dev
 |---|---|
 | `npm run dev` | 启动开发服务器（端口 3002） |
 | `npm run build` | TypeScript 编译 |
-| `npm run db:generate` | 重新生成 Prisma Client（切换数据库后必跑） |
+| `npm run db:generate` | 重新生成 Prisma Client 与 schema 副本 |
 | `npm run db:push` | 同步表结构（**仅限本地开发**，勿用于正式库） |
 | `npm run db:migrate` | 生成并应用迁移（`migrate dev`） |
 | `npm run db:migrate:all -- --name <迁移名>` | 对所有已配置数据库一键生成迁移 |

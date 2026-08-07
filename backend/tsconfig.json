@@ -18,5 +18,7 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "resolveJsonModule": true
-  }
+  },
+  // 只编译 src/：prisma.config.ts 由 Prisma CLI 执行，dist/ 旧产物不作为输入
+  "include": ["src"]
 }

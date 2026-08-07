@@ -16,24 +16,28 @@ RUN yarn build
 FROM node:22-slim AS backend-build
 WORKDIR /app
 ENV PUPPETEER_SKIP_DOWNLOAD=true
-RUN apt-get update && apt-get install -y --no-install-recommends openssl \
+# Prisma 7 为纯 JS 客户端 + driver adapter，无需 Rust 引擎二进制（openssl 不再需要）
+# build tools：better-sqlite3 原生模块在预编译二进制拉取失败时需源码编译（node-gyp）
+RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
     && rm -rf /var/lib/apt/lists/*
 COPY backend/package.json backend/package-lock.json ./
 COPY backend/prisma ./prisma
-RUN npm ci && npx prisma generate
+COPY backend/prisma.config.ts ./
+RUN npm ci
 COPY backend/tsconfig.json ./
 COPY backend/src ./src
-RUN npm run build
+# 先生成 Prisma Client 到 src/generated，再 tsc 编译
+RUN npx prisma generate && npm run build
 
 # ---- 生产依赖（仅 dependencies，Puppeteer 自动下载 Chrome）----
 FROM node:22-slim AS prod-deps
 WORKDIR /app
 ENV PUPPETEER_CACHE_DIR=/app/node_modules/.cache/puppeteer
-RUN apt-get update && apt-get install -y --no-install-recommends openssl unzip \
+# unzip：Puppeteer 解压 Chrome；python3/make/g++：better-sqlite3 源码编译兜底；Prisma 7 无引擎二进制
+RUN apt-get update && apt-get install -y --no-install-recommends unzip python3 make g++ \
     && rm -rf /var/lib/apt/lists/*
 COPY backend/package.json backend/package-lock.json ./
-COPY backend/prisma ./prisma
-RUN npm ci --omit=dev && npx prisma generate && npm cache clean --force
+RUN npm ci --omit=dev && npm cache clean --force
 
 # ---- 运行阶段 ----
 FROM node:22-slim AS runtime
@@ -54,6 +58,8 @@ WORKDIR /app
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=backend-build /app/dist ./dist
 COPY --from=backend-build /app/prisma ./prisma
+# prisma.config.ts：运行时 migrate deploy 依赖它按 DATABASE_PROVIDER 选择 schema
+COPY --from=backend-build /app/prisma.config.ts ./prisma.config.ts
 COPY --from=backend-build /app/package.json ./package.json
 COPY --from=frontend-build /app/dist ./public
 

@@ -1,12 +1,11 @@
 generator client {
-  provider      = "prisma-client-js"
-  // native = 当前平台（Windows 开发机 / Docker 的 Debian 运行镜像），无需额外目标
-  binaryTargets = ["native"]
+  provider = "prisma-client"
+  // 生成到 src 下参与 tsc 编译；adapter 方案下 client 与数据库类型解耦，运行时不依赖引擎二进制
+  output   = "../src/generated/prisma"
 }
 
 datasource db {
   provider = "sqlite"
-  url      = env("DATABASE_URL")
 }
 
 // 用户

@@ -11,4 +11,5 @@
 /.claude/
 /backend/dist/
 /backend/uploads/
+/backend/src/generated/
 /example/

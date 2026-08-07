@@ -5,9 +5,8 @@ set -e
 DATABASE_PROVIDER="${DATABASE_PROVIDER:-sqlite}"
 echo "[homibook] 数据库类型: ${DATABASE_PROVIDER}"
 
-# Prisma Client 在 generate 时即与数据库类型绑定，须按 provider 重新生成
-echo "[homibook] 生成 Prisma Client..."
-node prisma/run.mjs generate
+# Prisma 7 为 driver adapter 方案，Client 与数据库类型解耦，构建时已生成一次
+# （run.mjs 会在非 sqlite 时自动重新生成 schema 副本，供 migrate 使用）
 
 echo "[homibook] 应用数据库迁移 (prisma migrate deploy)..."
 # 正式版：migrate deploy 只按序应用 migrations 中未应用的迁移，绝不覆盖数据。

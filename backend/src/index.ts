@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
 import { buildApp } from './app.js'
 import { authRoutes } from './routes/auth.js'
 import { adminRoutes } from './routes/admin.js'
@@ -14,6 +16,13 @@ import { chatRoutes } from './routes/chat.js'
 import { seedDefaults } from './seed.js'
 import { startScheduler } from './services/scheduler.js'
 import { APP_VERSION } from './version.js'
+
+// 开发环境加载 backend/.env（已有环境变量优先）；Docker 等注入场景无 .env 时忽略
+try {
+  process.loadEnvFile(join(dirname(fileURLToPath(import.meta.url)), '..', '.env'))
+} catch {
+  /* 无 .env 文件时忽略（部署环境变量由外部注入） */
+}
 
 async function main() {
   const app = await buildApp()

@@ -16,7 +16,7 @@
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.x-blue" />
   <img alt="React" src="https://img.shields.io/badge/React-19-blue" />
   <img alt="Fastify" src="https://img.shields.io/badge/Fastify-5-blue" />
-  <img alt="Prisma" src="https://img.shields.io/badge/Prisma-5-blue" />
+  <img alt="Prisma" src="https://img.shields.io/badge/Prisma-7-blue" />
   <img alt="Tailwind CSS" src="https://img.shields.io/badge/Tailwind%20CSS-4-blue" />
   <img alt="SQLite/MySQL/PostgreSQL" src="https://img.shields.io/badge/DB-SQLite%20%7C%20MySQL%20%7C%20PostgreSQL-green" />
 </p>
@@ -72,7 +72,7 @@
 
 | 端 | 技术 |
 |---|---|
-| 后端 | Node.js + TypeScript (ESM)、Fastify 5、Prisma 5、Zod |
+| 后端 | Node.js + TypeScript (ESM)、Fastify 5、Prisma 7、Zod |
 | 前端 | React 19 + TypeScript、Vite、Shadcn/ui、Tailwind CSS 4、React Router DOM 7、Zustand、TanStack Query |
 | AI | AI SDK、工具调用、Puppeteer 网页抓取 |
 | 数据库 | SQLite / MySQL / PostgreSQL（环境变量切换） |

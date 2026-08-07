@@ -1,5 +1,5 @@
 import { prisma } from '../../../app.js'
-import { Prisma } from '@prisma/client'
+import type { Prisma } from '../../../generated/prisma/client.js'
 import { retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 import { computeAccountBalance, assertCanManageAccount } from '../../account.js'

@@ -103,6 +103,8 @@ for (const provider of ['mysql', 'postgresql']) {
   const dir = join(__dirname, provider)
   mkdirSync(dir, { recursive: true })
   let schema = base.replace(/provider = "sqlite"/, `provider = "${provider}"`)
+  // 副本位于 prisma/<provider>/ 二级目录，output 需多上一级才能指向 backend/src/generated
+  schema = schema.replace('"../src/generated/prisma"', '"../../src/generated/prisma"')
   schema = addTextAnnotations(schema)
   schema = addVarCharAnnotations(schema)
   const outPath = join(dir, 'schema.prisma')
