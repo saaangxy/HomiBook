@@ -423,4 +423,3 @@ CREATE UNIQUE INDEX "UserAIConfig_userId_key" ON "UserAIConfig"("userId");
 
 -- CreateIndex
 CREATE INDEX "UserProviderConfig_userId_idx" ON "UserProviderConfig"("userId");
-

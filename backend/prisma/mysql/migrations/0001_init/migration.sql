@@ -125,7 +125,7 @@ CREATE TABLE `ShareCode` (
 CREATE TABLE `SystemConfig` (
     `id` VARCHAR(191) NOT NULL,
     `key` VARCHAR(191) NOT NULL,
-    `value` TEXT NOT NULL,
+    `value` MEDIUMTEXT NOT NULL,
     `updatedAt` DATETIME(3) NOT NULL,
 
     UNIQUE INDEX `SystemConfig_key_key`(`key`),
@@ -279,7 +279,7 @@ CREATE TABLE `ChatSession` (
     `userId` VARCHAR(191) NOT NULL,
     `accountBookId` VARCHAR(191) NULL,
     `title` VARCHAR(191) NOT NULL DEFAULT '新对话',
-    `summary` TEXT NULL,
+    `summary` MEDIUMTEXT NULL,
     `summaryUpToMessageId` VARCHAR(191) NULL,
     `modelProvider` VARCHAR(191) NOT NULL DEFAULT 'deepseek',
     `modelName` VARCHAR(191) NOT NULL DEFAULT 'deepseek-chat',
@@ -297,8 +297,8 @@ CREATE TABLE `ChatMessage` (
     `sessionId` VARCHAR(191) NOT NULL,
     `accountBookId` VARCHAR(191) NULL,
     `role` VARCHAR(191) NOT NULL,
-    `content` TEXT NOT NULL,
-    `toolCalls` TEXT NULL,
+    `content` MEDIUMTEXT NOT NULL,
+    `toolCalls` MEDIUMTEXT NULL,
     `tokenCount` INTEGER NOT NULL DEFAULT 0,
     `modelProvider` VARCHAR(191) NULL,
     `modelName` VARCHAR(191) NULL,
@@ -314,7 +314,7 @@ CREATE TABLE `UserMemory` (
     `id` VARCHAR(191) NOT NULL,
     `userId` VARCHAR(191) NOT NULL,
     `sessionId` VARCHAR(191) NULL,
-    `content` TEXT NOT NULL,
+    `content` MEDIUMTEXT NOT NULL,
     `keywords` VARCHAR(191) NULL,
     `memoryType` VARCHAR(191) NOT NULL DEFAULT 'extracted',
     `importance` DOUBLE NOT NULL DEFAULT 0.5,
@@ -335,8 +335,8 @@ CREATE TABLE `AgentAuditLog` (
     `userId` VARCHAR(191) NOT NULL,
     `action` VARCHAR(191) NOT NULL,
     `toolName` VARCHAR(191) NULL,
-    `input` TEXT NULL,
-    `output` TEXT NULL,
+    `input` MEDIUMTEXT NULL,
+    `output` MEDIUMTEXT NULL,
     `modelProvider` VARCHAR(191) NULL,
     `modelName` VARCHAR(191) NULL,
     `durationMs` INTEGER NULL,
@@ -366,7 +366,7 @@ CREATE TABLE `UserAIConfig` (
     `maxSteps` INTEGER NOT NULL DEFAULT 10,
     `visionProviderConfigId` VARCHAR(191) NULL,
     `visionModel` VARCHAR(191) NOT NULL DEFAULT '',
-    `disabledTools` TEXT NULL,
+    `disabledTools` MEDIUMTEXT NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
 
@@ -485,4 +485,3 @@ ALTER TABLE `UserAIConfig` ADD CONSTRAINT `UserAIConfig_userId_fkey` FOREIGN KEY
 
 -- AddForeignKey
 ALTER TABLE `UserProviderConfig` ADD CONSTRAINT `UserProviderConfig_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `User`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-

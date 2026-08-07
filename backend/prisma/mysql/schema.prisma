@@ -167,7 +167,7 @@ model ShareCode {
 model SystemConfig {
   id        String   @id @default(uuid())
   key       String   @unique
-  value     String @db.Text
+  value     String @db.MediumText
   updatedAt DateTime @updatedAt
 }
 
@@ -325,7 +325,7 @@ model ChatSession {
   accountBookId String?
   accountBook   AccountBook?  @relation(fields: [accountBookId], references: [id], onDelete: SetNull)
   title         String        @default("新对话")
-  summary              String? @db.Text  // 已压缩旧消息的 LLM 摘要
+  summary              String? @db.MediumText  // 已压缩旧消息的 LLM 摘要
   summaryUpToMessageId String?  // 摘要覆盖到的最后一条消息 ID
   modelProvider String        @default("deepseek")
   modelName     String        @default("deepseek-chat")
@@ -348,8 +348,8 @@ model ChatMessage {
   accountBookId   String?
   accountBook     AccountBook? @relation(fields: [accountBookId], references: [id], onDelete: SetNull)
   role            String
-  content         String @db.Text
-  toolCalls       String? @db.Text
+  content         String @db.MediumText
+  toolCalls       String? @db.MediumText
   tokenCount      Int          @default(0)
   modelProvider   String?
   modelName       String?
@@ -366,7 +366,7 @@ model UserMemory {
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   sessionId      String?
   session        ChatSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
-  content        String @db.Text
+  content        String @db.MediumText
   keywords       String?
   memoryType     String       @default("extracted")
   importance     Float        @default(0.5)
@@ -388,8 +388,8 @@ model AgentAuditLog {
   user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   action        String
   toolName      String?
-  input         String? @db.Text
-  output        String? @db.Text
+  input         String? @db.MediumText
+  output        String? @db.MediumText
   modelProvider String?
   modelName     String?
   durationMs    Int?
@@ -424,7 +424,7 @@ model UserAIConfig {
   visionProviderConfigId String?
   visionModel            String  @default("")
 
-  disabledTools String? @db.Text
+  disabledTools String? @db.MediumText
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

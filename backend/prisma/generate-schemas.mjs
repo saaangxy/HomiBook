@@ -51,8 +51,12 @@ const VAR_CHAR_FIELDS = {
   },
 }
 
-/** 在指定 model 块内给字段追加 @db.Text（幂等，重复运行不会叠加） */
-function addTextAnnotations(schema) {
+/**
+ * 在指定 model 块内给字段追加长文本注解（幂等，重复运行不会叠加）。
+ * - MySQL：@db.Text 仅 64KB，导入预览/AI 记忆等大 JSON 会超限，用 @db.MediumText（16MB）
+ * - PostgreSQL：text 本身上限，@db.Text 即可
+ */
+function addTextAnnotations(schema, annotation) {
   let result = schema
   for (const [model, fields] of Object.entries(LONG_TEXT_FIELDS)) {
     const blockPattern = new RegExp(`model ${model} \\{[\\s\\S]*?\\n\\}`)
@@ -64,7 +68,7 @@ function addTextAnnotations(schema) {
     let newBlock = block
     for (const f of fields) {
       const fieldPattern = new RegExp(`^(\\s*${f}\\s+String\\??)(?=[ \\t]*(?:\\/\\/|\\r?\\n|$))`, 'm')
-      newBlock = newBlock.replace(fieldPattern, (_m, decl) => `${decl} @db.Text`)
+      newBlock = newBlock.replace(fieldPattern, (_m, decl) => `${decl} ${annotation}`)
     }
     result = result.replace(block, newBlock)
   }
@@ -105,7 +109,8 @@ for (const provider of ['mysql', 'postgresql']) {
   let schema = base.replace(/provider = "sqlite"/, `provider = "${provider}"`)
   // 副本位于 prisma/<provider>/ 二级目录，output 需多上一级才能指向 backend/src/generated/<provider>
   schema = schema.replace('"../src/generated/sqlite"', `"../../src/generated/${provider}"`)
-  schema = addTextAnnotations(schema)
+  // MySQL 用 MediumText（16MB）容纳大 JSON；PostgreSQL 保持 Text（无上限）
+  schema = addTextAnnotations(schema, provider === 'mysql' ? '@db.MediumText' : '@db.Text')
   schema = addVarCharAnnotations(schema)
   const outPath = join(dir, 'schema.prisma')
   writeFileSync(outPath, schema)
