@@ -1,5 +1,5 @@
 import { prisma } from '../../../app.js'
-import type { Prisma } from '../../../generated/prisma/client.js'
+import type { Prisma } from '../../../generated/sqlite/client.js'
 import { retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 import { computeAccountBalance, assertCanManageAccount } from '../../account.js'

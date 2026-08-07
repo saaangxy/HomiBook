@@ -1,5 +1,5 @@
-import { fileURLToPath } from 'node:url'
-import { dirname, join } from 'node:path'
+// 必须最先导入：加载 backend/.env，确保 lib/prisma.ts 在模块加载时能看到 DATABASE_PROVIDER
+import './load-env.js'
 import { buildApp } from './app.js'
 import { authRoutes } from './routes/auth.js'
 import { adminRoutes } from './routes/admin.js'
@@ -17,15 +17,20 @@ import { seedDefaults } from './seed.js'
 import { startScheduler } from './services/scheduler.js'
 import { APP_VERSION } from './version.js'
 
-// 开发环境加载 backend/.env（已有环境变量优先）；Docker 等注入场景无 .env 时忽略
-try {
-  process.loadEnvFile(join(dirname(fileURLToPath(import.meta.url)), '..', '.env'))
-} catch {
-  /* 无 .env 文件时忽略（部署环境变量由外部注入） */
+/** 启动时打印数据库信息（隐藏连接串中的凭据） */
+function printDatabaseInfo() {
+  const provider = (process.env.DATABASE_PROVIDER || 'sqlite').toLowerCase()
+  const url = process.env.DATABASE_URL || ''
+  // 隐藏 URL 中的用户名密码（如 mysql://user:pass@host → mysql://***@host）
+  const sanitized = url.replace(/(\/\/)[^@/]+(?=@)/, '$1***')
+  console.log(`[homibook] 数据库类型: ${provider}`)
+  if (sanitized) console.log(`[homibook] 数据库连接: ${sanitized}`)
 }
 
 async function main() {
   const app = await buildApp()
+
+  printDatabaseInfo()
 
   // 初始化默认数据
   await seedDefaults()

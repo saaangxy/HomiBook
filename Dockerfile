@@ -26,8 +26,8 @@ COPY backend/prisma.config.ts ./
 RUN npm ci
 COPY backend/tsconfig.json ./
 COPY backend/src ./src
-# 先生成 Prisma Client 到 src/generated，再 tsc 编译
-RUN npx prisma generate && npm run build
+# prebuild 钩子会先为 sqlite/mysql/postgresql 各生成一份 Prisma Client 到 src/generated/<provider>，再 tsc 编译
+RUN npm run build
 
 # ---- 生产依赖（仅 dependencies，Puppeteer 自动下载 Chrome）----
 FROM node:22-slim AS prod-deps

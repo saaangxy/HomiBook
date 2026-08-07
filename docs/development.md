@@ -54,14 +54,15 @@ yarn dev
 
 ### 多数据库机制（Prisma 7 驱动适配器）
 
-Prisma 7 使用 **driver adapter**，Client 与数据库类型**解耦**（运行时按 `DATABASE_PROVIDER` 选择 adapter），不再像旧版那样在 generate 时绑定数据库：
+Prisma 7 的 Client 与 schema 的 `datasource.provider` **绑定**（driver adapter 必须匹配 schema 的 provider），因此**每个数据库类型各生成一份 Client**，运行时按 `DATABASE_PROVIDER` 选择对应的一份：
 
-- 项目用一个 `schema.prisma`（SQLite）作为唯一源文件，生成**一个** Prisma Client 到 `backend/src/generated/prisma`（已 gitignore）
+- 项目用一个 `schema.prisma`（SQLite）作为唯一源文件，`npm run db:generate` 会为 sqlite / mysql / postgresql 各生成一份 Client 到 `backend/src/generated/<provider>`（已 gitignore）
 - `prisma.config.ts` 按 `DATABASE_PROVIDER` 选择 schema 副本与连接串，替代旧版 `--schema` 传参
 - `prisma/generate-schemas.mjs` 按需生成 `prisma/mysql/schema.prisma` / `prisma/postgresql/schema.prisma` 副本（迁移按 provider 生成 SQL 仍需字面量 provider；自动处理 MySQL 的 `@db.Text` 长文本、`@db.VarChar` 复合索引限制）
-- `prisma/run.mjs` 是 npm scripts 的包装器，自动读取 `.env`，非 sqlite 时先重新生成副本再转发命令
+- `prisma/run.mjs` 是迁移命令的包装器，自动读取 `.env`，非 sqlite 时先重新生成副本再转发命令
+- `backend/src/lib/prisma.ts` 用顶层 await 按 `DATABASE_PROVIDER` 加载对应 Client + driver adapter（sqlite→better-sqlite3、mysql→mariadb、postgresql→pg）
 
-切换数据库只需改 `.env` 后执行迁移/建表即可。
+切换数据库只需改 `.env` 后执行迁移/建表即可（Client 已按 provider 预生成，无需重建）。
 
 ### SQLite（默认，开发首选）
 
@@ -126,6 +127,7 @@ npm run dev
 
 - **数据不会自动迁移**：切换数据库后表结构和数据都需自行处理。SQLite 与 MySQL 之间的数据不会自动同步
 - **`db:push` 仅限本地开发库快速同步**：正式环境（含 Docker 部署）一律走迁移（`db:deploy`），绝不可在正式库用 `db push --accept-data-loss`
+- **`db:generate` 会为三个 provider 各生成一份 Client**（Prisma 7 的 Client 与 provider 绑定），新增/改动模型后需重跑；只切数据库不改模型则无需重跑
 - 每个 `db:generate` / `db:push` / `db:migrate` 都会打印 `[prisma] provider=xxx cmd=...`，可据此确认当前用的库
 - 新增了长文本字段时，需在 `backend/prisma/generate-schemas.mjs` 的 `LONG_TEXT_FIELDS` 中补充
 - Prisma 7 的 sqlite 相对路径以 `backend/` 为基准（`file:./prisma/dev.db`）；迁移配置集中在 `backend/prisma.config.ts`
@@ -136,7 +138,7 @@ npm run dev
 |---|---|
 | `npm run dev` | 启动开发服务器（端口 3002） |
 | `npm run build` | TypeScript 编译 |
-| `npm run db:generate` | 重新生成 Prisma Client 与 schema 副本 |
+| `npm run db:generate` | 为 sqlite/mysql/postgresql 各生成一份 Prisma Client + schema 副本 |
 | `npm run db:push` | 同步表结构（**仅限本地开发**，勿用于正式库） |
 | `npm run db:migrate` | 生成并应用迁移（`migrate dev`） |
 | `npm run db:migrate:all -- --name <迁移名>` | 对所有已配置数据库一键生成迁移 |

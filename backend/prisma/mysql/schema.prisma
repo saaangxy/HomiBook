@@ -1,7 +1,8 @@
 generator client {
   provider = "prisma-client"
-  // 生成到 src 下参与 tsc 编译；adapter 方案下 client 与数据库类型解耦，运行时不依赖引擎二进制
-  output   = "../../src/generated/prisma"
+  // Prisma 7 的 client 与 schema 的 datasource provider 绑定（adapter 必须匹配），
+  // 因此按 provider 各自生成一份 client，运行时按 DATABASE_PROVIDER 选择。
+  output   = "../../src/generated/mysql"
 }
 
 datasource db {

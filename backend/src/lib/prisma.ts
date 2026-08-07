@@ -3,7 +3,7 @@ import { dirname, isAbsolute, join } from 'node:path'
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 import { PrismaMariaDb } from '@prisma/adapter-mariadb'
 import { PrismaPg } from '@prisma/adapter-pg'
-import { PrismaClient } from '../generated/prisma/client.js'
+import type { PrismaClient as SqlitePrismaClient } from '../generated/sqlite/client.js'
 
 // backend 根目录（源码 src/lib/prisma.ts 与编译产物 dist/lib/prisma.js 均向上两级即 backend/）
 const backendDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -20,22 +20,31 @@ function resolveSqliteUrl(url: string): string {
   return isAbsolute(url) ? url : join(backendDir, url)
 }
 
+const provider = (process.env.DATABASE_PROVIDER || 'sqlite').toLowerCase()
+const url = process.env.DATABASE_URL || 'file:./prisma/dev.db'
+
 /**
- * 按 DATABASE_PROVIDER 选择 driver adapter（Prisma 7 驱动适配器方案）。
- * - sqlite → @prisma/adapter-better-sqlite3（timestampFormat 用 unixepoch-ms 兼容旧引擎写入的日期格式）
- * - mysql  → @prisma/adapter-mariadb（mariadb 驱动，支持 MySQL/MariaDB）
- * - postgresql → @prisma/adapter-pg
+ * Prisma 7 的 client 与 schema 的 datasource provider 绑定（driver adapter 必须匹配），
+ * 因此按 DATABASE_PROVIDER 选择对应 provider 生成的 client（见 prisma/generate-all.mjs）。
+ * 顶层 await：模块求值完成后再被各路由使用。
  */
-function createAdapter() {
-  const provider = (process.env.DATABASE_PROVIDER || 'sqlite').toLowerCase()
-  const url = process.env.DATABASE_URL || 'file:./prisma/dev.db'
-  switch (provider) {
-    case 'mysql':
-      return new PrismaMariaDb(url)
-    case 'postgresql':
-      return new PrismaPg(url)
-    default:
-      return new PrismaBetterSqlite3({ url: resolveSqliteUrl(url) }, { timestampFormat: 'unixepoch-ms' })
+let client: SqlitePrismaClient
+switch (provider) {
+  case 'mysql': {
+    const { PrismaClient: MySQLPrismaClient } = await import('../generated/mysql/client.js')
+    client = new MySQLPrismaClient({ adapter: new PrismaMariaDb(url) }) as unknown as SqlitePrismaClient
+    break
+  }
+  case 'postgresql': {
+    const { PrismaClient: PgPrismaClient } = await import('../generated/postgresql/client.js')
+    client = new PgPrismaClient({ adapter: new PrismaPg(url) }) as unknown as SqlitePrismaClient
+    break
+  }
+  default: {
+    const { PrismaClient: SqliteClient } = await import('../generated/sqlite/client.js')
+    client = new SqliteClient({
+      adapter: new PrismaBetterSqlite3({ url: resolveSqliteUrl(url) }, { timestampFormat: 'unixepoch-ms' }),
+    })
   }
 }
 
@@ -54,7 +63,7 @@ function createAdapter() {
  *
  * 其他场景请使用 prisma。新增 rawPrisma 引用前请评估是否能用 prisma 替代。
  */
-export const rawPrisma = new PrismaClient({ adapter: createAdapter() })
+export const rawPrisma = client
 
 type SoftDeleteModel = 'user' | 'account'
 
@@ -122,7 +131,7 @@ function softDeleteQuery(model: SoftDeleteModel) {
  *
  * 全项目默认 import { prisma }。rawPrisma 仅在上方注释列出的场景使用。
  */
-export const prisma = rawPrisma.$extends({
+export const prisma = client.$extends({
   query: {
     user: softDeleteQuery('user'),
     account: softDeleteQuery('account'),
