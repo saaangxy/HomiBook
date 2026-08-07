@@ -89,9 +89,12 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
       parentMessageId,
     }
     if (msgState.dbId) {
-      await prisma.chatMessage.update({ where: { id: msgState.dbId }, data: snapData }).catch(() => {})
+      await prisma.chatMessage.update({ where: { id: msgState.dbId }, data: snapData }).catch((e) => console.error('[chat-debug] chatMessage.update 失败:', e.message))
     } else {
-      const created = await prisma.chatMessage.create({ data: snapData }).catch(() => null)
+      const created = await prisma.chatMessage.create({ data: snapData }).catch((e) => {
+        console.error('[chat-debug] chatMessage.create 失败:', e.message, '| provider=', process.env.DATABASE_PROVIDER, '| sessionId=', sessionId)
+        return null
+      })
       if (created) msgState.dbId = created.id
     }
   }
@@ -1082,7 +1085,8 @@ export async function chatRoutes(app: FastifyInstance) {
           const reData = toolResult.data || {}
           toolResult = {
             success: true, retryable: false,
-            data: { mode: 'review', source: reData.source, records: reData.records ? (reData.records as any[]).map((r: any) => ({ type: r.type, categoryCode: r.categoryCode, categoryLabel: r.categoryLabel, mappedCategoryCode: r.mappedCategoryCode, mappedCategoryLabel: r.mappedCategoryLabel, payer: r.payer, remark: r.remark })) : [], unrecognizedRecords: reData.unrecognizedRecords ? (reData.unrecognizedRecords as any[]).map((r: any) => ({ type: r.type, categoryCode: r.categoryCode, categoryLabel: r.categoryLabel, mappedCategoryCode: r.mappedCategoryCode, mappedCategoryLabel: r.mappedCategoryLabel, payer: r.payer, remark: r.remark })) : [], unmatchedAccounts: reData.unmatchedAccounts || [], unmatchedCategories: reData.unmatchedCategories || [], stats: reData.stats, message: '请检查以上映射结果是否正确。' },
+            // confirmed: true 标记该预览已确认，前端 ImportPreviewInteractive 据此切换为「已确认」并禁用按钮（防重复提交）
+            data: { mode: 'review', confirmed: true, source: reData.source, records: reData.records ? (reData.records as any[]).map((r: any) => ({ type: r.type, categoryCode: r.categoryCode, categoryLabel: r.categoryLabel, mappedCategoryCode: r.mappedCategoryCode, mappedCategoryLabel: r.mappedCategoryLabel, payer: r.payer, remark: r.remark })) : [], unrecognizedRecords: reData.unrecognizedRecords ? (reData.unrecognizedRecords as any[]).map((r: any) => ({ type: r.type, categoryCode: r.categoryCode, categoryLabel: r.categoryLabel, mappedCategoryCode: r.mappedCategoryCode, mappedCategoryLabel: r.mappedCategoryLabel, payer: r.payer, remark: r.remark })) : [], unmatchedAccounts: reData.unmatchedAccounts || [], unmatchedCategories: reData.unmatchedCategories || [], stats: reData.stats, message: '请检查以上映射结果是否正确。' },
           }
         } else if (entry.toolName === 'confirm_import') {
           const args = entry.args || {}

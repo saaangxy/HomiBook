@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils'
+import { markSubmitted, isSubmitted } from '@/lib/ai-submit'
 import { getToolDisplayName } from '@/lib/tool-names'
 import type { ToolCallEntry, SuggestionOption } from '@/stores/chat'
 import { useChatStore } from '@/stores/chat'
@@ -55,7 +56,6 @@ function cellColorClass(color?: 'green' | 'red') {
 }
 
 export function ToolCallCard({ toolCall }: Props) {
-  const [confirming, setConfirming] = useState(false)
   const [expanded, setExpanded] = useState(false)
 
   const isPreviewImport = toolCall.toolName === 'preview_import'
@@ -107,10 +107,10 @@ export function ToolCallCard({ toolCall }: Props) {
   const handleConfirm = (approved: boolean) => {
     const { currentBookId } = useBookStore.getState()
     if (!currentBookId) return
-    setConfirming(true)
+    markSubmitted(toolCall.toolCallId)
     setConfirmError(false)
+    // 保持 submitted 标记，防止重复提交；块状态变为 pending 后 ConfirmPreviewView 会卸载
     useChatStore.getState().confirmAndContinue(currentBookId, toolCall.toolCallId, approved)
-    setConfirming(false)
   }
 
   const showArgs = toolCall.args != null
@@ -265,7 +265,7 @@ export function ToolCallCard({ toolCall }: Props) {
       {/* 确认按钮 —— 始终可见 */}
       {(effectiveStatus === 'confirming' || (isExpired && toolCall.preview)) && (
         <>
-          <ConfirmPreviewView preview={toolCall.preview} toolName={toolCall.toolName} onConfirm={handleConfirm} confirming={confirming} />
+          <ConfirmPreviewView preview={toolCall.preview} toolName={toolCall.toolName} onConfirm={handleConfirm} submitted={isSubmitted(toolCall.toolCallId)} />
           {confirmError && (
             <div className="flex items-center gap-1.5 text-red-600 text-xs mt-1">
               <XCircle size={12} />
@@ -301,12 +301,12 @@ function ConfirmPreviewView({
   preview: rawPreview,
   toolName,
   onConfirm,
-  confirming,
+  submitted,
 }: {
   preview?: string
   toolName?: string
   onConfirm: (approved: boolean) => void
-  confirming: boolean
+  submitted: boolean
 }) {
   const preview = parsePreview(rawPreview)
 
@@ -386,10 +386,11 @@ function ConfirmPreviewView({
       )}
 
       <div className="flex gap-2">
-        <Button size="sm" variant="default" disabled={confirming} onClick={() => onConfirm(true)}>
-          确认
+        <Button size="sm" variant="default" disabled={submitted} onClick={() => onConfirm(true)}>
+          {submitted ? <Loader2 size={12} className="animate-spin mr-1" /> : null}
+          {submitted ? '提交中...' : '确认'}
         </Button>
-        <Button size="sm" variant="outline" disabled={confirming} onClick={() => onConfirm(false)}>
+        <Button size="sm" variant="outline" disabled={submitted} onClick={() => onConfirm(false)}>
           拒绝
         </Button>
       </div>
@@ -424,13 +425,14 @@ function SuggestionView({
   const allFilled = questions.every((q) => !!getValue(q.field))
 
   const handleSubmit = () => {
-    if (!allFilled || submittingRef.current) return
+    if (!allFilled || submittingRef.current || isSubmitted(toolCallId)) return
     const { currentBookId } = useBookStore.getState()
     if (!currentBookId) return
     const values: Record<string, string> = {}
     for (const q of questions) {
       values[q.field] = getValue(q.field)
     }
+    markSubmitted(toolCallId)
     submittingRef.current = true
     useChatStore.getState().respondToSuggestion(currentBookId, toolCallId, values)
   }
@@ -541,7 +543,8 @@ function SwitchBookView({
     (toolBlock?.type === 'tool-call' ? (toolBlock.result as any)?.books : undefined) || []
 
   const handleSwitch = () => {
-    if (!bookId || submittingRef.current) return
+    if (!bookId || submittingRef.current || isSubmitted(toolCallId)) return
+    markSubmitted(toolCallId)
     submittingRef.current = true
     const { currentBookId: cid } = useBookStore.getState()
     if (!cid) return

@@ -5,7 +5,7 @@ const PROMPT = `## 导入流水数据（严格按以下顺序调用工具）
 
 1. 调用 preview_import(fileId, source, mode="analyze") 解析文件获取未匹配数据
 2. 分析预览结果中的 unmatchedAccounts、unmatchedCategories 和 allDictItems：
-   - 为每个未匹配账户生成 accountResolutions：已有候选(candidates) → action="existing" + targetAccountId；无候选 → action="create" + 推断的 targetAccountName + accountType
+   - 为每个未匹配账户生成 accountResolutions：已有候选(candidates) → action="existing" + targetAccountId；无候选 → action="create" + 推断的 targetAccountName + accountType, 判断是同一账户但是名称有差异时合并它
    - 为每个未匹配分类生成 categoryResolutions：根据源分类名和 allDictItems 中的分类编码/标签进行语义匹配，选择 targetCategoryCode；如有明显交易方特征可加 payerContains/descriptionContains 过滤
 3. 调用 preview_import(fileId, source, mode="preview", { accountResolutions, categoryResolutions }) 展示交互卡片供用户确认(工具内会进行确认,不需要询问)
 4. 用户确认后，直接调用 confirm_import(fileId, source, { accountResolutions, categoryResolutions }) 确认导入,不要输出任何文本

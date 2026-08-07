@@ -1,11 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
+import { markSubmitted, isSubmitted, clearSubmitted } from '@/lib/ai-submit'
 import { useChatStore } from '@/stores/chat'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { CheckCircle2 } from 'lucide-react'
+import { CheckCircle2, Loader2 } from 'lucide-react'
 
 // ---- 类型 ----
 
@@ -75,6 +76,12 @@ interface Props {
 
 export function ImportConfirmCard({ data, toolCallId }: Props) {
   const [ownerId, setOwnerId] = useState(isPreviewData(data) ? data.ownerId : '')
+  const submitted = isSubmitted(toolCallId)
+
+  // 导入完成（data 变为 imported 结果）后清除提交标记
+  useEffect(() => {
+    if (!isPreviewData(data)) clearSubmitted(toolCallId)
+  }, [data, toolCallId])
 
   // 如果已经是导入结果，直接显示
   if (!isPreviewData(data)) {
@@ -94,10 +101,13 @@ export function ImportConfirmCard({ data, toolCallId }: Props) {
   }
 
   const handleConfirm = () => {
+    markSubmitted(toolCallId)
+    // 保持 submitted 标记，防止重复提交；导入完成 data 切换为 imported 结果后清除
     useChatStore.getState().confirmAndContinue(data.accountBookId, toolCallId, true, { fileId: data.fileId, ownerId })
   }
 
   const handleReject = () => {
+    markSubmitted(toolCallId)
     useChatStore.getState().confirmAndContinue(data.accountBookId, toolCallId, false)
   }
 
@@ -203,10 +213,11 @@ export function ImportConfirmCard({ data, toolCallId }: Props) {
 
       {/* 操作按钮 */}
       <div className="flex gap-2">
-        <Button size="sm" variant="default" onClick={handleConfirm}>
-          确认导入 {data.stats.totalRecords} 条记录
+        <Button size="sm" variant="default" disabled={submitted} onClick={handleConfirm}>
+          {submitted ? <Loader2 size={12} className="animate-spin mr-1" /> : null}
+          {submitted ? '提交中...' : `确认导入 ${data.stats.totalRecords} 条记录`}
         </Button>
-        <Button size="sm" variant="outline" onClick={handleReject}>
+        <Button size="sm" variant="outline" disabled={submitted} onClick={handleReject}>
           取消
         </Button>
       </div>

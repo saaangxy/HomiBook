@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
+import { markSubmitted, isSubmitted, clearSubmitted } from '@/lib/ai-submit'
 import { ACCOUNT_TYPE_LABELS, type AccountType } from '@/api/account'
 import { useChatStore } from '@/stores/chat'
 import { Button } from '@/components/ui/button'
@@ -121,6 +122,7 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
   const accounts = data.accounts || []
   const allDictItems = data.allDictItems || []
   const isConfirmed = !!data.confirmed
+  const submitted = isSubmitted(toolCallId)
 
   // ---- 状态 ----
   const [tab, setTab] = useState<'records' | 'unmatchedAccounts' | 'unmatchedCategories' | 'unrecognized'>('records')
@@ -143,9 +145,12 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
   const [comboOpen, setComboOpen] = useState<string | null>(null)
   const [categorySearch, setCategorySearch] = useState('')
 
-  // 确认（状态由父组件 ToolCallCard 管理，通过 props 传入，和 handleSend 模式一致）
-  const [confirming, setConfirming] = useState(false)
   const [confirmError, setConfirmError] = useState<string | null>(null)
+
+  // 后端在 /confirm 返回后设置 confirmed:true，前端据此清除提交标记（按钮已切换为「已确认」）
+  useEffect(() => {
+    if (data?.confirmed) clearSubmitted(toolCallId)
+  }, [data?.confirmed, toolCallId])
 
   // ---- 初始化 ----
   const initialized = { current: false }
@@ -608,9 +613,10 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
           <Button
             size="sm"
             className="w-full text-xs"
-            disabled={confirming}
+            disabled={submitted}
             onClick={async () => {
-              setConfirming(true)
+              if (!toolCallId) return
+              markSubmitted(toolCallId)
               setConfirmError(null)
               try {
                 if (toolCallId) {
@@ -665,14 +671,16 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
                     Object.keys(overrides).length > 0 ? overrides : undefined,
                   )
                 }
+                // 成功：保持 submitted 标记，按钮禁用+spinner，防止重复点击
+                // 后端返回 confirmed:true 后，isConfirmed 切换为「已确认」并移除按钮
               } catch (err: any) {
                 setConfirmError(err?.message || '确认请求失败')
+                clearSubmitted(toolCallId) // 出错复位，允许重试
               }
-              setConfirming(false)
             }}
           >
-            {confirming ? <Loader2 size={12} className="animate-spin mr-1" /> : null}
-            确认无误，继续导入
+            {submitted ? <Loader2 size={12} className="animate-spin mr-1" /> : null}
+            {submitted ? '提交中...' : '确认无误，继续导入'}
           </Button>
         ) : (
           <div className="flex items-center gap-2 text-xs text-[#22c55e]">

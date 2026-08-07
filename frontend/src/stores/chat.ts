@@ -592,8 +592,12 @@ export const useChatStore = create<ChatState>()((set, get) => {
     }))
 
     // 检查同一消息中所有确认块是否都已决定
+    // 只收集需要确认的块（confirming=待确认 / pending=刚确认 / error=刚拒绝），
+    // 排除 status='success' 的纯查询工具（如 preview_import 的 analyze 模式），避免误入 decisions
     const updatedMsg = get().messages.find(m => m.id === parentId)
-    const allConfirming = (updatedMsg?.blocks.filter(b => b.type === 'tool-call') || []) as Extract<MessageBlock, { type: 'tool-call' }>[]
+    const allConfirming = (updatedMsg?.blocks.filter(b =>
+      b.type === 'tool-call' && (b.status === 'confirming' || b.status === 'pending' || b.status === 'error')
+    ) || []) as Extract<MessageBlock, { type: 'tool-call' }>[]
     const stillConfirming = allConfirming.filter(b => b.status === 'confirming')
 
     if (stillConfirming.length > 0) return // 等待其他块决定
