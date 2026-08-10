@@ -112,13 +112,11 @@ export function MainLayout() {
   const { logout } = useAuthStore()
   const navigate = useNavigate()
   const location = useLocation()
-  const { fetchBooks, booksLoaded } = useBookStore()
+  const { fetchBooks } = useBookStore()
 
   useEffect(() => {
-    if (!booksLoaded) {
-      fetchBooks()
-    }
-  }, [booksLoaded, fetchBooks])
+    fetchBooks()
+  }, [fetchBooks])
 
   const handleLogout = () => {
     logout()

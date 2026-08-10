@@ -20,15 +20,13 @@ const roleLabels: Record<string, string> = {
 }
 
 export function BookSwitcher() {
-  const { books, currentBookId, setCurrentBook, fetchBooks, booksLoaded } = useBookStore()
+  const { books, currentBookId, setCurrentBook, fetchBooks } = useBookStore()
   const navigate = useNavigate()
   const currentBook = books.find((b) => b.id === currentBookId)
 
   useEffect(() => {
-    if (!booksLoaded) {
-      fetchBooks()
-    }
-  }, [booksLoaded, fetchBooks])
+    fetchBooks()
+  }, [fetchBooks])
 
   return (
     <DropdownMenu>
