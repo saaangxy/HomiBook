@@ -49,11 +49,12 @@ import { holidayApi } from '@/api/holiday'
 import { ThemeSelector } from '@/components/ThemeSelector'
 import { importExportApi, type CategoryMapping, type AccountMapping } from '@/api/import-export'
 import { DictCombobox } from '@/components/DictCombobox'
-import { Plus, Pencil, Trash2, Settings, BookOpen, Check, FolderOpen, FileSearch, RefreshCw, Key, Copy, EyeOff, Link2, Wallet, Bot, Brain, Info, ExternalLink } from 'lucide-react'
+import { Plus, Pencil, Trash2, Settings, BookOpen, Check, FolderOpen, FileSearch, RefreshCw, Key, Copy, EyeOff, Link2, Wallet, Bot, Brain, Info, ExternalLink, Database } from 'lucide-react'
 import { apikeyApi, type ApiKeyItem, type ApiKeyCreated } from '@/api/apikey'
 import { useAuthStore } from '@/stores/auth'
 import { AIAssistantSettings } from '@/components/ai/AISettings'
 import { AIMemorySettings } from '@/components/ai/AIMemorySettings'
+import { DataMigrationPanel } from '@/components/backup/DataMigrationPanel'
 import { toast } from 'sonner'
 
 const DICT_GROUPS: { key: string; label: string }[] = [
@@ -861,7 +862,7 @@ export function SettingsPage() {
             <div className="space-y-4">
               <div>
                 <p className="text-sm text-muted-foreground">
-                  无效附件是上传后未关联到任何流水的文件（如编辑弹窗中放弃提交的附件）。
+                  无效附件包括：上传后未关联到流水的文件（如编辑弹窗中放弃提交的附件），以及数据库记录已删除但文件仍残留的孤儿文件。
                   清理无效附件可释放磁盘空间。
                 </p>
               </div>
@@ -912,6 +913,21 @@ export function SettingsPage() {
                 </Button>
               </div>
             </div>
+          </AccordionContent>
+        </AccordionItem>
+
+        {/* 数据迁移 */}
+        <AccordionItem value="data-migration" className="border rounded-xl px-5">
+          <AccordionTrigger className="text-base font-semibold hover:no-underline">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                <Database size={16} className="text-primary" />
+              </div>
+              数据迁移
+            </div>
+          </AccordionTrigger>
+          <AccordionContent className="pt-2 pb-5">
+            <DataMigrationPanel />
           </AccordionContent>
         </AccordionItem>
 

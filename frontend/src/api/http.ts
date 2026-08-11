@@ -46,7 +46,7 @@ async function uploadFile(url: string, file: File): Promise<{ id: string; url: s
   return res.json()
 }
 
-async function uploadForm(url: string, file: File, extraFields: Record<string, string>): Promise<any> {
+async function uploadForm<T = any>(url: string, file: File, extraFields: Record<string, string>): Promise<T> {
   const token = getToken()
   const formData = new FormData()
   formData.append('file', file)
@@ -63,6 +63,44 @@ async function uploadForm(url: string, file: File, extraFields: Record<string, s
   return res.json()
 }
 
+/** 从 Content-Disposition 头解析文件名（下载备份 zip 用） */
+function filenameFromDisposition(header: string | null): string | null {
+  if (!header) return null
+  const m = header.match(/filename="?([^";]+)"?/)
+  return m ? m[1] : null
+}
+
+/** POST 下载：请求返回二进制 blob，触发浏览器保存文件。返回 X-Export-Counts header（如有） */
+async function download(url: string, data?: unknown): Promise<Record<string, number> | null> {
+  const token = getToken()
+  const headers: Record<string, string> = {}
+  if (data) headers['Content-Type'] = 'application/json'
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const res = await fetch(url, { method: 'POST', headers, body: data ? JSON.stringify(data) : undefined })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ message: '下载失败' }))
+    throw new Error(error.message || `HTTP ${res.status}`)
+  }
+
+  // 读取各表导出数量（后端通过 X-Export-Counts header 返回）
+  const countsHeader = res.headers.get('X-Export-Counts')
+  const counts = countsHeader ? JSON.parse(countsHeader) as Record<string, number> : null
+
+  const blob = await res.blob()
+  const filename = filenameFromDisposition(res.headers.get('content-disposition')) || 'download.zip'
+  const objectUrl = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = objectUrl
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+
+  return counts
+}
+
 export const api = {
   get: <T>(url: string) => request<T>(url),
   post: <T>(url: string, data: unknown) => request<T>(url, { method: 'POST', body: JSON.stringify(data) }),
@@ -71,4 +109,5 @@ export const api = {
   delete: <T>(url: string, data?: unknown) => request<T>(url, { method: 'DELETE', body: data ? JSON.stringify(data) : undefined }),
   uploadFile,
   uploadForm,
+  download,
 }

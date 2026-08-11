@@ -30,7 +30,8 @@ export async function buildApp() {
   // Multipart for file uploads
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await app.register(multipart as any, {
-    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+    // 512MB 上限：数据迁移导入的备份 zip 可能较大；CSV 等常规上传不受影响
+    limits: { fileSize: 512 * 1024 * 1024 },
   })
 
   // Swagger OpenAPI 文档（自动从路由 schema 生成规范）

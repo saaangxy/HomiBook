@@ -206,10 +206,10 @@ export async function settingsRoutes(app: FastifyInstance) {
                 return {success: true}
             })
 
-            // 查询孤儿附件（recordId 为 null）
+            // 查询孤儿附件（recordId 为 null 的数据库记录 + uploads 目录下无数据库记录的孤儿文件）
             adminChild.get('/attachments/orphans', {
                 schema: {
-                    description: '获取孤立附件列表',
+                    description: '获取孤立附件列表（未关联流水的数据库记录 + 无数据库记录的孤儿文件）',
                     tags: ['设置']
                 },
                 config: {
@@ -220,7 +220,7 @@ export async function settingsRoutes(app: FastifyInstance) {
                             items: {
                                 type: 'object',
                                 properties: {
-                                    id: {type: 'string', description: '附件ID'},
+                                    id: {type: 'string', description: '附件ID（孤儿文件用文件名）'},
                                     path: {type: 'string', description: '文件路径'},
                                     originalFilename: {type: 'string', description: '原始文件名'},
                                     createdAt: {type: 'string', description: '创建时间'},
@@ -231,35 +231,62 @@ export async function settingsRoutes(app: FastifyInstance) {
                     }
                 }
             }, async () => {
-                const orphans = await prisma.recordAttachment.findMany({
+                const uploadsDir = path.join(process.cwd(), 'uploads')
+
+                // 1. 数据库孤儿：recordId 为 null 的 RecordAttachment 记录
+                const dbOrphans = await prisma.recordAttachment.findMany({
                     where: {recordId: null},
                     select: {id: true, path: true, originalFilename: true, createdAt: true},
                     orderBy: {createdAt: 'asc'},
                 })
-                // 检查文件是否还存在
-                const uploadsDir = path.join(process.cwd(), 'uploads')
-                return orphans.map((a) => ({
-                    ...a,
-                    fileExists: fs.existsSync(path.join(uploadsDir, path.basename(a.path))),
-                }))
+
+                // 2. 文件系统孤儿：uploads 目录下没有数据库记录的物理文件
+                const allPaths = await prisma.recordAttachment.findMany({select: {path: true}})
+                const dbFilenames = new Set(allPaths.map((a) => path.basename(a.path)))
+                const orphanFiles: Array<{id: string; path: string; originalFilename: string; createdAt: Date; fileExists: boolean}> = []
+                if (fs.existsSync(uploadsDir)) {
+                    for (const filename of fs.readdirSync(uploadsDir)) {
+                        if (!dbFilenames.has(filename)) {
+                            const stat = fs.statSync(path.join(uploadsDir, filename))
+                            if (stat.isFile()) {
+                                orphanFiles.push({
+                                    id: filename,
+                                    path: `/api/uploads/${filename}`,
+                                    originalFilename: filename,
+                                    createdAt: stat.mtime,
+                                    fileExists: true,
+                                })
+                            }
+                        }
+                    }
+                }
+
+                return [
+                    ...dbOrphans.map((a) => ({
+                        ...a,
+                        fileExists: fs.existsSync(path.join(uploadsDir, path.basename(a.path))),
+                    })),
+                    ...orphanFiles,
+                ]
             })
 
-            // 清理孤儿附件（删除文件 + DB 记录）
+            // 清理孤儿附件（删除未关联流水的数据库记录 + 无数据库记录的孤儿文件）
             adminChild.post('/attachments/clean-orphans', {
                 schema: {
-                    description: '清理孤立附件',
+                    description: '清理孤立附件（数据库记录 + 孤儿文件）',
                     tags: ['设置']
                 }
             }, async () => {
-                const orphans = await prisma.recordAttachment.findMany({
-                    where: {recordId: null},
-                    select: {id: true, path: true},
-                })
                 const uploadsDir = path.join(process.cwd(), 'uploads')
                 let deletedFiles = 0
                 let deletedRecords = 0
 
-                for (const att of orphans) {
+                // 1. 清理数据库孤儿（recordId 为 null）的记录和文件
+                const dbOrphans = await prisma.recordAttachment.findMany({
+                    where: {recordId: null},
+                    select: {id: true, path: true},
+                })
+                for (const att of dbOrphans) {
                     const filePath = path.join(uploadsDir, path.basename(att.path))
                     if (fs.existsSync(filePath)) {
                         try {
@@ -270,11 +297,27 @@ export async function settingsRoutes(app: FastifyInstance) {
                         }
                     }
                 }
-                if (orphans.length > 0) {
+                if (dbOrphans.length > 0) {
                     const result = await prisma.recordAttachment.deleteMany({
                         where: {recordId: null},
                     })
                     deletedRecords = result.count
+                }
+
+                // 2. 清理文件系统孤儿（uploads 目录下没有数据库记录的文件）
+                const allPaths = await prisma.recordAttachment.findMany({select: {path: true}})
+                const dbFilenames = new Set(allPaths.map((a) => path.basename(a.path)))
+                if (fs.existsSync(uploadsDir)) {
+                    for (const filename of fs.readdirSync(uploadsDir)) {
+                        if (!dbFilenames.has(filename)) {
+                            try {
+                                fs.unlinkSync(path.join(uploadsDir, filename))
+                                deletedFiles++
+                            } catch {
+                                // 单个文件删除失败不中断整体清理
+                            }
+                        }
+                    }
                 }
 
                 return {deletedFiles, deletedRecords}
