@@ -78,6 +78,13 @@ const JWT_EXPIRE_OPTIONS = [
   { value: '30d', label: '30 天' },
 ]
 
+const AUDIT_RETENTION_OPTIONS = [
+  { value: '7', label: '7 天' },
+  { value: '30', label: '30 天' },
+  { value: '90', label: '90 天' },
+  { value: '180', label: '180 天' },
+]
+
 export function SettingsPage() {
   const { user } = useAuthStore()
   const isAdmin = user?.role === 'ADMIN'
@@ -89,6 +96,7 @@ export function SettingsPage() {
   const [holidayApiUrl, setHolidayApiUrl] = useState('https://timor.tech/api/holiday/year/{year}')
   const [defaultTheme, setDefaultTheme] = useState('system')
   const [jwtExpiresIn, setJwtExpiresIn] = useState('7d')
+  const [auditLogRetentionDays, setAuditLogRetentionDays] = useState('7')
   const [configLoading, setConfigLoading] = useState(true)
   const [configSaving, setConfigSaving] = useState(false)
   const [configError, setConfigError] = useState('')
@@ -184,6 +192,7 @@ export function SettingsPage() {
         if (typeof config.holidayApiUrl === 'string') setHolidayApiUrl(config.holidayApiUrl)
         if (typeof config.defaultTheme === 'string') setDefaultTheme(config.defaultTheme)
         if (typeof config.jwtExpiresIn === 'string' && JWT_EXPIRE_OPTIONS.some(o => o.value === config.jwtExpiresIn)) setJwtExpiresIn(config.jwtExpiresIn)
+        if (typeof config.auditLogRetentionDays === 'string' && AUDIT_RETENTION_OPTIONS.some(o => o.value === config.auditLogRetentionDays)) setAuditLogRetentionDays(config.auditLogRetentionDays)
       })
       .catch(() => setConfigError('加载配置失败'))
       .finally(() => setConfigLoading(false))
@@ -222,7 +231,7 @@ export function SettingsPage() {
     setConfigSaving(true)
     setConfigError('')
     try {
-      await settingsApi.updateConfig({ registrationOpen, defaultCurrency, amountHighlightThreshold, holidayApiUrl, defaultTheme, jwtExpiresIn })
+      await settingsApi.updateConfig({ registrationOpen, defaultCurrency, amountHighlightThreshold, holidayApiUrl, defaultTheme, jwtExpiresIn, auditLogRetentionDays })
       toast.success('配置已保存')
     } catch (e: any) {
       setConfigError(e.message)
@@ -656,6 +665,29 @@ export function SettingsPage() {
                   <SelectContent className="bg-card border-border">
                     {JWT_EXPIRE_OPTIONS.map((opt) => (
                         <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* 分隔 */}
+              <div className="border-t" />
+
+              {/* AI 审计日志保留 */}
+              <div className="flex items-start justify-between gap-8">
+                <div className="flex-1">
+                  <h4 className="text-sm font-medium">AI 审计日志保留</h4>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    超过保留天数的 AI 操作记录将自动删除，查看审计页面时触发清理
+                  </p>
+                </div>
+                <Select value={auditLogRetentionDays} onValueChange={setAuditLogRetentionDays}>
+                  <SelectTrigger className="w-28 bg-background border-border h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-card border-border">
+                    {AUDIT_RETENTION_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

@@ -1059,7 +1059,7 @@ export async function chatRoutes(app: FastifyInstance) {
         entry.result = toolResult
         initialSSEEvents.push({ event: 'tool-result', data: { toolCallId, toolName: entry.toolName, result: toolResult, durationMs: 0, status: 'error' } })
         pendingToolResults.push({ toolCallId, toolName: entry.toolName, result: toolResult })
-        logToolCall({ userId, action: 'reject', toolName: entry.toolName })
+        logToolCall({ userId, sessionId: message.sessionId, action: 'reject', toolName: entry.toolName })
         continue
       }
 

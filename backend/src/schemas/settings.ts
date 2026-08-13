@@ -7,6 +7,7 @@ export const updateConfigSchema = z.object({
   holidayApiUrl: z.string().optional().describe('节假日API地址'),
   defaultTheme: z.string().optional().describe('默认主题'),
   jwtExpiresIn: z.enum(['1d', '7d', '30d']).optional().describe('JWT过期时间'),
+  auditLogRetentionDays: z.enum(['7', '30', '90', '180']).optional().describe('AI审计日志保留天数'),
 })
 
 export const createDictionarySchema = z.object({

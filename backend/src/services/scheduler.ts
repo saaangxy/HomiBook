@@ -1,6 +1,7 @@
 import cron from 'node-cron'
 import { prisma } from '../app.js'
 import { getNextTriggerTime, ensureFixedTag } from './recurring.js'
+import { cleanupExpiredAuditLogs } from './ai/audit.js'
 
 interface CronLike {
   schedule(cronExpression: string, fn: () => void): { stop(): void }
@@ -44,12 +45,13 @@ interface RecurringTxParams {
   loanMonthlyPayment: number | null
 }
 
-let task: { stop(): void } | null = null
+let recurringTask: { stop(): void } | null = null
+let auditCleanupTask: { stop(): void } | null = null
 
 export function startScheduler(client: PrismaLike = prisma, cronLib: CronLike = cron) {
-  if (task) return
+  if (recurringTask) return
 
-  task = cronLib.schedule('* * * * *', async () => {
+  recurringTask = cronLib.schedule('* * * * *', async () => {
     try {
       const now = new Date()
       const due = await client.recurringTransaction.findMany({
@@ -64,12 +66,24 @@ export function startScheduler(client: PrismaLike = prisma, cronLib: CronLike = 
     }
   })
 
+  // 每周日凌晨 3 点清理过期审计日志
+  auditCleanupTask = cronLib.schedule('0 3 * * 0', async () => {
+    try {
+      const deleted = await cleanupExpiredAuditLogs()
+      console.log(`[Scheduler] 审计日志清理完成，删除 ${deleted} 条过期记录`)
+    } catch (e) {
+      console.error('[Scheduler] 审计日志清理失败:', e)
+    }
+  })
+
   console.log('[Scheduler] 固定收支调度器已启动')
 }
 
 export function stopScheduler() {
-  task?.stop()
-  task = null
+  recurringTask?.stop()
+  auditCleanupTask?.stop()
+  recurringTask = null
+  auditCleanupTask = null
 }
 
 export async function generateRecord(rt: RecurringTxParams, client: PrismaLike = prisma) {

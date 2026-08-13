@@ -24,4 +24,51 @@ export const adminApi = {
 
   deleteUser: (id: string) =>
     api.delete<{ success: boolean }>(`/api/admin/users/${id}`),
+
+  getAuditLogs: (query: {
+    page?: number
+    pageSize?: number
+    userId?: string
+    action?: string
+    toolName?: string
+    status?: string
+    sessionId?: string
+    startTime?: string
+    endTime?: string
+  }) => {
+    const params = new URLSearchParams()
+    if (query.page) params.set('page', String(query.page))
+    if (query.pageSize) params.set('pageSize', String(query.pageSize))
+    if (query.userId) params.set('userId', query.userId)
+    if (query.action) params.set('action', query.action)
+    if (query.toolName) params.set('toolName', query.toolName)
+    if (query.status) params.set('status', query.status)
+    if (query.sessionId) params.set('sessionId', query.sessionId)
+    if (query.startTime) params.set('startTime', query.startTime)
+    if (query.endTime) params.set('endTime', query.endTime)
+    const qs = params.toString()
+    return api.get<{ items: AuditLogItem[]; total: number; page: number; pageSize: number }>(
+      `/api/admin/audit-logs${qs ? `?${qs}` : ''}`,
+    )
+  },
+}
+
+export interface AuditLogItem {
+  id: string
+  sessionId: string | null
+  sessionSummary: string | null
+  userId: string
+  userNickname: string | null
+  username: string | null
+  action: string
+  toolName: string | null
+  input: string | null
+  output: string | null
+  modelProvider: string | null
+  modelName: string | null
+  durationMs: number | null
+  status: string
+  errorMessage: string | null
+  ip: string | null
+  createdAt: string
 }

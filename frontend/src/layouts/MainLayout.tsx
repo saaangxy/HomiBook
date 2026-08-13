@@ -31,6 +31,7 @@ import {
   CalendarDays,
   Target,
   Repeat,
+  ShieldCheck,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -44,6 +45,7 @@ const allNavItems = [
   { path: '/recurring', label: '固定收支', icon: Repeat },
   { path: '/books', label: '账本管理', icon: Book },
   { path: '/admin/users', label: '用户管理', icon: Users, adminOnly: true },
+  { path: '/admin/ai-audit', label: 'AI审计', icon: ShieldCheck, adminOnly: true },
   { path: '/settings', label: '设置', icon: Settings },
 ]
 

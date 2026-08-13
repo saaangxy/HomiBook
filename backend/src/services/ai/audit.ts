@@ -66,3 +66,15 @@ export async function logModelCall(params: {
     ip: params.ip,
   })
 }
+
+// 清理过期审计日志，返回删除数量。保留天数从 SystemConfig.auditLogRetentionDays 读取，默认 7 天
+export async function cleanupExpiredAuditLogs(): Promise<number> {
+  const config = await prisma.systemConfig.findUnique({ where: { key: 'auditLogRetentionDays' } })
+  let retentionDays = 7
+  if (config?.value) {
+    try { retentionDays = parseInt(JSON.parse(config.value)) || 7 } catch { /* 用默认值 */ }
+  }
+  const cutoff = new Date(Date.now() - retentionDays * 86400000)
+  const result = await prisma.agentAuditLog.deleteMany({ where: { createdAt: { lt: cutoff } } }).catch(() => null)
+  return result?.count ?? 0
+}

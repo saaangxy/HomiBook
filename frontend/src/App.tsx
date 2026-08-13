@@ -9,6 +9,7 @@ import { HomePage } from './pages/HomePage'
 import { StatsPage } from './pages/StatsPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { UsersPage } from './pages/UsersPage.tsx'
+import { AIAuditPage } from './pages/AIAuditPage'
 import { BooksPage } from './pages/BooksPage'
 import { AccountsPage } from './pages/AccountsPage'
 import { RecordsPage } from './pages/RecordsPage'
@@ -64,6 +65,7 @@ function App() {
               <Route path="recurring" element={<RecurringTransactionsPage />} />
               <Route path="settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
               <Route path="admin/users" element={<AdminRoute><UsersPage /></AdminRoute>} />
+              <Route path="admin/ai-audit" element={<AdminRoute><AIAuditPage /></AdminRoute>} />
             </Route>
           </Routes>
           </BrowserRouter>
