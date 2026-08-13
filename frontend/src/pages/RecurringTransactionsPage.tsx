@@ -29,7 +29,9 @@ import { TagCombobox } from '@/components/TagCombobox'
 import { recurringApi, type RecurringTransaction, type LoanPreview } from '@/api/recurring'
 import { accountApi, type AccountItem } from '@/api/account'
 import { useBookStore } from '@/stores/book'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { Plus, Pencil, Trash2, Power, PowerOff, FileText } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 const TYPE_LABELS: Record<string, string> = { INCOME: '收入', EXPENSE: '支出', TRANSFER: '转账' }
 const TYPE_COLORS: Record<string, string> = {
@@ -49,6 +51,7 @@ function formatMoney(amount: number): string {
 
 export function RecurringTransactionsPage() {
   const { currentBookId } = useBookStore()
+  const isMobile = useIsMobile()
   const [list, setList] = useState<RecurringTransaction[]>([])
   const [accounts, setAccounts] = useState<AccountItem[]>([])
   const [loading, setLoading] = useState(false)
@@ -325,6 +328,55 @@ export function RecurringTransactionsPage() {
         </Card>
       ) : (
         <Card className="rounded-xl overflow-hidden">
+          {isMobile ? (
+            <div className="space-y-2 p-3">
+              {list.map((rt) => (
+                <div key={rt.id} className={cn('p-3 rounded-xl border', !rt.active ? 'opacity-50' : 'border-border hover:bg-accent/60')}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-sm font-medium truncate">{rt.name || '-'}</span>
+                    <Badge className={`text-[10px] ${TYPE_COLORS[rt.type]}`}>{TYPE_LABELS[rt.type]}</Badge>
+                    <span className="text-[10px] text-muted-foreground">{RECURRING_TYPE_LABELS[rt.recurringType]}</span>
+                    <span className="ml-auto text-sm font-bold tabular-nums">
+                      {rt.active ? <span className={rt.type === 'INCOME' ? 'text-[#22c55e]' : rt.type === 'TRANSFER' ? 'text-[#3b82f6]' : 'text-[#ef4444]'}>{formatMoney(rt.amount)}</span> : <span className="text-muted-foreground">{formatMoney(rt.amount)}</span>}
+                    </span>
+                  </div>
+                  <div className="text-xs text-muted-foreground mb-1.5">
+                    <span>{rt.categoryCode || '未分类'}</span>
+                    <span className="mx-1">|</span>
+                    <span className="truncate">
+                      {rt.type === 'TRANSFER' ? `${rt.account?.name || '-'} → ${rt.toAccount?.name || '-'}` : (rt.account?.name || '-')}
+                    </span>
+                  </div>
+                  <div className="text-xs text-muted-foreground/70 mb-1.5">
+                    <span className="font-mono">{rt.cron}</span>
+                    <span className="mx-1">|</span>
+                    <span>{rt.nextGenerateAt ? new Date(rt.nextGenerateAt).toLocaleString('zh-CN') : '-'}</span>
+                  </div>
+                  {rt.recurringType === 'LOAN' && rt.loanTotalAmount && (
+                    <div className="text-xs text-muted-foreground mb-1.5">
+                      总额: {formatMoney(rt.loanTotalAmount)} | 剩余: {formatMoney(rt.loanRemainingAmount || 0)} | {rt.loanTermMonths}期
+                    </div>
+                  )}
+                  <div className="flex items-center gap-0.5 justify-end">
+                    <button onClick={() => handleToggle(rt)} title={rt.active ? '停用' : '启用'} className="p-0.5 rounded hover:bg-accent">
+                      {rt.active ? <Power size={14} className="text-[#22c55e]" /> : <PowerOff size={14} className="text-muted-foreground" />}
+                    </button>
+                    {rt.recurringType === 'LOAN' && (
+                      <Button aria-label="还款计划" variant="ghost" size="icon" className="h-7 w-7" title="还款计划" onClick={() => setPlanTarget(rt)}>
+                        <FileText size={13} />
+                      </Button>
+                    )}
+                    <Button aria-label="编辑" variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(rt)}>
+                      <Pencil size={13} />
+                    </Button>
+                    <Button aria-label="删除" variant="ghost" size="icon" className="h-7 w-7" onClick={() => setDeleteTarget(rt)}>
+                      <Trash2 size={13} />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
           <Table>
             <TableHeader>
               <TableRow>
@@ -339,7 +391,7 @@ export function RecurringTransactionsPage() {
                 <TableHead className="text-xs w-36 text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
-            <TableBody>
+<TableBody>
               {list.map((rt) => (
                 <TableRow key={rt.id} className={!rt.active ? 'opacity-50' : ''}>
                   <TableCell className="text-xs font-medium">{rt.name || '-'}</TableCell>
@@ -394,6 +446,8 @@ export function RecurringTransactionsPage() {
               ))}
             </TableBody>
           </Table>
+          )}
+
         </Card>
       )}
 

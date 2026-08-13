@@ -313,7 +313,7 @@ export function CalendarPage() {
   return (
     <div className="h-full flex flex-col">
       {/* 月汇总卡片 */}
-      <div className="grid grid-cols-4 gap-3 mb-4 shrink-0">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4 shrink-0">
         <Card className="border border-border">
           <CardContent className="p-3 flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-[#22c55e]/10 flex items-center justify-center shrink-0">
@@ -413,7 +413,7 @@ export function CalendarPage() {
             </div>
 
             {/* 筛选行 */}
-            <div className="flex items-center gap-2 mt-3">
+            <div className="flex flex-wrap items-center gap-2 mt-3">
               <Select value={dayFilter} onValueChange={setDayFilter}>
                 <SelectTrigger className="w-24 h-8 text-xs bg-background border-border rounded-lg">
                   <SelectValue placeholder="类型" />

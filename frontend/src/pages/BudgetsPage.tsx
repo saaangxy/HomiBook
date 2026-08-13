@@ -45,6 +45,7 @@ import { TagCombobox } from '@/components/TagCombobox'
 import { BudgetDetailSheet } from '@/components/BudgetDetailSheet'
 import { DatePicker } from '@/components/ui/date-picker'
 import { useBookStore } from '../stores/book'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { budgetApi, type BudgetItem, type BudgetType } from '@/api/budget'
 import { Plus, Copy, Trash2, Pencil, Search, Check, Target, PiggyBank, TrendingUp, Info } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -80,6 +81,7 @@ function UsageBar({ percent, remaining }: { percent: number; remaining: number }
 
 export function BudgetsPage() {
   const currentBookId = useBookStore((s) => s.currentBookId)
+  const isMobile = useIsMobile()
   const [fixedBudgets, setFixedBudgets] = useState<BudgetItem[]>([])
   const [freeBudgets, setFreeBudgets] = useState<BudgetItem[]>([])
   const [loading, setLoading] = useState(false)
@@ -508,6 +510,77 @@ export function BudgetsPage() {
     </Table>
   )
 
+  const renderCards = (items: BudgetItem[], showMonth = true) => (
+    <div className="space-y-2">
+      {items.map((b) => {
+        const actual = b.actualAmount ?? 0
+        const percent = b.amount > 0 ? (actual / b.amount) * 100 : 0
+        const remaining = b.amount - actual
+        return (
+          <div key={b.id} className="p-3 rounded-xl border border-border hover:bg-accent/60">
+            <div className="flex items-center gap-2 mb-2">
+              <button
+                className={cn(
+                  'flex h-4 w-4 items-center justify-center rounded border border-border shrink-0',
+                  selectedIds.has(b.id) && 'bg-primary border-primary',
+                )}
+                onClick={() => toggleSelect(b.id)}
+              >
+                {selectedIds.has(b.id) && <Check className="h-3 w-3 text-white" />}
+              </button>
+              <span className="font-medium text-sm truncate">{b.name}</span>
+              {showMonth && <span className="text-xs text-muted-foreground">{b.month}月</span>}
+              <BudgetTypeBadge type={b.type as BudgetType} />
+              <span className="ml-auto text-sm font-bold tabular-nums">¥{b.amount.toFixed(2)}</span>
+            </div>
+            {tabView !== 'FIXED' && (
+              <div className="text-xs text-muted-foreground mb-2">
+                {b.type === 'FIXED'
+                  ? b.categoryCode || '-'
+                  : (
+                    <div className="space-y-1">
+                      {b.tags && b.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {b.tags.map((t, i) => (
+                            <Badge key={i} variant="secondary" className="text-[10px]">{t}</Badge>
+                          ))}
+                        </div>
+                      )}
+                      {(b.startDate || b.endDate) && (
+                        <div className="text-[10px]">
+                          {b.startDate ? b.startDate.slice(0, 10) : '...'} ~ {b.endDate ? b.endDate.slice(0, 10) : '...'}
+                        </div>
+                      )}
+                    </div>
+                  )}
+              </div>
+            )}
+            <div className="mb-2">
+              <UsageBar percent={percent} remaining={remaining} />
+            </div>
+            <div className="flex items-center justify-end gap-1">
+              <button className="p-1 hover:bg-muted rounded" onClick={() => setDetailBudget(b)} title="查看明细">
+                <Info size={14} />
+              </button>
+              <button className="p-1 hover:bg-muted rounded" onClick={() => openEdit(b)}>
+                <Pencil size={14} />
+              </button>
+              <button className="p-1 hover:bg-muted rounded text-[#ef4444]" onClick={() => setDeleteTarget(b)}>
+                <Trash2 size={14} />
+              </button>
+            </div>
+          </div>
+        )
+      })}
+      {items.length === 0 && (
+        <div className="text-center text-muted-foreground py-8">暂无预算数据</div>
+      )}
+    </div>
+  )
+
+  const renderList = (items: BudgetItem[], showMonth = true) =>
+    isMobile ? renderCards(items, showMonth) : renderTable(items, showMonth)
+
   return (
     <div className="space-y-6 p-6">
       <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -655,7 +728,7 @@ export function BudgetsPage() {
                   </SelectContent>
                 </Select>
               </div>
-              {renderTable(filteredFixedBudgets)}
+              {renderList(filteredFixedBudgets)}
             </div>
           )}
           {tabView !== 'FIXED' && (
@@ -677,7 +750,7 @@ export function BudgetsPage() {
                   compact
                 />
               </div>
-              {renderTable(filteredFreeBudgets, false)}
+              {renderList(filteredFreeBudgets, false)}
             </div>
           )}
         </div>

@@ -6,6 +6,8 @@ import { settingsApi } from '../api/settings'
 import { useAuthStore } from '../stores/auth'
 import { PasswordStrength } from '../components/PasswordStrength'
 import { ThemeSelector } from '../components/ThemeSelector'
+import { useIsMobile } from '../hooks/use-mobile'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 
 const styles = {
   container: {
@@ -84,7 +86,8 @@ const styles = {
   },
   card: {
     position: 'relative' as const,
-    width: '900px',
+    width: 'min(900px, 92vw)',
+    maxWidth: '100%',
     height: '560px',
     borderRadius: '28px',
     overflow: 'hidden',
@@ -275,6 +278,7 @@ export function LoginPage() {
   const [themePopover, setThemePopover] = useState(false)
   const navigate = useNavigate()
   const { setAuth } = useAuthStore()
+  const isMobile = useIsMobile()
 
   useEffect(() => {
     settingsApi.getPublicConfig()
@@ -325,6 +329,177 @@ export function LoginPage() {
     }
   }
 
+  const loginForm = (
+    <form onSubmit={handleLogin} style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      <h2 style={styles.formTitle}>{isMobile ? '登录' : '欢迎回来'}</h2>
+      <p style={styles.formSubtitle}>登录以继续管理你的账本</p>
+      <input
+        type="text"
+        placeholder="账号或邮箱"
+        value={loginAccount}
+        onChange={(e) => setLoginAccount(e.target.value)}
+        style={getInputStyle('loginEmail')}
+        onFocus={() => setFocusedInput('loginEmail')}
+        onBlur={() => setFocusedInput(null)}
+        required
+      />
+      <div style={{ position: 'relative', width: '100%' }}>
+        <input
+          type={showLoginPass ? 'text' : 'password'}
+          placeholder="密码"
+          value={loginPassword}
+          onChange={(e) => setLoginPassword(e.target.value)}
+          style={{ ...getInputStyle('loginPass'), paddingRight: '44px' }}
+          onFocus={() => setFocusedInput('loginPass')}
+          onBlur={() => setFocusedInput(null)}
+          required
+        />
+        <button
+          type="button"
+          onClick={() => setShowLoginPass(!showLoginPass)}
+          style={{
+            position: 'absolute',
+            right: '14px',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: 'hsl(var(--muted-foreground))',
+            padding: 0,
+            display: 'flex',
+            alignItems: 'center',
+          }}
+        >
+          {showLoginPass ? <EyeOff size={18} /> : <Eye size={18} />}
+        </button>
+      </div>
+      {error && (
+        <div style={styles.errorText}>
+          <AlertCircle size={14} />
+          <span>{error}</span>
+        </div>
+      )}
+      <a
+        href="#"
+        style={{
+          ...styles.forgetPassword,
+          ...(hoverStates.forgetPass ? styles.forgetPasswordHover : {}),
+        }}
+        onMouseEnter={() => setHoverStates({ ...hoverStates, forgetPass: true })}
+        onMouseLeave={() => setHoverStates({ ...hoverStates, forgetPass: false })}
+      >
+        忘记密码?
+      </a>
+      <div style={styles.buttonWrapper}>
+        <button
+          type="submit"
+          style={{
+            ...styles.button,
+            ...(hoverStates.signIn ? styles.buttonHover : {}),
+            opacity: isLoading ? 0.7 : 1,
+          }}
+          onMouseEnter={() => setHoverStates({ ...hoverStates, signIn: true })}
+          onMouseLeave={() => setHoverStates({ ...hoverStates, signIn: false })}
+          disabled={isLoading}
+        >
+          {isLoading ? '登录中...' : '登录'}
+        </button>
+      </div>
+    </form>
+  )
+
+  const registerForm = (
+    <form onSubmit={handleRegister} style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      <h2 style={styles.formTitle}>{isMobile ? '注册' : '创建账号'}</h2>
+      <p style={styles.formSubtitle}>开始管理你的家庭财务</p>
+      <input
+        type="text"
+        placeholder="账号"
+        value={registerUsername}
+        onChange={(e) => setRegisterUsername(e.target.value)}
+        style={getInputStyle('regUsername')}
+        onFocus={() => setFocusedInput('regUsername')}
+        onBlur={() => setFocusedInput(null)}
+        required
+      />
+      <input
+        type="text"
+        placeholder="昵称（可选）"
+        value={registerNickname}
+        onChange={(e) => setRegisterNickname(e.target.value)}
+        style={getInputStyle('regNickname')}
+        onFocus={() => setFocusedInput('regNickname')}
+        onBlur={() => setFocusedInput(null)}
+      />
+      <input
+        type="email"
+        placeholder="邮箱地址"
+        value={registerEmail}
+        onChange={(e) => setRegisterEmail(e.target.value)}
+        style={getInputStyle('regEmail')}
+        onFocus={() => setFocusedInput('regEmail')}
+        onBlur={() => setFocusedInput(null)}
+        required
+      />
+      <div style={{ position: 'relative', width: '100%' }}>
+        <input
+          type={showRegPass ? 'text' : 'password'}
+          placeholder="密码"
+          value={registerPassword}
+          onChange={(e) => setRegisterPassword(e.target.value)}
+          style={{ ...getInputStyle('regPass'), paddingRight: '44px' }}
+          onFocus={() => setFocusedInput('regPass')}
+          onBlur={() => setFocusedInput(null)}
+          required
+        />
+        <button
+          type="button"
+          onClick={() => setShowRegPass(!showRegPass)}
+          style={{
+            position: 'absolute',
+            right: '14px',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: 'hsl(var(--muted-foreground))',
+            padding: 0,
+            display: 'flex',
+            alignItems: 'center',
+          }}
+        >
+          {showRegPass ? <EyeOff size={18} /> : <Eye size={18} />}
+        </button>
+      </div>
+      {error && (
+        <div style={styles.errorText}>
+          <AlertCircle size={14} />
+          <span>{error}</span>
+        </div>
+      )}
+      <div style={{ width: '100%' }}>
+        <PasswordStrength password={registerPassword} />
+      </div>
+      <div style={styles.buttonWrapper}>
+        <button
+          type="submit"
+          style={{
+            ...styles.button,
+            ...(hoverStates.signUp ? styles.buttonHover : {}),
+            opacity: isLoading ? 0.7 : 1,
+          }}
+          onMouseEnter={() => setHoverStates({ ...hoverStates, signUp: true })}
+          onMouseLeave={() => setHoverStates({ ...hoverStates, signUp: false })}
+          disabled={isLoading}
+        >
+          {isLoading ? '创建中...' : '立即创建'}
+        </button>
+      </div>
+    </form>
+  )
+
   return (
     <div style={styles.container}>
       {/* 背景装饰 */}
@@ -362,13 +537,46 @@ export function LoginPage() {
         <h2 style={styles.headerTitle}>Homibook</h2>
       </div>
 
-      {/* 注册关闭时：仅显示居中登录表单 */}
-      {!registrationOpen ? (
+      {/* 移动端：竖排 Tab 卡 */}
+      {isMobile ? (
         <div
           className="login-card"
           style={{
             position: 'relative' as const,
-            width: '420px',
+            width: 'min(100%, 420px)',
+            maxWidth: '100%',
+            borderRadius: '28px',
+            overflow: 'hidden',
+            boxShadow: '0 25px 50px -12px hsl(var(--foreground) / 0.15)',
+            border: '1px solid hsl(var(--border))',
+            backgroundColor: 'hsl(var(--card))',
+            padding: '32px 20px',
+            maxHeight: 'calc(100vh - 140px)',
+            overflowY: 'auto',
+          }}
+        >
+          {registrationOpen ? (
+            <Tabs
+              value={isActive ? 'register' : 'login'}
+              onValueChange={(v) => setIsActive(v === 'register')}
+              className="w-full"
+            >
+              <TabsList className="grid w-full grid-cols-2 mb-6">
+                <TabsTrigger value="login">登录</TabsTrigger>
+                <TabsTrigger value="register">注册</TabsTrigger>
+              </TabsList>
+              <TabsContent value="login">{loginForm}</TabsContent>
+              <TabsContent value="register">{registerForm}</TabsContent>
+            </Tabs>
+          ) : loginForm}
+        </div>
+      ) : !registrationOpen ? (
+        <div
+          className="login-card"
+          style={{
+            position: 'relative' as const,
+            width: 'min(420px, 92vw)',
+            maxWidth: '100%',
             borderRadius: '28px',
             overflow: 'hidden',
             boxShadow: '0 25px 50px -12px hsl(var(--foreground) / 0.15)',
@@ -377,83 +585,7 @@ export function LoginPage() {
             padding: '48px 40px',
           }}
         >
-          <form onSubmit={handleLogin} style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <h2 style={styles.formTitle}>登录</h2>
-            <p style={styles.formSubtitle}>登录以继续管理你的账本</p>
-            <input
-              type="text"
-              placeholder="账号或邮箱"
-              value={loginAccount}
-              onChange={(e) => setLoginAccount(e.target.value)}
-              style={getInputStyle('loginEmail')}
-              onFocus={() => setFocusedInput('loginEmail')}
-              onBlur={() => setFocusedInput(null)}
-              required
-            />
-            <div style={{ position: 'relative', width: '100%' }}>
-              <input
-                type={showLoginPass ? 'text' : 'password'}
-                placeholder="密码"
-                value={loginPassword}
-                onChange={(e) => setLoginPassword(e.target.value)}
-                style={{ ...getInputStyle('loginPass'), paddingRight: '44px' }}
-                onFocus={() => setFocusedInput('loginPass')}
-                onBlur={() => setFocusedInput(null)}
-                required
-              />
-              <button
-                type="button"
-                onClick={() => setShowLoginPass(!showLoginPass)}
-                style={{
-                  position: 'absolute',
-                  right: '14px',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  color: 'hsl(var(--muted-foreground))',
-                  padding: 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                }}
-              >
-                {showLoginPass ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
-            </div>
-            {error && (
-              <div style={styles.errorText}>
-                <AlertCircle size={14} />
-                <span>{error}</span>
-              </div>
-            )}
-            <a
-              href="#"
-              style={{
-                ...styles.forgetPassword,
-                ...(hoverStates.forgetPass ? styles.forgetPasswordHover : {}),
-              }}
-              onMouseEnter={() => setHoverStates({ ...hoverStates, forgetPass: true })}
-              onMouseLeave={() => setHoverStates({ ...hoverStates, forgetPass: false })}
-            >
-              忘记密码?
-            </a>
-            <div style={styles.buttonWrapper}>
-              <button
-                type="submit"
-                style={{
-                  ...styles.button,
-                  ...(hoverStates.signIn ? styles.buttonHover : {}),
-                  opacity: isLoading ? 0.7 : 1,
-                }}
-                onMouseEnter={() => setHoverStates({ ...hoverStates, signIn: true })}
-                onMouseLeave={() => setHoverStates({ ...hoverStates, signIn: false })}
-                disabled={isLoading}
-              >
-                {isLoading ? '登录中...' : '登录'}
-              </button>
-            </div>
-          </form>
+          {loginForm}
         </div>
       ) : (
       <div style={styles.card} className="login-card">
@@ -465,83 +597,7 @@ export function LoginPage() {
             zIndex: isActive ? 2 : 5,
           }}
         >
-          <form onSubmit={handleLogin} style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <h2 style={styles.formTitle}>欢迎回来</h2>
-            <p style={styles.formSubtitle}>登录以继续管理你的账本</p>
-            <input
-              type="text"
-              placeholder="账号或邮箱"
-              value={loginAccount}
-              onChange={(e) => setLoginAccount(e.target.value)}
-              style={getInputStyle('loginEmail')}
-              onFocus={() => setFocusedInput('loginEmail')}
-              onBlur={() => setFocusedInput(null)}
-              required
-            />
-            <div style={{ position: 'relative', width: '100%' }}>
-              <input
-                type={showLoginPass ? 'text' : 'password'}
-                placeholder="密码"
-                value={loginPassword}
-                onChange={(e) => setLoginPassword(e.target.value)}
-                style={{ ...getInputStyle('loginPass'), paddingRight: '44px' }}
-                onFocus={() => setFocusedInput('loginPass')}
-                onBlur={() => setFocusedInput(null)}
-                required
-              />
-              <button
-                type="button"
-                onClick={() => setShowLoginPass(!showLoginPass)}
-                style={{
-                  position: 'absolute',
-                  right: '14px',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  color: 'hsl(var(--muted-foreground))',
-                  padding: 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                }}
-              >
-                {showLoginPass ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
-            </div>
-            {error && (
-              <div style={styles.errorText}>
-                <AlertCircle size={14} />
-                <span>{error}</span>
-              </div>
-            )}
-            <a
-              href="#"
-              style={{
-                ...styles.forgetPassword,
-                ...(hoverStates.forgetPass ? styles.forgetPasswordHover : {}),
-              }}
-              onMouseEnter={() => setHoverStates({ ...hoverStates, forgetPass: true })}
-              onMouseLeave={() => setHoverStates({ ...hoverStates, forgetPass: false })}
-            >
-              忘记密码?
-            </a>
-            <div style={styles.buttonWrapper}>
-              <button
-                type="submit"
-                style={{
-                  ...styles.button,
-                  ...(hoverStates.signIn ? styles.buttonHover : {}),
-                  opacity: isLoading ? 0.7 : 1,
-                }}
-                onMouseEnter={() => setHoverStates({ ...hoverStates, signIn: true })}
-                onMouseLeave={() => setHoverStates({ ...hoverStates, signIn: false })}
-                disabled={isLoading}
-              >
-                {isLoading ? '登录中...' : '登录'}
-              </button>
-            </div>
-          </form>
+          {loginForm}
         </div>
 
         {/* 注册表单 */}
@@ -551,94 +607,7 @@ export function LoginPage() {
             ...styles.signInContainer,
           }}
         >
-          <form onSubmit={handleRegister} style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <h2 style={styles.formTitle}>创建账号</h2>
-            <p style={styles.formSubtitle}>开始管理你的家庭财务</p>
-            <input
-              type="text"
-              placeholder="账号"
-              value={registerUsername}
-              onChange={(e) => setRegisterUsername(e.target.value)}
-              style={getInputStyle('regUsername')}
-              onFocus={() => setFocusedInput('regUsername')}
-              onBlur={() => setFocusedInput(null)}
-              required
-            />
-            <input
-              type="text"
-              placeholder="昵称（可选）"
-              value={registerNickname}
-              onChange={(e) => setRegisterNickname(e.target.value)}
-              style={getInputStyle('regNickname')}
-              onFocus={() => setFocusedInput('regNickname')}
-              onBlur={() => setFocusedInput(null)}
-            />
-            <input
-              type="email"
-              placeholder="邮箱地址"
-              value={registerEmail}
-              onChange={(e) => setRegisterEmail(e.target.value)}
-              style={getInputStyle('regEmail')}
-              onFocus={() => setFocusedInput('regEmail')}
-              onBlur={() => setFocusedInput(null)}
-              required
-            />
-            <div style={{ position: 'relative', width: '100%' }}>
-              <input
-                type={showRegPass ? 'text' : 'password'}
-                placeholder="密码"
-                value={registerPassword}
-                onChange={(e) => setRegisterPassword(e.target.value)}
-                style={{ ...getInputStyle('regPass'), paddingRight: '44px' }}
-                onFocus={() => setFocusedInput('regPass')}
-                onBlur={() => setFocusedInput(null)}
-                required
-              />
-              <button
-                type="button"
-                onClick={() => setShowRegPass(!showRegPass)}
-                style={{
-                  position: 'absolute',
-                  right: '14px',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  color: 'hsl(var(--muted-foreground))',
-                  padding: 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                }}
-              >
-                {showRegPass ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
-            </div>
-            {error && (
-              <div style={styles.errorText}>
-                <AlertCircle size={14} />
-                <span>{error}</span>
-              </div>
-            )}
-            <div style={{ width: '100%' }}>
-              <PasswordStrength password={registerPassword} />
-            </div>
-            <div style={styles.buttonWrapper}>
-              <button
-                type="submit"
-                style={{
-                  ...styles.button,
-                  ...(hoverStates.signUp ? styles.buttonHover : {}),
-                  opacity: isLoading ? 0.7 : 1,
-                }}
-                onMouseEnter={() => setHoverStates({ ...hoverStates, signUp: true })}
-                onMouseLeave={() => setHoverStates({ ...hoverStates, signUp: false })}
-                disabled={isLoading}
-              >
-                {isLoading ? '创建中...' : '立即创建'}
-              </button>
-            </div>
-          </form>
+          {registerForm}
         </div>
 
         {/* Overlay 滑动面板 */}

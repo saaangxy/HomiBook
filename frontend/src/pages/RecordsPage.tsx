@@ -57,6 +57,15 @@ import { settingsApi, type DictItem } from '@/api/settings'
 import { useBookStore } from '../stores/book'
 import { ImportDialog } from '@/components/ImportDialog'
 import { DedupDialog } from '@/components/DedupDialog'
+import { RecordRow } from '@/components/records/RecordRow'
+import { useIsMobile } from '@/hooks/use-mobile'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { MoreHorizontal } from 'lucide-react'
 import { importExportApi } from '@/api/import-export'
 import {
   Plus, ArrowUpRight, ArrowDownRight, ArrowLeftRight,
@@ -64,11 +73,6 @@ import {
   Upload, Download, Paperclip, Save, CopyMinus,
 } from 'lucide-react'
 
-const TYPE_COLORS: Record<RecordType, string> = {
-  INCOME: 'text-[#22c55e] bg-[#22c55e]/10',
-  EXPENSE: 'text-[#ef4444] bg-[#ef4444]/10',
-  TRANSFER: 'text-[#3b82f6] bg-[#3b82f6]/10',
-}
 const TYPE_LABELS: Record<RecordType, string> = {
   INCOME: '收入',
   EXPENSE: '支出',
@@ -135,6 +139,7 @@ function filterValueLabel(key: keyof FilterState, value: string[] | string, acco
 
 export function RecordsPage() {
   const currentBookId = useBookStore((s) => s.currentBookId)
+  const isMobile = useIsMobile()
 
   // 列表数据
   const [records, setRecords] = useState<RecordItem[]>([])
@@ -611,31 +616,6 @@ export function RecordsPage() {
   }
 
   // 编辑模式辅助函数
-  const getEditValue = (record: RecordItem, field: string): string => {
-    const changes = editChanges.get(record.id)
-    if (changes && field in changes) return changes[field]
-    switch (field) {
-      case 'date': return dayjs(record.date).format('YYYY-MM-DD')
-      case 'amount': return String(record.amount)
-      case 'categoryCode': return record.categoryCode || ''
-      case 'payer': return record.payer || ''
-      case 'remark': return record.remark || ''
-      case 'type': return record.type
-      case 'accountId': return record.accountId
-      case 'fromAccountId': return record.fromAccountId || ''
-      case 'toAccountId': return record.toAccountId || ''
-      default: return ''
-    }
-  }
-
-  const getEditTags = (record: RecordItem): string[] => {
-    const changes = editChanges.get(record.id)
-    if (changes && 'tags' in changes) {
-      try { return JSON.parse(changes.tags) } catch { return [] }
-    }
-    return record.tags || []
-  }
-
   const handleEditChange = (id: string, field: string, value: string) => {
     setEditChanges((prev) => {
       const next = new Map(prev)
@@ -773,78 +753,137 @@ export function RecordsPage() {
           </div>
           {/* 右侧：操作按钮 */}
           <div className="flex items-center gap-2 shrink-0">
-            <Button
-              onClick={openCreate}
-              className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg h-8 text-xs"
-            >
-              <Plus size={14} /> 记一笔
-            </Button>
-            {editMode ? (
+            {isMobile ? (
               <>
                 <Button
-                  onClick={handleSaveEdits}
-                  disabled={editChanges.size === 0 || savingEdits}
+                  onClick={openCreate}
                   className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg h-8 text-xs"
                 >
-                  <Save size={14} /> {savingEdits ? '保存中...' : '保存修改'}
-                  {editChanges.size > 0 && (
-                    <span className="ml-1 bg-white/20 text-[10px] rounded-full px-1.5">{editChanges.size}</span>
+                  <Plus size={14} /> 记一笔
+                </Button>
+                <Button variant="outline" size="icon" className="h-8 w-8 relative" onClick={openDrawer}>
+                  <Filter size={16} />
+                  {activeFilterCount > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-[10px] rounded-full w-4 h-4 flex items-center justify-center">
+                      {activeFilterCount}
+                    </span>
                   )}
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="icon" className="h-8 w-8">
+                      <MoreHorizontal size={16} />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {editMode ? (
+                      <>
+                        <DropdownMenuItem onClick={handleSaveEdits} disabled={editChanges.size === 0 || savingEdits}>
+                          <Save size={14} /> {savingEdits ? '保存中...' : '保存修改'}
+                          {editChanges.size > 0 && <span className="ml-1 text-xs">({editChanges.size})</span>}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={handleCancelEdits} disabled={savingEdits}>
+                          放弃修改
+                        </DropdownMenuItem>
+                      </>
+                    ) : (
+                      <DropdownMenuItem onClick={() => setEditMode(true)}>
+                        <Pencil size={14} /> 自由编辑
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem onClick={() => setImportOpen(true)}>
+                      <Upload size={14} /> 导入
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleExport}>
+                      <Download size={14} /> 导出
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setDedupOpen(true)}>
+                      <CopyMinus size={14} /> 去重
+                    </DropdownMenuItem>
+                    {activeFilterCount > 0 && (
+                      <DropdownMenuItem onClick={resetFilters}>
+                        <X size={14} /> 重置筛选
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </>
+            ) : (
+              <>
+                <Button
+                  onClick={openCreate}
+                  className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg h-8 text-xs"
+                >
+                  <Plus size={14} /> 记一笔
+                </Button>
+                {editMode ? (
+                  <>
+                    <Button
+                      onClick={handleSaveEdits}
+                      disabled={editChanges.size === 0 || savingEdits}
+                      className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg h-8 text-xs"
+                    >
+                      <Save size={14} /> {savingEdits ? '保存中...' : '保存修改'}
+                      {editChanges.size > 0 && (
+                        <span className="ml-1 bg-white/20 text-[10px] rounded-full px-1.5">{editChanges.size}</span>
+                      )}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={handleCancelEdits}
+                      disabled={savingEdits}
+                      className="h-8 text-xs rounded-lg"
+                    >
+                      放弃修改
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    variant="outline"
+                    onClick={() => setEditMode(true)}
+                    className="h-8 text-xs rounded-lg"
+                  >
+                    <Pencil size={14} /> 自由编辑
+                  </Button>
+                )}
+                <Button variant="outline" onClick={() => setImportOpen(true)} className="h-8 text-xs rounded-lg">
+                  <Upload size={14} /> 导入
+                </Button>
+                <Button variant="outline" onClick={handleExport} className="h-8 text-xs rounded-lg">
+                  <Download size={14} /> 导出
+                </Button>
+                <Button variant="outline" onClick={() => setDedupOpen(true)} className="h-8 text-xs rounded-lg">
+                  <CopyMinus size={14} /> 去重
                 </Button>
                 <Button
                   variant="outline"
-                  onClick={handleCancelEdits}
-                  disabled={savingEdits}
+                  onClick={openDrawer}
                   className="h-8 text-xs rounded-lg"
                 >
-                  放弃修改
+                  <Filter size={14} /> 筛选
+                  {activeFilterCount > 0 && (
+                    <span className="ml-1 bg-primary text-primary-foreground text-[10px] rounded-full w-4 h-4 flex items-center justify-center">
+                      {activeFilterCount}
+                    </span>
+                  )}
                 </Button>
+                {activeFilterCount > 0 && (
+                  <Button
+                    variant="ghost"
+                    onClick={resetFilters}
+                    className="h-8 text-xs text-muted-foreground"
+                  >
+                    重置
+                  </Button>
+                )}
               </>
-            ) : (
-              <Button
-                variant="outline"
-                onClick={() => setEditMode(true)}
-                className="h-8 text-xs rounded-lg"
-              >
-                <Pencil size={14} /> 自由编辑
-              </Button>
-            )}
-            <Button variant="outline" onClick={() => setImportOpen(true)} className="h-8 text-xs rounded-lg">
-              <Upload size={14} /> 导入
-            </Button>
-            <Button variant="outline" onClick={handleExport} className="h-8 text-xs rounded-lg">
-              <Download size={14} /> 导出
-            </Button>
-            <Button variant="outline" onClick={() => setDedupOpen(true)} className="h-8 text-xs rounded-lg">
-              <CopyMinus size={14} /> 去重
-            </Button>
-            <Button
-              variant="outline"
-              onClick={openDrawer}
-              className="h-8 text-xs rounded-lg"
-            >
-              <Filter size={14} /> 筛选
-              {activeFilterCount > 0 && (
-                <span className="ml-1 bg-primary text-primary-foreground text-[10px] rounded-full w-4 h-4 flex items-center justify-center">
-                  {activeFilterCount}
-                </span>
-              )}
-            </Button>
-            {activeFilterCount > 0 && (
-              <Button
-                variant="ghost"
-                onClick={resetFilters}
-                className="h-8 text-xs text-muted-foreground"
-              >
-                重置
-              </Button>
             )}
           </div>
         </div>
 
         {/* 批量操作栏 */}
         {!editMode && selectedIds.size > 0 && (
-          <div className="flex items-center gap-3 px-4 py-2 bg-muted/50 border-b">
+          <div className="flex flex-wrap items-center gap-3 px-4 py-2 bg-muted/50 border-b">
             <span className="text-sm">已选择 {selectedIds.size} 条</span>
             <Button size="sm" variant="outline" onClick={() => setBatchOpen(true)} className="text-xs h-7">
               批量更新
@@ -869,6 +908,30 @@ export function RecordsPage() {
           </CardContent>
         ) : (
           <>
+            {isMobile ? (
+              <div className="space-y-2">
+                {records.map((record) => (
+                  <RecordRow
+                    key={record.id}
+                    variant="card"
+                    record={record}
+                    editMode={editMode}
+                    editChanges={editChanges}
+                    selectedIds={selectedIds}
+                    accounts={accounts}
+                    allCategories={allCategories}
+                    bookMembers={bookMembers}
+                    currentBookId={currentBookId || ''}
+                    onToggleSelect={toggleSelect}
+                    onEditChange={handleEditChange}
+                    onOpenEdit={openEdit}
+                    onClone={handleClone}
+                    onDelete={setDeleteTarget}
+                    onViewAttachments={setViewingAttachments}
+                  />
+                ))}
+              </div>
+            ) : (
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
@@ -895,262 +958,32 @@ export function RecordsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {records.map((record) => {
-                  const isChanged = editChanges.has(record.id)
-                  const effectiveType = (editChanges.get(record.id)?.type || record.type) as RecordType
-                  const catGroup = getCategoryGroup(effectiveType)
-                  const rowCategories = allCategories.filter((c) => c.group === catGroup)
-                  return (
-                  <TableRow key={record.id} className={isChanged ? 'shadow-[inset_3px_0_0_hsl(var(--primary))] hover:bg-accent/50' : 'hover:bg-accent/50'}>
-                    {!editMode && (
-                      <TableCell className="py-2.5">
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.has(record.id)}
-                          onChange={() => toggleSelect(record.id)}
-                          className="rounded"
-                        />
-                      </TableCell>
-                    )}
-                    {/* 日期 */}
-                    <TableCell className="py-2.5">
-                      <div className="flex items-center gap-1.5">
-                        {editMode && isChanged && (
-                          <span className="w-2 h-2 rounded-full bg-primary shrink-0" title="已修改" />
-                        )}
-                        {editMode ? (
-                          <DatePicker
-                            value={getEditValue(record, 'date')}
-                            onChange={(v) => v && handleEditChange(record.id, 'date', v)}
-                            className="h-8 px-2 flex-1 min-w-0"
-                            compact
-                          />
-                        ) : (
-                          <span className="text-xs">{new Date(record.date).toLocaleDateString('zh-CN')}</span>
-                        )}
-                      </div>
-                    </TableCell>
-                    {/* 类型 */}
-                    <TableCell className="py-2.5">
-                      {editMode ? (
-                        <Select value={getEditValue(record, 'type')} onValueChange={(v) => handleEditChange(record.id, 'type', v)}>
-                          <SelectTrigger className="h-7 text-xs w-full">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {(['INCOME', 'EXPENSE', 'TRANSFER'] as RecordType[]).map((t) => (
-                              <SelectItem key={t} value={t}>{TYPE_LABELS[t]}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <Badge className={`text-[10px] ${TYPE_COLORS[record.type]}`}>
-                          {TYPE_LABELS[record.type]}
-                        </Badge>
-                      )}
-                    </TableCell>
-                    {/* 账户 */}
-                    <TableCell className="text-xs py-2.5">
-                      {editMode ? (
-                        effectiveType === 'TRANSFER' ? (
-                          <div className="flex items-center gap-1">
-                            <Select value={getEditValue(record, 'fromAccountId')} onValueChange={(v) => handleEditChange(record.id, 'fromAccountId', v)}>
-                              <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
-                                <SelectValue placeholder="转出" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
-                              </SelectContent>
-                            </Select>
-                            <span className="text-[10px] text-muted-foreground shrink-0">→</span>
-                            <Select value={getEditValue(record, 'toAccountId')} onValueChange={(v) => handleEditChange(record.id, 'toAccountId', v)}>
-                              <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
-                                <SelectValue placeholder="转入" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        ) : (
-                          <Select value={getEditValue(record, 'accountId')} onValueChange={(v) => handleEditChange(record.id, 'accountId', v)}>
-                            <SelectTrigger className="h-7 text-xs w-full">
-                              <SelectValue placeholder="账户" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
-                            </SelectContent>
-                          </Select>
-                        )
-                      ) : (
-                        record.type === 'TRANSFER' && record.fromAccount ? (
-                          <span>
-                            <span className="text-[#ef4444]">{record.fromAccount.name}</span>
-                            {' → '}
-                            <span className="text-[#22c55e]">{record.toAccount?.name}</span>
-                          </span>
-                        ) : (
-                          <span>{record.account.name}</span>
-                        )
-                      )}
-                    </TableCell>
-                    {/* 分类 */}
-                    <TableCell className="text-xs py-2.5">
-                      {editMode ? (
-                        <Select value={getEditValue(record, 'categoryCode')} onValueChange={(v) => handleEditChange(record.id, 'categoryCode', v === '__clear__' ? '' : v)}>
-                          <SelectTrigger className="h-7 text-xs w-full">
-                            <SelectValue placeholder="分类" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__clear__">无</SelectItem>
-                            {rowCategories.map((c) => (
-                              <SelectItem key={c.code} value={c.code}>{c.label}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <span className="text-muted-foreground">{record.categoryCode || '-'}</span>
-                      )}
-                    </TableCell>
-                    {/* 标签 */}
-                    <TableCell className="text-xs py-2.5">
-                      {editMode ? (
-                        <TagCombobox
-                          value={getEditTags(record)}
-                          onChange={(tags) => handleEditChange(record.id, 'tags', JSON.stringify(tags))}
-                          bookId={currentBookId || ''}
-                          placeholder="标签..."
-                          compact
-                        />
-                      ) : (
-                        record.tags?.length > 0 ? (
-                          <div className="flex flex-wrap gap-0.5">
-                            {record.tags.map((tag) => (
-                              <Badge key={tag} variant="secondary" className="text-[10px] py-0 px-1">{tag}</Badge>
-                            ))}
-                          </div>
-                        ) : <span className="text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-                    {/* 归属人 */}
-                    <TableCell className="text-xs py-2.5">
-                      {editMode ? (
-                        <Select value={getEditValue(record, 'ownerId')} onValueChange={(v) => handleEditChange(record.id, 'ownerId', v)}>
-                          <SelectTrigger className="h-7 text-xs w-full">
-                            <SelectValue placeholder="本人" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__self__">本人（默认）</SelectItem>
-                            {bookMembers.map(m => (
-                              <SelectItem key={m.userId} value={m.userId}>
-                                {m.user.nickname || m.user.email || m.userId}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <span className="text-muted-foreground">{record.ownerName || '-'}</span>
-                      )}
-                    </TableCell>
-                    {/* 交易方 */}
-                    <TableCell className="text-xs py-2.5">
-                      {editMode ? (
-                        <Input
-                          aria-label="交易方"
-                          value={getEditValue(record, 'payer')}
-                          onChange={(e) => handleEditChange(record.id, 'payer', e.target.value)}
-                          className="h-7 text-xs w-full"
-                          placeholder="-"
-                        />
-                      ) : (
-                        <span className="text-muted-foreground">{record.payer || '-'}</span>
-                      )}
-                    </TableCell>
-                    {/* 金额 */}
-                    <TableCell className="text-sm font-bold tabular-nums py-2.5 text-right">
-                      {editMode ? (
-                        <Input
-                          aria-label="金额"
-                          type="number"
-                          step="0.01"
-                          value={getEditValue(record, 'amount')}
-                          onChange={(e) => handleEditChange(record.id, 'amount', e.target.value)}
-                          className={`h-7 text-xs w-full text-right ${
-                            record.type === 'INCOME' ? 'text-[#22c55e]' :
-                            record.type === 'EXPENSE' ? 'text-[#ef4444]' : 'text-[#3b82f6]'
-                          }`}
-                        />
-                      ) : (
-                        <span className={
-                          record.type === 'INCOME' ? 'text-[#22c55e]' :
-                          record.type === 'EXPENSE' ? 'text-[#ef4444]' : 'text-[#3b82f6]'
-                        }>
-                          {record.type === 'EXPENSE' ? '-' : record.type === 'INCOME' ? '+' : ''}{formatMoney(record.amount)}
-                        </span>
-                      )}
-                    </TableCell>
-                    {/* 备注 */}
-                    <TableCell className="text-xs py-2.5">
-                      {editMode ? (
-                        <Input
-                          aria-label="备注"
-                          value={getEditValue(record, 'remark')}
-                          onChange={(e) => handleEditChange(record.id, 'remark', e.target.value)}
-                          className="h-7 text-xs w-full"
-                          placeholder="-"
-                        />
-                      ) : (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="text-muted-foreground max-w-32 truncate cursor-default block">
-                              {record.remark || '-'}
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent side="top" className="max-w-xs">
-                            <p className="break-all">{record.remark || '无备注'}</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      )}
-                    </TableCell>
-                    {/* 操作 */}
-                    <TableCell className="text-right py-2.5">
-                      <div className="flex items-center justify-end gap-0.5">
-                        {record.attachments?.length > 0 && (
-                          <Button aria-label="设置附件查看器" variant="ghost" size="icon" className="h-7 w-7" onClick={() => setViewingAttachments(record.attachments)}>
-                            <Paperclip size={13} />
-                          </Button>
-                        )}
-                        {editMode ? (
-                          <>
-                            <Button aria-label="关闭" variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleClone(record)}>
-                              <Copy size={13} />
-                            </Button>
-                            <Button aria-label="删除" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-[#ef4444]" onClick={() => setDeleteTarget(record)}>
-                              <Trash2 size={13} />
-                            </Button>
-                          </>
-                        ) : (
-                          <>
-                            <Button aria-label="编辑" variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(record)}>
-                              <Pencil size={13} />
-                            </Button>
-                            <Button aria-label="复制" variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleClone(record)}>
-                              <Copy size={13} />
-                            </Button>
-                            <Button aria-label="删除" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-[#ef4444]" onClick={() => setDeleteTarget(record)}>
-                              <Trash2 size={13} />
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                )})}
+                {records.map((record) => (
+                  <RecordRow
+                    key={record.id}
+                    variant="table"
+                    record={record}
+                    editMode={editMode}
+                    editChanges={editChanges}
+                    selectedIds={selectedIds}
+                    accounts={accounts}
+                    allCategories={allCategories}
+                    bookMembers={bookMembers}
+                    currentBookId={currentBookId || ''}
+                    onToggleSelect={toggleSelect}
+                    onEditChange={handleEditChange}
+                    onOpenEdit={openEdit}
+                    onClone={handleClone}
+                    onDelete={setDeleteTarget}
+                    onViewAttachments={setViewingAttachments}
+                  />
+                ))}
               </TableBody>
             </Table>
+            )}
 
             {/* 分页 */}
-            <div className="flex items-center justify-between p-4 border-t">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between p-4 border-t">
               <div className="flex items-center gap-3">
                 <span className="text-sm text-muted-foreground">每页</span>
                 <Select
@@ -1184,10 +1017,10 @@ export function RecordsPage() {
                   <ChevronRight size={14} />
                 </Button>
 
-                <span className="text-sm text-muted-foreground ml-2">跳至</span>
+                <span className="hidden sm:inline text-sm text-muted-foreground ml-2">跳至</span>
                 <Input
                   aria-label="跳转页码"
-                  className="h-8 w-14 text-sm text-center"
+                  className="hidden sm:block h-8 w-14 text-sm text-center"
                   placeholder={String(page)}
                   value={jumpInput}
                   onChange={(e) => setJumpInput(e.target.value.replace(/\D/g, ''))}
@@ -1198,7 +1031,7 @@ export function RecordsPage() {
                     }
                   }}
                 />
-                <span className="text-sm text-muted-foreground">页</span>
+                <span className="hidden sm:inline text-sm text-muted-foreground">页</span>
               </div>
             </div>
           </>
@@ -1208,7 +1041,7 @@ export function RecordsPage() {
       {/* 筛选抽屉 */}
       <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
         <SheetTrigger/>
-        <SheetContent side="right" className="w-80 flex flex-col">
+        <SheetContent side={isMobile ? 'bottom' : 'right'} className={isMobile ? 'w-full max-h-[80vh] flex flex-col' : 'w-80 flex flex-col'}>
           <SheetHeader>
             <SheetTitle>筛选条件</SheetTitle>
           </SheetHeader>

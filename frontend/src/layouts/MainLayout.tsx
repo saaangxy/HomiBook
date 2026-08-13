@@ -19,6 +19,7 @@ import { useAuthStore } from '../stores/auth'
 import { useBookStore } from '../stores/book'
 import { BookSwitcher } from '../components/BookSwitcher'
 import { UserMenu } from '../components/UserMenuSheet'
+import { BottomNav } from '../components/BottomNav'
 import {
   Book,
   LayoutDashboard,
@@ -159,30 +160,33 @@ export function MainLayout() {
       {/* 主区域 */}
       <main className="flex-1 flex flex-col overflow-hidden">
         {/* 顶部栏 */}
-        <header className="flex items-center justify-between px-8 py-4 border-b border-border h-16 min-h-16 bg-background">
-          <div className="flex items-center gap-4">
+        <header className="flex items-center justify-between px-4 md:px-8 py-3 md:py-4 border-b border-border h-16 min-h-16 bg-background">
+          <div className="flex items-center gap-2 md:gap-4">
             <SidebarTrigger className="text-muted-foreground hover:text-foreground" />
-            <span className="text-lg font-semibold">{pageTitle}</span>
+            <span className="text-base md:text-lg font-semibold">{pageTitle}</span>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 md:gap-3">
             <BookSwitcher />
             <Button
               variant="outline"
               onClick={handleLogout}
-              className="rounded-[10px] border-border text-muted-foreground text-[13px] hover:text-primary hover:bg-accent"
+              className="rounded-[10px] border-border text-muted-foreground text-[13px] hover:text-primary hover:bg-accent p-2"
             >
               <LogOut size={16} />
-              退出登录
+              <span className="hidden sm:inline">退出登录</span>
             </Button>
           </div>
         </header>
 
         {/* 内容区域 */}
-        <div className="flex-1 overflow-auto p-8">
+        <div className="flex-1 overflow-auto p-3 md:p-8 pb-24 md:pb-8">
           <Outlet />
         </div>
       </main>
+
+      {/* 移动端底部导航 */}
+      <BottomNav />
     </SidebarProvider>
   )
 }
