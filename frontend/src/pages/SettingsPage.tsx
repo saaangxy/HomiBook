@@ -72,6 +72,12 @@ const HOLIDAY_API_OPTIONS = [
   { value: 'https://api.jiejiariapi.com/v1/holidays/{year}', label: 'jiejiariapi.com（备选）' },
 ]
 
+const JWT_EXPIRE_OPTIONS = [
+  { value: '1d', label: '1 天' },
+  { value: '7d', label: '7 天' },
+  { value: '30d', label: '30 天' },
+]
+
 export function SettingsPage() {
   const { user } = useAuthStore()
   const isAdmin = user?.role === 'ADMIN'
@@ -82,6 +88,7 @@ export function SettingsPage() {
   const [amountHighlightThreshold, setAmountHighlightThreshold] = useState(1000)
   const [holidayApiUrl, setHolidayApiUrl] = useState('https://timor.tech/api/holiday/year/{year}')
   const [defaultTheme, setDefaultTheme] = useState('system')
+  const [jwtExpiresIn, setJwtExpiresIn] = useState('7d')
   const [configLoading, setConfigLoading] = useState(true)
   const [configSaving, setConfigSaving] = useState(false)
   const [configError, setConfigError] = useState('')
@@ -176,6 +183,7 @@ export function SettingsPage() {
         if (typeof config.amountHighlightThreshold === 'number') setAmountHighlightThreshold(config.amountHighlightThreshold)
         if (typeof config.holidayApiUrl === 'string') setHolidayApiUrl(config.holidayApiUrl)
         if (typeof config.defaultTheme === 'string') setDefaultTheme(config.defaultTheme)
+        if (typeof config.jwtExpiresIn === 'string' && JWT_EXPIRE_OPTIONS.some(o => o.value === config.jwtExpiresIn)) setJwtExpiresIn(config.jwtExpiresIn)
       })
       .catch(() => setConfigError('加载配置失败'))
       .finally(() => setConfigLoading(false))
@@ -214,7 +222,7 @@ export function SettingsPage() {
     setConfigSaving(true)
     setConfigError('')
     try {
-      await settingsApi.updateConfig({ registrationOpen, defaultCurrency, amountHighlightThreshold, holidayApiUrl, defaultTheme })
+      await settingsApi.updateConfig({ registrationOpen, defaultCurrency, amountHighlightThreshold, holidayApiUrl, defaultTheme, jwtExpiresIn })
       toast.success('配置已保存')
     } catch (e: any) {
       setConfigError(e.message)
@@ -628,6 +636,29 @@ export function SettingsPage() {
                   onChange={(e) => setAmountHighlightThreshold(parseFloat(e.target.value) || 0)}
                   className="w-28 bg-background border-border h-9"
                 />
+              </div>
+
+              {/* 分隔 */}
+              <div className="border-t" />
+
+              {/* JWT 过期时间 */}
+              <div className="flex items-start justify-between gap-8">
+                <div className="flex-1">
+                  <h4 className="text-sm font-medium">登录有效期</h4>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    登录后 Token 的有效时长，超过后需重新登录。修改仅对后续登录生效
+                  </p>
+                </div>
+                <Select value={jwtExpiresIn} onValueChange={setJwtExpiresIn}>
+                  <SelectTrigger className="w-28 bg-background border-border h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-card border-border">
+                    {JWT_EXPIRE_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* 分隔 */}

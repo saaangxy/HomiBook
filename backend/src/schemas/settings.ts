@@ -6,6 +6,7 @@ export const updateConfigSchema = z.object({
   amountHighlightThreshold: z.number().optional().describe('金额高亮阈值'),
   holidayApiUrl: z.string().optional().describe('节假日API地址'),
   defaultTheme: z.string().optional().describe('默认主题'),
+  jwtExpiresIn: z.enum(['1d', '7d', '30d']).optional().describe('JWT过期时间'),
 })
 
 export const createDictionarySchema = z.object({

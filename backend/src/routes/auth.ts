@@ -80,7 +80,18 @@ export async function authRoutes(app: FastifyInstance) {
       return reply.status(401).send({ message: '账号或密码错误' })
     }
 
-    const token = app.jwt.sign({ id: user.id, email: user.email, role: user.role })
+    // 读取 JWT 过期时间配置（默认 7d），登录后按配置签发 token
+    const jwtConfig = await prisma.systemConfig.findUnique({ where: { key: 'jwtExpiresIn' } })
+    let expiresIn = '7d'
+    if (jwtConfig?.value) {
+      try {
+        expiresIn = JSON.parse(jwtConfig.value)
+      } catch {
+        expiresIn = jwtConfig.value
+      }
+    }
+
+    const token = app.jwt.sign({ id: user.id, email: user.email, role: user.role }, { expiresIn })
 
     return {
       token,
