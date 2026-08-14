@@ -28,12 +28,15 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Spinner } from '@/components/ui/spinner'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Trash2, Key, Shield, ShieldOff, Eye, EyeOff } from 'lucide-react'
 import { adminApi, type AdminUser } from '../api/admin'
 import { useAuthStore } from '../stores/auth'
+import { useIsMobile } from '@/hooks/use-mobile'
 
 export function UsersPage() {
   const currentUser = useAuthStore((s) => s.user)
+  const isMobile = useIsMobile()
   const [users, setUsers] = useState<AdminUser[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -154,7 +157,52 @@ export function UsersPage() {
         </Alert>
       )}
 
-      {/* Table */}
+      {isMobile ? (
+        <div className="space-y-2">
+          {users.map((user) => (
+            <div key={user.id} className="p-3 rounded-xl border border-border hover:bg-accent/60">
+              <div className="flex items-center gap-2 mb-1.5">
+                <Avatar className="w-8 h-8 rounded-full bg-primary text-primary-foreground shrink-0">
+                  <AvatarFallback className="text-[10px] font-bold">
+                    {(user.nickname?.[0] || user.username?.[0] || 'U').toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <span className="font-medium text-sm truncate min-w-0 flex-1">{user.nickname || '未命名'}</span>
+                <Badge variant={user.role === 'ADMIN' ? 'default' : 'secondary'} className="inline-flex items-center gap-1 text-[10px] shrink-0 whitespace-nowrap">
+                  {user.role === 'ADMIN' ? <Shield size={10} /> : <ShieldOff size={10} />}
+                  {user.role === 'ADMIN' ? '管理员' : '普通用户'}
+                </Badge>
+                <Badge variant={user.status === 'ACTIVE' ? 'secondary' : 'destructive'} className={user.status === 'ACTIVE' ? 'bg-[#22c55e]/15 text-[#22c55e] text-[10px] shrink-0 whitespace-nowrap' : 'text-[10px] shrink-0 whitespace-nowrap'}>
+                  {user.status === 'ACTIVE' ? '正常' : '已禁用'}
+                </Badge>
+              </div>
+              <div className="text-xs text-muted-foreground mb-1 truncate">{user.email}</div>
+              <div className="text-xs text-muted-foreground/70 mb-2">
+                账号: {user.username} · {new Date(user.createdAt).toLocaleDateString('zh-CN')}
+              </div>
+              {user.id !== currentUser?.id && (
+                <div className="flex items-center justify-end gap-2">
+                  <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => handleToggleRole(user)} title={user.role === 'ADMIN' ? '降为普通用户' : '提升为管理员'}>
+                    {user.role === 'ADMIN' ? <ShieldOff size={13} /> : <Shield size={13} />} 权限
+                  </Button>
+                  <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => handleToggleStatus(user)} title={user.status === 'ACTIVE' ? '禁用' : '启用'}>
+                    {user.status === 'ACTIVE' ? '禁用' : '启用'}
+                  </Button>
+                  <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => { setFormPassword(''); setFormError(''); setShowPassword(false); setTargetUserId(user.id); setPasswordOpen(true) }}>
+                    <Key size={13} /> 密码
+                  </Button>
+                  <Button size="sm" variant="outline" className="text-xs h-7 text-[#ef4444] border-[#ef4444]/30 hover:bg-[#ef4444]/15" onClick={() => { setFormError(''); setTargetUser(user); setDeleteOpen(true) }}>
+                    <Trash2 size={13} /> 删除
+                  </Button>
+                </div>
+              )}
+            </div>
+          ))}
+          {users.length === 0 && (
+            <div className="text-center text-muted-foreground py-8">暂无用户</div>
+          )}
+        </div>
+      ) : (
       <div className="bg-card border border-border rounded-2xl overflow-hidden">
         <Table>
           <TableHeader>
@@ -265,6 +313,8 @@ export function UsersPage() {
           </TableBody>
         </Table>
       </div>
+      )}
+
 
       {/* 创建用户弹窗 */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>

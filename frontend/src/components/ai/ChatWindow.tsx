@@ -14,13 +14,19 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Send, StopCircle, Upload, Image as ImageIcon, X, Globe } from 'lucide-react'
+import { Send, StopCircle, Upload, Image as ImageIcon, X, Globe, Menu, Plus } from 'lucide-react'
 import { parseContentIntoBlocks } from '@/stores/chat-content-parser'
 import { type MessageBlock } from '@/stores/chat'
+import { useIsMobile } from '@/hooks/use-mobile'
+import {
+  Sheet, SheetContent, SheetHeader, SheetTitle,
+} from '@/components/ui/sheet'
 
 export function ChatWindow() {
   const [input, setInput] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
+  const isMobile = useIsMobile()
+  const [sessionOpen, setSessionOpen] = useState(false)
 
   const {
     sessions, currentSessionId, messages, allMessages, error,
@@ -295,21 +301,54 @@ export function ChatWindow() {
   }, [messages])
 
   return (
-    <div className="flex h-[600px] rounded-xl border bg-card overflow-hidden">
-      {/* 左侧会话列表 */}
-      <div className="w-52 border-r shrink-0">
-        <SessionList
-          sessions={sessions}
-          currentId={currentSessionId}
-          streamingSessionIds={streamingSessionIds}
-          onSelect={handleSelectSession}
-          onCreate={handleCreateSession}
-          onDelete={handleDeleteSession}
-        />
-      </div>
+    <div className="flex h-[65vh] md:h-[600px] rounded-xl border bg-card overflow-hidden">
+      {/* 桌面端左侧会话列表 */}
+      {!isMobile && (
+        <div className="w-52 border-r shrink-0">
+          <SessionList
+            sessions={sessions}
+            currentId={currentSessionId}
+            streamingSessionIds={streamingSessionIds}
+            onSelect={handleSelectSession}
+            onCreate={handleCreateSession}
+            onDelete={handleDeleteSession}
+          />
+        </div>
+      )}
+
+      {/* 移动端会话抽屉 */}
+      {isMobile && (
+        <Sheet open={sessionOpen} onOpenChange={setSessionOpen}>
+          <SheetContent side="left" className="w-72 p-0 [&>button]:hidden">
+            <SheetHeader className="sr-only">
+              <SheetTitle>会话列表</SheetTitle>
+            </SheetHeader>
+            <SessionList
+              sessions={sessions}
+              currentId={currentSessionId}
+              streamingSessionIds={streamingSessionIds}
+              onSelect={(id) => { handleSelectSession(id); setSessionOpen(false) }}
+              onCreate={() => { handleCreateSession(); setSessionOpen(false) }}
+              onDelete={handleDeleteSession}
+            />
+          </SheetContent>
+        </Sheet>
+      )}
 
       {/* 右侧聊天区 */}
       <div className="flex-1 flex flex-col min-w-0">
+        {/* 移动端顶部工具行 */}
+        {isMobile && (
+          <div className="flex items-center gap-2 border-b px-3 py-2 shrink-0">
+            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setSessionOpen(true)}>
+              <Menu size={16} />
+            </Button>
+            <span className="text-sm font-medium flex-1 truncate">AI 助手</span>
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleCreateSession}>
+              <Plus size={16} />
+            </Button>
+          </div>
+        )}
         {/* 消息列表 */}
         <ScrollArea className="flex-1">
           <div ref={scrollRef} className="p-4 space-y-4">

@@ -5,6 +5,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Book, Wallet, ArrowUpCircle, ArrowDownCircle, TrendingUp, TrendingDown, AlertTriangle, Bot, Settings } from 'lucide-react'
 import { useBookStore } from '../stores/book'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { recordApi, type RecordSummary } from '../api/record'
 import { accountApi } from '../api/account'
 import { budgetApi, type BudgetItem } from '../api/budget'
@@ -14,6 +15,7 @@ import { fetchAIConfig } from '../api/chat'
 export function HomePage() {
   const { currentBookId, books } = useBookStore()
   const currentBook = books.find((b) => b.id === currentBookId)
+  const isMobile = useIsMobile()
 
   const [summary, setSummary] = useState<RecordSummary | null>(null)
   const [accountCount, setAccountCount] = useState(0)
@@ -61,6 +63,16 @@ export function HomePage() {
   const warnBudgets = budgets.filter((b) => b.amount > 0 && (b.actualAmount / b.amount) > 0.85)
   const dangerBudgets = budgets.filter((b) => b.amount > 0 && b.actualAmount >= b.amount)
 
+  // 统计卡片数据（桌面大卡 / 移动端单列精简卡共用）
+  const netIcon = summary && summary.netIncome >= 0 ? TrendingUp : TrendingDown
+  const netColor = summary && summary.netIncome > 0 ? 'text-[#22c55e] bg-[#22c55e]/10' : 'text-[#f97316] bg-[#f97316]/10'
+  const statCards = [
+    { icon: Wallet, iconColor: 'text-[#3b82f6] bg-[#3b82f6]/10', label: '活跃账户', display: String(accountCount), prefix: '' },
+    { icon: ArrowUpCircle, iconColor: 'text-primary bg-primary/10', label: '本月收入', display: summary ? summary.income.toLocaleString() : '0', prefix: '¥' },
+    { icon: ArrowDownCircle, iconColor: 'text-[#ef4444] bg-[#ef4444]/10', label: '本月支出', display: summary ? summary.expense.toLocaleString() : '0', prefix: '¥' },
+    { icon: netIcon, iconColor: netColor, label: '本月结余', display: summary ? summary.netIncome.toLocaleString() : '0', prefix: '¥' },
+  ]
+
   return (
     <div className="space-y-6">
       {/* 账本信息 */}
@@ -95,79 +107,47 @@ export function HomePage() {
       )}
 
       {/* 统计卡片 */}
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-5">
-        <Card className="bg-card border-border rounded-2xl">
-          <CardContent className="flex flex-row items-start gap-4 p-6">
-            <div className="w-12 h-12 rounded-2xl bg-[#3b82f6]/10 text-[#3b82f6] flex items-center justify-center shrink-0">
-              <Wallet size={22} />
-            </div>
-            <div>
-              {loading ? (
-                <Skeleton className="h-8 w-12 mb-1" />
-              ) : (
-                <div className="text-[28px] font-bold leading-tight">{accountCount}</div>
-              )}
-              <div className="text-[13px] text-muted-foreground mt-1">活跃账户</div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-card border-border rounded-2xl">
-          <CardContent className="flex flex-row items-start gap-4 p-6">
-            <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
-              <ArrowUpCircle size={22} />
-            </div>
-            <div>
-              {loading ? (
-                <Skeleton className="h-8 w-24 mb-1" />
-              ) : (
-                <div className="text-[28px] font-bold leading-tight">
-                  ¥{summary ? summary.income.toLocaleString() : '0'}
+      {isMobile ? (
+        <div className="flex flex-col gap-2">
+          {statCards.map((c) => (
+            <Card key={c.label} className="bg-card border-border rounded-xl">
+              <CardContent className="flex items-center justify-between p-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${c.iconColor}`}>
+                    <c.icon size={16} />
+                  </div>
+                  <span className="text-sm text-muted-foreground truncate">{c.label}</span>
                 </div>
-              )}
-              <div className="text-[13px] text-muted-foreground mt-1">本月收入</div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-card border-border rounded-2xl">
-          <CardContent className="flex flex-row items-start gap-4 p-6">
-            <div className="w-12 h-12 rounded-2xl bg-[#ef4444]/10 text-[#ef4444] flex items-center justify-center shrink-0">
-              <ArrowDownCircle size={22} />
-            </div>
-            <div>
-              {loading ? (
-                <Skeleton className="h-8 w-24 mb-1" />
-              ) : (
-                <div className="text-[28px] font-bold leading-tight">
-                  ¥{summary ? summary.expense.toLocaleString() : '0'}
+                {loading ? (
+                  <Skeleton className="h-6 w-20 ml-3 shrink-0" />
+                ) : (
+                  <div className="text-lg font-bold tabular-nums ml-3 shrink-0">{c.prefix}{c.display}</div>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-5">
+          {statCards.map((c) => (
+            <Card key={c.label} className="bg-card border-border rounded-2xl">
+              <CardContent className="flex flex-row items-start gap-4 p-6">
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${c.iconColor}`}>
+                  <c.icon size={22} />
                 </div>
-              )}
-              <div className="text-[13px] text-muted-foreground mt-1">本月支出</div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-card border-border rounded-2xl">
-          <CardContent className="flex flex-row items-start gap-4 p-6">
-            <div className={`w-12 h-12 rounded-2xl shrink-0 flex items-center justify-center ${
-              summary && summary.netIncome > 0 ? 'bg-[#22c55e]/10 text-[#22c55e]' : 'bg-[#f97316]/10 text-[#f97316]'
-            }`}>
-              {summary && summary.netIncome >= 0 ? <TrendingUp size={22} /> : <TrendingDown size={22} />}
-            </div>
-            <div>
-              {loading ? (
-                <Skeleton className="h-8 w-24 mb-1" />
-              ) : (
-                <div className="text-[28px] font-bold leading-tight">
-                  ¥{summary ? summary.netIncome.toLocaleString() : '0'}
+                <div>
+                  {loading ? (
+                    <Skeleton className="h-8 w-24 mb-1" />
+                  ) : (
+                    <div className="text-[28px] font-bold leading-tight">{c.prefix}{c.display}</div>
+                  )}
+                  <div className="text-[13px] text-muted-foreground mt-1">{c.label}</div>
                 </div>
-              )}
-              <div className="text-[13px] text-muted-foreground mt-1">本月结余</div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
 
       {/* AI 聊天 */}
       {currentBookId && aiEnabled && (
