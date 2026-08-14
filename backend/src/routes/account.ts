@@ -15,6 +15,7 @@ import {
   computeAccountBalance,
   refreshAccountBalance,
 } from '../services/account.js'
+import { balanceHistoryCache, BAL_HIST_TTL_MS } from '../services/cache.js'
 
 // 保留导出以兼容现有引用
 export { computeAccountBalance, refreshAccountBalance } from '../services/account.js'
@@ -193,6 +194,11 @@ export async function accountRoutes(app: FastifyInstance) {
       return reply.status(e.statusCode || 403).send({ message: e.message })
     }
 
+    // 查询缓存(同账本成员数据一致,按请求键缓存。TTL 到期自愈,无需在各写路径失效)
+    const cacheKey = `balhist:${bookId}:${granularity}:${accountIds ?? 'all'}:${dateFrom}:${dateTo}`
+    const cached = balanceHistoryCache.get(cacheKey)
+    if (cached) return cached
+
     // 查询账户
     const accountFilter = accountIds
       ? accountIds.split(',').map((s: string) => s.trim()).filter(Boolean)
@@ -318,6 +324,7 @@ export async function accountRoutes(app: FastifyInstance) {
       })
     }
 
+    balanceHistoryCache.set(cacheKey, result, BAL_HIST_TTL_MS)
     return result
   })
 

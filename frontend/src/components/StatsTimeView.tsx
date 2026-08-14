@@ -19,6 +19,13 @@ import { recordApi, type RecordSummary, type RecordItem } from '@/api/record'
 import { accountApi, type AccountItem } from '@/api/account'
 import { adminApi, type AdminUser } from '@/api/admin'
 import { budgetApi } from '@/api/budget'
+import { recurringApi } from '@/api/recurring'
+import {
+  scoreSavings,
+  scoreDebtBurden,
+  scoreFreedom,
+  type RadarMetric,
+} from '@/lib/financial-health'
 import { AnalysisPanel } from './AnalysisPanel'
 import { BarChart3, Search, X, List, ChevronLeft, ChevronRight, HelpCircle } from 'lucide-react'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
@@ -71,14 +78,14 @@ function buildStackedBar(periods: string[], categories: { name: string; data: nu
 }
 
 const RADAR_TIPS: Record<string, string> = {
-  '储蓄率': '（收入-支出）/ 收入，反映每月能存下多少钱',
+  '储蓄率': '（收入-支出）/ 收入，反映本期能存下多少钱',
   '收支平衡': '收入是否大于等于支出，低于100表示入不敷出',
-  '记账覆盖度': '使用的支出分类数 / 10，反映记账的细致程度',
   '预算执行': '实际支出与预算的符合度，超支越多分数越低',
-  '资金沉淀率': '1 - 转账/总流水，反映资金用于实际收支而非账户间划转的比例',
+  '偿债压力': '月供 ÷ 本期月均收入，越低越健康。健康区间 ≤35%',
+  '财务自由度': '被动收入 ÷ 本期支出，越接近 100% 越接近财务自由',
 }
 
-function buildRadarOption(metrics: { name: string; value: number }[], t: ChartTheme): EChartsOption {
+function buildRadarOption(metrics: RadarMetric[], t: ChartTheme): EChartsOption {
   return {
     tooltip: {
       trigger: 'item' as const,
@@ -93,7 +100,9 @@ function buildRadarOption(metrics: { name: string; value: number }[], t: ChartTh
           const v = fullValues[i]
           const display = v != null ? `${v} 分` : '-'
           if (hoverIdx === i) {
-            html += `<span style="font-weight:bold;color:${t.primary}">◆ ${m.name}: ${display}</span><br/>`
+            html += `<span style="font-weight:bold;color:${t.primary}">◆ ${m.name}: ${display}</span>`
+            if (m.detail) html += `<span style="color:${t.mutedForeground}"> · ${m.detail}</span>`
+            html += `<br/>`
           } else {
             html += `&nbsp;&nbsp;${m.name}: ${display}<br/>`
           }
@@ -117,39 +126,61 @@ function buildRadarOption(metrics: { name: string; value: number }[], t: ChartTh
   }
 }
 
-function computeRadar(
-  summary: RecordSummary,
-  categories: { code: string | null; name: string; data: number[] }[],
-  budgetHealth: number,
-): { name: string; value: number }[] {
-  const income = summary.income || 1
-  const expense = summary.expense || 0
-  const transfer = summary.transfer || 0
+interface TimeRadarInput {
+  summary: RecordSummary
+  budgetHealth: number
+  monthlyPayment: number
+  monthsInPeriod: number
+  passiveIncome: number
+}
 
-  // 储蓄率：收入中储蓄的比例
-  const savingsRate = Math.min(100, Math.max(0, Math.round(((income - expense) / Math.max(income, 1)) * 100)))
+// 时间段财务健康 5 维评估(全部为所选时间段内的流指标)
+function computeRadar(input: TimeRadarInput): RadarMetric[] {
+  const income = input.summary.income || 0
+  const expense = input.summary.expense || 0
+  const metrics: RadarMetric[] = []
 
-  // 收支平衡：是否量入为出
-  const balance = income >= expense
-    ? 100
-    : Math.min(100, Math.max(0, Math.round((income / Math.max(expense, 1)) * 100)))
+  // 储蓄率
+  if (income > 0) {
+    const savings = (income - expense) / income
+    metrics.push({ name: '储蓄率', value: scoreSavings(savings), detail: `储蓄率 ${(savings * 100).toFixed(1)}%` })
+  } else {
+    metrics.push({ name: '储蓄率', value: 0, available: false, detail: '数据不足(无收入记录)' })
+  }
 
-  // 记账覆盖度：使用分类数量反映记账习惯
-  const coverage = Math.min(100, Math.round((categories.length / 10) * 100))
+  // 收支平衡
+  if (expense > 0) {
+    const balance = income >= expense ? 100 : Math.round((income / expense) * 100)
+    metrics.push({ name: '收支平衡', value: balance, detail: `收入/支出 ${income >= expense ? '≥100%' : `${(income / expense * 100).toFixed(1)}%`}` })
+  } else if (income > 0) {
+    metrics.push({ name: '收支平衡', value: 100, detail: '本期内无支出' })
+  } else {
+    metrics.push({ name: '收支平衡', value: 0, available: false, detail: '数据不足' })
+  }
 
-  // 资金沉淀率：资金用于实际收支（非转账）的比例
-  const totalFlow = income + expense + transfer
-  const retention = totalFlow > 0
-    ? Math.min(100, Math.max(0, Math.round((1 - transfer / totalFlow) * 100)))
-    : 100
+  // 预算执行
+  metrics.push({ name: '预算执行', value: Math.max(0, Math.min(100, Math.round(input.budgetHealth))), detail: `预算契合度 ${Math.round(input.budgetHealth)} 分` })
 
-  return [
-    { name: '储蓄率', value: savingsRate },
-    { name: '收支平衡', value: balance },
-    { name: '记账覆盖度', value: coverage },
-    { name: '预算执行', value: budgetHealth },
-    { name: '资金沉淀率', value: retention },
-  ]
+  // 偿债压力(反向)
+  const monthlyIncome = income > 0 ? income / input.monthsInPeriod : 0
+  if (input.monthlyPayment > 0 && monthlyIncome > 0) {
+    const ratio = input.monthlyPayment / monthlyIncome
+    metrics.push({ name: '偿债压力', value: scoreDebtBurden(ratio), detail: `月供占比 ${(ratio * 100).toFixed(1)}%` })
+  } else if (input.monthlyPayment <= 0) {
+    metrics.push({ name: '偿债压力', value: 100, detail: '无贷款,无负债压力' })
+  } else {
+    metrics.push({ name: '偿债压力', value: 20, available: false, detail: '数据不足(无收入记录)' })
+  }
+
+  // 财务自由度
+  if (expense > 0) {
+    const ratio = input.passiveIncome / expense
+    metrics.push({ name: '财务自由度', value: scoreFreedom(ratio), detail: `被动收入覆盖支出 ${(ratio * 100).toFixed(1)}%` })
+  } else {
+    metrics.push({ name: '财务自由度', value: 0, available: false, detail: '数据不足(无支出记录)' })
+  }
+
+  return metrics
 }
 
 async function fetchBudgetHealth(
@@ -222,7 +253,7 @@ export function StatsTimeView({ bookId, mode }: Props) {
   const [loading, setLoading] = useState(false)
   const [periods, setPeriods] = useState<string[]>([])
   const [categories, setCategories] = useState<{ code: string | null; name: string; data: number[] }[]>([])
-  const [radarMetrics, setRadarMetrics] = useState<{ name: string; value: number }[]>([])
+  const [radarMetrics, setRadarMetrics] = useState<RadarMetric[]>([])
 
   // 堆叠柱状图选中
   const [barSelected, setBarSelected] = useState<{ code: string | null; name: string; period: string } | null>(null)
@@ -286,7 +317,7 @@ export function StatsTimeView({ bookId, mode }: Props) {
         }
       }
 
-      const [trendData, summaryData, budgetHealth] = await Promise.all([
+      const [trendData, summaryData, budgetHealth, loans, passiveSummary] = await Promise.all([
         recordApi.categoryTrend({
           bookId,
           type: 'EXPENSE',
@@ -300,13 +331,27 @@ export function StatsTimeView({ bookId, mode }: Props) {
         }),
         recordApi.summary({ bookId, ...params }),
         fetchBudgetHealth(bookId, mode, year, month, params.dateFrom, params.dateTo),
+        recurringApi.list(bookId),
+        recordApi.summary({ bookId, type: 'INCOME', categoryCode: '投资收益,分红', ...params }),
       ])
 
       const filteredCategories = trendData.categories.filter((c) => c.data.some((v) => v > 0))
       setPeriods(trendData.periods)
       setCategories(filteredCategories)
       setSummary(summaryData)
-      setRadarMetrics(computeRadar(summaryData, filteredCategories, budgetHealth))
+      // 雷达图:时间段内流健康 5 维
+      const activeLoans = loans.filter((l) => l.recurringType === 'LOAN' && l.active)
+      const monthlyPayment = activeLoans.reduce((s, l) => s + (l.amount ?? 0), 0)
+      const monthsInPeriod = params.dateFrom && params.dateTo
+        ? Math.max(1, dayjs(params.dateTo).diff(dayjs(params.dateFrom), 'month') + 1)
+        : 1
+      setRadarMetrics(computeRadar({
+        summary: summaryData,
+        budgetHealth,
+        monthlyPayment,
+        monthsInPeriod,
+        passiveIncome: passiveSummary.income,
+      }))
     } catch { /* ignore */ }
     finally { setLoading(false) }
   }, [bookId, mode, year, month, searchParams, searched])
