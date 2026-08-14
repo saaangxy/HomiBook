@@ -37,7 +37,6 @@ import {
   TableBody,
   TableRow,
   TableHead,
-  TableCell,
 } from '@/components/ui/table'
 import {Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger} from '@/components/ui/sheet'
 import { DatePicker } from '@/components/ui/date-picker'
@@ -46,7 +45,6 @@ import { MultiSelect } from '@/components/ui/multi-select'
 import dayjs from 'dayjs'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
-import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { DictCombobox } from '@/components/DictCombobox'
 import { TagCombobox } from '@/components/TagCombobox'
 import { AttachmentViewer } from '@/components/AttachmentViewer'
@@ -69,8 +67,8 @@ import { MoreHorizontal } from 'lucide-react'
 import { importExportApi } from '@/api/import-export'
 import {
   Plus, ArrowUpRight, ArrowDownRight, ArrowLeftRight,
-  Pencil, Trash2, Copy, Filter, X, ChevronLeft, ChevronRight,
-  Upload, Download, Paperclip, Save, CopyMinus,
+  Pencil, Filter, X, ChevronLeft, ChevronRight,
+  Upload, Download, Save, CopyMinus,
 } from 'lucide-react'
 
 const TYPE_LABELS: Record<RecordType, string> = {
