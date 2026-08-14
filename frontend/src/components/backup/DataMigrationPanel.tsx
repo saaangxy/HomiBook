@@ -397,7 +397,7 @@ export function DataMigrationPanel() {
             <div className="rounded-lg p-3 text-xs bg-green-50 border border-green-200">
               <p className="font-medium mb-1">导入完成</p>
               {importResult.scope === 'full' && (
-                <p className="mb-1 text-muted-foreground">已导入数据，请重新登录。</p>
+                <p className="mb-1 text-muted-foreground">已导入数据，当前账号已失效，请重新登录!!!</p>
               )}
               <div className="flex flex-wrap gap-x-4 gap-y-0.5">
                 {Object.entries(importResult.results).map(([table, count]) => (
