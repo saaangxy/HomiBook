@@ -637,21 +637,21 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                   onClick={() => !item.disabled && setSource(item.key)}
                   className={`flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-colors ${
                     source === item.key && !item.disabled
-                      ? 'border-primary bg-primary/5'
+                      ? 'border-primary bg-primary text-primary-foreground shadow-sm'
                       : 'border-border hover:border-primary/30'
                   } ${item.disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                 >
                   <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                    item.disabled ? 'bg-muted' : 'bg-primary/10'
+                    item.disabled ? 'bg-muted' : 'bg-primary'
                   }`}>
-                    <FileText size={20} className={item.disabled ? 'text-muted-foreground' : 'text-primary'} />
+                    <FileText size={20} className={item.disabled ? 'text-muted-foreground' : 'text-primary-foreground'} />
                   </div>
                   <div className="flex-1">
                     <p className="font-medium text-sm">{item.label}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{item.desc}</p>
+                    <p className={`text-xs mt-0.5 ${source === item.key && !item.disabled ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>{item.desc}</p>
                   </div>
                   {source === item.key && !item.disabled && (
-                    <CheckCircle size={20} className="text-primary" />
+                    <CheckCircle size={20} className="text-primary-foreground" />
                   )}
                 </button>
               ))}
@@ -695,7 +695,9 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
               >
                 {file ? (
                   <div className="flex flex-col items-center gap-2">
-                    <FileText size={32} className="text-primary" />
+                    <div className="w-12 h-12 rounded-xl bg-primary text-primary-foreground flex items-center justify-center">
+                      <FileText size={24} />
+                    </div>
                     <p className="text-sm font-medium">{file.name}</p>
                     <p className="text-xs text-muted-foreground">{(file.size / 1024).toFixed(1)} KB</p>
                     <Button

@@ -40,7 +40,7 @@ export function ThemeSelector({ showSystem = true, compact = false, value, onCha
               className={cn(
                 'flex items-center gap-2.5 p-2.5 rounded-[10px] border text-left transition-all',
                 isActive
-                  ? 'border-primary bg-primary/10 shadow-sm'
+                  ? 'border-primary bg-primary text-primary-foreground shadow-sm'
                   : 'border-border hover:bg-accent',
               )}
             >
@@ -69,7 +69,7 @@ export function ThemeSelector({ showSystem = true, compact = false, value, onCha
                 </div>
               )}
               <span className="text-sm flex-1">{opt.name}</span>
-              {isActive && <Check size={14} className="text-primary shrink-0" />}
+              {isActive && <Check size={14} className="text-primary-foreground shrink-0" />}
             </button>
           )
         })}
@@ -89,7 +89,7 @@ export function ThemeSelector({ showSystem = true, compact = false, value, onCha
             className={cn(
               'flex flex-col gap-2 p-4 rounded-xl border-2 text-left transition-all',
               isActive
-                ? 'border-primary bg-primary/5 shadow-md'
+                ? 'border-primary bg-primary text-primary-foreground shadow-md'
                 : 'border-border hover:bg-accent hover:border-accent-foreground/20',
             )}
           >
@@ -123,9 +123,9 @@ export function ThemeSelector({ showSystem = true, compact = false, value, onCha
                 </div>
               )}
               <span className="font-semibold text-sm">{opt.name}</span>
-              {isActive && <Check size={16} className="text-primary shrink-0 ml-auto" />}
+              {isActive && <Check size={16} className="text-primary-foreground shrink-0 ml-auto" />}
             </div>
-            <p className="text-xs text-muted-foreground leading-relaxed">{opt.description}</p>
+            <p className={cn('text-xs leading-relaxed', isActive ? 'text-primary-foreground/80' : 'text-muted-foreground')}>{opt.description}</p>
           </button>
         )
       })}

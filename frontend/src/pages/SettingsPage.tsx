@@ -558,8 +558,8 @@ export function SettingsPage() {
         <AccordionItem value="general" className="border rounded-xl px-5">
           <AccordionTrigger className="text-base font-semibold hover:no-underline">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                <Settings size={16} className="text-primary" />
+              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+                <Settings size={16} className="text-primary-foreground" />
               </div>
               通用设置
             </div>
@@ -775,8 +775,8 @@ export function SettingsPage() {
         <AccordionItem value="ai-memory" className="border rounded-xl px-5">
           <AccordionTrigger className="text-base font-semibold hover:no-underline">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                <Brain size={16} className="text-primary" />
+              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+                <Brain size={16} className="text-primary-foreground" />
               </div>
               AI 记忆
             </div>
@@ -791,8 +791,8 @@ export function SettingsPage() {
         <AccordionItem value="ai-assistant" className="border rounded-xl px-5">
           <AccordionTrigger className="text-base font-semibold hover:no-underline">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                <Bot size={16} className="text-primary" />
+              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+                <Bot size={16} className="text-primary-foreground" />
               </div>
               AI 助手
             </div>
@@ -806,8 +806,8 @@ export function SettingsPage() {
         <AccordionItem value="dictionary" className="border rounded-xl px-5">
           <AccordionTrigger className="text-base font-semibold hover:no-underline">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                <BookOpen size={16} className="text-primary" />
+              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+                <BookOpen size={16} className="text-primary-foreground" />
               </div>
               字典管理
             </div>
@@ -915,8 +915,8 @@ export function SettingsPage() {
         <AccordionItem value="attachments" className="border rounded-xl px-5">
           <AccordionTrigger className="text-base font-semibold hover:no-underline">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                <FolderOpen size={16} className="text-primary" />
+              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+                <FolderOpen size={16} className="text-primary-foreground" />
               </div>
               附件管理
             </div>
@@ -983,8 +983,8 @@ export function SettingsPage() {
         <AccordionItem value="data-migration" className="border rounded-xl px-5">
           <AccordionTrigger className="text-base font-semibold hover:no-underline">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                <Database size={16} className="text-primary" />
+              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+                <Database size={16} className="text-primary-foreground" />
               </div>
               数据迁移
             </div>
@@ -998,8 +998,8 @@ export function SettingsPage() {
         <AccordionItem value="apikeys" className="border rounded-xl px-5">
           <AccordionTrigger className="text-base font-semibold hover:no-underline">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                <Key size={16} className="text-primary" />
+              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+                <Key size={16} className="text-primary-foreground" />
               </div>
               API Key 管理
             </div>
@@ -1125,8 +1125,8 @@ export function SettingsPage() {
         <AccordionItem value="import-mappings" className="border rounded-xl px-5">
           <AccordionTrigger className="text-base font-semibold hover:no-underline">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                <Link2 size={16} className="text-primary" />
+              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+                <Link2 size={16} className="text-primary-foreground" />
               </div>
               导入分类映射
             </div>
@@ -1241,8 +1241,8 @@ export function SettingsPage() {
         <AccordionItem value="import-account-mappings" className="border rounded-xl px-5">
           <AccordionTrigger className="text-base font-semibold hover:no-underline">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                <Wallet size={16} className="text-primary" />
+              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+                <Wallet size={16} className="text-primary-foreground" />
               </div>
               导入账户映射
             </div>
@@ -1344,8 +1344,8 @@ export function SettingsPage() {
         <AccordionItem value="about" className="border rounded-xl px-5">
           <AccordionTrigger className="hover:no-underline">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                <Info size={16} className="text-primary" />
+              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+                <Info size={16} className="text-primary-foreground" />
               </div>
               <span>关于</span>
             </div>

@@ -242,7 +242,7 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
                 onClick={() => toggleField(f.key)}
                 className={`h-8 px-3 rounded-md text-xs border transition-colors ${
                   matchFields[f.key]
-                    ? 'bg-primary/10 border-primary text-primary'
+                    ? 'bg-primary border-primary text-primary-foreground'
                     : 'bg-background border-border text-muted-foreground hover:border-primary/30'
                 }`}
               >

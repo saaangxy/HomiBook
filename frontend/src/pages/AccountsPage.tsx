@@ -326,7 +326,7 @@ export function AccountsPage() {
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                        account.type === 'CREDIT_CARD' ? 'bg-[#ef4444]/10 text-[#ef4444]' : 'bg-primary/10 text-primary'
+                        account.type === 'CREDIT_CARD' ? 'bg-[#ef4444]/10 text-[#ef4444]' : 'bg-primary text-primary-foreground'
                       }`}>
                         <CreditCard size={20} />
                       </div>

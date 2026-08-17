@@ -68,7 +68,7 @@ export function HomePage() {
   const netColor = summary && summary.netIncome > 0 ? 'text-[#22c55e] bg-[#22c55e]/10' : 'text-[#f97316] bg-[#f97316]/10'
   const statCards = [
     { icon: Wallet, iconColor: 'text-[#3b82f6] bg-[#3b82f6]/10', label: '活跃账户', display: String(accountCount), prefix: '' },
-    { icon: ArrowUpCircle, iconColor: 'text-primary bg-primary/10', label: '本月收入', display: summary ? summary.income.toLocaleString() : '0', prefix: '¥' },
+    { icon: ArrowUpCircle, iconColor: 'bg-primary text-primary-foreground', label: '本月收入', display: summary ? summary.income.toLocaleString() : '0', prefix: '¥' },
     { icon: ArrowDownCircle, iconColor: 'text-[#ef4444] bg-[#ef4444]/10', label: '本月支出', display: summary ? summary.expense.toLocaleString() : '0', prefix: '¥' },
     { icon: netIcon, iconColor: netColor, label: '本月结余', display: summary ? summary.netIncome.toLocaleString() : '0', prefix: '¥' },
   ]
@@ -108,20 +108,18 @@ export function HomePage() {
 
       {/* 统计卡片 */}
       {isMobile ? (
-        <div className="flex flex-col gap-2">
+        <div className="grid grid-cols-4 gap-2">
           {statCards.map((c) => (
             <Card key={c.label} className="bg-card border-border rounded-xl">
-              <CardContent className="flex items-center justify-between p-3">
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${c.iconColor}`}>
-                    <c.icon size={16} />
-                  </div>
-                  <span className="text-sm text-muted-foreground truncate">{c.label}</span>
+              <CardContent className="flex flex-col items-center gap-1 p-2 min-w-0">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${c.iconColor}`}>
+                  <c.icon size={16} />
                 </div>
+                <span className="text-[11px] text-muted-foreground truncate w-full text-center">{c.label}</span>
                 {loading ? (
-                  <Skeleton className="h-6 w-20 ml-3 shrink-0" />
+                  <Skeleton className="h-5 w-14" />
                 ) : (
-                  <div className="text-lg font-bold tabular-nums ml-3 shrink-0">{c.prefix}{c.display}</div>
+                  <div className="text-sm font-bold tabular-nums truncate w-full text-center">{c.prefix}{c.display}</div>
                 )}
               </CardContent>
             </Card>

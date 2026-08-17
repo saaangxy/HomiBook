@@ -44,7 +44,7 @@ function formatMoney(amount: number): string {
 function UsageBadge({ percent }: { percent: number }) {
   let color = 'text-[#22c55e] bg-[#22c55e]/10'
   if (percent > 100) color = 'text-[#ef4444] bg-[#ef4444]/10'
-  else if (percent > 80) color = 'text-primary bg-primary/10'
+  else if (percent > 80) color = 'bg-primary text-primary-foreground'
   else if (percent > 60) color = 'text-[#eab308] bg-[#eab308]/10'
   return <Badge className={`text-xs ${color}`}>{percent.toFixed(0)}%</Badge>
 }

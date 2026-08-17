@@ -441,14 +441,14 @@ export function ChatWindow() {
                   className={cn(
                     'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
                     webSearchEnabled
-                      ? 'bg-primary/10 text-primary'
+                      ? 'bg-primary text-primary-foreground shadow-sm'
                       : 'text-muted-foreground hover:bg-muted',
                   )}
                   onClick={() => setWebSearchEnabled(v => !v)}
                   title={webSearchEnabled ? '网络搜索已开启' : '网络搜索已关闭'}
                 >
                   <Globe size={13} />
-                  {webSearchEnabled ? '联网搜索' : '联网搜索'}
+                  联网搜索
                 </button>
                 {/* 上传小票 */}
                 <Button

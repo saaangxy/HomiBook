@@ -107,7 +107,7 @@ function buildCron(
 
 const btnBase = 'px-2 py-1 text-xs rounded border transition-colors'
 const btnSelected = `${btnBase} bg-primary text-primary-foreground border-primary`
-const btnDefault = `${btnBase} bg-background text-foreground border-border hover:bg-primary/10 hover:text-primary`
+const btnDefault = `${btnBase} bg-background text-foreground border-border hover:bg-primary hover:text-primary-foreground`
 
 function GridButton({ value, isSelected, onClick, children, minWidth = '36px' }: {
   value: number

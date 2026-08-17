@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, ArrowLeftRight, BarChart3, Settings, type LucideIcon } from 'lucide-react'
+import { LayoutDashboard, ArrowLeftRight, BarChart3, CalendarDays, type LucideIcon } from 'lucide-react'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { cn } from '@/lib/utils'
 
@@ -7,7 +7,7 @@ const ITEMS: { path: string; label: string; icon: LucideIcon }[] = [
   { path: '/', label: '首页', icon: LayoutDashboard },
   { path: '/records', label: '流水', icon: ArrowLeftRight },
   { path: '/stats', label: '统计', icon: BarChart3 },
-  { path: '/settings', label: '设置', icon: Settings },
+  { path: '/records/calendar', label: '流水日历', icon: CalendarDays },
 ]
 
 export function BottomNav() {
@@ -28,8 +28,8 @@ export function BottomNav() {
               onClick={() => navigate(item.path)}
               className={cn(
                 'flex flex-col items-center justify-center gap-1 text-[11px]',
-                'transition-colors',
-                active ? 'text-primary' : 'text-muted-foreground',
+                'mx-1 my-1.5 rounded-xl transition-colors',
+                active ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
               )}
             >
               <item.icon size={20} />
