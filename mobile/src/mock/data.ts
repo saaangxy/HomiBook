@@ -1,4 +1,4 @@
-import type { AccountItem, BudgetItem, Category, RadarMetric, RecordItem, RecordSummary, Server } from '@/types';
+import type { AccountItem, AdminUser, AuditLogItem, BudgetItem, Category, Ledger, RadarMetric, RecurringTransaction, RecordItem, RecordSummary, Server } from '@/types';
 
 // 分类(图标用 lucide 名称,由组件映射)
 export const mockCategories: Category[] = [
@@ -66,6 +66,12 @@ export const mockRadar: RadarMetric[] = [
   { name: '保障充足度', value: 55, detail: '保费占收入 6.2%' },
 ];
 
+export const mockLedgers: Ledger[] = [
+  { id: 'l1', name: '家庭账本', icon: '🏠', memberCount: 3 },
+  { id: 'l2', name: '个人账本', icon: '👤', memberCount: 1 },
+  { id: 'l3', name: '旅行账本', icon: '✈️', memberCount: 2 },
+];
+
 export const mockServers: Server[] = [
   { id: 's1', name: '演示站', baseUrl: 'https://demo.homibook.com' },
   { id: 's2', name: '本地开发', baseUrl: 'http://192.168.1.100:3002' },
@@ -74,8 +80,35 @@ export const mockServers: Server[] = [
 
 export const mockAuth = {
   username: 'demo',
-  nickname: '奶爸记账',
+  nickname: 'demo',
   isLoggedIn: false,
   serverId: null,
   remember: true,
 };
+
+// 固定收支
+export const mockRecurring: RecurringTransaction[] = [
+  { id: 'rc1', name: '8月工资', type: 'INCOME', recurringType: 'PERIODIC', amount: 15000, accountId: 'a1', accountName: '工资卡', categoryCode: '工资', categoryName: '工资', cron: '每月 10 日', active: true, nextGenerateAt: '2026-09-10' },
+  { id: 'rc2', name: '房租', type: 'EXPENSE', recurringType: 'PERIODIC', amount: 2600, accountId: 'a1', accountName: '工资卡', categoryCode: '住房', categoryName: '住房', cron: '每月 1 日', active: true, nextGenerateAt: '2026-09-01' },
+  { id: 'rc3', name: '房贷还款', type: 'EXPENSE', recurringType: 'LOAN', amount: 0, accountId: 'a4', accountName: '信用卡', cron: '每月 20 日', active: true, nextGenerateAt: '2026-09-20' },
+  { id: 'rc4', name: '基金定投', type: 'TRANSFER', recurringType: 'PERIODIC', amount: 1000, accountId: 'a1', accountName: '工资卡', toAccountId: 'a5', cron: '每月 15 日', active: true, nextGenerateAt: '2026-09-15' },
+  { id: 'rc5', name: '话费代扣', type: 'EXPENSE', recurringType: 'PERIODIC', amount: 99, accountId: 'a2', accountName: '支付宝', remark: '移动套餐', cron: '每月 25 日', active: false },
+];
+
+// 用户管理
+export const mockUsers: AdminUser[] = [
+  { id: 'u1', email: 'admin@homibook.com', username: 'admin', nickname: '管理员', role: 'ADMIN', status: 'ACTIVE', createdAt: '2025-01-01' },
+  { id: 'u2', email: 'demo@homibook.com', username: 'demo', nickname: '小明', role: 'USER', status: 'ACTIVE', createdAt: '2025-03-12' },
+  { id: 'u3', email: 'lily@homibook.com', username: 'lily', nickname: '小李', role: 'USER', status: 'ACTIVE', createdAt: '2025-06-20' },
+  { id: 'u4', email: 'test@homibook.com', username: 'test', nickname: '测试号', role: 'USER', status: 'DISABLED', createdAt: '2025-08-05' },
+];
+
+// AI 审计日志
+export const mockAuditLogs: AuditLogItem[] = [
+  { id: 'al1', userNickname: '管理员', action: 'tool_call', toolName: 'query_records', input: '{"range":"本月"}', output: '{"count":8}', status: 'success', durationMs: 320, modelName: 'claude-opus-4-6', createdAt: '2026-08-19 10:12:33' },
+  { id: 'al2', userNickname: '小明', action: 'model_call', toolName: '洞察总结', status: 'success', durationMs: 1450, modelName: 'claude-sonnet-4-6', createdAt: '2026-08-19 09:41:08' },
+  { id: 'al3', userNickname: '管理员', action: 'confirm', toolName: 'create_record', input: '{"amount":58.5}', status: 'success', durationMs: 12, modelName: 'claude-opus-4-6', createdAt: '2026-08-18 22:05:44' },
+  { id: 'al4', userNickname: '小李', action: 'tool_call', toolName: 'ocr_receipt', input: '{"image":"receipt.jpg"}', output: '{"error":"识别失败"}', status: 'error', errorMessage: '图片模糊,无法识别文字', durationMs: 890, modelName: 'claude-sonnet-4-6', createdAt: '2026-08-18 20:33:19' },
+  { id: 'al5', userNickname: '小明', action: 'reject', toolName: 'create_record', input: '{"amount":3200}', status: 'success', durationMs: 9, modelName: 'claude-opus-4-6', createdAt: '2026-08-18 15:27:51' },
+  { id: 'al6', userNickname: '管理员', action: 'tool_call', toolName: 'analyze_budget', input: '{"month":"2026-08"}', output: '{"warning":1}', status: 'success', durationMs: 610, modelName: 'claude-opus-4-6', createdAt: '2026-08-17 09:02:14' },
+];

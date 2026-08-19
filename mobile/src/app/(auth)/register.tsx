@@ -1,15 +1,16 @@
 import { useState } from 'react';
-import { Pressable, TextInput, View } from 'react-native';
-import { router, Link } from 'expo-router';
-import { Eye, EyeOff, ArrowLeft } from 'lucide-react-native';
+import { Link, router } from 'expo-router';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { ArrowLeft, Eye, EyeOff } from 'lucide-react-native';
 import { useTheme } from '@/theme';
-import { Screen } from '@/components/Screen';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '@/components/ui/Button';
 import { Text } from '@/components/ui/Text';
-import { FadeInView } from '@/components/FadeInView';
 
 export default function RegisterScreen() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [nickname, setNickname] = useState('');
@@ -17,49 +18,57 @@ export default function RegisterScreen() {
   const [showPwd, setShowPwd] = useState(false);
 
   const inputStyle = {
-    backgroundColor: colors.card,
+    backgroundColor: colors.elevated,
+    borderWidth: 1,
     borderColor: colors.border,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
     color: colors.foreground,
+    fontSize: 15,
   };
 
   return (
-    <Screen keyboard>
-      <View className="flex-1 px-6 pt-8">
-        <Pressable onPress={() => router.back()} className="mb-6" style={{ alignSelf: 'flex-start' }}>
-          <ArrowLeft size={24} color={colors.foreground} />
-        </Pressable>
+    <View style={{ flex: 1 }}>
+      <LinearGradient
+        colors={isDark ? ['#1e293b', '#0f172a'] : ['#fff7ed', '#ffedd5']}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, paddingTop: insets.top }}
+      >
+        <View style={{ flex: 1, padding: 20 }}>
+          <Pressable onPress={() => router.back()} style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.06)' }}>
+            <ArrowLeft size={20} color={colors.foreground} />
+          </Pressable>
 
-        <FadeInView>
-          <Text style={{ fontSize: 22, fontWeight: '700', marginBottom: 4, color: colors.foreground }}>创建账号</Text>
-          <Text variant="muted" style={{ fontSize: 13, marginBottom: 32 }}>注册一个家庭共用账本</Text>
+          <View style={{ justifyContent: 'center', flex: 1 }}>
+            <Text style={{ color: colors.foreground, fontSize: 30, fontWeight: '800', letterSpacing: -1, marginBottom: 6 }}>
+              创建账号
+            </Text>
+            <Text variant="muted" style={{ fontSize: 13, marginBottom: 24 }}>注册一个家庭共用的账本</Text>
 
-          <View className="gap-3">
-            <TextInput value={username} onChangeText={setUsername} placeholder="账号" placeholderTextColor={colors.mutedForeground} autoCapitalize="none" className="h-[50px] rounded-2xl border px-4" style={inputStyle} />
-            <TextInput value={email} onChangeText={setEmail} placeholder="邮箱地址" placeholderTextColor={colors.mutedForeground} autoCapitalize="none" keyboardType="email-address" className="h-[50px] rounded-2xl border px-4" style={inputStyle} />
-            <TextInput value={nickname} onChangeText={setNickname} placeholder="昵称（可选）" placeholderTextColor={colors.mutedForeground} className="h-[50px] rounded-2xl border px-4" style={inputStyle} />
-            <View className="relative">
-              <TextInput value={password} onChangeText={setPassword} placeholder="密码（至少6位）" placeholderTextColor={colors.mutedForeground} secureTextEntry={!showPwd} className="h-[50px] rounded-2xl border px-4 pr-12" style={inputStyle} />
-              <Pressable className="absolute right-4 top-1/2" style={{ transform: [{ translateY: -11 }] }} onPress={() => setShowPwd((v) => !v)}>
-                {showPwd ? <EyeOff size={20} color={colors.mutedForeground} /> : <Eye size={20} color={colors.mutedForeground} />}
-              </Pressable>
-            </View>
+            <View style={{ backgroundColor: colors.card, borderRadius: 24, padding: 24, borderWidth: 1, borderColor: colors.border, shadowColor: '#0f172a', shadowOpacity: 0.08, shadowRadius: 20, shadowOffset: { width: 0, height: 10 }, elevation: 4, gap: 14 }}>
+              <Text variant="label">账号</Text>
+              <TextInput value={username} onChangeText={setUsername} placeholder="账号" placeholderTextColor={colors.mutedForeground} autoCapitalize="none" style={inputStyle} />
+              <Text variant="label">邮箱地址</Text>
+              <TextInput value={email} onChangeText={setEmail} placeholder="邮箱地址" placeholderTextColor={colors.mutedForeground} autoCapitalize="none" keyboardType="email-address" style={inputStyle} />
+              <Text variant="label">昵称（可选）</Text>
+              <TextInput value={nickname} onChangeText={setNickname} placeholder="昵称（可选）" placeholderTextColor={colors.mutedForeground} style={inputStyle} />
+              <Text variant="label">密码（至少6位）</Text>
+              <View style={[inputStyle, { flexDirection: 'row', alignItems: 'center' }]}>
+                <TextInput value={password} onChangeText={setPassword} placeholder="密码（至少6位）" placeholderTextColor={colors.mutedForeground} secureTextEntry={!showPwd} style={{ flex: 1, color: colors.foreground, fontSize: 15, padding: 0 }} />
+                <Pressable onPress={() => setShowPwd((v) => !v)}>
+                  {showPwd ? <EyeOff size={18} color={colors.mutedForeground} /> : <Eye size={18} color={colors.mutedForeground} />}
+                </Pressable>
+              </View>
 
-            <Button
-              title="注 册"
-              size="lg"
-              style={{ marginTop: 8 }}
-              onPress={() => {
-                // 模拟注册,设计优先阶段不接真实后端
-                router.replace('/(tabs)');
-              }}
-            />
-            <View className="flex-row justify-center gap-1 mt-2">
-              <Text variant="muted">已有账号?</Text>
-              <Link href="/login" style={{ color: colors.primary, fontWeight: '600' }}>去登录</Link>
+              <Button title="注册" size="lg" onPress={() => router.replace('/(tabs)')} />
+              <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 4 }}>
+                <Text variant="muted" style={{ fontSize: 13 }}>已有账号?</Text>
+                <Link href="/login" style={{ color: colors.foreground, fontSize: 13, fontWeight: '500' }}>去登录</Link>
+              </View>
             </View>
           </View>
-        </FadeInView>
-      </View>
-    </Screen>
+        </View>
+      </LinearGradient>
+    </View>
   );
 }

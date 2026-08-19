@@ -12,6 +12,8 @@ export interface RecordItem {
   categoryName?: string;
   accountId: string;
   accountName?: string;
+  toAccountId?: string;
+  toAccountName?: string;
   ownerName?: string;
   tags: string[];
 }
@@ -40,6 +42,7 @@ export interface AccountItem {
   balance: number;
   initialBalance: number;
   bankName: string | null;
+  accountNo?: string;
   status: 'ACTIVE' | 'ARCHIVED';
 }
 
@@ -66,6 +69,19 @@ export interface Server {
   baseUrl: string;
 } // 模拟服务器配置
 
+export interface Ledger {
+  id: string;
+  name: string;
+  icon: string; // emoji
+  memberCount: number;
+} // 账本
+
+export type LedgerMenu = {
+  icon: string;
+  label: string;
+  to?: string;
+};
+
 export interface AuthState {
   isLoggedIn: boolean;
   username: string;
@@ -79,4 +95,56 @@ export interface RadarMetric {
   value: number;
   detail?: string;
   available?: boolean;
+}
+
+// 固定收支
+export type RecurringType = 'PERIODIC' | 'LOAN';
+
+export interface RecurringTransaction {
+  id: string;
+  name: string;
+  type: RecordType;
+  recurringType: RecurringType;
+  amount: number;
+  accountId: string;
+  accountName: string;
+  toAccountId?: string;
+  categoryCode?: string;
+  categoryName?: string;
+  payer?: string;
+  remark?: string;
+  cron: string; // '0 0 5 * *' 简化为周期描述
+  active: boolean;
+  nextGenerateAt?: string;
+}
+
+// 用户管理
+export type UserRole = 'ADMIN' | 'USER';
+export type UserStatus = 'ACTIVE' | 'DISABLED';
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  username: string;
+  nickname: string;
+  role: UserRole;
+  status: UserStatus;
+  createdAt: string;
+}
+
+// AI 审计日志
+export type AuditAction = 'tool_call' | 'confirm' | 'reject' | 'model_call';
+
+export interface AuditLogItem {
+  id: string;
+  userNickname: string;
+  action: AuditAction;
+  toolName?: string;
+  input?: string; // JSON 字符串
+  output?: string; // JSON 字符串
+  modelName?: string;
+  durationMs?: number;
+  status: 'success' | 'error';
+  errorMessage?: string;
+  createdAt: string;
 }

@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { Pressable, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Plus, Bot, AlertTriangle, ChevronRight, BookOpen } from 'lucide-react-native';
+import { ChevronRight } from 'lucide-react-native';
 import { useTheme } from '@/theme';
 import { useAuth } from '@/stores/auth';
 import { Screen } from '@/components/Screen';
@@ -10,150 +9,163 @@ import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { RecordRow } from '@/components/RecordRow';
 import { FadeInView } from '@/components/FadeInView';
-import { AnimatedPressable } from '@/components/AnimatedPressable';
-import { fetchRecords, fetchSummary, fetchBudgets, fetchCategories } from '@/services/records';
+import { fetchSummary, fetchBudgets, fetchCategories } from '@/services/records';
+import { useRecords } from '@/stores/records';
+import { useCountUp } from '@/lib/useCountUp';
 import { formatMoney, formatMoneyShort } from '@/lib/format';
-import type { RecordItem, RecordSummary, BudgetItem } from '@/types';
+import type { RecordSummary, BudgetItem } from '@/types';
 
+type Period = '本月' | '当年';
+
+// 首页:收支总览(橙渐变) + 预算 + AI 助手 + 最近流水
 export default function HomeScreen() {
   const { colors } = useTheme();
-  const { nickname, currentServer } = useAuth();
-  const router = useRouter();
-
+  const { nickname } = useAuth();
+  const [period, setPeriod] = useState<Period>('本月');
   const [summary, setSummary] = useState<RecordSummary | null>(null);
-  const [recent, setRecent] = useState<RecordItem[]>([]);
   const [budgets, setBudgets] = useState<BudgetItem[]>([]);
+  const [budgetExp, setBudgetExp] = useState(false);
   const [catMap, setCatMap] = useState<Record<string, string>>({});
+  const { records } = useRecords();
 
-  // 模拟数据加载
   useEffect(() => {
     fetchSummary().then(setSummary);
-    fetchRecords().then((r) => setRecent(r.slice(0, 3)));
     fetchBudgets().then(setBudgets);
     fetchCategories().then((c) => setCatMap(Object.fromEntries(c.map((x) => [x.code, x.icon]))));
   }, []);
+  const recent = records.slice(0, 4);
 
-  const dangerBudget = budgets.find((b) => b.actualAmount >= b.amount);
-  const alarmBudget = budgets.find((b) => b.actualAmount > 0 && b.actualAmount / b.amount > 0.85 && b.actualAmount < b.amount);
+  const balance = useCountUp(summary?.netIncome ?? 0);
+  const totalBudget = budgets.reduce((s, b) => s + b.amount, 0);
+  const totalUsed = budgets.reduce((s, b) => s + b.actualAmount, 0);
+  const pct = totalBudget ? Math.min(100, Math.round((totalUsed / totalBudget) * 100)) : 0;
+
+  const income = summary?.income ?? 0;
+  const expense = summary?.expense ?? 0;
 
   return (
     <Screen scroll>
-      <View className="px-5 pt-3">
-        {/* 问候 + 当前服务器 */}
+      <View className="px-5 pt-4">
+        {/* 问候 */}
         <FadeInView>
-          <View className="flex-row items-center justify-between mb-4 px-1">
+          <View className="flex-row items-center justify-between mb-5">
             <View>
-              <Text variant="title" style={{ fontSize: 22 }}>你好,{nickname || '朋友'}</Text>
-              <Text variant="muted" style={{ fontSize: 13 }}>{currentServer?.name ?? '未连接服务器'}</Text>
+              <Text variant="muted" style={{ fontSize: 13 }}>{period === '本月' ? '下午好' : '近况概览'}</Text>
+              <Text style={{ fontSize: 22, fontWeight: '700' }}>{nickname || '朋友'} 👋</Text>
             </View>
-            <Pressable onPress={() => router.push('/server')} className="flex-row items-center gap-1 rounded-full px-3 py-1.5" style={{ backgroundColor: colors.muted }}>
-              <Text variant="muted" style={{ fontSize: 12 }}>服务器</Text>
-              <ChevronRight size={14} color={colors.mutedForeground} />
-            </Pressable>
           </View>
         </FadeInView>
 
-        {/* 本月摘要渐变卡 */}
+        {/* 收支总览(橙渐变) */}
         <FadeInView index={1}>
           <LinearGradient
-            colors={[colors.primary, '#fb923c']}
+            colors={['#fb923c', '#f97316', '#ea580c']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            className="rounded-3xl p-5 mb-4"
+            style={{ borderRadius: 20, padding: 20, marginBottom: 16, shadowColor: '#f97316', shadowOpacity: 0.3, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 6 }}
           >
-            <View className="flex-row items-center gap-2 mb-1">
-              <BookOpen size={16} color={colors.primaryForeground} />
-              <Text style={{ color: colors.primaryForeground, fontSize: 13 }}>8月账单</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 13, fontWeight: '600' }}>收支总览</Text>
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {(['本月', '当年'] as Period[]).map((p) => {
+                  const active = period === p;
+                  return (
+                    <Pressable
+                      key={p}
+                      onPress={() => setPeriod(p)}
+                      style={{ paddingHorizontal: 12, paddingVertical: 5, borderRadius: 999, backgroundColor: active ? 'rgba(255,255,255,0.25)' : 'transparent' }}
+                    >
+                      <Text style={{ color: '#fff', fontSize: 12, fontWeight: active ? '700' : '400' }}>{p}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
             </View>
-            <View className="flex-row items-end gap-1 mb-4">
-              <Text style={{ color: colors.primaryForeground, fontSize: 30, fontWeight: '800' , fontVariant:['tabular-nums']}}>
-                {summary ? formatMoney(summary.netIncome) : '...'}
-              </Text>
-              <Text style={{ color: colors.primaryForeground, opacity: 0.8, fontSize: 13, marginBottom: 6 }}>本月结余</Text>
-            </View>
-            <View className="flex-row gap-6">
-              <View className="flex-1">
-                <Text style={{ color: colors.primaryForeground, opacity: 0.85, fontSize: 12 }}>收入</Text>
-                <Text style={{ color: colors.primaryForeground, fontSize: 16, fontWeight: '700', fontVariant:['tabular-nums'] }}>
-                  {summary ? formatMoneyShort(summary.income) : '...'}
-                </Text>
-              </View>
-              <View className="flex-1">
-                <Text style={{ color: colors.primaryForeground, opacity: 0.85, fontSize: 12 }}>支出</Text>
-                <Text style={{ color: colors.primaryForeground, fontSize: 16, fontWeight: '700', fontVariant:['tabular-nums'] }}>
-                  {summary ? formatMoneyShort(summary.expense) : '...'}
-                </Text>
-              </View>
-              <View className="flex-1 items-end">
-                <Text style={{ color: colors.primaryForeground, opacity: 0.85, fontSize: 12 }}>本月记账</Text>
-                <Text style={{ color: colors.primaryForeground, fontSize: 16, fontWeight: '700' }}>{recent.length + 5} 笔</Text>
-              </View>
+
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 18 }}>
+              {[
+                { label: '收入', value: formatMoneyShort(income), color: '#d1fae5' },
+                { label: '支出', value: formatMoneyShort(expense), color: '#fee2e2' },
+                { label: '结余', value: formatMoneyShort(balance), color: '#ffffff' },
+              ].map((c) => (
+                <View key={c.label} style={{ flex: 1, alignItems: 'center' }}>
+                  <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12, marginBottom: 4 }}>{c.label}</Text>
+                  <Text style={{ color: c.color, fontSize: 18, fontWeight: '700', fontVariant: ['tabular-nums'] }}>{c.value}</Text>
+                </View>
+              ))}
             </View>
           </LinearGradient>
         </FadeInView>
 
-        {/* 预算预警 */}
-        {(dangerBudget || alarmBudget) && (
-          <FadeInView index={2}>
-            <Card className="p-3.5 mb-4 flex-row items-center gap-3" style={{ borderColor: colors.expense }}>
-              <AlertTriangle size={18} color={colors.expense} />
-              <View className="flex-1">
-                <Text variant="expense" style={{ fontSize: 13, fontWeight: '600' }}>
-                  {dangerBudget ? `${dangerBudget.name} 已超预算` : `${alarmBudget!.name} 即将超预算`}
-                </Text>
-                <Text variant="muted" style={{ fontSize: 12 }}>
-                  {dangerBudget
-                    ? `已花 ${formatMoney(dangerBudget.actualAmount)} / ${formatMoney(dangerBudget.amount)}`
-                    : `已花 ${formatMoney(alarmBudget!.actualAmount)} / ${formatMoney(alarmBudget!.amount)}`}
-                </Text>
+        {/* 预算 */}
+        <FadeInView index={2}>
+          <Card className="px-5 py-4 mb-4" onPress={() => setBudgetExp((v) => !v)}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View>
+                <Text variant="muted" style={{ fontSize: 12 }}>本月总预算</Text>
+                <Text style={{ fontSize: 22, fontWeight: '700', fontVariant: ['tabular-nums'], marginTop: 2 }}>¥{formatMoney(totalBudget)}</Text>
               </View>
-            </Card>
-          </FadeInView>
-        )}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Text variant="muted" style={{ fontSize: 20 }}>{budgetExp ? '⌃' : '⌄'}</Text>
+                <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '600' }}>{pct}%</Text>
+              </View>
+            </View>
+            <View style={{ height: 8, borderRadius: 4, backgroundColor: colors.muted, marginTop: 12, overflow: 'hidden' }}>
+              <View style={{ width: `${pct}%`, height: '100%', backgroundColor: colors.primary, borderRadius: 4 }} />
+            </View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 }}>
+              <Text variant="muted" style={{ fontSize: 11 }}>已用 {formatMoney(totalUsed)}</Text>
+              <Text variant="muted" style={{ fontSize: 11 }}>剩余 {formatMoney(totalBudget - totalUsed)}</Text>
+            </View>
+
+            {budgetExp && (
+              <View style={{ borderTopWidth: 1, borderTopColor: colors.hairline, marginTop: 14, paddingTop: 10 }}>
+                {budgets.map((b) => {
+                  const bp = b.amount ? Math.min(100, Math.round((b.actualAmount / b.amount) * 100)) : 0;
+                  return (
+                    <View key={b.id} style={{ marginBottom: 12 }}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5 }}>
+                        <Text style={{ fontSize: 13 }}>{b.name}</Text>
+                        <Text variant="muted" style={{ fontSize: 12, fontVariant: ['tabular-nums'] }}>{formatMoney(b.actualAmount)} / {formatMoney(b.amount)}</Text>
+                      </View>
+                      <View style={{ height: 6, borderRadius: 3, backgroundColor: colors.muted, overflow: 'hidden' }}>
+                        <View style={{ width: `${bp}%`, height: '100%', backgroundColor: bp >= 100 ? colors.expense : colors.primary, borderRadius: 3 }} />
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+          </Card>
+        </FadeInView>
+
+        {/* AI 助手(点击进入记一笔的 AI 识别) */}
+        <FadeInView index={3}>
+          <Pressable style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: 'rgba(249,115,22,0.06)', borderRadius: 20, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(249,115,22,0.2)' }}>
+            <View style={{ width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(249,115,22,0.12)' }}>
+              <Text style={{ fontSize: 22 }}>🤖</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 15, fontWeight: '600' }}>AI 财务助手</Text>
+              <Text variant="muted" style={{ fontSize: 12, marginTop: 2 }}>本月餐饮支出偏高，建议控制晚餐消费</Text>
+            </View>
+            <ChevronRight size={16} color={colors.primary} />
+          </Pressable>
+        </FadeInView>
 
         {/* 最近流水 */}
-        <View className="mb-4">
-          <View className="flex-row items-center justify-between mb-2 px-1">
-            <Text variant="bold" style={{ fontSize: 16 }}>最近记账</Text>
-            <Pressable onPress={() => router.push('/records')}>
-              <Text variant="primary" style={{ fontSize: 13 }}>查看全部</Text>
-            </Pressable>
-          </View>
-          <Card className="p-4 gap-4">
+        <FadeInView index={4}>
+          <Text variant="muted" style={{ fontSize: 12, letterSpacing: 1, marginBottom: 10 }}>最近流水</Text>
+          <Card className="px-5 py-4 mb-4">
             {recent.map((r, i) => (
-              <FadeInView key={r.id} index={i}>
-                <RecordRow record={r} icon={catMap[r.categoryCode ?? '']} />
-                {i < recent.length - 1 && <View className="h-px my-4" style={{ backgroundColor: colors.border }} />}
-              </FadeInView>
+              <View key={r.id}>
+                <RecordRow record={r} icon={catMap[r.categoryCode ?? '']} showDivider={i < recent.length - 1} />
+                {i < recent.length - 1 && <View style={{ height: 12 }} />}
+              </View>
             ))}
           </Card>
-        </View>
-
-        {/* AI 助手 */}
-        <FadeInView>
-          <AnimatedPressable onPress={() => {/* AI 入口 */}}>
-            <Card className="p-4 flex-row items-center gap-3">
-              <View className="w-11 h-11 rounded-2xl items-center justify-center" style={{ backgroundColor: colors.primary }}>
-                <Bot size={22} color={colors.primaryForeground} />
-              </View>
-              <View className="flex-1">
-                <Text variant="bold" style={{ fontSize: 15 }}>AI 记账助手</Text>
-                <Text variant="muted" style={{ fontSize: 12 }}>"这个月花超了吗?" 问我</Text>
-              </View>
-              <ChevronRight size={18} color={colors.mutedForeground} />
-            </Card>
-          </AnimatedPressable>
         </FadeInView>
       </View>
-
-      {/* 记一笔 FAB */}
-      <AnimatedPressable
-        onPress={() => router.push('/add-record')}
-        className="absolute bottom-6 right-5 w-14 h-14 rounded-full items-center justify-center shadow-lg"
-        style={{ backgroundColor: colors.primary, shadowColor: colors.primary, shadowOpacity: 0.4, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6 }}
-      >
-        <Plus size={26} color={colors.primaryForeground} />
-      </AnimatedPressable>
     </Screen>
   );
 }

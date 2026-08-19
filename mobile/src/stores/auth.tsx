@@ -45,7 +45,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refreshServers]);
 
   const login = useCallback(async (u: string, _pwd: string, serverId: string, remember: boolean) => {
-    const auth = await authService.login(u, u === 'demo' ? '奶爸记账' : u, serverId, remember);
+    const auth = await authService.login(u, u, serverId, remember);
     setIsLoggedIn(true);
     setUsername(auth.username);
     setNickname(auth.nickname);

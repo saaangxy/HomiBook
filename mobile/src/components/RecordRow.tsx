@@ -23,31 +23,41 @@ const ICON_MAP: Record<string, LucideIcon> = {
 interface RecordRowProps {
   record: RecordItem;
   icon?: string;
+  showDivider?: boolean;
 }
 
-// 流水行:分类图标 + 名称/备注 + 金额(收入绿/支出红)
-export function RecordRow({ record, icon }: RecordRowProps) {
+// 精致流水行:44px 圆角图标(收入绿/支出红淡彩底) + 分类/备注 + 金额
+export function RecordRow({ record, icon, showDivider = false }: RecordRowProps) {
   const { colors } = useTheme();
   const Icon = ICON_MAP[icon ?? ''] ?? CircleDollarSign;
   const isIncome = record.type === 'INCOME';
-  const amountColor = isIncome ? colors.income : colors.expense;
+  const isTransfer = record.type === 'TRANSFER';
+  const amountColor = isTransfer ? colors.transfer : isIncome ? colors.income : colors.expense;
+  const iconBg = isTransfer ? 'rgba(59,130,246,0.12)' : isIncome ? 'rgba(34,197,94,0.12)' : 'rgba(249,115,22,0.12)';
+  const iconColor = isTransfer ? colors.transfer : isIncome ? colors.income : colors.primary;
+  const subtitle = isTransfer
+    ? `${record.accountName ?? ''} → ${record.toAccountName ?? '其他账户'}`
+    : (record.remark || record.accountName || record.date);
 
   return (
-    <View className="flex-row items-center gap-3">
-      <View className="w-11 h-11 rounded-2xl items-center justify-center" style={{ backgroundColor: colors.muted }}>
-        <Icon size={20} color={colors.primary} />
-      </View>
-      <View className="flex-1">
-        <Text numberOfLines={1} style={{ color: colors.foreground, fontWeight: '600', fontSize: 15 }}>
-          {record.categoryName ?? '未分类'}
+    <View>
+      <View className="flex-row items-center gap-3">
+        <View className="w-11 h-11 rounded-[14px] items-center justify-center" style={{ backgroundColor: iconBg }}>
+          <Icon size={20} color={iconColor} />
+        </View>
+        <View className="flex-1">
+          <Text numberOfLines={1} style={{ fontSize: 15, fontWeight: '600' }}>
+            {record.categoryName ?? '未分类'}
+          </Text>
+          <Text numberOfLines={1} variant="muted" style={{ fontSize: 12, marginTop: 2 }}>
+            {subtitle}
+          </Text>
+        </View>
+        <Text style={{ color: amountColor, fontWeight: '700', fontSize: 16, fontVariant: ['tabular-nums'] }}>
+          {isIncome ? '+' : '-'}{formatMoney(record.amount)}
         </Text>
-        <Text numberOfLines={1} variant="muted" style={{ fontSize: 12, marginTop: 2 }}>
-          {record.remark || record.accountName || record.date}
-        </Text>
       </View>
-      <Text style={{ color: amountColor, fontWeight: '700', fontSize: 15, fontVariant: ['tabular-nums'] }}>
-        {isIncome ? '+' : '-'}{formatMoney(record.amount)}
-      </Text>
+      {showDivider && <View className="h-px mt-3" style={{ backgroundColor: colors.hairline }} />}
     </View>
   );
 }

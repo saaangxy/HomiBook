@@ -1,51 +1,55 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 
-// 语义色 token(与 web 主题对齐:橙色主色、圆角卡片)
+// 橙色多彩账本配色(对齐移动端原型):
+// slate 底 + 橙主色 + 绿收入/红支出 + 柔和阴影。活泼、精致、色彩分明。
 export interface ThemeColors {
-  background: string;
-  card: string;
-  cardMuted: string;
-  foreground: string;
-  muted: string;
-  mutedForeground: string;
-  border: string;
-  primary: string;
+  background: string;      // 页面 slate 底
+  card: string;            // 卡片面
+  elevated: string;        // 浮层/输入框面
+  foreground: string;      // 正文
+  muted: string;           // 次要面
+  mutedForeground: string; // 次要文字
+  border: string;          // 发丝线
+  hairline: string;        // 更细的发丝线
+  primary: string;         // 橙主操作
   primaryForeground: string;
-  destructive: string;
-  income: string;
-  expense: string;
+  income: string;          // 收入绿
+  expense: string;         // 支出红
+  transfer: string;        // 转账蓝
   white: string;
 }
 
 export const lightColors: ThemeColors = {
   background: '#f8fafc',
   card: '#ffffff',
-  cardMuted: '#f1f5f9',
-  foreground: '#111827',
+  elevated: '#f8fafc',
+  foreground: '#0f172a',
   muted: '#f1f5f9',
   mutedForeground: '#64748b',
   border: '#e2e8f0',
+  hairline: '#f1f5f9',
   primary: '#f97316',
   primaryForeground: '#ffffff',
-  destructive: '#ef4444',
   income: '#22c55e',
   expense: '#ef4444',
+  transfer: '#3b82f6',
   white: '#ffffff',
 };
 
 export const darkColors: ThemeColors = {
   background: '#0f172a',
   card: '#1e293b',
-  cardMuted: '#0f172a',
+  elevated: '#1e293b',
   foreground: '#f8fafc',
   muted: '#334155',
   mutedForeground: '#94a3b8',
   border: '#334155',
+  hairline: '#263550',
   primary: '#f97316',
   primaryForeground: '#ffffff',
-  destructive: '#ef4444',
   income: '#22c55e',
   expense: '#ef4444',
+  transfer: '#3b82f6',
   white: '#ffffff',
 };
 
