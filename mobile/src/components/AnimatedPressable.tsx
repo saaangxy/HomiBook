@@ -1,7 +1,7 @@
 import { forwardRef } from 'react';
 import { Pressable, type PressableProps } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
-import * as Haptics from 'expo-haptics';
+import { motion, haptics } from '@/theme/motion';
 
 const AnimatedPressableBase = Animated.createAnimatedComponent(Pressable);
 
@@ -28,12 +28,12 @@ export const AnimatedPressable = forwardRef<typeof Pressable, AnimatedPressableP
       ref={ref as any}
       disabled={disabled}
       onPressIn={(e) => {
-        s.value = withSpring(scale, { damping: 20, stiffness: 300 });
-        if (haptic && !disabled) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        s.value = withSpring(scale, motion.spring.snappy);
+        if (haptic && !disabled) haptics.tap();
         onPressIn?.(e);
       }}
       onPressOut={(e) => {
-        s.value = withSpring(1, { damping: 20, stiffness: 300 });
+        s.value = withSpring(1, motion.spring.snappy);
         onPressOut?.(e);
       }}
       style={[animatedStyle, style]}

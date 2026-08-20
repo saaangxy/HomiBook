@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
-import type { Ledger } from '@/types';
+import type { Ledger, RecordItem } from '@/types';
 import { mockLedgers } from '@/mock/data';
 import { Sidebar } from './Sidebar';
 import { LedgerModal } from './LedgerModal';
@@ -19,8 +19,10 @@ interface UIShellValue {
   openLedger: () => void;
   closeLedger: () => void;
   recordOpen: boolean;
-  openRecord: () => void;
+  /** 传入记录即编辑模式,否则新建 */
+  openRecord: (record?: RecordItem) => void;
   closeRecord: () => void;
+  editingRecord: RecordItem | null;
 }
 
 const UIShellContext = createContext<UIShellValue | null>(null);
@@ -31,6 +33,7 @@ export function UIShellProvider({ children }: { children: ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [ledgerOpen, setLedgerOpen] = useState(false);
   const [recordOpen, setRecordOpen] = useState(false);
+  const [editingRecord, setEditingRecord] = useState<RecordItem | null>(null);
 
   const value = useMemo<UIShellValue>(
     () => ({
@@ -50,10 +53,17 @@ export function UIShellProvider({ children }: { children: ReactNode }) {
       openLedger: () => setLedgerOpen(true),
       closeLedger: () => setLedgerOpen(false),
       recordOpen,
-      openRecord: () => setRecordOpen(true),
-      closeRecord: () => setRecordOpen(false),
+      openRecord: (record) => {
+        setEditingRecord(record ?? null);
+        setRecordOpen(true);
+      },
+      closeRecord: () => {
+        setRecordOpen(false);
+        setEditingRecord(null);
+      },
+      editingRecord,
     }),
-    [ledgers, currentLedgerId, sidebarOpen, ledgerOpen, recordOpen],
+    [ledgers, currentLedgerId, sidebarOpen, ledgerOpen, recordOpen, editingRecord],
   );
 
   return (

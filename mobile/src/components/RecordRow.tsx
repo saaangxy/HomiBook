@@ -1,7 +1,7 @@
 import { View } from 'react-native';
 import { Utensils, ShoppingBag, Car, Home, BookOpen, HeartPulse, Gamepad2, Shield, Wallet, Gift, TrendingUp, Landmark, CircleDollarSign, type LucideIcon } from 'lucide-react-native';
 import type { RecordItem } from '@/types';
-import { useTheme } from '@/theme';
+import { useTheme, alpha } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { formatMoney } from '@/lib/format';
 
@@ -33,11 +33,11 @@ export function RecordRow({ record, icon, showDivider = false }: RecordRowProps)
   const isIncome = record.type === 'INCOME';
   const isTransfer = record.type === 'TRANSFER';
   const amountColor = isTransfer ? colors.transfer : isIncome ? colors.income : colors.expense;
-  const iconBg = isTransfer ? 'rgba(59,130,246,0.12)' : isIncome ? 'rgba(34,197,94,0.12)' : 'rgba(249,115,22,0.12)';
   const iconColor = isTransfer ? colors.transfer : isIncome ? colors.income : colors.primary;
+  const iconBg = alpha(iconColor, 0.12);
   const subtitle = isTransfer
     ? `${record.accountName ?? ''} → ${record.toAccountName ?? '其他账户'}`
-    : (record.remark || record.accountName || record.date);
+    : (record.counterparty || record.remark || record.accountName || record.date);
 
   return (
     <View>

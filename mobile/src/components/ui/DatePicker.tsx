@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react-native';
-import { useTheme } from '@/theme';
+import { useTheme, alpha } from '@/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '@/components/ui/Text';
 
@@ -107,7 +107,7 @@ export function DatePicker({ value, onChange }: DatePickerProps) {
                       <View
                         style={{
                           width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
-                          backgroundColor: isSel ? colors.primary : isToday ? 'rgba(249,115,22,0.12)' : 'transparent',
+                          backgroundColor: isSel ? colors.primary : isToday ? alpha(colors.primary, 0.12) : 'transparent',
                           borderWidth: isToday && !isSel ? 1 : 0,
                           borderColor: colors.primary,
                         }}

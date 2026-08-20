@@ -1,7 +1,7 @@
-import { Pressable, Switch, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ChevronRight, Moon, Sun, LogOut, CircleUserRound, Server } from 'lucide-react-native';
-import { useTheme } from '@/theme';
+import { ChevronRight, Palette, LogOut, CircleUserRound, Server } from 'lucide-react-native';
+import { useTheme, alpha } from '@/theme';
 import { useAuth } from '@/stores/auth';
 import { Screen } from '@/components/Screen';
 import { Card } from '@/components/ui/Card';
@@ -32,9 +32,10 @@ function Row({ icon, iconBg, label, right, onPress, danger, last }: RowProps) {
 }
 
 export default function SettingsScreen() {
-  const { colors, isDark, toggleTheme } = useTheme();
+  const { colors, themeId, palette } = useTheme();
   const { nickname, username, currentServer, logout } = useAuth();
   const router = useRouter();
+  const themeName = themeId === 'system' ? '跟随系统' : palette.name;
 
   return (
     <Screen scroll>
@@ -44,7 +45,7 @@ export default function SettingsScreen() {
         {/* 用户 */}
         <FadeInView>
           <Card className="px-5 py-4 mb-4" style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-            <View style={{ width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(249,115,22,0.12)' }}>
+            <View style={{ width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: alpha(colors.primary, 0.12) }}>
               <CircleUserRound size={28} color={colors.primary} />
             </View>
             <View style={{ flex: 1 }}>
@@ -65,9 +66,10 @@ export default function SettingsScreen() {
               onPress={() => router.push('/server')}
             />
             <Row
-              icon={isDark ? <Moon size={16} color={colors.primary} /> : <Sun size={16} color={colors.primary} />}
-              label="深色模式"
-              right={<Switch value={isDark} onValueChange={toggleTheme} trackColor={{ true: colors.primary }} thumbColor="#fff" />}
+              icon={<Palette size={16} color={colors.primary} />}
+              label="外观主题"
+              right={<Text variant="muted" style={{ fontSize: 12 }}>{themeName}</Text>}
+              onPress={() => router.push('/theme')}
               last
             />
           </Card>

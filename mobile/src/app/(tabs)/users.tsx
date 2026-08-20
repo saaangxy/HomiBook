@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, TextInput, View } from 'react-native';
 import { Plus, Trash2 } from 'lucide-react-native';
-import { useTheme } from '@/theme';
+import { useTheme, alpha } from '@/theme';
 import { useAuth } from '@/stores/auth';
 import { Screen } from '@/components/Screen';
 import { Card } from '@/components/ui/Card';
@@ -102,7 +102,7 @@ export default function UsersScreen() {
               resetCreate();
               setCreateOpen(true);
             }}
-            style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(249,115,22,0.12)' }}
+            style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: alpha(colors.primary, 0.12) }}
           >
             <Plus size={18} color={colors.primary} />
           </Pressable>
@@ -116,7 +116,7 @@ export default function UsersScreen() {
               <FadeInView key={u.id} index={i}>
                 <Card className="px-5 py-4 mb-3" onPress={() => setManage(u)}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                    <View style={{ width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: u.role === 'ADMIN' ? 'rgba(249,115,22,0.12)' : colors.muted }}>
+                    <View style={{ width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: u.role === 'ADMIN' ? alpha(colors.primary, 0.12) : colors.muted }}>
                       <Text style={{ fontSize: 18, fontWeight: '700', color: u.role === 'ADMIN' ? colors.primary : colors.mutedForeground }}>{u.nickname.slice(0, 1)}</Text>
                     </View>
                     <View style={{ flex: 1 }}>
@@ -127,7 +127,7 @@ export default function UsersScreen() {
                       <Text variant="muted" style={{ fontSize: 12, marginTop: 2 }} numberOfLines={1}>{u.email}</Text>
                     </View>
                     <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                      <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, backgroundColor: u.role === 'ADMIN' ? 'rgba(249,115,22,0.12)' : colors.muted }}>
+                      <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, backgroundColor: u.role === 'ADMIN' ? alpha(colors.primary, 0.12) : colors.muted }}>
                         <Text style={{ fontSize: 10, color: u.role === 'ADMIN' ? colors.primary : colors.mutedForeground, fontWeight: '600' }}>{ROLE_LABEL[u.role]}</Text>
                       </View>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -160,7 +160,7 @@ export default function UsersScreen() {
               const selected = nRole === r;
               const c = r === 'ADMIN' ? colors.primary : colors.foreground;
               return (
-                <Pressable key={r} onPress={() => setNRole(r)} style={{ flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 999, borderWidth: 1, borderColor: selected ? c : colors.border, backgroundColor: selected ? `${c}1f` : colors.muted }}>
+                <Pressable key={r} onPress={() => setNRole(r)} style={{ flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 999, borderWidth: 1, borderColor: selected ? c : colors.border, backgroundColor: selected ? alpha(c, 0.12) : colors.muted }}>
                   <Text style={{ fontSize: 13, color: selected ? c : colors.mutedForeground, fontWeight: '600' }}>{ROLE_LABEL[r]}</Text>
                 </Pressable>
               );

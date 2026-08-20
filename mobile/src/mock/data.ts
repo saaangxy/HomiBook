@@ -1,4 +1,4 @@
-import type { AccountItem, AdminUser, AuditLogItem, BudgetItem, Category, Ledger, RadarMetric, RecurringTransaction, RecordItem, RecordSummary, Server } from '@/types';
+import type { AccountItem, AdminUser, AuditLogItem, BudgetItem, BudgetType, Category, Ledger, LedgerMember, RadarMetric, RecurringTransaction, RecordItem, RecordSummary, Server } from '@/types';
 
 // 分类(图标用 lucide 名称,由组件映射)
 export const mockCategories: Category[] = [
@@ -44,10 +44,11 @@ export const mockSummary: RecordSummary = {
 };
 
 export const mockBudgets: BudgetItem[] = [
-  { id: 'b1', name: '餐饮', categoryCode: '餐饮', amount: 2000, actualAmount: 1860, year: 2026, month: 8 },
-  { id: 'b2', name: '购物', categoryCode: '购物', amount: 1500, actualAmount: 1420, year: 2026, month: 8 },
-  { id: 'b3', name: '交通', categoryCode: '交通', amount: 800, actualAmount: 320, year: 2026, month: 8 },
-  { id: 'b4', name: '娱乐', categoryCode: '娱乐', amount: 500, actualAmount: 45, year: 2026, month: 8 },
+  { id: 'b1', name: '餐饮', type: 'FIXED' as BudgetType, categoryCode: '餐饮', amount: 2000, actualAmount: 1860, year: 2026, month: 8 },
+  { id: 'b2', name: '购物', type: 'FREE' as BudgetType, categoryCode: '购物', amount: 1500, actualAmount: 1420, year: 2026, month: 8 },
+  { id: 'b3', name: '交通', type: 'FIXED' as BudgetType, categoryCode: '交通', amount: 800, actualAmount: 320, year: 2026, month: 8 },
+  { id: 'b4', name: '娱乐', type: 'FREE' as BudgetType, categoryCode: '娱乐', amount: 500, actualAmount: 45, year: 2026, month: 8 },
+  { id: 'b5', name: '年度旅行', type: 'FREE' as BudgetType, categoryCode: null, amount: 20000, actualAmount: 8500, year: 2026, month: null },
 ];
 
 export const mockMonthlyTrend = {
@@ -66,11 +67,52 @@ export const mockRadar: RadarMetric[] = [
   { name: '保障充足度', value: 55, detail: '保费占收入 6.2%' },
 ];
 
-export const mockLedgers: Ledger[] = [
-  { id: 'l1', name: '家庭账本', icon: '🏠', memberCount: 3 },
-  { id: 'l2', name: '个人账本', icon: '👤', memberCount: 1 },
-  { id: 'l3', name: '旅行账本', icon: '✈️', memberCount: 2 },
+// 资产净值月度趋势
+export const mockAssetNetWorth = {
+  months: ['3月', '4月', '5月', '6月', '7月', '8月'],
+  values: [58000, 62000, 64500, 68000, 71200, 73490],
+};
+
+// 账户余额分布
+export const mockAccountBalance = [
+  { name: '工资卡', value: 12860.5, color: '#3b82f6' },
+  { name: '支付宝', value: 3450.2, color: '#06b6d4' },
+  { name: '微信零钱', value: 880, color: '#22c55e' },
+  { name: '基金账户', value: 52000, color: '#a855f7' },
+  { name: '信用卡', value: 2300, color: '#ef4444' },
+  { name: '现金', value: 600, color: '#f59e0b' },
 ];
+
+// 分类支出分布(饼图)
+export const mockCategoryPie = [
+  { name: '住房', value: 2600, color: '#6366f1' },
+  { name: '餐饮', value: 1860, color: '#f97316' },
+  { name: '购物', value: 1420, color: '#ec4899' },
+  { name: '交通', value: 320, color: '#14b8a6' },
+  { name: '医疗', value: 180, color: '#ef4444' },
+  { name: '娱乐', value: 45, color: '#8b5cf6' },
+];
+
+export const mockLedgers: Ledger[] = [
+  { id: 'l1', name: '家庭账本', icon: '🏠', memberCount: 3, shareCode: 'FAM2026', role: 'OWNER' },
+  { id: 'l2', name: '个人账本', icon: '👤', memberCount: 1, shareCode: 'PER2026', role: 'OWNER' },
+  { id: 'l3', name: '旅行账本', icon: '✈️', memberCount: 2, shareCode: 'TRV2026', role: 'MEMBER' },
+];
+
+export const mockLedgerMembers: Record<string, LedgerMember[]> = {
+  l1: [
+    { id: 'u1', nickname: '张三', role: 'OWNER', joinedAt: '2025-01-01' },
+    { id: 'u2', nickname: '李四', role: 'MEMBER', joinedAt: '2025-03-15' },
+    { id: 'u3', nickname: '王五', role: 'MEMBER', joinedAt: '2025-06-20' },
+  ],
+  l2: [
+    { id: 'u1', nickname: '张三', role: 'OWNER', joinedAt: '2025-01-01' },
+  ],
+  l3: [
+    { id: 'u2', nickname: '李四', role: 'OWNER', joinedAt: '2025-04-01' },
+    { id: 'u1', nickname: '张三', role: 'MEMBER', joinedAt: '2025-05-10' },
+  ],
+};
 
 export const mockServers: Server[] = [
   { id: 's1', name: '演示站', baseUrl: 'https://demo.homibook.com' },

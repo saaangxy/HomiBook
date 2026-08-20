@@ -20,18 +20,20 @@ const SIZES = {
   lg: { height: 54, padX: 24, fontSize: 16 },
 };
 
-// 橙渐变主按钮(pill)、次级/描边/幽灵变体 —— 对齐移动端原型
+// 主题化主按钮(品牌渐变,圆角随主题;mondrian 为方角色块)、次级/描边/幽灵变体
 export function Button({ title, onPress, variant = 'primary', disabled, loading, size = 'md', icon, style }: ButtonProps) {
-  const { colors } = useTheme();
+  const { colors, palette, fonts } = useTheme();
   const s = SIZES[size];
   const isPrimary = variant === 'primary';
+  const radius = palette.radius.button;
+  const font = { fontFamily: fonts.medium };
 
   const base: ViewStyle = {
     height: s.height,
-    borderRadius: 999,
+    borderRadius: radius,
     paddingHorizontal: s.padX,
-    borderWidth: variant === 'outline' || variant === 'secondary' ? 1 : 0,
-    borderColor: variant === 'outline' ? colors.border : variant === 'secondary' ? colors.border : 'transparent',
+    borderWidth: variant === 'outline' || variant === 'secondary' ? palette.cardStyle.borderWidth : 0,
+    borderColor: variant === 'outline' || variant === 'secondary' ? colors.border : 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
@@ -39,21 +41,21 @@ export function Button({ title, onPress, variant = 'primary', disabled, loading,
     opacity: disabled ? 0.5 : 1,
   };
 
-  // 次级按钮:浅灰底深字(原型 btn-secondary)
+  // 次级按钮:muted 底深字
   if (variant === 'secondary') {
     return (
       <AnimatedPressable disabled={disabled || loading} onPress={onPress} style={[base, { backgroundColor: colors.muted }, style]}>
         {loading ? <ActivityIndicator color={colors.foreground} /> : (
           <>
             {icon}
-            <Text style={{ color: colors.foreground, fontSize: s.fontSize, fontWeight: '500' }}>{title}</Text>
+            <Text style={[{ color: colors.foreground, fontSize: s.fontSize, fontWeight: '500' }, font]}>{title}</Text>
           </>
         )}
       </AnimatedPressable>
     );
   }
 
-  // 主按钮:橙渐变 + 柔和投影(渐变置于内容之后绘制为底层)
+  // 主按钮:主题品牌渐变 + 投影(overflow 裁剪渐变圆角)
   if (isPrimary) {
     return (
       <AnimatedPressable
@@ -61,20 +63,28 @@ export function Button({ title, onPress, variant = 'primary', disabled, loading,
         onPress={onPress}
         style={[
           base,
-          { backgroundColor: '#f97316', shadowColor: '#f97316', shadowOpacity: 0.35, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 5 },
+          {
+            backgroundColor: colors.primary,
+            overflow: 'hidden',
+            shadowColor: colors.primary,
+            shadowOpacity: palette.cardStyle.shadow === 'none' ? 0 : 0.35,
+            shadowRadius: 14,
+            shadowOffset: { width: 0, height: 6 },
+            elevation: palette.cardStyle.shadow === 'none' ? 0 : 5,
+          },
           style,
         ]}
       >
         <LinearGradient
-          colors={['#fb923c', '#f97316', '#ea580c']}
+          colors={palette.colors.gradient}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
-        {loading ? <ActivityIndicator color="#fff" /> : (
+        {loading ? <ActivityIndicator color={colors.primaryForeground} /> : (
           <>
             {icon}
-            <Text style={{ color: '#fff', fontSize: s.fontSize, fontWeight: '600', letterSpacing: 0.5 }}>{title}</Text>
+            <Text style={[{ color: colors.primaryForeground, fontSize: s.fontSize, fontWeight: '600', letterSpacing: 0.5 }, font]}>{title}</Text>
           </>
         )}
       </AnimatedPressable>
@@ -88,7 +98,7 @@ export function Button({ title, onPress, variant = 'primary', disabled, loading,
       {loading ? <ActivityIndicator color={fg} /> : (
         <>
           {icon}
-          <Text style={{ color: fg, fontSize: s.fontSize, fontWeight: variant === 'ghost' ? '500' : '600' }}>{title}</Text>
+          <Text style={[{ color: fg, fontSize: s.fontSize, fontWeight: variant === 'ghost' ? '500' : '600' }, font]}>{title}</Text>
         </>
       )}
     </AnimatedPressable>

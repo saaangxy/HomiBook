@@ -1,91 +1,214 @@
 import { useState } from 'react';
-import { Pressable, TextInput, View } from 'react-native';
+import { Pressable, TextInput, View, Alert, ScrollView } from 'react-native';
 import { router } from 'expo-router';
-import { X, Plus, Check, Trash2 } from 'lucide-react-native';
-import { useTheme } from '@/theme';
+import { X, Plus, Check, Trash2, Pencil, Server as ServerIcon, User } from 'lucide-react-native';
+import { useTheme, alpha } from '@/theme';
 import { useAuth } from '@/stores/auth';
 import { Screen } from '@/components/Screen';
-import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
-import { Button } from '@/components/ui/Button';
 import { FadeInView } from '@/components/FadeInView';
+import type { Server } from '@/types';
+
+type EditState = { id: string; name: string; baseUrl: string; account: string } | null;
 
 export default function ServerScreen() {
   const { colors } = useTheme();
-  const { servers, currentServer, switchServer, addServer, removeServer } = useAuth();
+  const { servers, currentServer, switchServer, addServer, updateServer, removeServer } = useAuth();
   const [name, setName] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
+  const [account, setAccount] = useState('');
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<EditState>(null);
 
   const handleAdd = async () => {
     if (!name || !baseUrl) return;
-    await addServer(name, baseUrl);
-    setName('');
-    setBaseUrl('');
+    await addServer(name, baseUrl, account || undefined);
+    setName(''); setBaseUrl(''); setAccount('');
     setAdding(false);
   };
 
-  const underline = { borderBottomWidth: 1, borderBottomColor: colors.border };
+  const handleEdit = async () => {
+    if (!editing || !editing.name || !editing.baseUrl) return;
+    await updateServer(editing.id, editing.name, editing.baseUrl, editing.account || undefined);
+    setEditing(null);
+  };
+
+  const handleDelete = (s: Server) => {
+    Alert.alert('删除服务器', `确定删除「${s.name}」吗？`, [
+      { text: '取消', style: 'cancel' },
+      { text: '删除', style: 'destructive', onPress: () => removeServer(s.id) },
+    ]);
+  };
+
+  const inputStyle = {
+    backgroundColor: colors.elevated,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    color: colors.foreground,
+    fontSize: 15,
+  };
+  const labelStyle = { fontSize: 12, color: colors.mutedForeground, marginBottom: 5 };
+
+  const renderForm = (isEdit: boolean) => {
+    const n = isEdit ? editing!.name : name;
+    const u = isEdit ? editing!.baseUrl : baseUrl;
+    const a = isEdit ? editing!.account : account;
+    return (
+      <View style={{ gap: 12 }}>
+        <View>
+          <Text style={labelStyle}>名称</Text>
+          <TextInput
+            value={n}
+            onChangeText={(v) => isEdit ? setEditing({ ...editing!, name: v }) : setName(v)}
+            placeholder="如 演示站"
+            placeholderTextColor={colors.mutedForeground}
+            style={inputStyle}
+          />
+        </View>
+        <View>
+          <Text style={labelStyle}>服务器地址</Text>
+          <TextInput
+            value={u}
+            onChangeText={(v) => isEdit ? setEditing({ ...editing!, baseUrl: v }) : setBaseUrl(v)}
+            placeholder="https://..."
+            placeholderTextColor={colors.mutedForeground}
+            autoCapitalize="none"
+            style={inputStyle}
+          />
+        </View>
+        <View>
+          <Text style={labelStyle}>绑定账号(选填)</Text>
+          <TextInput
+            value={a}
+            onChangeText={(v) => isEdit ? setEditing({ ...editing!, account: v }) : setAccount(v)}
+            placeholder="登录后自动绑定"
+            placeholderTextColor={colors.mutedForeground}
+            autoCapitalize="none"
+            style={inputStyle}
+          />
+        </View>
+        <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+          <Pressable
+            onPress={() => { isEdit ? setEditing(null) : setAdding(false); }}
+            style={{ flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 10, backgroundColor: colors.muted }}
+          >
+            <Text style={{ color: colors.mutedForeground, fontSize: 14 }}>取消</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => isEdit ? handleEdit() : handleAdd()}
+            style={{ flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 10, backgroundColor: colors.primary }}
+          >
+            <Text style={{ color: colors.primaryForeground, fontWeight: '600', fontSize: 14 }}>{isEdit ? '保存' : '添加'}</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  };
 
   return (
     <Screen>
-      <View className="flex-1 px-8 pt-14">
-        <View className="flex-row items-center justify-between mb-8">
-          <Pressable onPress={() => router.back()}>
+      <View style={{ flex: 1 }}>
+        {/* 标题栏 */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 48, paddingBottom: 12 }}>
+          <Pressable onPress={() => router.back()} hitSlop={8}>
             <X size={22} color={colors.foreground} />
           </Pressable>
-          <Text style={{ fontSize: 16, fontWeight: '500', letterSpacing: 1 }}>服务器</Text>
+          <Text style={{ fontSize: 16, fontWeight: '600' }}>服务器管理</Text>
           <View style={{ width: 22 }} />
         </View>
 
-        {/* 服务器列表 */}
-        <Card className="px-0 py-2">
+        <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40, gap: 12 }} keyboardShouldPersistTaps="handled">
+          {servers.length === 0 && !adding && (
+            <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+              <ServerIcon size={40} color={colors.mutedForeground} />
+              <Text variant="muted" style={{ fontSize: 14, marginTop: 8 }}>暂无服务器配置</Text>
+            </View>
+          )}
+
+          {/* 服务器列表 */}
           {servers.map((s, i) => {
-            const active = currentServer?.id === s.id || (currentServer === null && i === 0);
+            const active = currentServer?.id === s.id;
+            const isEditingThis = editing?.id === s.id;
             return (
               <FadeInView key={s.id} index={i}>
-                <Pressable
-                  className="flex-row items-center gap-3 px-5 py-4"
-                  style={i < servers.length - 1 ? { borderBottomWidth: 1, borderBottomColor: colors.hairline } : null}
-                  onPress={() => switchServer(s.id)}
-                >
-                  <View className="flex-1">
-                    <View className="flex-row items-center gap-2">
-                      <Text style={{ fontSize: 15, fontWeight: '500' }}>{s.name}</Text>
-                      {active && <Check size={15} color={colors.foreground} />}
-                    </View>
-                    <Text variant="muted" style={{ fontSize: 12, marginTop: 2 }}>{s.baseUrl}</Text>
+                {isEditingThis ? (
+                  <View style={{ backgroundColor: colors.card, borderRadius: 14, padding: 16, borderWidth: 1, borderColor: colors.border }}>
+                    {renderForm(true)}
                   </View>
-                  {!active && (
-                    <Pressable onPress={() => removeServer(s.id)} className="p-1">
-                      <Trash2 size={16} color={colors.mutedForeground} />
+                ) : (
+                  <View style={{
+                    backgroundColor: colors.card, borderRadius: 14, padding: 14,
+                    borderWidth: 1, borderColor: active ? colors.primary : colors.border,
+                  }}>
+                    <Pressable onPress={() => switchServer(s.id)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                      <View style={{
+                        width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+                        backgroundColor: active ? alpha(colors.primary, 0.12) : colors.muted,
+                      }}>
+                        <ServerIcon size={18} color={active ? colors.primary : colors.mutedForeground} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={{ fontSize: 15, fontWeight: '600', color: colors.foreground }}>{s.name}</Text>
+                          {active && <Check size={14} color={colors.primary} />}
+                        </View>
+                        <Text variant="muted" style={{ fontSize: 12, marginTop: 2 }}>{s.baseUrl}</Text>
+                        {s.account && (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                            <User size={11} color={colors.mutedForeground} />
+                            <Text variant="muted" style={{ fontSize: 11 }}>{s.account}</Text>
+                          </View>
+                        )}
+                      </View>
                     </Pressable>
-                  )}
-                </Pressable>
+                    {/* 操作按钮 */}
+                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                      <Pressable
+                        onPress={() => setEditing({ id: s.id, name: s.name, baseUrl: s.baseUrl, account: s.account ?? '' })}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: colors.muted }}
+                      >
+                        <Pencil size={13} color={colors.foreground} />
+                        <Text style={{ fontSize: 12, color: colors.foreground }}>编辑</Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => handleDelete(s)}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: alpha(colors.expense, 0.1) }}
+                      >
+                        <Trash2 size={13} color={colors.expense} />
+                        <Text style={{ fontSize: 12, color: colors.expense }}>删除</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                )}
               </FadeInView>
             );
           })}
-        </Card>
 
-        {/* 新增 */}
-        <Button
-          title={adding ? '收起' : '添加服务器'}
-          variant="outline"
-          icon={<Plus size={16} color={colors.foreground} />}
-          style={{ marginTop: 20 }}
-          onPress={() => setAdding((v) => !v)}
-        />
-        {adding && (
-          <View className="gap-6 mt-6">
-            <View style={underline}>
-              <TextInput value={name} onChangeText={setName} placeholder="名称（如 演示站）" placeholderTextColor={colors.mutedForeground} className="pb-2" style={{ color: colors.foreground, fontSize: 15 }} />
+          {/* 添加表单 */}
+          {adding && (
+            <View style={{ backgroundColor: colors.card, borderRadius: 14, padding: 16, borderWidth: 1, borderColor: colors.border }}>
+              {renderForm(false)}
             </View>
-            <View style={underline}>
-              <TextInput value={baseUrl} onChangeText={setBaseUrl} placeholder="https://..." placeholderTextColor={colors.mutedForeground} autoCapitalize="none" className="pb-2" style={{ color: colors.foreground, fontSize: 15 }} />
-            </View>
-            <Button title="保存" onPress={handleAdd} />
-          </View>
-        )}
+          )}
+
+          {/* 添加按钮 */}
+          {!adding && (
+            <Pressable
+              onPress={() => setAdding(true)}
+              style={{
+                flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                paddingVertical: 12, borderRadius: 12,
+                borderWidth: 1, borderStyle: 'dashed', borderColor: colors.border,
+              }}
+            >
+              <Plus size={16} color={colors.mutedForeground} />
+              <Text variant="muted" style={{ fontSize: 14 }}>添加服务器</Text>
+            </Pressable>
+          )}
+        </ScrollView>
       </View>
     </Screen>
   );

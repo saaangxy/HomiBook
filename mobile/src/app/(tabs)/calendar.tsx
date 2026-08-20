@@ -1,45 +1,37 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
-import { ChevronLeft, ChevronRight } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight, CalendarCheck } from 'lucide-react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
-import { useTheme } from '@/theme';
+import { useTheme, haptics, alpha } from '@/theme';
 import { Screen } from '@/components/Screen';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { RecordRow } from '@/components/RecordRow';
 import { FormSheet } from '@/components/chrome/FormSheet';
-import { fetchRecords, fetchCategories } from '@/services/records';
+import { useUIShell } from '@/components/chrome/chrome';
+import { useRecords } from '@/stores/records';
 import { formatMoney, formatMoneyShort } from '@/lib/format';
-import type { RecordItem } from '@/types';
 
 const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日'];
-const ROW_FULL = 64; // 日历格 全高
-const ROW_CALM = 48; // 选中压缩后高度
+const ROW_FULL = 64; // 日历行高(始终不变,压缩的是可视高度)
+const CALM_ROWS = 3; // 压缩态可见行数(其余上下滚动展示)
 
-// 流水日历:月历网格(流水高亮/今日橙底/当日收支) + 选中日流水(选中后压缩日历、放大当日流水)+ 点击年月快速导航
+// 流水日历:月历网格(日期下常显当日收支) + 选中压缩日历可视高度(整月仍可滚动)+ 放大当日流水(点击记录可编辑)+ 年月快速导航
 export default function CalendarScreen() {
   const { colors } = useTheme();
   const { width } = useWindowDimensions();
-  const [year, setYear] = useState(2026);
-  const [month, setMonth] = useState(8); // 1-12
-  const [selected, setSelected] = useState(17);
-  const [records, setRecords] = useState<RecordItem[]>([]);
-  const [catMap, setCatMap] = useState<Record<string, string>>({});
+  const now = new Date();
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth() + 1); // 1-12
+  const [selected, setSelected] = useState(now.getDate());
+  // 唯一数据源:记一笔/编辑/删除后日历即时一致
+  const { records, categories } = useRecords();
+  const { openRecord } = useUIShell();
+  const catMap = useMemo(() => Object.fromEntries(categories.map((x) => [x.code, x.icon])), [categories]);
   const [ymOpen, setYmOpen] = useState(false);
   const [pickY, setPickY] = useState(year);
   const [expanded, setExpanded] = useState(true); // 日历展开态(选中日压缩后为 false)
-
-  // 选中日期时压缩日历行高(Reanimated)
-  const compress = useSharedValue(0);
-  const rowStyle = useAnimatedStyle(() => ({ height: ROW_FULL + (ROW_CALM - ROW_FULL) * compress.value }));
-  // 压缩后隐藏日期下的当日收支金额
-  const moneyStyle = useAnimatedStyle(() => ({ opacity: 1 - compress.value }));
-
-  useEffect(() => {
-    fetchRecords().then(setRecords);
-    fetchCategories().then((c) => setCatMap(Object.fromEntries(c.map((x) => [x.code, x.icon]))));
-  }, []);
 
   const days = useMemo(() => {
     const first = new Date(year, month - 1, 1);
@@ -48,27 +40,58 @@ export default function CalendarScreen() {
     return [...Array(offset).fill(0), ...Array.from({ length: total }, (_, i) => i + 1)];
   }, [year, month]);
 
+  // 日历总行数 -> 展开态高度;压缩态只显示 3 行,内部滚动查看整月
+  const gridRows = Math.ceil(days.length / 7);
+  const fullH = gridRows * ROW_FULL;
+  const calmH = CALM_ROWS * ROW_FULL;
+
+  // 选中日期时压缩日历可视高度(行高不变,网格可上下滚动)
+  const compress = useSharedValue(0);
+  const gridBoxStyle = useAnimatedStyle(() => ({
+    height: fullH + (calmH - fullH) * compress.value,
+    overflow: 'hidden' as const,
+  }));
+
   const key = (d: number) => `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 
-  // 每日收支汇总
+  // 每日收支汇总(含转账)
   const daySum = useMemo(() => {
-    const m: Record<string, { income: number; expense: number }> = {};
+    const m: Record<string, { income: number; expense: number; transfer: number }> = {};
     for (const r of records) {
-      const e = (m[r.date] ??= { income: 0, expense: 0 });
+      const e = (m[r.date] ??= { income: 0, expense: 0, transfer: 0 });
       if (r.type === 'INCOME') e.income += r.amount;
       else if (r.type === 'EXPENSE') e.expense += r.amount;
+      else e.transfer += r.amount;
     }
     return m;
   }, [records]);
 
   const dayRecords = records.filter((r) => r.date === key(selected));
-  const dayExpense = dayRecords.filter((r) => r.type === 'EXPENSE').reduce((s, r) => s + r.amount, 0);
+  const dayTotals = useMemo(() => {
+    let income = 0, expense = 0, transfer = 0;
+    for (const r of dayRecords) {
+      if (r.type === 'INCOME') income += r.amount;
+      else if (r.type === 'EXPENSE') expense += r.amount;
+      else transfer += r.amount;
+    }
+    return { income, expense, transfer };
+  }, [dayRecords]);
 
   const nav = (delta: number) => {
     const next = new Date(year, month - 1 + delta, 1);
     setYear(next.getFullYear());
     setMonth(next.getMonth() + 1);
     setSelected(1);
+  };
+
+  // 快速返回当日
+  const goToday = () => {
+    const t = new Date();
+    setYear(t.getFullYear());
+    setMonth(t.getMonth() + 1);
+    setSelected(t.getDate());
+    setExpanded(false);
+    compress.value = withTiming(1, { duration: 220 });
   };
 
   // 重新展开日历
@@ -89,11 +112,12 @@ export default function CalendarScreen() {
   };
 
   // 向下滑动当日流水区域 -> 重新展开日历
+  // 降低触发阈值,让轻微下滑即可展开
   const panExpand = Gesture.Pan()
     .enabled(!expanded)
-    .activeOffsetY(18)
+    .activeOffsetY(8)
     .onEnd((e) => {
-      if (e.translationY > 40) runOnJS(expand)();
+      if (e.translationY > 20) runOnJS(expand)();
     });
 
   // 年月快速导航:选择某年某月后跳转
@@ -119,7 +143,6 @@ export default function CalendarScreen() {
           {/* 点击年月 → 快速导航 */}
           <Pressable onPress={() => { setPickY(year); setYmOpen(true); }} style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Text style={{ fontSize: 15, fontWeight: '700', color: colors.primary }}>{year}年{month}月</Text>
-            <Text style={{ fontSize: 13, color: colors.primary, marginLeft: 4, transform: [{ translateY: -1 }] }}>⌄</Text>
           </Pressable>
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <Pressable onPress={() => nav(-1)} style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.muted }}>
@@ -127,6 +150,11 @@ export default function CalendarScreen() {
             </Pressable>
             <Pressable onPress={() => nav(1)} style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.muted }}>
               <ChevronRight size={16} color={colors.foreground} />
+            </Pressable>
+            {/* 返回今日 */}
+            <Pressable onPress={goToday} style={{ height: 34, paddingHorizontal: 10, borderRadius: 17, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 4, backgroundColor: alpha(colors.primary, 0.12) }}>
+              <CalendarCheck size={15} color={colors.primary} />
+              <Text style={{ fontSize: 12, fontWeight: '600', color: colors.primary }}>今日</Text>
             </Pressable>
           </View>
         </View>
@@ -140,52 +168,77 @@ export default function CalendarScreen() {
           ))}
         </View>
 
-        {/* 日历网格(选中日期后压缩行高) */}
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-          {days.map((d, i) => {
-            if (d === 0) return <View key={`b${i}`} style={{ width: cellW, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', height: ROW_FULL }} />;
-            const isToday = key(d) === todayKey;
-            const isSel = d === selected;
-            const sum = daySum[key(d)];
-            const hasSum = !!sum && (sum.income > 0 || sum.expense > 0);
-            return (
-              <Pressable key={d} onPress={() => onPressDay(d)} style={{ width: cellW, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                <Animated.View style={[rowStyle, { alignItems: 'center', justifyContent: 'flex-start', paddingTop: 3 }]}>
-                  <View style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: isSel || isToday ? colors.primary : 'transparent' }}>
-                    <Text style={{ fontSize: 13, fontWeight: isToday || isSel ? '700' : '400', color: isSel || isToday ? '#fff' : colors.foreground }}>
-                      {d}
-                    </Text>
-                  </View>
-                  {hasSum && (
-                    <Animated.View style={[{ alignItems: 'center', marginTop: 2 }, moneyStyle]}>
-                      {sum!.expense > 0 && (
-                        <Text style={{ fontSize: 8.5, color: colors.expense, fontVariant: ['tabular-nums'], lineHeight: 12 }} numberOfLines={1}>-{formatMoneyShort(sum!.expense)}</Text>
-                      )}
-                      {sum!.income > 0 && (
-                        <Text style={{ fontSize: 8.5, color: colors.income, fontVariant: ['tabular-nums'], lineHeight: 12 }} numberOfLines={1}>+{formatMoneyShort(sum!.income)}</Text>
-                      )}
-                    </Animated.View>
-                  )}
-                </Animated.View>
-              </Pressable>
-            );
-          })}
-        </View>
+        {/* 日历网格:选中后压缩可视高度,整月上下滚动展示;日期下收支金额常显 */}
+        <Animated.View style={gridBoxStyle}>
+          <ScrollView showsVerticalScrollIndicator={false} nestedScrollEnabled>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+              {days.map((d, i) => {
+                if (d === 0) return <View key={`b${i}`} style={{ width: cellW, alignItems: 'center', justifyContent: 'center', height: ROW_FULL }} />;
+                const isToday = key(d) === todayKey;
+                const isSel = d === selected;
+                const sum = daySum[key(d)];
+                const hasSum = !!sum && (sum.income > 0 || sum.expense > 0);
+                return (
+                  <Pressable key={d} onPress={() => onPressDay(d)} style={{ width: cellW, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 3 }}>
+                    <View style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: isSel || isToday ? colors.primary : 'transparent' }}>
+                      <Text style={{ fontSize: 13, fontWeight: isToday || isSel ? '700' : '400', color: isSel || isToday ? colors.primaryForeground : colors.foreground }}>
+                        {d}
+                      </Text>
+                    </View>
+                    {hasSum && (
+                      <View style={{ alignItems: 'center', marginTop: 2 }}>
+                        {sum!.expense > 0 && (
+                          <Text style={{ fontSize: 8.5, color: colors.expense, fontVariant: ['tabular-nums'], lineHeight: 12 }} numberOfLines={1}>-{formatMoneyShort(sum!.expense)}</Text>
+                        )}
+                        {sum!.income > 0 && (
+                          <Text style={{ fontSize: 8.5, color: colors.income, fontVariant: ['tabular-nums'], lineHeight: 12 }} numberOfLines={1}>+{formatMoneyShort(sum!.income)}</Text>
+                        )}
+                      </View>
+                    )}
+                  </Pressable>
+                );
+              })}
+            </View>
+          </ScrollView>
+        </Animated.View>
 
-        {/* 当日流水:选中后放大占满剩余高度,内部可滚动;向下滑动可重新展开日历 */}
-        <View style={{ flex: 1, marginTop: 16 }} pointerEvents="box-none">
-          {/* 下滑展开把手(仅压缩态显示) */}
+        {/* 当日流水:压缩日历后占满剩余高度,内部可滚动;向下滑动可重新展开日历;点击记录可编辑 */}
+        <View style={{ flex: 1, marginTop: 12 }} pointerEvents="box-none">
+          {/* 下滑展开:把手 + 标题行 整个区域都可触发,非仅小把手 */}
           {!expanded && (
             <GestureDetector gesture={panExpand}>
-              <View style={{ alignItems: 'center', paddingVertical: 8 }}>
-                <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.muted }} />
+              <View style={{ paddingBottom: 10 }}>
+                {/* 把手(视觉提示) */}
+                <View style={{ alignItems: 'center', paddingTop: 8, paddingBottom: 6 }}>
+                  <View style={{ width: 48, height: 5, borderRadius: 3, backgroundColor: colors.muted }} />
+                </View>
+                {/* 标题行也纳入手势区域 */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                  <Text style={{ fontSize: 15, fontWeight: '600' }}>当日流水</Text>
+                  {/* 支出/收入/转账同步展示 */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    {dayTotals.expense > 0 && (
+                      <Text style={{ fontSize: 12, color: colors.expense, fontVariant: ['tabular-nums'] }}>支 {formatMoneyShort(dayTotals.expense)}</Text>
+                    )}
+                    {dayTotals.income > 0 && (
+                      <Text style={{ fontSize: 12, color: colors.income, fontVariant: ['tabular-nums'] }}>收 {formatMoneyShort(dayTotals.income)}</Text>
+                    )}
+                    {dayTotals.transfer > 0 && (
+                      <Text style={{ fontSize: 12, color: colors.transfer, fontVariant: ['tabular-nums'] }}>转 {formatMoneyShort(dayTotals.transfer)}</Text>
+                    )}
+                    {dayTotals.expense === 0 && dayTotals.income === 0 && dayTotals.transfer === 0 && (
+                      <Text variant="muted" style={{ fontSize: 12 }}>{month}月{selected}日</Text>
+                    )}
+                  </View>
+                </View>
               </View>
             </GestureDetector>
           )}
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-            <Text style={{ fontSize: 15, fontWeight: '600' }}>当日流水</Text>
-            <Text variant="muted" style={{ fontSize: 12 }}>{month}月{selected}日 · 支出{formatMoney(dayExpense)}</Text>
-          </View>
+          {expanded && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <Text style={{ fontSize: 15, fontWeight: '600' }}>当日流水</Text>
+            </View>
+          )}
           <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 24 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <Card className="px-5 py-4">
               {dayRecords.length === 0 ? (
@@ -193,7 +246,14 @@ export default function CalendarScreen() {
               ) : (
                 dayRecords.map((r, i) => (
                   <View key={r.id}>
-                    <RecordRow record={r} icon={catMap[r.categoryCode ?? '']} showDivider={i < dayRecords.length - 1} />
+                    <Pressable
+                      onPress={() => {
+                        haptics.tap();
+                        openRecord(r);
+                      }}
+                    >
+                      <RecordRow record={r} icon={catMap[r.categoryCode ?? '']} showDivider={i < dayRecords.length - 1} />
+                    </Pressable>
                     {i < dayRecords.length - 1 && <View style={{ height: 14 }} />}
                   </View>
                 ))
@@ -232,7 +292,7 @@ export default function CalendarScreen() {
                       backgroundColor: active ? colors.primary : colors.muted,
                     }}
                   >
-                    <Text style={{ fontSize: 14, fontWeight: active ? '700' : '500', color: active ? '#fff' : colors.foreground }}>{m}月</Text>
+                    <Text style={{ fontSize: 14, fontWeight: active ? '700' : '500', color: active ? colors.primaryForeground : colors.foreground }}>{m}月</Text>
                   </View>
                 </Pressable>
               );

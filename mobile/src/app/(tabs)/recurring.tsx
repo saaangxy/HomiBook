@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, Switch, TextInput, View } from 'react-native';
 import { Plus, ArrowUpRight, ArrowDownRight, ArrowLeftRight, Trash2 } from 'lucide-react-native';
-import { useTheme } from '@/theme';
+import { useTheme, alpha } from '@/theme';
 import { Screen } from '@/components/Screen';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
@@ -121,7 +121,7 @@ export default function RecurringScreen() {
         {/* 标题栏 */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
           <Text style={{ fontSize: 20, fontWeight: '700' }}>固定收支</Text>
-          <Pressable onPress={openCreate} style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(249,115,22,0.12)' }}>
+          <Pressable onPress={openCreate} style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: alpha(colors.primary, 0.12) }}>
             <Plus size={18} color={colors.primary} />
           </Pressable>
         </View>
@@ -140,13 +140,13 @@ export default function RecurringScreen() {
                 <FadeInView key={t.id} index={i}>
                   <Card className="px-5 py-4 mb-3" onPress={() => openEdit(t)}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                      <View style={{ width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: `${color}1f` }}>
+                      <View style={{ width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: alpha(color, 0.12) }}>
                         <Icon size={20} color={color} />
                       </View>
                       <View style={{ flex: 1 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                           <Text style={{ fontSize: 15, fontWeight: '600' }}>{t.name}</Text>
-                          <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, backgroundColor: `${color}1f` }}>
+                          <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, backgroundColor: alpha(color, 0.12) }}>
                             <Text style={{ fontSize: 10, color, fontWeight: '600' }}>{TYPE_LABEL[t.type]}</Text>
                           </View>
                         </View>
@@ -189,7 +189,7 @@ export default function RecurringScreen() {
               const active = type === tk;
               const c = colors[TYPE_COLOR[tk]];
               return (
-                <Pressable key={tk} onPress={() => setType(tk)} style={{ flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 999, borderWidth: 1, borderColor: active ? c : colors.border, backgroundColor: active ? `${c}1f` : colors.muted }}>
+                <Pressable key={tk} onPress={() => setType(tk)} style={{ flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 999, borderWidth: 1, borderColor: active ? c : colors.border, backgroundColor: active ? alpha(c, 0.12) : colors.muted }}>
                   <Text style={{ fontSize: 13, color: active ? c : colors.mutedForeground, fontWeight: '600' }}>{TYPE_LABEL[tk]}</Text>
                 </Pressable>
               );
@@ -204,7 +204,7 @@ export default function RecurringScreen() {
             {accounts.map((a) => {
               const selected = accountId === a.id;
               return (
-                <Pressable key={a.id} onPress={() => setAccountId(a.id)} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? 'rgba(249,115,22,0.1)' : colors.muted }}>
+                <Pressable key={a.id} onPress={() => setAccountId(a.id)} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? alpha(colors.primary, 0.1) : colors.muted }}>
                   <Text style={{ fontSize: 12, color: selected ? colors.primary : colors.mutedForeground, fontWeight: selected ? '600' : '400' }}>{a.name}</Text>
                 </Pressable>
               );

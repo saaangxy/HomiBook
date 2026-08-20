@@ -1,45 +1,43 @@
-import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
-import { ArrowUpRight, ArrowDownRight, ArrowLeftRight, Plus } from 'lucide-react-native';
-import { useTheme } from '@/theme';
+import { useMemo, useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { ArrowUpRight, ArrowDownRight, ArrowLeftRight, SlidersHorizontal, X, Copy, Trash2, Pencil } from 'lucide-react-native';
+import { useTheme, alpha, haptics } from '@/theme';
 import { useUIShell } from '@/components/chrome/chrome';
+import { useRecords } from '@/stores/records';
 import { Screen } from '@/components/Screen';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { RecordRow } from '@/components/RecordRow';
-import { AnimatedPressable } from '@/components/AnimatedPressable';
+import { SwipeRow } from '@/components/SwipeRow';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { FadeInView } from '@/components/FadeInView';
-import { fetchRecords, fetchCategories, fetchSummary } from '@/services/records';
+import { FilterSheet, applyRecordFilters, countActiveFilters, emptyFilters, type RecordFilters } from '@/components/FilterSheet';
 import { formatMoney } from '@/lib/format';
-import type { RecordItem, RecordSummary } from '@/types';
+import type { RecordItem, RecordType } from '@/types';
 
-type Filter = '全部' | '收入' | '支出' | '转账';
-const FILTERS: Filter[] = ['全部', '收入', '支出', '转账'];
+const TYPE_LABEL: Record<RecordType, string> = { EXPENSE: '支出', INCOME: '收入', TRANSFER: '转账' };
 
-const TYPE_OF: Record<Filter, string | null> = {
-  全部: null,
-  收入: 'INCOME',
-  支出: 'EXPENSE',
-  转账: 'TRANSFER',
-};
-
-// 流水管理:4 汇总卡(参考网页端) + 筛选胶囊 + 按日分组精致列表 + 记一笔 FAB
+// 流水管理:4 汇总卡 + 高级筛选抽屉(FilterSheet) + 活跃条件胶囊 + 左滑编辑/克隆/删除 + 下拉刷新
+// 数据全部消费 useRecords() 唯一数据源 —— 记一笔/编辑/删除后全局即时一致
 export default function RecordsScreen() {
   const { colors } = useTheme();
   const { openRecord } = useUIShell();
-  const [records, setRecords] = useState<RecordItem[]>([]);
-  const [summary, setSummary] = useState<RecordSummary | null>(null);
-  const [catMap, setCatMap] = useState<Record<string, string>>({});
-  const [filter, setFilter] = useState<Filter>('全部');
+  const { records, summary, accounts, categories, refresh, cloneRecord, deleteRecord } = useRecords();
+  const [filters, setFilters] = useState<RecordFilters>(emptyFilters);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    fetchRecords().then(setRecords);
-    fetchSummary().then(setSummary);
-    fetchCategories().then((c) => setCatMap(Object.fromEntries(c.map((x) => [x.code, x.icon]))));
-  }, []);
+  const catMap = useMemo(() => Object.fromEntries(categories.map((x) => [x.code, x.icon])), [categories]);
+  const catLabelMap = useMemo(() => Object.fromEntries(categories.map((x) => [x.code, x.label])), [categories]);
 
-  const type = TYPE_OF[filter];
-  const filtered = records.filter((r) => (type ? r.type === type : true));
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await refresh();
+    setRefreshing(false);
+  };
+
+  const filtered = applyRecordFilters(records, filters);
+  const activeCount = countActiveFilters(filters);
 
   // 按日分组(由近及远)
   const groups = filtered.reduce<Record<string, RecordItem[]>>((acc, r) => {
@@ -48,11 +46,48 @@ export default function RecordsScreen() {
   }, {});
   const dates = Object.keys(groups).sort((a, b) => (a < b ? 1 : -1));
 
+  const onClone = (r: RecordItem) => {
+    cloneRecord(r);
+    haptics.success();
+  };
+  const onDelete = (r: RecordItem) => {
+    deleteRecord(r.id);
+    haptics.warn();
+  };
+
+  // 活跃条件胶囊(点 × 单个移除)
+  const activeChips: { key: string; label: string; onClear: () => void }[] = [
+    ...filters.types.map((t) => ({
+      key: `t-${t}`,
+      label: TYPE_LABEL[t],
+      onClear: () => setFilters((f) => ({ ...f, types: f.types.filter((x) => x !== t) })),
+    })),
+    ...filters.accountIds.map((id) => ({
+      key: `a-${id}`,
+      label: accounts.find((a) => a.id === id)?.name ?? id,
+      onClear: () => setFilters((f) => ({ ...f, accountIds: f.accountIds.filter((x) => x !== id) })),
+    })),
+    ...filters.categoryCodes.map((code) => ({
+      key: `c-${code}`,
+      label: catLabelMap[code] ?? code,
+      onClear: () => setFilters((f) => ({ ...f, categoryCodes: f.categoryCodes.filter((x) => x !== code) })),
+    })),
+    ...(filters.dateFrom || filters.dateTo
+      ? [{ key: 'date', label: `${filters.dateFrom || '…'} ~ ${filters.dateTo || '…'}`, onClear: () => setFilters((f) => ({ ...f, dateFrom: '', dateTo: '' })) }]
+      : []),
+    ...(filters.minAmount || filters.maxAmount
+      ? [{ key: 'amt', label: `¥${filters.minAmount || '0'} ~ ¥${filters.maxAmount || '∞'}`, onClear: () => setFilters((f) => ({ ...f, minAmount: '', maxAmount: '' })) }]
+      : []),
+    ...(filters.keyword.trim()
+      ? [{ key: 'kw', label: `「${filters.keyword.trim()}」`, onClear: () => setFilters((f) => ({ ...f, keyword: '' })) }]
+      : []),
+  ];
+
   const summaryCards = [
-    { label: '总收入', value: summary?.income ?? 0, icon: ArrowUpRight, color: colors.income },
-    { label: '总支出', value: summary?.expense ?? 0, icon: ArrowDownRight, color: colors.expense },
-    { label: '转账总额', value: summary?.transfer ?? 0, icon: ArrowLeftRight, color: colors.transfer },
-    { label: '净收入', value: summary?.netIncome ?? 0, icon: ArrowUpRight, color: (summary?.netIncome ?? 0) >= 0 ? colors.income : colors.expense },
+    { label: '总收入', value: summary.income, icon: ArrowUpRight, color: colors.income },
+    { label: '总支出', value: summary.expense, icon: ArrowDownRight, color: colors.expense },
+    { label: '转账总额', value: summary.transfer, icon: ArrowLeftRight, color: colors.transfer },
+    { label: '净收入', value: summary.netIncome, icon: ArrowUpRight, color: summary.netIncome >= 0 ? colors.income : colors.expense },
   ] as const;
 
   return (
@@ -63,10 +98,10 @@ export default function RecordsScreen() {
 
         {/* 汇总卡片 2x2 */}
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 10, marginBottom: 16 }}>
-          {summaryCards.map(({ label, value, icon: Icon, color }) => (
-            <FadeInView key={label} index={0} style={{ width: '48%' }}>
+          {summaryCards.map(({ label, value, icon: Icon, color }, i) => (
+            <FadeInView key={label} index={i} style={{ width: '48%' }}>
               <View style={{ padding: 14, borderRadius: 18, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}>
-                <View style={{ width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: `${color}1f` }}>
+                <View style={{ width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: alpha(color, 0.12) }}>
                   <Icon size={17} color={color} />
                 </View>
                 <View style={{ flex: 1 }}>
@@ -78,43 +113,47 @@ export default function RecordsScreen() {
           ))}
         </View>
 
-        {/* 筛选胶囊 + 记一笔 */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: 8, paddingBottom: 12, alignItems: 'center' }}
-        >
-          {FILTERS.map((f) => {
-            const active = filter === f;
-            return (
-              <Pressable
-                key={f}
-                onPress={() => setFilter(f)}
-                style={{
-                  paddingHorizontal: 16,
-                  paddingVertical: 7,
-                  borderRadius: 999,
-                  backgroundColor: active ? colors.primary : colors.muted,
-                  borderWidth: 1,
-                  borderColor: active ? colors.primary : colors.border,
-                }}
-              >
-                <Text style={{ fontSize: 13, color: active ? '#fff' : colors.foreground, fontWeight: active ? '600' : '400' }}>{f}</Text>
-              </Pressable>
-            );
-          })}
+        {/* 筛选入口 + 活跃条件胶囊 */}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingBottom: 12, alignItems: 'center' }}>
           <Pressable
-            onPress={openRecord}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 16, paddingVertical: 7, borderRadius: 999, backgroundColor: 'rgba(249,115,22,0.12)', borderWidth: 1, borderColor: 'rgba(249,115,22,0.3)' }}
+            onPress={() => {
+              setFilterOpen(true);
+              haptics.tap();
+            }}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border }}
           >
-            <Plus size={14} color={colors.primary} />
-            <Text style={{ fontSize: 13, color: colors.primary, fontWeight: '600' }}>记一笔</Text>
+            <SlidersHorizontal size={13} color={colors.foreground} />
+            <Text style={{ fontSize: 13, color: colors.foreground, fontWeight: '500' }}>筛选</Text>
+            {activeCount > 0 && (
+              <View style={{ minWidth: 16, height: 16, borderRadius: 8, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 }}>
+                <Text style={{ fontSize: 10, color: colors.primaryForeground, fontWeight: '700' }}>{activeCount}</Text>
+              </View>
+            )}
           </Pressable>
-        </ScrollView>
 
-        <ScrollView contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+          {activeChips.map((c) => (
+            <View key={c.key} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingLeft: 12, paddingRight: 8, paddingVertical: 6, borderRadius: 999, backgroundColor: alpha(colors.primary, 0.1), borderWidth: 1, borderColor: alpha(colors.primary, 0.3) }}>
+              <Text style={{ fontSize: 12, color: colors.primary }}>{c.label}</Text>
+              <Pressable onPress={c.onClear} hitSlop={6}>
+                <X size={12} color={colors.primary} />
+              </Pressable>
+            </View>
+          ))}
+        </View>
+
+        <ScrollView
+          contentContainerStyle={{ paddingBottom: 40, flexGrow: 1 }}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}
+        >
           {dates.length === 0 ? (
-            <Card className="items-center py-12"><Text variant="muted">暂无流水</Text></Card>
+            <EmptyState
+              icon="🧾"
+              title={activeCount ? '没有符合条件的流水' : '暂无流水'}
+              description={activeCount ? '试试调整筛选条件' : '记下第一笔,开始管理家庭财务'}
+              actionLabel={activeCount ? undefined : '记一笔'}
+              onAction={activeCount ? undefined : () => openRecord()}
+            />
           ) : (
             dates.map((d, gi) => (
               <FadeInView key={d} index={gi}>
@@ -122,7 +161,17 @@ export default function RecordsScreen() {
                   <Text variant="muted" style={{ fontSize: 11, letterSpacing: 1, marginBottom: 12 }}>{d}</Text>
                   {groups[d].map((r, i) => (
                     <View key={r.id}>
-                      <RecordRow record={r} icon={catMap[r.categoryCode ?? '']} showDivider={i < groups[d].length - 1} />
+                      <SwipeRow
+                        actions={[
+                          { key: 'edit', label: '编辑', color: colors.transfer, icon: Pencil, onPress: () => openRecord(r) },
+                          { key: 'clone', label: '克隆', color: colors.mutedForeground, icon: Copy, onPress: () => onClone(r) },
+                          { key: 'del', label: '删除', color: colors.expense, icon: Trash2, onPress: () => onDelete(r) },
+                        ]}
+                      >
+                        <Pressable onPress={() => { haptics.tap(); openRecord(r); }}>
+                          <RecordRow record={r} icon={catMap[r.categoryCode ?? '']} />
+                        </Pressable>
+                      </SwipeRow>
                       {i < groups[d].length - 1 && <View style={{ height: 14 }} />}
                     </View>
                   ))}
@@ -133,13 +182,7 @@ export default function RecordsScreen() {
         </ScrollView>
       </View>
 
-      {/* 记一笔 FAB */}
-      <AnimatedPressable
-        onPress={openRecord}
-        style={{ position: 'absolute', right: 20, bottom: 28, width: 58, height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary, shadowColor: '#f97316', shadowOpacity: 0.4, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 8 }}
-      >
-        <Plus size={26} color="#fff" />
-      </AnimatedPressable>
+      <FilterSheet visible={filterOpen} initial={filters} onApply={setFilters} onClose={() => setFilterOpen(false)} />
     </Screen>
   );
 }

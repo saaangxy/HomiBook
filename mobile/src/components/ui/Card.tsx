@@ -1,7 +1,7 @@
 import { type ReactNode } from 'react';
 import { View, type ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useTheme } from '@/theme';
+import { useTheme, cardShadow } from '@/theme';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
 
 interface CardProps {
@@ -9,21 +9,21 @@ interface CardProps {
   className?: string;
   style?: ViewStyle;
   onPress?: () => void;
-  /** gradient: 橙渐变卡(浅色文字) */
+  /** gradient: 品牌渐变卡(浅色文字) */
   variant?: 'default' | 'gradient';
 }
 
-// 精致卡片:20px 大圆角 + 发丝边 + 极淡投影(浅色) / 抬高面(深色);variant=gradient 用橙渐变
+// 主题化卡片:圆角/边框/阴影随主题策略(mondrian 实线无影、craft 票据粗边、telegram 发光边)
 export function Card({ children, className = '', style, onPress, variant = 'default' }: CardProps) {
-  const { colors, isDark } = useTheme();
+  const { colors, palette } = useTheme();
 
   if (variant === 'gradient') {
     const grad = (
       <LinearGradient
-        colors={['#fb923c', '#f97316', '#ea580c']}
+        colors={palette.colors.gradient}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={[{ borderRadius: 20 }, style]}
+        style={[{ borderRadius: palette.radius.card }, style]}
       >
         <View className={className}>{children}</View>
       </LinearGradient>
@@ -34,12 +34,10 @@ export function Card({ children, className = '', style, onPress, variant = 'defa
 
   const base: ViewStyle = {
     backgroundColor: colors.card,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: isDark ? colors.border : '#eef1f5',
-    ...(isDark
-      ? {}
-      : { shadowColor: '#0f172a', shadowOpacity: 0.04, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 1 }),
+    borderRadius: palette.radius.card,
+    borderWidth: palette.cardStyle.borderWidth,
+    borderColor: colors.border,
+    ...cardShadow(palette),
   };
 
   if (onPress) {

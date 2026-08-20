@@ -1,47 +1,44 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ChevronRight } from 'lucide-react-native';
-import { useTheme } from '@/theme';
+import { useTheme, alpha } from '@/theme';
 import { useAuth } from '@/stores/auth';
 import { Screen } from '@/components/Screen';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { RecordRow } from '@/components/RecordRow';
 import { FadeInView } from '@/components/FadeInView';
-import { fetchSummary, fetchBudgets, fetchCategories } from '@/services/records';
+import { fetchBudgets } from '@/services/records';
 import { useRecords } from '@/stores/records';
 import { useCountUp } from '@/lib/useCountUp';
 import { formatMoney, formatMoneyShort } from '@/lib/format';
-import type { RecordSummary, BudgetItem } from '@/types';
+import type { BudgetItem } from '@/types';
 
 type Period = '本月' | '当年';
 
-// 首页:收支总览(橙渐变) + 预算 + AI 助手 + 最近流水
+// 首页:收支总览(品牌渐变) + 预算 + AI 助手 + 最近流水;数据消费 useRecords() 唯一数据源
 export default function HomeScreen() {
-  const { colors } = useTheme();
+  const { colors, palette } = useTheme();
   const { nickname } = useAuth();
   const [period, setPeriod] = useState<Period>('本月');
-  const [summary, setSummary] = useState<RecordSummary | null>(null);
   const [budgets, setBudgets] = useState<BudgetItem[]>([]);
   const [budgetExp, setBudgetExp] = useState(false);
-  const [catMap, setCatMap] = useState<Record<string, string>>({});
-  const { records } = useRecords();
+  const { records, summary, categories } = useRecords();
+  const catMap = useMemo(() => Object.fromEntries(categories.map((x) => [x.code, x.icon])), [categories]);
 
   useEffect(() => {
-    fetchSummary().then(setSummary);
     fetchBudgets().then(setBudgets);
-    fetchCategories().then((c) => setCatMap(Object.fromEntries(c.map((x) => [x.code, x.icon]))));
   }, []);
   const recent = records.slice(0, 4);
 
-  const balance = useCountUp(summary?.netIncome ?? 0);
+  const balance = useCountUp(summary.netIncome);
   const totalBudget = budgets.reduce((s, b) => s + b.amount, 0);
   const totalUsed = budgets.reduce((s, b) => s + b.actualAmount, 0);
   const pct = totalBudget ? Math.min(100, Math.round((totalUsed / totalBudget) * 100)) : 0;
 
-  const income = summary?.income ?? 0;
-  const expense = summary?.expense ?? 0;
+  const income = summary.income;
+  const expense = summary.expense;
 
   return (
     <Screen scroll>
@@ -56,13 +53,13 @@ export default function HomeScreen() {
           </View>
         </FadeInView>
 
-        {/* 收支总览(橙渐变) */}
+        {/* 收支总览(品牌渐变) */}
         <FadeInView index={1}>
           <LinearGradient
-            colors={['#fb923c', '#f97316', '#ea580c']}
+            colors={palette.colors.gradient}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={{ borderRadius: 20, padding: 20, marginBottom: 16, shadowColor: '#f97316', shadowOpacity: 0.3, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 6 }}
+            style={{ borderRadius: palette.radius.card, padding: 20, marginBottom: 16, shadowColor: colors.primary, shadowOpacity: 0.3, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 6 }}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 13, fontWeight: '600' }}>收支总览</Text>
@@ -141,8 +138,8 @@ export default function HomeScreen() {
 
         {/* AI 助手(点击进入记一笔的 AI 识别) */}
         <FadeInView index={3}>
-          <Pressable style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: 'rgba(249,115,22,0.06)', borderRadius: 20, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(249,115,22,0.2)' }}>
-            <View style={{ width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(249,115,22,0.12)' }}>
+          <Pressable style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: alpha(colors.primary, 0.06), borderRadius: 20, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: alpha(colors.primary, 0.2) }}>
+            <View style={{ width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: alpha(colors.primary, 0.12) }}>
               <Text style={{ fontSize: 22 }}>🤖</Text>
             </View>
             <View style={{ flex: 1 }}>

@@ -1,79 +1,90 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useColorScheme } from 'react-native';
+import {
+  defaultThemeId,
+  getPalette,
+  palettes,
+  type Palette,
+  type PaletteId,
+  type ThemeColors,
+  type ThemeFonts,
+  type ThemeId,
+} from './palettes';
 
-// 橙色多彩账本配色(对齐移动端原型):
-// slate 底 + 橙主色 + 绿收入/红支出 + 柔和阴影。活泼、精致、色彩分明。
-export interface ThemeColors {
-  background: string;      // 页面 slate 底
-  card: string;            // 卡片面
-  elevated: string;        // 浮层/输入框面
-  foreground: string;      // 正文
-  muted: string;           // 次要面
-  mutedForeground: string; // 次要文字
-  border: string;          // 发丝线
-  hairline: string;        // 更细的发丝线
-  primary: string;         // 橙主操作
-  primaryForeground: string;
-  income: string;          // 收入绿
-  expense: string;         // 支出红
-  transfer: string;        // 转账蓝
-  white: string;
-}
+export { palettes, paletteOrder, type Palette, type PaletteId, type ThemeColors, type ThemeId } from './palettes';
+export { motion, haptics } from './motion';
+export { spacing, pagePadding, typography, cardShadow, sheetShadow, alpha } from './tokens';
 
-export const lightColors: ThemeColors = {
-  background: '#f8fafc',
-  card: '#ffffff',
-  elevated: '#f8fafc',
-  foreground: '#0f172a',
-  muted: '#f1f5f9',
-  mutedForeground: '#64748b',
-  border: '#e2e8f0',
-  hairline: '#f1f5f9',
-  primary: '#f97316',
-  primaryForeground: '#ffffff',
-  income: '#22c55e',
-  expense: '#ef4444',
-  transfer: '#3b82f6',
-  white: '#ffffff',
-};
-
-export const darkColors: ThemeColors = {
-  background: '#0f172a',
-  card: '#1e293b',
-  elevated: '#1e293b',
-  foreground: '#f8fafc',
-  muted: '#334155',
-  mutedForeground: '#94a3b8',
-  border: '#334155',
-  hairline: '#263550',
-  primary: '#f97316',
-  primaryForeground: '#ffffff',
-  income: '#22c55e',
-  expense: '#ef4444',
-  transfer: '#3b82f6',
-  white: '#ffffff',
-};
+const STORAGE_KEY = 'homibook.theme';
 
 interface ThemeContextValue {
-  isDark: boolean;
+  /** 用户选择的主题(含 'system') */
+  themeId: ThemeId;
+  /** 解析后的实际调色板 id(system 已解析) */
+  resolvedId: PaletteId;
+  palette: Palette;
+  /** 兼容字段:等价 palette.colors */
   colors: ThemeColors;
+  fonts: ThemeFonts;
+  isDark: boolean;
+  setThemeId: (id: ThemeId) => void;
+  /** 兼容旧接口:映射为 light/dark */
   setDark: (dark: boolean) => void;
   toggleTheme: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
+  themeId: defaultThemeId,
+  resolvedId: 'light',
+  palette: getPalette('light'),
+  colors: getPalette('light').colors,
+  fonts: {},
   isDark: false,
-  colors: lightColors,
+  setThemeId: () => {},
   setDark: () => {},
   toggleTheme: () => {},
 });
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [isDark, setIsDark] = useState(false);
-  const colors = isDark ? darkColors : lightColors;
+  const systemScheme = useColorScheme();
+  const [themeId, setThemeIdState] = useState<ThemeId>(defaultThemeId);
 
-  const value = useMemo(
-    () => ({ isDark, colors, setDark: setIsDark, toggleTheme: () => setIsDark((d) => !d) }),
-    [isDark, colors],
+  // 启动时读取持久化主题(登录后由 auth 流程同步 user.theme,见 M2)
+  useEffect(() => {
+    AsyncStorage.getItem(STORAGE_KEY).then((saved) => {
+      if (saved && (saved === 'system' || saved in palettes)) setThemeIdState(saved as ThemeId);
+    }).catch(() => {});
+  }, []);
+
+  const resolvedId: PaletteId =
+    themeId === 'system' ? (systemScheme === 'dark' ? 'dark' : 'light') : themeId;
+  const palette = getPalette(resolvedId);
+
+  const value = useMemo<ThemeContextValue>(
+    () => ({
+      themeId,
+      resolvedId,
+      palette,
+      colors: palette.colors,
+      fonts: palette.fonts,
+      isDark: palette.mode === 'dark',
+      setThemeId: (id) => {
+        setThemeIdState(id);
+        AsyncStorage.setItem(STORAGE_KEY, id).catch(() => {});
+      },
+      setDark: (dark) => {
+        const id: ThemeId = dark ? 'dark' : 'light';
+        setThemeIdState(id);
+        AsyncStorage.setItem(STORAGE_KEY, id).catch(() => {});
+      },
+      toggleTheme: () => {
+        const id: ThemeId = palette.mode === 'dark' ? 'light' : 'dark';
+        setThemeIdState(id);
+        AsyncStorage.setItem(STORAGE_KEY, id).catch(() => {});
+      },
+    }),
+    [themeId, resolvedId, palette],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

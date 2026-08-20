@@ -14,6 +14,7 @@ export interface RecordItem {
   accountName?: string;
   toAccountId?: string;
   toAccountName?: string;
+  counterparty?: string;
   ownerName?: string;
   tags: string[];
 }
@@ -46,9 +47,12 @@ export interface AccountItem {
   status: 'ACTIVE' | 'ARCHIVED';
 }
 
+export type BudgetType = 'FIXED' | 'FREE';
+
 export interface BudgetItem {
   id: string;
   name: string;
+  type: BudgetType;
   categoryCode: string | null;
   amount: number;
   actualAmount: number;
@@ -67,28 +71,40 @@ export interface Server {
   id: string;
   name: string;
   baseUrl: string;
-} // 模拟服务器配置
+  account?: string;
+} // 自部署服务器配置(本机持久化,可绑定账号)
+
+/** 登录用户信息(对齐后端 /api/auth/me 响应) */
+export interface UserInfo {
+  id: string;
+  email: string;
+  username: string | null;
+  nickname: string | null;
+  role: string;
+  theme: string;
+}
 
 export interface Ledger {
   id: string;
   name: string;
   icon: string; // emoji
   memberCount: number;
+  shareCode?: string;
+  role?: 'OWNER' | 'MEMBER';
 } // 账本
+
+export interface LedgerMember {
+  id: string;
+  nickname: string;
+  role: 'OWNER' | 'MEMBER';
+  joinedAt: string;
+}
 
 export type LedgerMenu = {
   icon: string;
   label: string;
   to?: string;
 };
-
-export interface AuthState {
-  isLoggedIn: boolean;
-  username: string;
-  nickname: string;
-  serverId: string | null;
-  remember: boolean;
-} // 模拟登录态
 
 export interface RadarMetric {
   name: string;

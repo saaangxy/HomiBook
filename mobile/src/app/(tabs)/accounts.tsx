@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, TextInput, View } from 'react-native';
 import { Plus, CreditCard, Wallet, MessageCircle, Banknote, TrendingUp, Landmark, Archive, RotateCcw, Trash2 } from 'lucide-react-native';
-import { useTheme } from '@/theme';
+import { useTheme, alpha } from '@/theme';
 import { Screen } from '@/components/Screen';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
@@ -141,7 +141,7 @@ export default function AccountsScreen() {
         {/* 标题栏 */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
           <Text style={{ fontSize: 20, fontWeight: '700' }}>账户管理</Text>
-          <Pressable onPress={openCreate} style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(249,115,22,0.12)' }}>
+          <Pressable onPress={openCreate} style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: alpha(colors.primary, 0.12) }}>
             <Plus size={18} color={colors.primary} />
           </Pressable>
         </View>
@@ -176,7 +176,7 @@ export default function AccountsScreen() {
                 <FadeInView key={a.id} index={i}>
                   <Card className="px-5 py-4 mb-3" onPress={() => openEdit(a)}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                      <View style={{ width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: negative ? 'rgba(239,68,68,0.1)' : 'rgba(249,115,22,0.12)' }}>
+                      <View style={{ width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: negative ? alpha(colors.expense, 0.1) : alpha(colors.primary, 0.12) }}>
                         <Icon size={20} color={negative ? colors.expense : colors.primary} />
                       </View>
                       <View style={{ flex: 1 }}>
@@ -213,7 +213,7 @@ export default function AccountsScreen() {
             {TYPE_KEYS.map((t) => {
               const active = type === t;
               return (
-                <Pressable key={t} onPress={() => setType(t)} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: active ? colors.primary : colors.border, backgroundColor: active ? 'rgba(249,115,22,0.1)' : colors.muted }}>
+                <Pressable key={t} onPress={() => setType(t)} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: active ? colors.primary : colors.border, backgroundColor: active ? alpha(colors.primary, 0.1) : colors.muted }}>
                   <Text style={{ fontSize: 12, color: active ? colors.primary : colors.mutedForeground, fontWeight: active ? '600' : '400' }}>{TYPE_LABEL[t]}</Text>
                 </Pressable>
               );

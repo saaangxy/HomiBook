@@ -1,7 +1,7 @@
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { Check } from 'lucide-react-native';
-import { useTheme } from '@/theme';
+import { useTheme, alpha } from '@/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '@/components/ui/Text';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
@@ -55,7 +55,7 @@ export function LedgerModal() {
                   paddingHorizontal: 12,
                   borderRadius: 16,
                   marginBottom: 10,
-                  backgroundColor: active ? 'rgba(249,115,22,0.08)' : colors.muted,
+                  backgroundColor: active ? alpha(colors.primary, 0.08) : colors.muted,
                   borderWidth: 2,
                   borderColor: active ? colors.primary : 'transparent',
                 }}
