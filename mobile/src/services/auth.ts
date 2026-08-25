@@ -1,7 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { clearCredential, http, saveCredential, setBaseUrl } from './http';
+import { clearCredential, decodeJwtExp, http, saveCredential, setBaseUrl, type Credential } from './http';
 import { secureDelete, secureGet, secureSet } from './storage';
 import type { Server, UserInfo } from '@/types';
+
+/** mock 凭据有效期(演示过期判断,7 天后失效) */
+const MOCK_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 // 认证与服务器管理服务:
 // - 服务器列表持久化 AsyncStorage(非敏感)
@@ -24,7 +27,7 @@ const MOCK_USER: UserInfo = {
   theme: 'default',
 };
 
-const MOCK_CREDENTIAL = { kind: 'jwt' as const, value: 'mock-token' };
+const MOCK_CREDENTIAL: Credential = { kind: 'jwt', value: 'mock-token', expiresAt: Date.now() + MOCK_TTL_MS };
 
 const SERVERS_KEY = 'homibook.servers';
 const REMEMBER_KEY = 'homibook.remember';
@@ -106,7 +109,8 @@ export async function apiLogin(account: string, password: string): Promise<UserI
     return { ...MOCK_USER, username: account, nickname: account };
   }
   const res = await http.post<{ token: string; user: UserInfo }>('/api/auth/login', { account, password });
-  await saveCredential({ kind: 'jwt', value: res.token });
+  // JWT 的 exp 存在 token 里,解码后写入凭据用于本地过期判断
+  await saveCredential({ kind: 'jwt', value: res.token, expiresAt: decodeJwtExp(res.token) ?? undefined });
   return res.user;
 }
 
@@ -116,6 +120,7 @@ export async function verifyApiKey(key: string): Promise<UserInfo> {
     await saveCredential(MOCK_CREDENTIAL);
     return { ...MOCK_USER };
   }
+  // API Key 后端无过期时间(永久有效,直到删除),不设 expiresAt 视为永不过期
   await saveCredential({ kind: 'apikey', value: key });
   try {
     return await http.get<UserInfo>('/api/auth/me');

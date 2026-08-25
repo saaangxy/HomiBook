@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import * as authService from '@/services/auth';
-import { clearCredential, getCredential, setUnauthorizedHandler } from '@/services/http';
+import { clearCredential, getCredential, isCredentialExpired, setUnauthorizedHandler } from '@/services/http';
 import { palettes, useTheme, type ThemeId } from '@/theme';
 import type { Server, UserInfo } from '@/types';
 
@@ -16,6 +16,8 @@ interface AuthStore {
   loginWithApiKey: (key: string, serverId: string) => Promise<void>;
   logout: () => Promise<void>;
   switchServer: (id: string) => Promise<void>;
+  /** 快速登录:切换服务器 → 用绑定账号 + 记住的密码自动登录 → 跳转首页 */
+  quickLogin: (id: string) => Promise<{ ok: boolean; error?: string }>;
   addServer: (name: string, baseUrl: string, account?: string) => Promise<void>;
   updateServer: (id: string, name: string, baseUrl: string, account?: string) => Promise<void>;
   removeServer: (id: string) => Promise<void>;
@@ -56,15 +58,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     (async () => {
       await refreshServers();
       const cred = await getCredential();
+      // 凭据已过期 → 清除并保持登出,需重新登录
+      if (isCredentialExpired(cred)) {
+        await clearCredential();
+        setReady(true);
+        return;
+      }
       if (cred) {
-        try {
-          const me = await authService.apiMe();
+        // 凭据未过期 → 直接恢复登录态(本地判断,离线也可进入页面)
+        setIsLoggedIn(true);
+        // 后台刷新用户信息与主题(失败不登出,真正失效由 401 拦截器兜底)
+        authService.apiMe().then((me) => {
           setUser(me);
-          setIsLoggedIn(true);
           syncTheme(me.theme);
-        } catch {
-          // 401 已由拦截器清理;网络错误保持登出,凭据留待下次重试
-        }
+        }).catch(() => {});
       }
       setReady(true);
     })();
@@ -111,6 +118,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await refreshServers();
   }, [refreshServers]);
 
+  // 快速登录:切换服务器 → 用绑定账号 + 记住的密码自动登录
+  const quickLogin = useCallback(
+    async (id: string): Promise<{ ok: boolean; error?: string }> => {
+      try {
+        await authService.switchServer(id);
+        await refreshServers();
+        const server = servers.find((s) => s.id === id);
+        const account = server?.account;
+        if (!account) return { ok: false, error: '该服务器未绑定账号' };
+        const remembered = await authService.getRemembered();
+        if (!remembered || remembered.account !== account) {
+          return { ok: false, error: '未保存密码,请手动登录' };
+        }
+        const me = await authService.apiLogin(account, remembered.password);
+        await authService.bindServerAccount(id, account);
+        setUser(me);
+        setIsLoggedIn(true);
+        syncTheme(me.theme);
+        await refreshServers();
+        return { ok: true };
+      } catch (e: any) {
+        return { ok: false, error: e?.message ?? '登录失败' };
+      }
+    },
+    [refreshServers, servers, syncTheme],
+  );
+
   const addServer = useCallback(async (name: string, baseUrl: string, account?: string) => {
     await authService.addServer(name, baseUrl, account);
     await refreshServers();
@@ -141,6 +175,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loginWithApiKey,
         logout,
         switchServer,
+        quickLogin,
         addServer,
         updateServer,
         removeServer,

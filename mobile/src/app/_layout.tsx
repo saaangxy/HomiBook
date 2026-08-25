@@ -1,4 +1,5 @@
 import '@/global.css';
+import { useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Stack } from 'expo-router/stack';
 import { StatusBar } from 'expo-status-bar';
@@ -13,6 +14,7 @@ import { ThemeProvider, useTheme } from '@/theme';
 import { AuthProvider, useAuth } from '@/stores/auth';
 import { RecordsProvider } from '@/stores/records';
 import { UIShellProvider } from '@/components/chrome/chrome';
+import { Splash } from '@/components/Splash';
 
 function RootNavigator() {
   const { isLoggedIn } = useAuth();
@@ -45,6 +47,9 @@ export default function RootLayout() {
     DMSans_400Regular, DMSans_500Medium, DMSans_700Bold,
   });
 
+  // 开屏展示控制:字体就绪后展示 logo,淡出完成后由 Splash 回调卸载
+  const [showSplash, setShowSplash] = useState(true);
+
   if (!fontsLoaded) return null;
 
   return (
@@ -54,6 +59,7 @@ export default function RootLayout() {
           <RecordsProvider>
             <UIShellProvider>
               <RootNavigator />
+              {showSplash && <Splash onDone={() => setShowSplash(false)} />}
             </UIShellProvider>
           </RecordsProvider>
         </AuthProvider>

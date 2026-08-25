@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { Pressable, TextInput, View, Alert, ScrollView } from 'react-native';
+import { Pressable, TextInput, View, Alert, ScrollView, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
-import { X, Plus, Check, Trash2, Pencil, Server as ServerIcon, User } from 'lucide-react-native';
-import { useTheme, alpha } from '@/theme';
+import { X, Plus, Check, Trash2, Pencil, Server as ServerIcon, User, LogIn } from 'lucide-react-native';
+import { useTheme, alpha, haptics } from '@/theme';
 import { useAuth } from '@/stores/auth';
 import { Screen } from '@/components/Screen';
 import { Text } from '@/components/ui/Text';
@@ -13,12 +13,13 @@ type EditState = { id: string; name: string; baseUrl: string; account: string } 
 
 export default function ServerScreen() {
   const { colors } = useTheme();
-  const { servers, currentServer, switchServer, addServer, updateServer, removeServer } = useAuth();
+  const { servers, currentServer, addServer, updateServer, removeServer, quickLogin } = useAuth();
   const [name, setName] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [account, setAccount] = useState('');
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<EditState>(null);
+  const [loggingIn, setLoggingIn] = useState<string | null>(null); // 正在登录的服务器ID
 
   const handleAdd = async () => {
     if (!name || !baseUrl) return;
@@ -38,6 +39,27 @@ export default function ServerScreen() {
       { text: '取消', style: 'cancel' },
       { text: '删除', style: 'destructive', onPress: () => removeServer(s.id) },
     ]);
+  };
+
+  const handleServerTap = async (s: Server) => {
+    if (loggingIn) return;
+    haptics.tap();
+    // 无绑定账号 → 仅切换服务器,返回登录页
+    if (!s.account) {
+      await quickLogin(s.id); // 切换服务器
+      router.replace('/(auth)/login');
+      return;
+    }
+    // 有绑定账号 → 尝试快速登录
+    setLoggingIn(s.id);
+    const result = await quickLogin(s.id);
+    setLoggingIn(null);
+    if (result.ok) {
+      router.replace('/(tabs)');
+    } else {
+      // 快速登录失败 → 跳转登录页,让用户手动输入密码
+      router.replace('/(auth)/login');
+    }
   };
 
   const inputStyle = {
@@ -132,6 +154,7 @@ export default function ServerScreen() {
           {servers.map((s, i) => {
             const active = currentServer?.id === s.id;
             const isEditingThis = editing?.id === s.id;
+            const isLoading = loggingIn === s.id;
             return (
               <FadeInView key={s.id} index={i}>
                 {isEditingThis ? (
@@ -143,12 +166,16 @@ export default function ServerScreen() {
                     backgroundColor: colors.card, borderRadius: 14, padding: 14,
                     borderWidth: 1, borderColor: active ? colors.primary : colors.border,
                   }}>
-                    <Pressable onPress={() => switchServer(s.id)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                    <Pressable onPress={() => handleServerTap(s)} disabled={isLoading} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                       <View style={{
                         width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
                         backgroundColor: active ? alpha(colors.primary, 0.12) : colors.muted,
                       }}>
-                        <ServerIcon size={18} color={active ? colors.primary : colors.mutedForeground} />
+                        {isLoading ? (
+                          <ActivityIndicator size="small" color={colors.primary} />
+                        ) : (
+                          <ServerIcon size={18} color={active ? colors.primary : colors.mutedForeground} />
+                        )}
                       </View>
                       <View style={{ flex: 1 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -163,6 +190,13 @@ export default function ServerScreen() {
                           </View>
                         )}
                       </View>
+                      {/* 登录提示图标 */}
+                      {!isLoading && s.account && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: alpha(colors.primary, 0.1) }}>
+                          <LogIn size={12} color={colors.primary} />
+                          <Text style={{ fontSize: 11, color: colors.primary, fontWeight: '600' }}>登录</Text>
+                        </View>
+                      )}
                     </Pressable>
                     {/* 操作按钮 */}
                     <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>

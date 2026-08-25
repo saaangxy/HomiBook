@@ -9,6 +9,29 @@ const CREDENTIAL_KEY = 'homibook.credential';
 export interface Credential {
   kind: 'jwt' | 'apikey';
   value: string;
+  /** 过期时间(毫秒时间戳);缺省视为不过期(API Key 后端无过期) */
+  expiresAt?: number;
+}
+
+/** 解码 JWT 的过期时间(Unix 秒) -> 毫秒时间戳;非合法 JWT 或缺少 exp 返回 null */
+export function decodeJwtExp(token: string): number | null {
+  try {
+    // JWT 三段式:header.payload.signature
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    // base64url -> base64,RN/Expo 全局自带 atob
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+    if (typeof payload.exp !== 'number') return null;
+    return payload.exp * 1000;
+  } catch {
+    return null;
+  }
+}
+
+/** 凭据是否已过期(未设置 expiresAt 视为永不过期) */
+export function isCredentialExpired(cred: Credential | null): boolean {
+  if (!cred || cred.expiresAt == null) return false;
+  return Date.now() >= cred.expiresAt;
 }
 
 export class ApiError extends Error {
