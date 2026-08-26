@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, TextInput, View } from 'react-native';
 import { Plus, CreditCard, Wallet, MessageCircle, Banknote, TrendingUp, Landmark, Archive, RotateCcw, Trash2 } from 'lucide-react-native';
 import { useTheme, alpha } from '@/theme';
 import { Screen } from '@/components/Screen';
@@ -66,6 +66,17 @@ export default function AccountsScreen() {
   useEffect(() => {
     if (!bookId) return;
     fetchAccounts(bookId).then(setAccounts);
+  }, [bookId]);
+
+  const [refreshing, setRefreshing] = useState(false);
+  // 下拉刷新:重拉账户列表
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      if (bookId) await fetchAccounts(bookId).then(setAccounts);
+    } finally {
+      setRefreshing(false);
+    }
   }, [bookId]);
 
   const status = FILTER_STATUS[filter];
@@ -170,7 +181,7 @@ export default function AccountsScreen() {
           })}
         </View>
 
-        <ScrollView contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}>
           {visible.length === 0 ? (
             <Card className="items-center py-12">
               <Text style={{ fontSize: 30, marginBottom: 6 }}>💳</Text>

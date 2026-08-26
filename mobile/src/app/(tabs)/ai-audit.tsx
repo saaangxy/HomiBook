@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react-native';
 import { useTheme } from '@/theme';
 import { Screen } from '@/components/Screen';
@@ -31,6 +31,17 @@ export default function AIAuditScreen() {
 
   useEffect(() => {
     fetchAuditLogs().then(setLogs);
+  }, []);
+
+  const [refreshing, setRefreshing] = useState(false);
+  // 下拉刷新:重拉审计日志
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await fetchAuditLogs().then(setLogs);
+    } finally {
+      setRefreshing(false);
+    }
   }, []);
 
   const users = useMemo(() => ['全部', ...Array.from(new Set(logs.map((l) => l.userNickname)))], [logs]);
@@ -83,7 +94,7 @@ export default function AIAuditScreen() {
           </View>
         </View>
 
-        <ScrollView contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}>
           {pageItems.length === 0 ? (
             <Card className="items-center py-12">
               <Text style={{ fontSize: 30, marginBottom: 6 }}>🔍</Text>

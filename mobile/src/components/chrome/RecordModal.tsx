@@ -98,6 +98,11 @@ export function RecordModal() {
   const [chatInput, setChatInput] = useState('');
   const [chatTyping, setChatTyping] = useState(false);
   const sheetScrollRef = useRef<ScrollView>(null);
+  // 两个 tab 高度一致:分别测量手动/AI 容器实际高度,取较高者作为公共最小高度
+  const manualH = useRef(screenH * 0.55);
+  const aiH = useRef(screenH * 0.55);
+  const [contentMinH, setContentMinH] = useState(screenH * 0.55);
+  const syncMinH = () => setContentMinH(Math.max(manualH.current, aiH.current, screenH * 0.55));
 
   const categories = allCategories.filter((c) => (type === 'EXPENSE' ? c.type === 'EXPENSE' : c.type === 'INCOME'));
   const accounts = allAccounts.filter((a) => a.status === 'ACTIVE');
@@ -121,7 +126,7 @@ export function RecordModal() {
       setRemark(editingRecord.remark ?? '');
       setCounterparty(editingRecord.counterparty ?? '');
     } else {
-      setMode('manual');
+      // 新建模式:保留记忆的 tab(不强制 manual),仅重置表单字段
       setType('EXPENSE');
       setAmount('0');
       setCat(categories[0]?.code ?? '餐饮');
@@ -355,7 +360,8 @@ export function RecordModal() {
           </View>
 
           {mode === 'manual' ? (
-            <>
+            /* 手动模式容器 minHeight 与 AI 模式一致,保证切换 tab 时弹窗高度不跳变 */
+            <View style={{ minHeight: contentMinH }} onLayout={(e) => { manualH.current = e.nativeEvent.layout.height; syncMinH(); }}>
               <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets nestedScrollEnabled>
                 {/* 类型(仿网页 Tabs 分段控件) */}
                 {fieldLabel('类型')}
@@ -465,10 +471,10 @@ export function RecordModal() {
               <View style={{ marginTop: 10 }}>
                 <Button title={`保存${typeLabel} ¥${display}`} onPress={save} />
               </View>
-            </>
+            </View>
           ) : (
             /* AI 模式:顶部会话切换工具行(仿网页移动端) + 消息区 + 输入区;高度与手动侧一致 */
-            <View style={{ paddingVertical: 4, minHeight: screenH * 0.55 }}>
+            <View style={{ paddingVertical: 4, minHeight: contentMinH }} onLayout={(e) => { aiH.current = e.nativeEvent.layout.height; syncMinH(); }}>
               {/* 会话工具行:菜单按钮 + 当前会话标题 + 新建 */}
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: colors.hairline, marginBottom: 10 }}>
                 <Pressable

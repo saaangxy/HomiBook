@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import {
-  ScrollView, View, Pressable, Alert, TextInput, Platform,
+  RefreshControl, ScrollView, View, Pressable, Alert, TextInput, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Plus, Pencil, Trash2, Search, ChevronDown } from 'lucide-react-native';
@@ -68,6 +68,17 @@ export default function BudgetPage() {
 
   const reload = useCallback(() => {
     if (bookId) fetchBudgets(bookId).then(setBudgets);
+  }, [bookId]);
+  const [refreshing, setRefreshing] = useState(false);
+  // 下拉刷新:预算 + 分类
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      if (bookId) await Promise.all([fetchBudgets(bookId).then(setBudgets), fetchCategories().then(setCategories)]);
+      else await fetchCategories().then(setCategories);
+    } finally {
+      setRefreshing(false);
+    }
   }, [bookId]);
 
   const handleCreate = useCallback(async () => {
@@ -248,7 +259,7 @@ export default function BudgetPage() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['bottom']}>
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
+      <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}>
         {/* 年月选择 + 搜索 */}
         <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
           <Pressable onPress={() => setMonth(m => Math.max(1, m - 1))} style={{

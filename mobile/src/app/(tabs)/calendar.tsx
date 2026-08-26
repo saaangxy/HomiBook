@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, View, useWindowDimensions } from 'react-native';
 import { ChevronLeft, ChevronRight, CalendarCheck } from 'lucide-react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -28,7 +28,7 @@ export default function CalendarScreen() {
   const [month, setMonth] = useState(now.getMonth() + 1); // 1-12
   const [selected, setSelected] = useState(now.getDate());
   // 分类图标(图标来源复用 records store 的分类)
-  const { categories } = useRecords();
+  const { categories, refresh } = useRecords();
   const { currentLedger, openRecord } = useUIShell();
   const bookId = currentLedger.id;
   const catMap = useMemo(() => Object.fromEntries(categories.map((x) => [x.code, x.icon])), [categories]);
@@ -52,6 +52,23 @@ export default function CalendarScreen() {
     fetchRecords(bookId, { page: 1, pageSize: 100, dateFrom: date, dateTo: date }).then((list) => { if (!cancel) setDayList(list); });
     return () => { cancel = true; };
   }, [bookId, year, month, selected]);
+
+  const [refreshing, setRefreshing] = useState(false);
+  // 下拉刷新:重拉 store(分类) + 月汇总 + 当日流水
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      if (!bookId) return;
+      const date = key(selected);
+      await Promise.all([
+        refresh(),
+        fetchCalendar(bookId, year, month).then(setMonthlyDays),
+        fetchRecords(bookId, { page: 1, pageSize: 100, dateFrom: date, dateTo: date }).then(setDayList),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refresh, bookId, year, month, selected]);
 
   const days = useMemo(() => {
     const first = new Date(year, month - 1, 1);
@@ -259,7 +276,7 @@ export default function CalendarScreen() {
               <Text style={{ fontSize: 15, fontWeight: '600' }}>当日流水</Text>
             </View>
           )}
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 24 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 24 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}>
             <Card className="px-5 py-4">
               {dayRecords.length === 0 ? (
                 <View className="items-center py-10"><Text variant="muted">当天暂无流水</Text></View>

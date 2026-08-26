@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, TextInput, View } from 'react-native';
 import { Plus, Trash2 } from 'lucide-react-native';
 import { useTheme, alpha } from '@/theme';
 import { useAuth } from '@/stores/auth';
@@ -34,6 +34,17 @@ export default function UsersScreen() {
 
   useEffect(() => {
     fetchUsers().then(setUsers);
+  }, []);
+
+  const [refreshing, setRefreshing] = useState(false);
+  // 下拉刷新:重拉用户列表
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await fetchUsers().then(setUsers);
+    } finally {
+      setRefreshing(false);
+    }
   }, []);
 
   const resetCreate = () => {
@@ -108,7 +119,7 @@ export default function UsersScreen() {
           </Pressable>
         </View>
 
-        <ScrollView contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}>
           {users.map((u, i) => {
             const isMe = u.username === username;
             const active = u.status === 'ACTIVE';

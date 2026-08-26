@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
-  ScrollView, View, Pressable, TextInput, Dimensions, Platform,
+  RefreshControl, ScrollView, View, Pressable, TextInput, Dimensions, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -415,7 +415,7 @@ const ACCOUNT_BALANCE_SERIES = [
 // ════════════════════════════════════════
 export default function StatsPage() {
   const { colors } = useTheme();
-  const { summary, accounts } = useRecords();
+  const { summary, accounts, refresh } = useRecords();
   const { currentLedger } = useUIShell();
   const bookId = currentLedger.id;
   const [tab, setTab] = useState<StatsTab>('overview');
@@ -436,6 +436,18 @@ export default function StatsPage() {
     fetchMonthlyTrend(bookId).then(setTrend);
     fetchRadar(bookId).then(setRadar);
   }, [bookId]);
+
+  const [refreshing, setRefreshing] = useState(false);
+  // 下拉刷新:重拉 store + 趋势 + 雷达
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      if (bookId) await Promise.all([refresh(), fetchMonthlyTrend(bookId).then(setTrend), fetchRadar(bookId).then(setRadar)]);
+      else await refresh();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refresh, bookId]);
 
   // 资产净值趋势 / 账户余额:由真实账户派生(近6个月按月粗略)
   const assetMonths = useMemo(() => {
@@ -662,7 +674,7 @@ export default function StatsPage() {
         </View>
       </View>
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 40 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}>
         {tab === 'overview' && renderOverview()}
         {tab === 'yearly' && renderTimeView('yearly')}
         {tab === 'monthly' && renderTimeView('monthly')}

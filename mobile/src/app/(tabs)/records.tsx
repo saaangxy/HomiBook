@@ -62,8 +62,27 @@ export default function RecordsScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await refresh();
-    setRefreshing(false);
+    try {
+      await refresh();
+      // 有筛选时同步重拉后端筛选结果
+      if (bookId && hasActiveFilter) {
+        const singleAccount = filters.accountIds.length === 1 ? filters.accountIds[0] : undefined;
+        const singleCategory = filters.categoryCodes.length === 1 ? filters.categoryCodes[0] : undefined;
+        await fetchRecords(bookId, {
+          pageSize: 100,
+          types: filters.types,
+          dateFrom: filters.dateFrom || undefined,
+          dateTo: filters.dateTo || undefined,
+          amountFrom: filters.minAmount ? Number(filters.minAmount) : undefined,
+          amountTo: filters.maxAmount ? Number(filters.maxAmount) : undefined,
+          remark: filters.keyword.trim() || undefined,
+          accountId: singleAccount,
+          categoryCode: singleCategory,
+        }).then(setList);
+      }
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   // 数据源:有筛选 → 后端结果;无筛选 → store 全量

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { router } from 'expo-router';
 import { Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -29,9 +29,32 @@ export default function HomeScreen() {
   const [budgetExp, setBudgetExp] = useState(false);
   const [yearIncome, setYearIncome] = useState(0);
   const [yearExpense, setYearExpense] = useState(0);
-  const { records, summary, categories } = useRecords();
+  const { records, summary, categories, refresh } = useRecords();
   const { currentLedger } = useUIShell();
   const catMap = useMemo(() => Object.fromEntries(categories.map((x) => [x.code, x.icon])), [categories]);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // 下拉刷新:重拉 store(流水/账户/分类) + 预算 + 当年收支
+  const onRefresh = useCallback(async () => {
+    const bookId = currentLedger.id;
+    setRefreshing(true);
+    try {
+      if (bookId) {
+        await Promise.all([
+          refresh(),
+          fetchBudgets(bookId).then(setBudgets),
+          fetchMonthlyTrend(bookId).then((t) => {
+            setYearIncome(t.income.reduce((s, x) => s + x, 0));
+            setYearExpense(t.expense.reduce((s, x) => s + x, 0));
+          }),
+        ]);
+      } else {
+        await refresh();
+      }
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refresh, currentLedger.id]);
 
   useEffect(() => {
     const bookId = currentLedger.id;
@@ -59,7 +82,7 @@ export default function HomeScreen() {
   const expense = summary.expense;
 
   return (
-    <Screen scroll>
+    <Screen scroll refreshing={refreshing} onRefresh={onRefresh}>
       <View className="px-5 pt-4">
         {/* 问候 */}
         <FadeInView>

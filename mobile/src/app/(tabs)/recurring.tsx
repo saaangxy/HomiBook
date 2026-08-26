@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, Switch, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, Switch, TextInput, View } from 'react-native';
 import { Plus, ArrowUpRight, ArrowDownRight, ArrowLeftRight, Trash2 } from 'lucide-react-native';
 import { useTheme, alpha } from '@/theme';
 import { Screen } from '@/components/Screen';
@@ -41,6 +41,17 @@ export default function RecurringScreen() {
     if (!bookId) return;
     fetchRecurring(bookId).then(setItems);
     fetchAccounts(bookId).then(setAccounts);
+  }, [bookId]);
+
+  const [refreshing, setRefreshing] = useState(false);
+  // 下拉刷新:固定收支 + 账户
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      if (bookId) await Promise.all([fetchRecurring(bookId).then(setItems), fetchAccounts(bookId).then(setAccounts)]);
+    } finally {
+      setRefreshing(false);
+    }
   }, [bookId]);
 
   const resetForm = () => {
@@ -130,7 +141,7 @@ export default function RecurringScreen() {
           </Pressable>
         </View>
 
-        <ScrollView contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}>
           {items.length === 0 ? (
             <Card className="items-center py-12">
               <Text style={{ fontSize: 30, marginBottom: 6 }}>🔁</Text>
