@@ -1,7 +1,11 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Ledger, RecordItem } from '@/types';
 import { createBookApi, fetchBooks } from '@/services/records';
+import { secureGet, secureSet } from '@/services/storage';
 import { useAuth } from '@/stores/auth';
+
+// 记住每个服务器+账号最后使用的账本:key 按服务器 baseUrl 与账号区分(避免跨账号串用无权账本)
+const ledgerKey = (baseUrl: string, account: string) => `homibook.ledger.${baseUrl}.${account || 'default'}`;
 
 interface UIShellValue {
   // 账本
@@ -26,21 +30,53 @@ interface UIShellValue {
 const UIShellContext = createContext<UIShellValue | null>(null);
 
 export function UIShellProvider({ children }: { children: ReactNode }) {
-  const { isLoggedIn } = useAuth();
+  const { isLoggedIn, currentServer, username } = useAuth();
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
   const [currentLedgerId, setCurrentLedgerId] = useState('');
+  const baseUrl = currentServer?.baseUrl ?? '';
+  const account = username || 'default';
 
-  // 登录后拉取后端账本并选中第一个
+  // 保存当前服务器+账号选中的账本
+  const saveLedgerId = (id: string) => {
+    if (baseUrl && id) secureSet(ledgerKey(baseUrl, account), id);
+  };
+
+  // 登出/切换账号时清空账本,避免残留旧账号的账本 id 导致无权访问
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setLedgers([]);
+      setCurrentLedgerId('');
+    }
+  }, [isLoggedIn]);
+
+  // 登录后拉取账本,优先打开该服务器+账号上次使用的账本,否则选第一个
   useEffect(() => {
     if (!isLoggedIn) return;
+    let cancelled = false;
+    // 服务器切换(或账号变更)时先清空,避免用旧服务器的账本 id 请求新服务器
+    setLedgers([]);
+    setCurrentLedgerId('');
     fetchBooks()
-      .then((books) => {
-        if (books.length === 0) return;
+      .then(async (books) => {
+        if (cancelled) return;
+        // 空账本也要正常落地(列表为空、无当前账本)
         setLedgers(books);
-        setCurrentLedgerId((prev) => (books.some((b) => b.id === prev) ? prev : books[0].id));
+        if (books.length === 0) {
+          setCurrentLedgerId('');
+          return;
+        }
+        const remembered = baseUrl ? await secureGet(ledgerKey(baseUrl, account)).catch(() => null) : null;
+        const rememberedId = remembered && books.some((b) => b.id === remembered) ? remembered : '';
+        const finalId = rememberedId || books[0].id;
+        setCurrentLedgerId(finalId);
+        // 选中后立即保存,切走再切回能恢复该账本
+        saveLedgerId(finalId);
       })
       .catch(() => {});
-  }, [isLoggedIn]);
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoggedIn, baseUrl, account]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [ledgerOpen, setLedgerOpen] = useState(false);
   const [recordOpen, setRecordOpen] = useState(false);
@@ -52,6 +88,7 @@ export function UIShellProvider({ children }: { children: ReactNode }) {
       currentLedger: ledgers.find((l) => l.id === currentLedgerId) ?? ledgers[0] ?? { id: '', name: '', icon: '📒', memberCount: 0 },
       switchLedger: (id) => {
         setCurrentLedgerId(id);
+        saveLedgerId(id);
         setLedgerOpen(false);
       },
       createLedger: async (name) => {
@@ -61,6 +98,7 @@ export function UIShellProvider({ children }: { children: ReactNode }) {
         if (books.length > 0) {
           setLedgers(books);
           setCurrentLedgerId(books[books.length - 1].id);
+          saveLedgerId(books[books.length - 1].id);
         }
       },
       sidebarOpen,
@@ -80,7 +118,7 @@ export function UIShellProvider({ children }: { children: ReactNode }) {
       },
       editingRecord,
     }),
-    [ledgers, currentLedgerId, sidebarOpen, ledgerOpen, recordOpen, editingRecord],
+    [ledgers, currentLedgerId, sidebarOpen, ledgerOpen, recordOpen, editingRecord, baseUrl, account],
   );
 
   return (

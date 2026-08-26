@@ -91,7 +91,6 @@ export default function LoginScreen() {
               homi<Text style={{ color: colors.primary }}>book</Text>
             </Text>
             <Text variant="muted" style={{ textAlign: 'center', fontSize: 13, marginTop: 4, marginBottom: 28 }}>
-              开源自部署 · 家庭记账
             </Text>
 
             {/* 登录卡片 */}

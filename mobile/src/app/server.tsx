@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Alert, Modal, Pressable, TextInput, View, ScrollView, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { X, Plus, Check, Trash2, Pencil, Server as ServerIcon, User, LogIn } from 'lucide-react-native';
+import { X, Plus, Check, Trash2, Pencil, Copy, Server as ServerIcon, User, LogIn } from 'lucide-react-native';
 import { useTheme, alpha, haptics } from '@/theme';
 import { useAuth } from '@/stores/auth';
 import { Screen } from '@/components/Screen';
@@ -25,16 +25,37 @@ export default function ServerScreen() {
   const [editing, setEditing] = useState<EditState>(null);
   const [loggingIn, setLoggingIn] = useState<string | null>(null); // 正在登录的服务器ID
   const [deleting, setDeleting] = useState<Server | null>(null); // 待删除确认
+  const [formError, setFormError] = useState(''); // 表单内联错误提示
+
+  // 名称、地址必填,且(账号+密码)或 API Key 至少填一种
+  const validate = (n: string, u: string, acct: string, pwd: string, key: string): string => {
+    if (!n.trim() || !u.trim()) return '请填写名称与服务器地址';
+    const url = u.trim();
+    if (!/^https?:\/\/\S+/.test(url)) return '服务器地址需以 http:// 或 https:// 开头';
+    if (!((acct.trim() && pwd) || key.trim())) return '请填写账号密码,或填写 API Key';
+    return '';
+  };
 
   const handleAdd = async () => {
-    if (!name || !baseUrl) return;
+    const err = validate(name, baseUrl, account, password, apiKey);
+    if (err) {
+      setFormError(err);
+      return;
+    }
+    setFormError('');
     await addServer(name, baseUrl, { account: account || undefined, password: password || undefined, apiKey: apiKey || undefined });
     setName(''); setBaseUrl(''); setAccount(''); setPassword(''); setApiKey('');
     setAdding(false);
   };
 
   const handleEdit = async () => {
-    if (!editing || !editing.name || !editing.baseUrl) return;
+    if (!editing) return;
+    const err = validate(editing.name, editing.baseUrl, editing.account, editing.password, editing.apiKey);
+    if (err) {
+      setFormError(err);
+      return;
+    }
+    setFormError('');
     await updateServer(editing.id, editing.name, editing.baseUrl, {
       account: editing.account || undefined,
       password: editing.password,
@@ -57,6 +78,16 @@ export default function ServerScreen() {
     } catch (e: any) {
       Alert.alert('删除失败', e?.message || '未知错误');
     }
+  };
+
+  // 复制服务器:新增一条内容完全一致的配置
+  const handleCopy = async (s: Server) => {
+    await addServer(`${s.name} 副本`, s.baseUrl, {
+      account: s.account || undefined,
+      password: s.password,
+      apiKey: s.apiKey,
+    });
+    haptics.success();
   };
 
   const handleServerTap = async (s: Server) => {
@@ -104,7 +135,7 @@ export default function ServerScreen() {
           <Text style={labelStyle}>名称</Text>
           <TextInput
             value={n}
-            onChangeText={(v) => isEdit ? setEditing({ ...editing!, name: v }) : setName(v)}
+            onChangeText={(v) => { setFormError(''); isEdit ? setEditing({ ...editing!, name: v }) : setName(v); }}
             placeholder="如 演示站"
             placeholderTextColor={colors.mutedForeground}
             style={inputStyle}
@@ -114,7 +145,7 @@ export default function ServerScreen() {
           <Text style={labelStyle}>服务器地址</Text>
           <TextInput
             value={u}
-            onChangeText={(v) => isEdit ? setEditing({ ...editing!, baseUrl: v }) : setBaseUrl(v)}
+            onChangeText={(v) => { setFormError(''); isEdit ? setEditing({ ...editing!, baseUrl: v }) : setBaseUrl(v); }}
             placeholder="https://..."
             placeholderTextColor={colors.mutedForeground}
             autoCapitalize="none"
@@ -126,7 +157,7 @@ export default function ServerScreen() {
           <Text style={labelStyle}>账号</Text>
           <TextInput
             value={a}
-            onChangeText={(v) => isEdit ? setEditing({ ...editing!, account: v }) : setAccount(v)}
+            onChangeText={(v) => { setFormError(''); isEdit ? setEditing({ ...editing!, account: v }) : setAccount(v); }}
             placeholder="登录账号或邮箱"
             placeholderTextColor={colors.mutedForeground}
             autoCapitalize="none"
@@ -137,7 +168,7 @@ export default function ServerScreen() {
           <Text style={labelStyle}>密码(选填)</Text>
           <TextInput
             value={p}
-            onChangeText={(v) => isEdit ? setEditing({ ...editing!, password: v }) : setPassword(v)}
+            onChangeText={(v) => { setFormError(''); isEdit ? setEditing({ ...editing!, password: v }) : setPassword(v); }}
             placeholder="登录密码,填了即可一键登录"
             placeholderTextColor={colors.mutedForeground}
             secureTextEntry
@@ -149,7 +180,7 @@ export default function ServerScreen() {
           <Text style={labelStyle}>API Key(选填)</Text>
           <TextInput
             value={k}
-            onChangeText={(v) => isEdit ? setEditing({ ...editing!, apiKey: v }) : setApiKey(v)}
+            onChangeText={(v) => { setFormError(''); isEdit ? setEditing({ ...editing!, apiKey: v }) : setApiKey(v); }}
             placeholder="homibook_... 优先于密码登录"
             placeholderTextColor={colors.mutedForeground}
             autoCapitalize="none"
@@ -158,6 +189,11 @@ export default function ServerScreen() {
             style={inputStyle}
           />
         </View>
+        {formError ? (
+          <View style={{ paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, backgroundColor: alpha(colors.destructive, 0.1) }}>
+            <Text style={{ color: colors.destructive, fontSize: 12 }}>{formError}</Text>
+          </View>
+        ) : null}
         <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
           <Pressable
             onPress={() => { isEdit ? setEditing(null) : setAdding(false); }}
@@ -251,6 +287,13 @@ export default function ServerScreen() {
                     </Pressable>
                     {/* 操作按钮 */}
                     <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                      <Pressable
+                        onPress={() => handleCopy(s)}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: colors.muted }}
+                      >
+                        <Copy size={13} color={colors.foreground} />
+                        <Text style={{ fontSize: 12, color: colors.foreground }}>复制</Text>
+                      </Pressable>
                       <Pressable
                         onPress={() => setEditing({ id: s.id, name: s.name, baseUrl: s.baseUrl, account: s.account ?? '', password: s.password ?? '', apiKey: s.apiKey ?? '' })}
                         style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: colors.muted }}

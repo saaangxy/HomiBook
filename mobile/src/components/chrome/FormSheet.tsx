@@ -66,7 +66,6 @@ export function FormSheet({ visible, title, onClose, onSave, saveLabel = '保存
           entering={FadeInDown.duration(260).easing(Easing.out(Easing.cubic))}
           style={[
             sheetShadow(palette),
-            sheetAnim,
             {
               backgroundColor: colors.card,
               borderTopLeftRadius: palette.radius.sheet,
@@ -76,6 +75,8 @@ export function FormSheet({ visible, title, onClose, onSave, saveLabel = '保存
             },
           ]}
         >
+          {/* 手势 transform 单独包一层,避免与 entering 布局动画的 transform 冲突 */}
+          <Animated.View style={[sheetAnim]}>
           {/* 把手 + 标题行整体可拖动关闭 */}
           <GestureDetector gesture={pan}>
             <View style={{ paddingTop: 10 }}>
@@ -94,6 +95,7 @@ export function FormSheet({ visible, title, onClose, onSave, saveLabel = '保存
               <Button title={saveLabel} onPress={onSave} loading={saveLoading} />
             </View>
           )}
+          </Animated.View>
         </Animated.View>
       </KeyboardAvoidingView>
     </Modal>
