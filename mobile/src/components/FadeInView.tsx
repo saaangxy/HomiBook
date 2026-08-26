@@ -1,6 +1,6 @@
 import { type ReactNode } from 'react';
 import { type ViewStyle } from 'react-native';
-import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
+import Animated, { Easing, FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { motion } from '@/theme/motion';
 
 interface FadeInViewProps {
@@ -17,7 +17,7 @@ export function FadeInView({ children, index = 0, from = 'bottom', className, st
   const capped = Math.min(index, motion.stagger.maxItems - 1);
   return (
     <Animated.View
-      entering={entering.delay(capped * motion.stagger.delay).springify().damping(18)}
+      entering={entering.delay(capped * motion.stagger.delay).duration(300).easing(Easing.out(Easing.cubic))}
       className={className}
       style={style}
     >

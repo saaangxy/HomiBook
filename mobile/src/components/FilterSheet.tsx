@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import { KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import Animated, { Easing, FadeIn, FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, alpha, haptics, sheetShadow } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { DatePicker } from '@/components/ui/DatePicker';
-import { fetchAccounts, fetchCategories } from '@/services/records';
+import { useRecords } from '@/stores/records';
 import type { AccountItem, Category, RecordItem, RecordType } from '@/types';
 
 export interface RecordFilters {
@@ -81,19 +81,13 @@ const TYPE_OPTIONS: { value: RecordType; label: string }[] = [
 export function FilterSheet({ visible, initial, onApply, onClose }: FilterSheetProps) {
   const { colors, palette } = useTheme();
   const insets = useSafeAreaInsets();
+  const { accounts, categories } = useRecords();
   const [draft, setDraft] = useState<RecordFilters>(initial);
-  const [accounts, setAccounts] = useState<AccountItem[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
 
   // 打开时同步外部条件为草稿
   useEffect(() => {
     if (visible) setDraft(initial);
   }, [visible, initial]);
-
-  useEffect(() => {
-    fetchAccounts().then(setAccounts);
-    fetchCategories().then(setCategories);
-  }, []);
 
   const toggle = <T,>(list: T[], v: T): T[] => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
 
@@ -127,12 +121,12 @@ export function FilterSheet({ visible, initial, onApply, onClose }: FilterSheetP
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
-      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+      <KeyboardAvoidingView style={{ flex: 1, justifyContent: 'flex-end' }} behavior="padding">
         <Animated.View entering={FadeIn.duration(180)} style={StyleSheet.absoluteFill}>
           <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={onClose} />
         </Animated.View>
         <Animated.View
-          entering={FadeInDown.springify().damping(20)}
+          entering={FadeInDown.duration(260).easing(Easing.out(Easing.cubic))}
           style={[
             sheetShadow(palette),
             {
@@ -222,7 +216,7 @@ export function FilterSheet({ visible, initial, onApply, onClose }: FilterSheetP
             />
           </View>
         </Animated.View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

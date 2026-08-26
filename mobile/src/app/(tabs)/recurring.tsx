@@ -8,7 +8,8 @@ import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { FadeInView } from '@/components/FadeInView';
 import { FormSheet } from '@/components/chrome/FormSheet';
-import { fetchRecurring } from '@/services/recurring';
+import { useUIShell } from '@/components/chrome/chrome';
+import { createRecurringApi, deleteRecurringApi, fetchRecurring, toggleRecurringApi, updateRecurringApi } from '@/services/recurring';
 import { fetchAccounts } from '@/services/records';
 import { formatMoney } from '@/lib/format';
 import type { AccountItem, RecordType, RecurringTransaction } from '@/types';
@@ -21,6 +22,8 @@ const TYPE_COLOR: Record<RecordType, 'income' | 'expense' | 'transfer'> = { INCO
 // 固定收支:列表 + 启停 + 新增/编辑/删除(设计优先 mock;贷款特殊字段简化)
 export default function RecurringScreen() {
   const { colors } = useTheme();
+  const { currentLedger } = useUIShell();
+  const bookId = currentLedger.id;
   const [items, setItems] = useState<RecurringTransaction[]>([]);
   const [accounts, setAccounts] = useState<AccountItem[]>([]);
   const [sheet, setSheet] = useState(false);
@@ -35,9 +38,10 @@ export default function RecurringScreen() {
   const [active, setActive] = useState(true);
 
   useEffect(() => {
-    fetchRecurring().then(setItems);
-    fetchAccounts().then(setAccounts);
-  }, []);
+    if (!bookId) return;
+    fetchRecurring(bookId).then(setItems);
+    fetchAccounts(bookId).then(setAccounts);
+  }, [bookId]);
 
   const resetForm = () => {
     setName('');
@@ -67,40 +71,40 @@ export default function RecurringScreen() {
     setSheet(true);
   };
 
-  const toggle = (t: RecurringTransaction) => {
-    setItems((prev) => prev.map((x) => (x.id === t.id ? { ...x, active: !x.active } : x)));
+  const reload = () => {
+    if (bookId) fetchRecurring(bookId).then(setItems);
   };
 
-  const remove = (t: RecurringTransaction) => {
-    setItems((prev) => prev.filter((x) => x.id !== t.id));
+  const toggle = async (t: RecurringTransaction) => {
+    await toggleRecurringApi(t.id, !t.active);
+    reload();
+  };
+
+  const remove = async (t: RecurringTransaction) => {
+    await deleteRecurringApi(t.id);
     setEditing(null);
     setSheet(false);
+    reload();
   };
 
-  const save = () => {
+  const save = async () => {
     if (!name) return;
-    const account = accounts.find((a) => a.id === accountId);
+    const payload = {
+      name,
+      type,
+      amount: parseFloat(amount) || 0,
+      accountId,
+      categoryCode: category || undefined,
+      cron: cron || '0 0 1 * *',
+    };
     if (editing) {
-      setItems((prev) =>
-        prev.map((x) => (x.id === editing.id ? { ...x, name, type, amount: parseFloat(amount) || 0, accountId, accountName: account?.name ?? '', categoryName: category || undefined, cron, active } : x)),
-      );
+      await updateRecurringApi(editing.id, payload);
     } else {
-      const item: RecurringTransaction = {
-        id: `rc${Date.now()}`,
-        name,
-        type,
-        recurringType: 'PERIODIC',
-        amount: parseFloat(amount) || 0,
-        accountId,
-        accountName: account?.name ?? '',
-        categoryName: category || undefined,
-        cron,
-        active,
-      };
-      setItems((prev) => [item, ...prev]);
+      await createRecurringApi(bookId, payload);
     }
     setSheet(false);
     resetForm();
+    reload();
   };
 
   const inputStyle = {

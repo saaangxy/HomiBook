@@ -1,6 +1,7 @@
 import { api } from './http'
+import type { BudgetType } from '@homibook/core'
 
-export type BudgetType = 'FIXED' | 'FREE'
+export { type BudgetType }
 
 export interface BudgetItem {
   id: string

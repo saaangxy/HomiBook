@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import Animated, { Easing, FadeIn, FadeInDown } from 'react-native-reanimated';
 import { Check, ChevronDown } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, sheetShadow, haptics } from '@/theme';
@@ -62,7 +62,7 @@ export function SelectSheet({ value, options, onChange, placeholder = '请选择
             <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={() => setOpen(false)} />
           </Animated.View>
           <Animated.View
-            entering={FadeInDown.springify().damping(20)}
+            entering={FadeInDown.duration(260).easing(Easing.out(Easing.cubic))}
             style={[
               sheetShadow(palette),
               {

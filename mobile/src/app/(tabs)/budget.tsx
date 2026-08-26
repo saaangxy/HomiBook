@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   ScrollView, View, Pressable, Alert, TextInput, Platform,
 } from 'react-native';
@@ -7,8 +7,9 @@ import { Plus, Pencil, Trash2, Search, ChevronDown } from 'lucide-react-native';
 import { useTheme, alpha } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { mockBudgets, mockCategories } from '@/mock/data';
-import type { BudgetItem, BudgetType } from '@/types';
+import { useUIShell } from '@/components/chrome/chrome';
+import { createBudgetApi, deleteBudgetApi, fetchBudgets, fetchCategories, updateBudgetApi } from '@/services/records';
+import type { BudgetItem, BudgetType, Category } from '@/types';
 
 const BUDGET_TYPES: { key: BudgetType | 'ALL'; label: string }[] = [
   { key: 'ALL', label: '全部' },
@@ -19,7 +20,10 @@ const BUDGET_TYPES: { key: BudgetType | 'ALL'; label: string }[] = [
 // 预算管理页:对齐网页端 CRUD + 类型筛选 + 搜索 + 年月筛选
 export default function BudgetPage() {
   const { colors } = useTheme();
-  const [budgets, setBudgets] = useState<BudgetItem[]>(mockBudgets);
+  const { currentLedger } = useUIShell();
+  const bookId = currentLedger.id;
+  const [budgets, setBudgets] = useState<BudgetItem[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [typeFilter, setTypeFilter] = useState<BudgetType | 'ALL'>('ALL');
   const [search, setSearch] = useState('');
   const [year, setYear] = useState(2026);
@@ -33,6 +37,13 @@ export default function BudgetPage() {
   const [formType, setFormType] = useState<BudgetType>('FIXED');
   const [formAmount, setFormAmount] = useState('');
   const [formCategory, setFormCategory] = useState<string>('');
+
+  // 加载真实预算与分类
+  useEffect(() => {
+    if (!bookId) return;
+    fetchBudgets(bookId).then(setBudgets);
+    fetchCategories().then(setCategories);
+  }, [bookId]);
 
   // ── 筛选 ──
   const filtered = useMemo(() => {
@@ -55,40 +66,48 @@ export default function BudgetPage() {
     setFormName(''); setFormType('FIXED'); setFormAmount(''); setFormCategory('');
   }, []);
 
-  const handleCreate = useCallback(() => {
-    if (!formName.trim() || !formAmount) return;
-    const budget: BudgetItem = {
-      id: `b${Date.now()}`, name: formName.trim(), type: formType,
-      categoryCode: formCategory || null, amount: Number(formAmount),
-      actualAmount: 0, year, month: formType === 'FREE' ? null : month,
-    };
-    setBudgets(prev => [...prev, budget]);
-    setCreating(false); resetForm();
-  }, [formName, formType, formAmount, formCategory, year, month, resetForm]);
+  const reload = useCallback(() => {
+    if (bookId) fetchBudgets(bookId).then(setBudgets);
+  }, [bookId]);
 
-  const handleEdit = useCallback(() => {
+  const handleCreate = useCallback(async () => {
+    if (!formName.trim() || !formAmount) return;
+    await createBudgetApi(bookId, {
+      name: formName.trim(), type: formType,
+      categoryCode: formCategory || undefined, amount: Number(formAmount),
+      year, month: formType === 'FREE' ? 0 : month,
+    });
+    setCreating(false); resetForm(); reload();
+  }, [formName, formType, formAmount, formCategory, year, month, resetForm, bookId, reload]);
+
+  const handleEdit = useCallback(async () => {
     if (!editing || !formName.trim() || !formAmount) return;
-    setBudgets(prev => prev.map(b => b.id === editing.id ? {
-      ...b, name: formName.trim(), type: formType, amount: Number(formAmount),
-      categoryCode: formCategory || null,
-    } : b));
-    setEditing(null); resetForm();
-  }, [editing, formName, formType, formAmount, formCategory, resetForm]);
+    await updateBudgetApi(editing.id, {
+      name: formName.trim(), amount: Number(formAmount),
+      categoryCode: formCategory || undefined,
+    });
+    setEditing(null); resetForm(); reload();
+  }, [editing, formName, formAmount, formCategory, resetForm, reload]);
 
   const handleDelete = useCallback((budget: BudgetItem) => {
     Alert.alert('删除预算', `确定要删除「${budget.name}」吗？`, [
       { text: '取消', style: 'cancel' },
-      { text: '删除', style: 'destructive', onPress: () => setBudgets(prev => prev.filter(b => b.id !== budget.id)) },
+      {
+        text: '删除', style: 'destructive', onPress: async () => {
+          await deleteBudgetApi(budget.id);
+          reload();
+        },
+      },
     ]);
     setDeleting(null);
-  }, []);
+  }, [reload]);
 
   const openEdit = useCallback((b: BudgetItem) => {
     setEditing(b); setFormName(b.name); setFormType(b.type);
     setFormAmount(String(b.amount)); setFormCategory(b.categoryCode ?? '');
   }, []);
 
-  const expenseCategories = mockCategories.filter(c => c.type === 'EXPENSE');
+  const expenseCategories = categories.filter(c => c.type === 'EXPENSE');
 
   // ── 渲染 ──
   const renderFormSheet = (title: string, onConfirm: () => void) => (

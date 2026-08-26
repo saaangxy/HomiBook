@@ -1,25 +1,7 @@
 import { api } from './http'
+import { ACCOUNT_TYPE_LABELS, type AccountType } from '@homibook/core'
 
-export type AccountType =
-  | 'BANK_DEBIT'
-  | 'CREDIT_CARD'
-  | 'ALIPAY'
-  | 'WECHAT'
-  | 'CASH'
-  | 'RECHARGE_CARD'
-  | 'INVESTMENT'
-  | 'OTHER'
-
-export const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
-  BANK_DEBIT: '借记卡',
-  CREDIT_CARD: '信用卡',
-  ALIPAY: '支付宝',
-  WECHAT: '微信',
-  CASH: '现金',
-  RECHARGE_CARD: '充值卡',
-  INVESTMENT: '投资账户',
-  OTHER: '其他',
-}
+export { ACCOUNT_TYPE_LABELS, type AccountType }
 
 export interface AccountItem {
   id: string

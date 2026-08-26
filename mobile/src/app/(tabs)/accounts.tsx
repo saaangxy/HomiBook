@@ -8,7 +8,8 @@ import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { FadeInView } from '@/components/FadeInView';
 import { FormSheet } from '@/components/chrome/FormSheet';
-import { fetchAccounts } from '@/services/records';
+import { useUIShell } from '@/components/chrome/chrome';
+import { createAccountApi, deleteAccountApi, fetchAccounts, updateAccountApi } from '@/services/records';
 import { formatMoney } from '@/lib/format';
 import type { AccountItem, AccountType } from '@/types';
 
@@ -47,6 +48,8 @@ const TYPE_KEYS = Object.keys(TYPE_LABEL) as AccountType[];
 // 账户管理:筛选 + 账户卡片列表 + 新建/编辑/归档/删除(设计优先 mock)
 export default function AccountsScreen() {
   const { colors } = useTheme();
+  const { currentLedger } = useUIShell();
+  const bookId = currentLedger.id;
   const [accounts, setAccounts] = useState<AccountItem[]>([]);
   const [filter, setFilter] = useState<Filter>('全部');
 
@@ -61,8 +64,9 @@ export default function AccountsScreen() {
   const [bankName, setBankName] = useState('');
 
   useEffect(() => {
-    fetchAccounts().then(setAccounts);
-  }, []);
+    if (!bookId) return;
+    fetchAccounts(bookId).then(setAccounts);
+  }, [bookId]);
 
   const status = FILTER_STATUS[filter];
   const visible = accounts.filter((a) => (status ? a.status === status : true));
@@ -90,35 +94,39 @@ export default function AccountsScreen() {
     setSheet(true);
   };
 
-  const save = () => {
+  const save = async () => {
     if (!name) return;
     if (editing) {
-      setAccounts((prev) => prev.map((a) => (a.id === editing.id ? { ...a, name, type, accountNo: accountNo || undefined, bankName: bankName || null } : a)));
-    } else {
-      const initBalance = parseFloat(initial) || 0;
-      const item: AccountItem = {
-        id: `a${Date.now()}`,
+      await updateAccountApi(editing.id, {
         name,
         type,
-        balance: initBalance,
-        initialBalance: initBalance,
-        bankName: bankName || null,
-        status: 'ACTIVE',
-      };
-      setAccounts((prev) => [item, ...prev]);
+        accountNo: accountNo || undefined,
+        bankName: bankName || undefined,
+      });
+    } else {
+      await createAccountApi(bookId, {
+        name,
+        type,
+        initialBalance: parseFloat(initial) || 0,
+        accountNo: accountNo || undefined,
+        bankName: bankName || undefined,
+      });
     }
+    if (bookId) fetchAccounts(bookId).then(setAccounts);
     setSheet(false);
     resetForm();
   };
 
-  const toggleArchive = (a: AccountItem) => {
-    setAccounts((prev) => prev.map((x) => (x.id === a.id ? { ...x, status: x.status === 'ACTIVE' ? 'ARCHIVED' : 'ACTIVE' } : x)));
+  const toggleArchive = async (a: AccountItem) => {
+    await updateAccountApi(a.id, { status: a.status === 'ACTIVE' ? 'ARCHIVED' : 'ACTIVE' });
+    if (bookId) fetchAccounts(bookId).then(setAccounts);
     setEditing(null);
     setSheet(false);
   };
 
-  const remove = (a: AccountItem) => {
-    setAccounts((prev) => prev.filter((x) => x.id !== a.id));
+  const remove = async (a: AccountItem) => {
+    await deleteAccountApi(a.id);
+    if (bookId) fetchAccounts(bookId).then(setAccounts);
     setEditing(null);
     setSheet(false);
   };

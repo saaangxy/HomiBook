@@ -1,6 +1,8 @@
 import '@/global.css';
 import { useState } from 'react';
+import { StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 import { Stack } from 'expo-router/stack';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
@@ -14,6 +16,9 @@ import { ThemeProvider, useTheme } from '@/theme';
 import { AuthProvider, useAuth } from '@/stores/auth';
 import { RecordsProvider } from '@/stores/records';
 import { UIShellProvider } from '@/components/chrome/chrome';
+import { Sidebar } from '@/components/chrome/Sidebar';
+import { LedgerModal } from '@/components/chrome/LedgerModal';
+import { RecordModal } from '@/components/chrome/RecordModal';
 import { Splash } from '@/components/Splash';
 
 function RootNavigator() {
@@ -37,6 +42,10 @@ function RootNavigator() {
 }
 
 export default function RootLayout() {
+  // Web 端:允许手动设置 colorScheme(darkMode 需为 'class',否则 react-native-css-interop 抛错)
+  if (typeof globalThis.window !== 'undefined') {
+    (StyleSheet as any).setFlag?.('darkMode', 'class');
+  }
   // 主题拉丁字体全量预加载(中文走系统字体回退);加载完成前不渲染,避免闪字
   const [fontsLoaded] = useFonts({
     CrimsonText_400Regular, CrimsonText_600SemiBold, CrimsonText_700Bold,
@@ -54,16 +63,23 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <ThemeProvider>
-        <AuthProvider>
-          <RecordsProvider>
+      {/* SafeAreaProvider 需置于最外层,initialWindowMetrics 保证首帧即拿到正确 insets,避免内容覆盖状态栏/底部导航 */}
+      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+        <ThemeProvider>
+          <AuthProvider>
             <UIShellProvider>
-              <RootNavigator />
-              {showSplash && <Splash onDone={() => setShowSplash(false)} />}
+              <RecordsProvider>
+                <RootNavigator />
+                {/* 全局覆盖层(置于 RecordsProvider 内,可同时访问 UIShell 与 Records) */}
+                <Sidebar />
+                <LedgerModal />
+                <RecordModal />
+                {showSplash && <Splash onDone={() => setShowSplash(false)} />}
+              </RecordsProvider>
             </UIShellProvider>
-          </RecordsProvider>
-        </AuthProvider>
-      </ThemeProvider>
+          </AuthProvider>
+        </ThemeProvider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }

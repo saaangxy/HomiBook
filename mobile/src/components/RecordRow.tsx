@@ -1,4 +1,5 @@
 import { View } from 'react-native';
+import dayjs from 'dayjs';
 import { Utensils, ShoppingBag, Car, Home, BookOpen, HeartPulse, Gamepad2, Shield, Wallet, Gift, TrendingUp, Landmark, CircleDollarSign, type LucideIcon } from 'lucide-react-native';
 import type { RecordItem } from '@/types';
 import { useTheme, alpha } from '@/theme';
@@ -35,9 +36,10 @@ export function RecordRow({ record, icon, showDivider = false }: RecordRowProps)
   const amountColor = isTransfer ? colors.transfer : isIncome ? colors.income : colors.expense;
   const iconColor = isTransfer ? colors.transfer : isIncome ? colors.income : colors.primary;
   const iconBg = alpha(iconColor, 0.12);
+  const dateLabel = record.date ? dayjs(record.date).format('MM-DD HH:mm') : '';
   const subtitle = isTransfer
     ? `${record.accountName ?? ''} → ${record.toAccountName ?? '其他账户'}`
-    : (record.counterparty || record.remark || record.accountName || record.date);
+    : (record.counterparty || record.remark || record.accountName || dateLabel);
 
   return (
     <View>

@@ -76,12 +76,27 @@ export async function clearCredential(): Promise<void> {
   await secureDelete(CREDENTIAL_KEY);
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+export interface RequestOptions {
+  query?: Record<string, string | number | boolean | undefined>;
+}
+
+/** 拼接 query 参数到 URL */
+function buildQuery(path: string, query?: RequestOptions['query']): string {
+  if (!query) return path;
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(query)) {
+    if (v !== undefined && v !== null && v !== '') sp.append(k, String(v));
+  }
+  const qs = sp.toString();
+  return qs ? `${path}${path.includes('?') ? '&' : '?'}${qs}` : path;
+}
+
+async function request<T>(method: string, path: string, body?: unknown, opts?: RequestOptions): Promise<T> {
   const cred = await getCredential();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10000);
   try {
-    const res = await fetch(`${currentBaseUrl}${path}`, {
+    const res = await fetch(`${currentBaseUrl}${buildQuery(path, opts?.query)}`, {
       method,
       headers: {
         'Content-Type': 'application/json',
@@ -91,8 +106,14 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
       signal: controller.signal,
     });
     if (res.status === 401) {
-      onUnauthorized?.();
-      throw new ApiError(401, '登录已过期,请重新登录');
+      const data = (await res.json().catch(() => null)) as { message?: string } | null;
+      if (cred) {
+        // 携带凭据仍 401 → 会话已过期(凭据失效)
+        onUnauthorized?.();
+        throw new ApiError(401, '登录已过期,请重新登录');
+      }
+      // 无凭据(登录/注册等) → 返回后端具体错误(如"账号或密码错误")
+      throw new ApiError(401, data?.message ?? '认证失败');
     }
     if (!res.ok) {
       const data = (await res.json().catch(() => null)) as { message?: string } | null;
@@ -110,9 +131,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 }
 
 export const http = {
-  get: <T>(path: string) => request<T>('GET', path),
-  post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),
-  patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, body),
-  put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body),
-  delete: <T>(path: string) => request<T>('DELETE', path),
+  get: <T>(path: string, opts?: RequestOptions) => request<T>('GET', path, undefined, opts),
+  post: <T>(path: string, body?: unknown, opts?: RequestOptions) => request<T>('POST', path, body, opts),
+  patch: <T>(path: string, body?: unknown, opts?: RequestOptions) => request<T>('PATCH', path, body, opts),
+  put: <T>(path: string, body?: unknown, opts?: RequestOptions) => request<T>('PUT', path, body, opts),
+  delete: <T>(path: string, opts?: RequestOptions) => request<T>('DELETE', path, undefined, opts),
 };

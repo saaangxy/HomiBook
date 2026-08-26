@@ -1,9 +1,7 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Ledger, RecordItem } from '@/types';
-import { mockLedgers } from '@/mock/data';
-import { Sidebar } from './Sidebar';
-import { LedgerModal } from './LedgerModal';
-import { RecordModal } from './RecordModal';
+import { createBookApi, fetchBooks } from '@/services/records';
+import { useAuth } from '@/stores/auth';
 
 interface UIShellValue {
   // 账本
@@ -28,8 +26,21 @@ interface UIShellValue {
 const UIShellContext = createContext<UIShellValue | null>(null);
 
 export function UIShellProvider({ children }: { children: ReactNode }) {
-  const [ledgers, setLedgers] = useState<Ledger[]>(mockLedgers);
-  const [currentLedgerId, setCurrentLedgerId] = useState(mockLedgers[0].id);
+  const { isLoggedIn } = useAuth();
+  const [ledgers, setLedgers] = useState<Ledger[]>([]);
+  const [currentLedgerId, setCurrentLedgerId] = useState('');
+
+  // 登录后拉取后端账本并选中第一个
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    fetchBooks()
+      .then((books) => {
+        if (books.length === 0) return;
+        setLedgers(books);
+        setCurrentLedgerId((prev) => (books.some((b) => b.id === prev) ? prev : books[0].id));
+      })
+      .catch(() => {});
+  }, [isLoggedIn]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [ledgerOpen, setLedgerOpen] = useState(false);
   const [recordOpen, setRecordOpen] = useState(false);
@@ -38,13 +49,19 @@ export function UIShellProvider({ children }: { children: ReactNode }) {
   const value = useMemo<UIShellValue>(
     () => ({
       ledgers,
-      currentLedger: ledgers.find((l) => l.id === currentLedgerId) ?? ledgers[0],
+      currentLedger: ledgers.find((l) => l.id === currentLedgerId) ?? ledgers[0] ?? { id: '', name: '', icon: '📒', memberCount: 0 },
       switchLedger: (id) => {
         setCurrentLedgerId(id);
         setLedgerOpen(false);
       },
-      createLedger: (name) => {
-        setLedgers((prev) => [...prev, { id: `l${Date.now()}`, name, icon: '📒', memberCount: 1 }]);
+      createLedger: async (name) => {
+        await createBookApi(name);
+        setLedgerOpen(false);
+        const books = await fetchBooks().catch(() => []);
+        if (books.length > 0) {
+          setLedgers(books);
+          setCurrentLedgerId(books[books.length - 1].id);
+        }
       },
       sidebarOpen,
       openSidebar: () => setSidebarOpen(true),
@@ -69,10 +86,6 @@ export function UIShellProvider({ children }: { children: ReactNode }) {
   return (
     <UIShellContext.Provider value={value}>
       {children}
-      {/* 全局覆盖层:抽屉 / 账本切换 / 记账底部弹窗 */}
-      <Sidebar />
-      <LedgerModal />
-      <RecordModal />
     </UIShellContext.Provider>
   );
 }

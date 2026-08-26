@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { router } from 'expo-router';
 import { Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ChevronRight } from 'lucide-react-native';
@@ -11,6 +12,7 @@ import { RecordRow } from '@/components/RecordRow';
 import { FadeInView } from '@/components/FadeInView';
 import { fetchBudgets, fetchMonthlyTrend } from '@/services/records';
 import { useRecords } from '@/stores/records';
+import { useUIShell } from '@/components/chrome/chrome';
 import { formatMoney, formatMoneyShort } from '@/lib/format';
 import type { BudgetItem } from '@/types';
 
@@ -28,16 +30,19 @@ export default function HomeScreen() {
   const [yearIncome, setYearIncome] = useState(0);
   const [yearExpense, setYearExpense] = useState(0);
   const { records, summary, categories } = useRecords();
+  const { currentLedger } = useUIShell();
   const catMap = useMemo(() => Object.fromEntries(categories.map((x) => [x.code, x.icon])), [categories]);
 
   useEffect(() => {
-    fetchBudgets().then(setBudgets);
-    // 当年收支:由月度趋势累计(mock)
-    fetchMonthlyTrend().then((t) => {
+    const bookId = currentLedger.id;
+    if (!bookId) return;
+    fetchBudgets(bookId).then(setBudgets);
+    // 当年收支:由月度趋势累计
+    fetchMonthlyTrend(bookId).then((t) => {
       setYearIncome(t.income.reduce((s, x) => s + x, 0));
       setYearExpense(t.expense.reduce((s, x) => s + x, 0));
     });
-  }, []);
+  }, [currentLedger.id]);
   const recent = records.slice(0, 4);
 
   // 本月预算项:当年当月 + 年度预算(month:null,与预算管理页当月视图口径一致)
@@ -186,9 +191,9 @@ export default function HomeScreen() {
           </FadeInView>
         )}
 
-        {/* AI 助手(点击进入记一笔的 AI 识别) */}
+        {/* AI 助手(点击进入完整 AI 助手页) */}
         <FadeInView index={3}>
-          <Pressable style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: alpha(colors.primary, 0.06), borderRadius: 20, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: alpha(colors.primary, 0.2) }}>
+          <Pressable onPress={() => router.push('/ai')} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: alpha(colors.primary, 0.06), borderRadius: 20, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: alpha(colors.primary, 0.2) }}>
             <View style={{ width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: alpha(colors.primary, 0.12) }}>
               <Text style={{ fontSize: 22 }}>🤖</Text>
             </View>

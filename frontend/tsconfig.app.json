@@ -18,7 +18,9 @@
     /* Paths */
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@homibook/core": ["../packages/core/src/index.ts"],
+      "@homibook/core/*": ["../packages/core/src/*"]
     },
 
     /* Linting */

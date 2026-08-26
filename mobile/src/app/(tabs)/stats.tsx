@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   ScrollView, View, Pressable, TextInput, Dimensions, Platform,
 } from 'react-native';
@@ -12,11 +12,10 @@ import Svg, {
 } from 'react-native-svg';
 import { useTheme, alpha } from '@/theme';
 import { Text } from '@/components/ui/Text';
-import {
-  mockSummary, mockMonthlyTrend, mockRadar,
-  mockAssetNetWorth, mockAccountBalance, mockCategoryPie,
-  mockAccounts, mockUsers,
-} from '@/mock/data';
+import { useRecords } from '@/stores/records';
+import { useUIShell } from '@/components/chrome/chrome';
+import { fetchMonthlyTrend, fetchRadar } from '@/services/records';
+import type { RadarMetric } from '@/types';
 
 // ── Tab 定义:对齐网页端 4 视图 ──
 type StatsTab = 'overview' | 'yearly' | 'monthly' | 'free';
@@ -416,6 +415,9 @@ const ACCOUNT_BALANCE_SERIES = [
 // ════════════════════════════════════════
 export default function StatsPage() {
   const { colors } = useTheme();
+  const { summary, accounts } = useRecords();
+  const { currentLedger } = useUIShell();
+  const bookId = currentLedger.id;
   const [tab, setTab] = useState<StatsTab>('overview');
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -426,36 +428,64 @@ export default function StatsPage() {
   const [freeDateTo, setFreeDateTo] = useState('');
   const [freeSearched, setFreeSearched] = useState(false);
 
+  // 真实数据:月度趋势 / 雷达
+  const [trend, setTrend] = useState<{ income: number[]; expense: number[] }>({ income: [], expense: [] });
+  const [radar, setRadar] = useState<RadarMetric[]>([]);
+  useEffect(() => {
+    if (!bookId) return;
+    fetchMonthlyTrend(bookId).then(setTrend);
+    fetchRadar(bookId).then(setRadar);
+  }, [bookId]);
+
+  // 资产净值趋势 / 账户余额:由真实账户派生(近6个月按月粗略)
+  const assetMonths = useMemo(() => {
+    const ms: string[] = [];
+    const d = new Date();
+    for (let i = 5; i >= 0; i--) {
+      const x = new Date(d.getFullYear(), d.getMonth() - i, 1);
+      ms.push(`${x.getMonth() + 1}月`);
+    }
+    return ms;
+  }, []);
+  const assetNetWorth = useMemo(
+    () => ({ months: assetMonths, values: accounts.length ? accounts.map(() => accounts.reduce((s, a) => s + (a.balance ?? 0), 0)) : [0, 0, 0, 0, 0, 0] }),
+    [accounts, assetMonths],
+  );
+  const monthlyLabels = useMemo(
+    () => trend.income.map((_, i) => `${i + 1}月`),
+    [trend.income],
+  );
+
   // ── 首页(Overview):对齐网页 StatsOverview ──
   const renderOverview = () => (
     <View style={{ gap: 16 }}>
       <View style={{ flexDirection: 'row', gap: 8 }}>
-        <SummaryCard icon={TrendingUp} label="总收入" value={mockSummary.income} color="#22c55e" />
-        <SummaryCard icon={TrendingDown} label="总支出" value={mockSummary.expense} color="#ef4444" />
+        <SummaryCard icon={TrendingUp} label="总收入" value={summary.income} color="#22c55e" />
+        <SummaryCard icon={TrendingDown} label="总支出" value={summary.expense} color="#ef4444" />
       </View>
       <View style={{ flexDirection: 'row', gap: 8 }}>
-        <SummaryCard icon={Activity} label="净收入" value={mockSummary.netIncome} color={mockSummary.netIncome >= 0 ? '#22c55e' : '#ef4444'} />
-        <SummaryCard icon={Wallet} label="转账总额" value={mockSummary.transfer} color="#3b82f6" />
+        <SummaryCard icon={Activity} label="净收入" value={summary.netIncome} color={summary.netIncome >= 0 ? '#22c55e' : '#ef4444'} />
+        <SummaryCard icon={Wallet} label="转账总额" value={summary.transfer} color="#3b82f6" />
       </View>
 
       <ChartCard title="月度收支趋势">
-        <TripleLineChart income={mockMonthlyTrend.income} expense={mockMonthlyTrend.expense} labels={mockMonthlyTrend.months} />
+        <TripleLineChart income={trend.income} expense={trend.expense} labels={monthlyLabels} />
       </ChartCard>
 
       <ChartCard title="资产净值趋势">
-        <AreaLineChart data={mockAssetNetWorth.values} labels={mockAssetNetWorth.months} color={colors.primary} />
+        <AreaLineChart data={assetNetWorth.values} labels={assetNetWorth.months} color={colors.primary} />
       </ChartCard>
 
       <ChartCard title="账户余额变化(近60天)">
-        <MultiLineChart series={ACCOUNT_BALANCE_SERIES} labels={mockAssetNetWorth.months} />
+        <MultiLineChart series={ACCOUNT_BALANCE_SERIES} labels={assetNetWorth.months} />
       </ChartCard>
 
       <ChartCard title="财务健康评估(7维)">
         <View style={{ alignItems: 'center' }}>
-          <TimeRadar metrics={mockRadar} size={Math.min(CW, 300)} />
+          <TimeRadar metrics={radar} size={Math.min(CW, 300)} />
         </View>
         <View style={{ gap: 6, marginTop: 8 }}>
-          {mockRadar.map(m => (
+          {radar.map(m => (
             <View key={m.name} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: m.value >= 80 ? '#22c55e' : m.value >= 50 ? '#f59e0b' : '#ef4444' }} />
               <Text style={{ fontSize: 12, color: colors.mutedForeground, flex: 1 }}>{m.name}</Text>
@@ -532,12 +562,12 @@ export default function StatsPage() {
         <>
           {/* 汇总卡片 */}
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            <SummaryCard icon={TrendingUp} label="总收入" value={mockSummary.income} color="#22c55e" />
-            <SummaryCard icon={TrendingDown} label="总支出" value={mockSummary.expense} color="#ef4444" />
+            <SummaryCard icon={TrendingUp} label="总收入" value={summary.income} color="#22c55e" />
+            <SummaryCard icon={TrendingDown} label="总支出" value={summary.expense} color="#ef4444" />
           </View>
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            <SummaryCard icon={Activity} label="净收入" value={mockSummary.netIncome} color={mockSummary.netIncome >= 0 ? '#22c55e' : '#ef4444'} />
-            <SummaryCard icon={Wallet} label="转账总额" value={mockSummary.transfer} color="#3b82f6" />
+            <SummaryCard icon={Activity} label="净收入" value={summary.netIncome} color={summary.netIncome >= 0 ? '#22c55e' : '#ef4444'} />
+            <SummaryCard icon={Wallet} label="转账总额" value={summary.transfer} color="#3b82f6" />
           </View>
 
           {/* 5维雷达 */}

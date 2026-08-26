@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Pressable, TextInput, View, Alert, ScrollView, ActivityIndicator } from 'react-native';
+import { Alert, Modal, Pressable, TextInput, View, ScrollView, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X, Plus, Check, Trash2, Pencil, Server as ServerIcon, User, LogIn } from 'lucide-react-native';
 import { useTheme, alpha, haptics } from '@/theme';
 import { useAuth } from '@/stores/auth';
@@ -9,57 +10,74 @@ import { Text } from '@/components/ui/Text';
 import { FadeInView } from '@/components/FadeInView';
 import type { Server } from '@/types';
 
-type EditState = { id: string; name: string; baseUrl: string; account: string } | null;
+type EditState = { id: string; name: string; baseUrl: string; account: string; password: string; apiKey: string } | null;
 
 export default function ServerScreen() {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const { servers, currentServer, addServer, updateServer, removeServer, quickLogin } = useAuth();
   const [name, setName] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [account, setAccount] = useState('');
+  const [password, setPassword] = useState('');
+  const [apiKey, setApiKey] = useState('');
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<EditState>(null);
   const [loggingIn, setLoggingIn] = useState<string | null>(null); // 正在登录的服务器ID
+  const [deleting, setDeleting] = useState<Server | null>(null); // 待删除确认
 
   const handleAdd = async () => {
     if (!name || !baseUrl) return;
-    await addServer(name, baseUrl, account || undefined);
-    setName(''); setBaseUrl(''); setAccount('');
+    await addServer(name, baseUrl, { account: account || undefined, password: password || undefined, apiKey: apiKey || undefined });
+    setName(''); setBaseUrl(''); setAccount(''); setPassword(''); setApiKey('');
     setAdding(false);
   };
 
   const handleEdit = async () => {
     if (!editing || !editing.name || !editing.baseUrl) return;
-    await updateServer(editing.id, editing.name, editing.baseUrl, editing.account || undefined);
+    await updateServer(editing.id, editing.name, editing.baseUrl, {
+      account: editing.account || undefined,
+      password: editing.password,
+      apiKey: editing.apiKey,
+    });
     setEditing(null);
   };
 
+  // 点击删除:打开确认弹窗(自建 Modal,避免 RN Web 的 Alert 确认按钮不可靠)
   const handleDelete = (s: Server) => {
-    Alert.alert('删除服务器', `确定删除「${s.name}」吗？`, [
-      { text: '取消', style: 'cancel' },
-      { text: '删除', style: 'destructive', onPress: () => removeServer(s.id) },
-    ]);
+    setDeleting(s);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleting) return;
+    const id = deleting.id;
+    setDeleting(null);
+    try {
+      await removeServer(id);
+    } catch (e: any) {
+      Alert.alert('删除失败', e?.message || '未知错误');
+    }
   };
 
   const handleServerTap = async (s: Server) => {
     if (loggingIn) return;
     haptics.tap();
-    // 无绑定账号 → 仅切换服务器,返回登录页
-    if (!s.account) {
-      await quickLogin(s.id); // 切换服务器
-      router.replace('/(auth)/login');
+    // 有完整凭证(账号+密码 或 API Key) → 一键登录进首页
+    if (s.apiKey || (s.account && s.password)) {
+      setLoggingIn(s.id);
+      const result = await quickLogin(s.id);
+      setLoggingIn(null);
+      if (result.ok) {
+        router.replace('/(tabs)');
+      } else {
+        // 一键登录失败(密码过期/凭证错误) → 跳转登录页手动输入
+        router.replace('/(auth)/login');
+      }
       return;
     }
-    // 有绑定账号 → 尝试快速登录
-    setLoggingIn(s.id);
-    const result = await quickLogin(s.id);
-    setLoggingIn(null);
-    if (result.ok) {
-      router.replace('/(tabs)');
-    } else {
-      // 快速登录失败 → 跳转登录页,让用户手动输入密码
-      router.replace('/(auth)/login');
-    }
+    // 无凭证或凭证不全 → 仅切换服务器,跳登录页手动输入
+    await quickLogin(s.id);
+    router.replace('/(auth)/login');
   };
 
   const inputStyle = {
@@ -78,6 +96,8 @@ export default function ServerScreen() {
     const n = isEdit ? editing!.name : name;
     const u = isEdit ? editing!.baseUrl : baseUrl;
     const a = isEdit ? editing!.account : account;
+    const p = isEdit ? editing!.password : password;
+    const k = isEdit ? editing!.apiKey : apiKey;
     return (
       <View style={{ gap: 12 }}>
         <View>
@@ -98,17 +118,43 @@ export default function ServerScreen() {
             placeholder="https://..."
             placeholderTextColor={colors.mutedForeground}
             autoCapitalize="none"
+            keyboardType="url"
             style={inputStyle}
           />
         </View>
         <View>
-          <Text style={labelStyle}>绑定账号(选填)</Text>
+          <Text style={labelStyle}>账号</Text>
           <TextInput
             value={a}
             onChangeText={(v) => isEdit ? setEditing({ ...editing!, account: v }) : setAccount(v)}
-            placeholder="登录后自动绑定"
+            placeholder="登录账号或邮箱"
             placeholderTextColor={colors.mutedForeground}
             autoCapitalize="none"
+            style={inputStyle}
+          />
+        </View>
+        <View>
+          <Text style={labelStyle}>密码(选填)</Text>
+          <TextInput
+            value={p}
+            onChangeText={(v) => isEdit ? setEditing({ ...editing!, password: v }) : setPassword(v)}
+            placeholder="登录密码,填了即可一键登录"
+            placeholderTextColor={colors.mutedForeground}
+            secureTextEntry
+            autoCapitalize="none"
+            style={inputStyle}
+          />
+        </View>
+        <View>
+          <Text style={labelStyle}>API Key(选填)</Text>
+          <TextInput
+            value={k}
+            onChangeText={(v) => isEdit ? setEditing({ ...editing!, apiKey: v }) : setApiKey(v)}
+            placeholder="homibook_... 优先于密码登录"
+            placeholderTextColor={colors.mutedForeground}
+            autoCapitalize="none"
+            autoCorrect={false}
+            secureTextEntry
             style={inputStyle}
           />
         </View>
@@ -131,10 +177,10 @@ export default function ServerScreen() {
   };
 
   return (
-    <Screen>
+    <Screen keyboard>
       <View style={{ flex: 1 }}>
         {/* 标题栏 */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 48, paddingBottom: 12 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: insets.top + 12, paddingBottom: 12 }}>
           <Pressable onPress={() => router.back()} hitSlop={8}>
             <X size={22} color={colors.foreground} />
           </Pressable>
@@ -187,11 +233,16 @@ export default function ServerScreen() {
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
                             <User size={11} color={colors.mutedForeground} />
                             <Text variant="muted" style={{ fontSize: 11 }}>{s.account}</Text>
+                            {(s.apiKey || s.password) && (
+                              <Text variant="muted" style={{ fontSize: 10, marginLeft: 2 }}>
+                                {s.apiKey ? '· API Key' : '· 已存密码'}
+                              </Text>
+                            )}
                           </View>
                         )}
                       </View>
-                      {/* 登录提示图标 */}
-                      {!isLoading && s.account && (
+                      {/* 一键登录提示:服务器已配置账号密码或 API Key */}
+                      {!isLoading && (s.apiKey || (s.account && s.password)) && (
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: alpha(colors.primary, 0.1) }}>
                           <LogIn size={12} color={colors.primary} />
                           <Text style={{ fontSize: 11, color: colors.primary, fontWeight: '600' }}>登录</Text>
@@ -201,7 +252,7 @@ export default function ServerScreen() {
                     {/* 操作按钮 */}
                     <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
                       <Pressable
-                        onPress={() => setEditing({ id: s.id, name: s.name, baseUrl: s.baseUrl, account: s.account ?? '' })}
+                        onPress={() => setEditing({ id: s.id, name: s.name, baseUrl: s.baseUrl, account: s.account ?? '', password: s.password ?? '', apiKey: s.apiKey ?? '' })}
                         style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: colors.muted }}
                       >
                         <Pencil size={13} color={colors.foreground} />
@@ -244,6 +295,31 @@ export default function ServerScreen() {
           )}
         </ScrollView>
       </View>
+
+      {/* 删除确认弹窗(自建 Modal,跨平台可靠) */}
+      <Modal
+        visible={!!deleting}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDeleting(null)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <View style={{ width: '100%', backgroundColor: colors.card, borderRadius: 16, padding: 18 }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', marginBottom: 6 }}>删除服务器</Text>
+            <Text variant="muted" style={{ fontSize: 13, marginBottom: 18 }}>
+              确定删除「{deleting?.name}」吗？删除后该服务器配置将从本机移除。
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <Pressable onPress={() => setDeleting(null)} style={{ flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}>
+                <Text style={{ fontSize: 14 }}>取消</Text>
+              </Pressable>
+              <Pressable onPress={confirmDelete} style={{ flex: 1, backgroundColor: colors.expense, borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}>
+                <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>删除</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </Screen>
   );
 }

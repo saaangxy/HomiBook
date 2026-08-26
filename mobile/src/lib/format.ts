@@ -1,12 +1,2 @@
-export function formatMoney(amount: number): string {
-  const sign = amount < 0 ? '-' : '';
-  const abs = Math.abs(amount);
-  return `${sign}¥${abs.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-export function formatMoneyShort(amount: number): string {
-  const sign = amount < 0 ? '-' : '';
-  const abs = Math.abs(amount);
-  if (abs >= 10000) return `${sign}¥${(abs / 10000).toFixed(1)}万`;
-  return `${sign}¥${abs.toLocaleString('zh-CN')}`;
-}
+// 金额格式化 —— re-export @homibook/core(三端共享同一实现)
+export { formatMoney, formatMoneyShort } from '@homibook/core';

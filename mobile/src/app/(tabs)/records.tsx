@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { ArrowUpRight, ArrowDownRight, ArrowLeftRight, SlidersHorizontal, X, Copy, Trash2, Pencil } from 'lucide-react-native';
 import { useTheme, alpha, haptics } from '@/theme';
 import { useUIShell } from '@/components/chrome/chrome';
 import { useRecords } from '@/stores/records';
+import { fetchRecords } from '@/services/records';
 import { Screen } from '@/components/Screen';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
@@ -11,7 +12,7 @@ import { RecordRow } from '@/components/RecordRow';
 import { SwipeRow } from '@/components/SwipeRow';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { FadeInView } from '@/components/FadeInView';
-import { FilterSheet, applyRecordFilters, countActiveFilters, emptyFilters, type RecordFilters } from '@/components/FilterSheet';
+import { FilterSheet, countActiveFilters, emptyFilters, type RecordFilters } from '@/components/FilterSheet';
 import { formatMoney } from '@/lib/format';
 import type { RecordItem, RecordType } from '@/types';
 
@@ -22,13 +23,42 @@ const TYPE_LABEL: Record<RecordType, string> = { EXPENSE: '支出', INCOME: '收
 export default function RecordsScreen() {
   const { colors } = useTheme();
   const { openRecord } = useUIShell();
+  const { currentLedger } = useUIShell();
+  const bookId = currentLedger.id;
   const { records, summary, accounts, categories, refresh, cloneRecord, deleteRecord } = useRecords();
   const [filters, setFilters] = useState<RecordFilters>(emptyFilters);
   const [filterOpen, setFilterOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  // 后端筛选结果(独立请求,不受 store 前 100 条限制)
+  const [list, setList] = useState<RecordItem[]>([]);
 
   const catMap = useMemo(() => Object.fromEntries(categories.map((x) => [x.code, x.icon])), [categories]);
   const catLabelMap = useMemo(() => Object.fromEntries(categories.map((x) => [x.code, x.label])), [categories]);
+
+  // 有筛选时按后端条件请求;无筛选时用 store 全量(下拉刷新更新)
+  const hasActiveFilter = countActiveFilters(filters) > 0;
+  useEffect(() => {
+    if (!bookId) return;
+    if (!hasActiveFilter) {
+      setList([]);
+      return;
+    }
+    let cancel = false;
+    const singleAccount = filters.accountIds.length === 1 ? filters.accountIds[0] : undefined;
+    const singleCategory = filters.categoryCodes.length === 1 ? filters.categoryCodes[0] : undefined;
+    fetchRecords(bookId, {
+      pageSize: 200,
+      types: filters.types,
+      dateFrom: filters.dateFrom || undefined,
+      dateTo: filters.dateTo || undefined,
+      amountFrom: filters.minAmount ? Number(filters.minAmount) : undefined,
+      amountTo: filters.maxAmount ? Number(filters.maxAmount) : undefined,
+      remark: filters.keyword.trim() || undefined,
+      accountId: singleAccount,
+      categoryCode: singleCategory,
+    }).then((r) => { if (!cancel) setList(r); });
+    return () => { cancel = true; };
+  }, [bookId, hasActiveFilter, filters.types, filters.accountIds, filters.categoryCodes, filters.dateFrom, filters.dateTo, filters.minAmount, filters.maxAmount, filters.keyword]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -36,12 +66,20 @@ export default function RecordsScreen() {
     setRefreshing(false);
   };
 
-  const filtered = applyRecordFilters(records, filters);
+  // 数据源:有筛选 → 后端结果;无筛选 → store 全量
+  const source = hasActiveFilter ? list : records;
+  // 多选账户/分类(后端仅支持单值)在客户端补过滤
+  const filtered = source.filter((r) => {
+    if (filters.accountIds.length > 1 && !filters.accountIds.includes(r.accountId)) return false;
+    if (filters.categoryCodes.length > 1 && !filters.categoryCodes.includes(r.categoryCode ?? '')) return false;
+    return true;
+  });
   const activeCount = countActiveFilters(filters);
 
   // 按日分组(由近及远)
   const groups = filtered.reduce<Record<string, RecordItem[]>>((acc, r) => {
-    (acc[r.date] ??= []).push(r);
+    const day = r.date.slice(0, 10);
+    (acc[day] ??= []).push(r);
     return acc;
   }, {});
   const dates = Object.keys(groups).sort((a, b) => (a < b ? 1 : -1));

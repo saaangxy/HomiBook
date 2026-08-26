@@ -1,5 +1,5 @@
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import Animated, { Easing, FadeIn, FadeInDown } from 'react-native-reanimated';
 import { Check } from 'lucide-react-native';
 import { useTheme, alpha } from '@/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -20,7 +20,7 @@ export function LedgerModal() {
           <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={closeLedger} />
         </Animated.View>
         <Animated.View
-          entering={FadeInDown.springify().damping(20)}
+          entering={FadeInDown.duration(260).easing(Easing.out(Easing.cubic))}
           style={{
             width: '82%',
             backgroundColor: colors.card,

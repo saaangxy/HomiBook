@@ -2,6 +2,8 @@
 module.exports = {
   content: ['./src/**/*.{js,jsx,ts,tsx}'],
   presets: [require('nativewind/preset')],
+  // 'class' 模式:避免 react-native-css-interop 在 Web 端手动设置 colorScheme 时因 'media' 抛错
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {

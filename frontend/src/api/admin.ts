@@ -1,14 +1,7 @@
 import { api } from './http'
+import type { AdminUser, AuditLogItem } from '@homibook/core'
 
-export interface AdminUser {
-  id: string
-  email: string
-  username: string | null
-  nickname: string | null
-  role: 'ADMIN' | 'USER'
-  status: 'ACTIVE' | 'DISABLED'
-  createdAt: string
-}
+export { type AdminUser, type AuditLogItem }
 
 export const adminApi = {
   listUsers: () => api.get<{ users: AdminUser[] }>('/api/admin/users').then((r) => r.users),
@@ -53,22 +46,4 @@ export const adminApi = {
   },
 }
 
-export interface AuditLogItem {
-  id: string
-  sessionId: string | null
-  sessionSummary: string | null
-  userId: string
-  userNickname: string | null
-  username: string | null
-  action: string
-  toolName: string | null
-  input: string | null
-  output: string | null
-  modelProvider: string | null
-  modelName: string | null
-  durationMs: number | null
-  status: string
-  errorMessage: string | null
-  ip: string | null
-  createdAt: string
-}
+

@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { fetchAccounts, fetchCategories, fetchRecords } from '@/services/records';
+import { createRecord, deleteRecordApi, fetchAccounts, fetchCategories, fetchRecords, updateRecordApi, type RecordCreatePayload } from '@/services/records';
+import { useUIShell } from '@/components/chrome/chrome';
 import type { AccountItem, Category, RecordItem, RecordSummary } from '@/types';
 
 interface RecordsValue {
@@ -10,13 +11,30 @@ interface RecordsValue {
   categories: Category[];
   loading: boolean;
   refresh: () => Promise<void>;
-  addRecord: (r: Omit<RecordItem, 'id'>) => void;
-  updateRecord: (id: string, patch: Partial<Omit<RecordItem, 'id'>>) => void;
-  deleteRecord: (id: string) => void;
-  cloneRecord: (r: RecordItem) => void;
+  addRecord: (r: Omit<RecordItem, 'id'>) => Promise<void>;
+  updateRecord: (id: string, patch: Partial<Omit<RecordItem, 'id'>>) => Promise<void>;
+  deleteRecord: (id: string) => Promise<void>;
+  cloneRecord: (r: RecordItem) => Promise<void>;
 }
 
 const RecordsContext = createContext<RecordsValue | null>(null);
+
+// mobile 扁平展示类型 -> 后端创建/更新记录 payload
+function toCreatePayload(r: Partial<Omit<RecordItem, 'id'>>, accountBookId: string): RecordCreatePayload {
+  return {
+    accountBookId,
+    type: r.type ?? 'EXPENSE',
+    amount: r.amount ?? 0,
+    date: r.date ?? '',
+    remark: r.remark ?? null,
+    tags: r.tags ?? [],
+    accountId: r.accountId ?? '',
+    fromAccountId: r.type === 'TRANSFER' ? r.accountId ?? undefined : undefined,
+    toAccountId: r.toAccountId ?? undefined,
+    categoryCode: r.categoryCode ?? null,
+    payer: r.counterparty ?? null,
+  };
+}
 
 // 流水唯一数据源:全部页面消费此 store —— 记一笔/编辑/删除后,首页/流水/日历/统计即时一致
 export function RecordsProvider({ children }: { children: ReactNode }) {
@@ -24,14 +42,23 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
   const [accounts, setAccounts] = useState<AccountItem[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  // 以当前账本为数据维度;无账本(未登录/未加载)时不请求
+  const { currentLedger } = useUIShell();
+  const bookId = currentLedger.id;
 
   const refresh = useCallback(async () => {
-    const [r, a, c] = await Promise.all([fetchRecords(), fetchAccounts(), fetchCategories()]);
+    if (!bookId) {
+      setRecords([]);
+      setAccounts([]);
+      setLoading(false);
+      return;
+    }
+    const [r, a, c] = await Promise.all([fetchRecords(bookId), fetchAccounts(bookId), fetchCategories()]);
     setRecords(r);
     setAccounts(a);
     setCategories(c);
     setLoading(false);
-  }, []);
+  }, [bookId]);
 
   useEffect(() => {
     refresh();
@@ -57,12 +84,28 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
       categories,
       loading,
       refresh,
-      addRecord: (r) => setRecords((prev) => [{ ...r, id: `r${Date.now()}` }, ...prev]),
-      updateRecord: (id, patch) => setRecords((prev) => prev.map((x) => (x.id === id ? { ...x, ...patch } : x))),
-      deleteRecord: (id) => setRecords((prev) => prev.filter((x) => x.id !== id)),
-      cloneRecord: (r) => setRecords((prev) => [{ ...r, id: `r${Date.now()}` }, ...prev]),
+      addRecord: async (r) => {
+        if (!bookId) return;
+        await createRecord(bookId, toCreatePayload(r, bookId));
+        await refresh();
+      },
+      updateRecord: async (id, patch) => {
+        if (!bookId) return;
+        await updateRecordApi(bookId, id, toCreatePayload(patch, bookId));
+        await refresh();
+      },
+      deleteRecord: async (id) => {
+        if (!bookId) return;
+        await deleteRecordApi(bookId, id);
+        await refresh();
+      },
+      cloneRecord: async (r) => {
+        if (!bookId) return;
+        await createRecord(bookId, toCreatePayload(r, bookId));
+        await refresh();
+      },
     }),
-    [records, summary, accounts, categories, loading, refresh],
+    [records, summary, accounts, categories, loading, refresh, bookId],
   );
 
   return <RecordsContext.Provider value={value}>{children}</RecordsContext.Provider>;

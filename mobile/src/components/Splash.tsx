@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Image, View } from 'react-native';
 import Animated, {
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withDelay,
@@ -30,10 +31,12 @@ export function Splash({ onDone }: SplashProps) {
     opacity.value = withTiming(1, { duration: motion.duration.base, easing: motion.easing });
     scale.value = withTiming(1, { duration: motion.duration.slow, easing: motion.easing });
     // 停留后淡出,完成后通知上层卸载
+    // 注意:withTiming 的 completion 回调运行在 UI Runtime(worklet),
+    // 不能直接调用 JS 线程的 onDone,需用 runOnJS 切回 JS 线程
     opacity.value = withDelay(
       HOLD_MS,
       withTiming(0, { duration: motion.duration.slow, easing: motion.easing }, (finished) => {
-        if (finished) onDone();
+        if (finished) runOnJS(onDone)();
       }),
     );
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

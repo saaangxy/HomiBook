@@ -1,4 +1,7 @@
 import { api } from './http'
+import type { RecordSummary, RecordType } from '@homibook/core'
+
+export { type RecordSummary, type RecordType }
 
 export interface AttachmentUploadResult {
   id: string         // RecordAttachment ID
@@ -6,8 +9,6 @@ export interface AttachmentUploadResult {
   fullUrl: string    // 完整路径，如 http://localhost:3002/api/uploads/xxx.png
   originalFilename: string
 }
-
-export type RecordType = 'INCOME' | 'EXPENSE' | 'TRANSFER'
 
 export interface RecordItem {
   id: string
@@ -30,13 +31,6 @@ export interface RecordItem {
   account: { id: string; name: string; type: string }
   fromAccount: { id: string; name: string } | null
   toAccount: { id: string; name: string } | null
-}
-
-export interface RecordSummary {
-  income: number
-  expense: number
-  transfer: number
-  netIncome: number
 }
 
 export interface RecordListResult {

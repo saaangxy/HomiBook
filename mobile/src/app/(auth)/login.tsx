@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react';
 import { router } from 'expo-router';
-import { Pressable, ScrollView, Switch, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, TextInput, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Eye, EyeOff, KeyRound, Plus, Server as ServerIcon } from 'lucide-react-native';
 import { useTheme, haptics } from '@/theme';
 import { useAuth } from '@/stores/auth';
-import { AUTH_MODE, getRemembered } from '@/services/auth';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '@/components/ui/Button';
 import { Text } from '@/components/ui/Text';
@@ -24,33 +23,23 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [showSecret, setShowSecret] = useState(false);
-  const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const effectiveServerId = serverId ?? currentServer?.id ?? servers[0]?.id ?? null;
 
-  // 预填「记住我」的账号密码
-  useEffect(() => {
-    getRemembered().then((r) => {
-      if (r) {
-        setAccount(r.account);
-        setPassword(r.password);
-        setRemember(true);
-      }
-    });
-  }, []);
-
-  // 切换服务器时自动填充绑定的账号
+  // 切换服务器时,用该服务器内置的账号密码 / API Key 预填(可手动修改兜底)
+  // 依赖取 id,避免 servers 数组重建导致覆盖用户手动输入
   useEffect(() => {
     const s = servers.find((x) => x.id === effectiveServerId);
-    if (s?.account && !account) {
-      setAccount(s.account);
-    }
+    if (!s) return;
+    if (s.account) setAccount(s.account);
+    if (s.password) setPassword(s.password);
+    if (s.apiKey) setApiKey(s.apiKey);
   }, [effectiveServerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleLogin = async () => {
-    if (AUTH_MODE === 'real' && !effectiveServerId) {
+    if (!effectiveServerId) {
       setError('请先添加服务器');
       return;
     }
@@ -62,9 +51,9 @@ export default function LoginScreen() {
           setError('请输入账号与密码');
           return;
         }
-        await login(account, password, effectiveServerId ?? '', remember);
+        await login(account, password, effectiveServerId ?? '');
       } else {
-        if (AUTH_MODE === 'real' && !apiKey.startsWith('homibook_')) {
+        if (!apiKey.startsWith('homibook_')) {
           setError('API Key 应以 homibook_ 开头');
           return;
         }
@@ -95,7 +84,7 @@ export default function LoginScreen() {
   return (
     <View style={{ flex: 1 }}>
       <LinearGradient colors={[colors.background, colors.muted]} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, paddingTop: insets.top }}>
-        <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 20 }} keyboardShouldPersistTaps="handled">
+        <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 20 }} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
           <FadeInView>
             {/* 品牌 */}
             <Text style={{ fontFamily: fonts.display, color: colors.foreground, fontSize: 42, fontWeight: '800', letterSpacing: -2, textAlign: 'center' }}>
@@ -146,9 +135,7 @@ export default function LoginScreen() {
               </ScrollView>
               {servers.length === 0 && (
                 <Text variant="muted" style={{ fontSize: 12, marginTop: -8, marginBottom: 16 }}>
-                  {AUTH_MODE === 'mock'
-                    ? '演示模式:无需配置服务器,任意账号密码即可登录'
-                    : '还没有服务器,点击「添加」配置你的自部署实例'}
+                  还没有服务器,点击「添加」配置你的自部署实例
                 </Text>
               )}
 
@@ -198,10 +185,9 @@ export default function LoginScreen() {
                     </Pressable>
                   </View>
 
-                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
-                    <Switch value={remember} onValueChange={setRemember} trackColor={{ true: colors.primary }} thumbColor="#fff" />
-                    <Text variant="muted" style={{ fontSize: 12, marginLeft: 8 }}>记住账号密码(保存在本机安全存储)</Text>
-                  </View>
+                  <Text variant="muted" style={{ fontSize: 12, lineHeight: 18, marginBottom: 16 }}>
+                    已预填当前服务器的账号密码(保存于本机安全存储),可直接登录;如密码过期可修改后重试。
+                  </Text>
                 </>
               ) : (
                 <>

@@ -1,40 +1,7 @@
 import { api } from './http'
+import type { BookDetail, BookItem, BookMember, ShareCode } from '@homibook/core'
 
-export interface BookItem {
-  id: string
-  name: string
-  ownerId: string
-  role: 'owner' | 'admin' | 'member'
-  memberCount: number
-  createdAt: string
-}
-
-export interface BookDetail {
-  id: string
-  name: string
-  ownerId: string
-  createdAt: string
-  updatedAt: string
-  owner: { id: string; nickname: string | null; email: string }
-  members: BookMember[]
-  memberCount: number
-}
-
-export interface BookMember {
-  id: string
-  userId: string
-  role: string
-  joinedAt: string
-  user: { id: string; nickname: string | null; email: string }
-}
-
-export interface ShareCode {
-  id: string
-  code: string
-  expiresAt: string | null
-  createdAt: string
-  isExpired: boolean
-}
+export { type BookDetail, type BookItem, type BookMember, type ShareCode }
 
 export interface ShareCodeLookup {
   bookId: string

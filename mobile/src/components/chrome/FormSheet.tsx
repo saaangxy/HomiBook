@@ -1,6 +1,7 @@
 import { useEffect, type ReactNode } from 'react';
-import { Modal, Pressable, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
+  Easing,
   FadeIn,
   FadeInDown,
   runOnJS,
@@ -54,12 +55,15 @@ export function FormSheet({ visible, title, onClose, onSave, saveLabel = '保存
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
-      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+      <KeyboardAvoidingView
+        style={{ flex: 1, justifyContent: 'flex-end' }}
+        behavior="padding"
+      >
         <Animated.View entering={FadeIn.duration(180)} style={StyleSheet.absoluteFill}>
           <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={onClose} />
         </Animated.View>
         <Animated.View
-          entering={FadeInDown.springify().damping(20)}
+          entering={FadeInDown.duration(260).easing(Easing.out(Easing.cubic))}
           style={[
             sheetShadow(palette),
             sheetAnim,
@@ -91,7 +95,7 @@ export function FormSheet({ visible, title, onClose, onSave, saveLabel = '保存
             </View>
           )}
         </Animated.View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

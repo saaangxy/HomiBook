@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
 import { ChevronLeft, ChevronRight, CalendarCheck } from 'lucide-react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -10,7 +10,9 @@ import { Text } from '@/components/ui/Text';
 import { RecordRow } from '@/components/RecordRow';
 import { FormSheet } from '@/components/chrome/FormSheet';
 import { useUIShell } from '@/components/chrome/chrome';
+import { fetchCalendar, fetchRecords, type CalendarDay } from '@/services/records';
 import { useRecords } from '@/stores/records';
+import type { RecordItem } from '@/types';
 import { formatMoney, formatMoneyShort } from '@/lib/format';
 
 const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日'];
@@ -25,13 +27,31 @@ export default function CalendarScreen() {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1); // 1-12
   const [selected, setSelected] = useState(now.getDate());
-  // 唯一数据源:记一笔/编辑/删除后日历即时一致
-  const { records, categories } = useRecords();
-  const { openRecord } = useUIShell();
+  // 分类图标(图标来源复用 records store 的分类)
+  const { categories } = useRecords();
+  const { currentLedger, openRecord } = useUIShell();
+  const bookId = currentLedger.id;
   const catMap = useMemo(() => Object.fromEntries(categories.map((x) => [x.code, x.icon])), [categories]);
   const [ymOpen, setYmOpen] = useState(false);
   const [pickY, setPickY] = useState(year);
   const [expanded, setExpanded] = useState(true); // 日历展开态(选中日压缩后为 false)
+
+  // 月视图每日汇总(独立请求,按年月拉取)与选中日流水
+  const [monthlyDays, setMonthlyDays] = useState<CalendarDay[]>([]);
+  const [dayList, setDayList] = useState<RecordItem[]>([]);
+  useEffect(() => {
+    if (!bookId) return;
+    let cancel = false;
+    fetchCalendar(bookId, year, month).then((d) => { if (!cancel) setMonthlyDays(d); });
+    return () => { cancel = true; };
+  }, [bookId, year, month]);
+  useEffect(() => {
+    if (!bookId) return;
+    let cancel = false;
+    const date = key(selected);
+    fetchRecords(bookId, { page: 1, pageSize: 100, dateFrom: date, dateTo: date }).then((list) => { if (!cancel) setDayList(list); });
+    return () => { cancel = true; };
+  }, [bookId, year, month, selected]);
 
   const days = useMemo(() => {
     const first = new Date(year, month - 1, 1);
@@ -54,19 +74,16 @@ export default function CalendarScreen() {
 
   const key = (d: number) => `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 
-  // 每日收支汇总(含转账)
+  // 每日收支汇总(来自后端 /api/records/calendar 月视图)
   const daySum = useMemo(() => {
     const m: Record<string, { income: number; expense: number; transfer: number }> = {};
-    for (const r of records) {
-      const e = (m[r.date] ??= { income: 0, expense: 0, transfer: 0 });
-      if (r.type === 'INCOME') e.income += r.amount;
-      else if (r.type === 'EXPENSE') e.expense += r.amount;
-      else e.transfer += r.amount;
+    for (const d of monthlyDays) {
+      m[d.date] = { income: d.income, expense: d.expense, transfer: d.transfer };
     }
     return m;
-  }, [records]);
+  }, [monthlyDays]);
 
-  const dayRecords = records.filter((r) => r.date === key(selected));
+  const dayRecords = dayList;
   const dayTotals = useMemo(() => {
     let income = 0, expense = 0, transfer = 0;
     for (const r of dayRecords) {
@@ -177,9 +194,9 @@ export default function CalendarScreen() {
                 const isToday = key(d) === todayKey;
                 const isSel = d === selected;
                 const sum = daySum[key(d)];
-                const hasSum = !!sum && (sum.income > 0 || sum.expense > 0);
+                const hasSum = !!sum && (sum.income > 0 || sum.expense > 0 || sum.transfer > 0);
                 return (
-                  <Pressable key={d} onPress={() => onPressDay(d)} style={{ width: cellW, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 3 }}>
+                  <Pressable key={d} onPress={() => onPressDay(d)} style={{ width: cellW, height: ROW_FULL, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 3 }}>
                     <View style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: isSel || isToday ? colors.primary : 'transparent' }}>
                       <Text style={{ fontSize: 13, fontWeight: isToday || isSel ? '700' : '400', color: isSel || isToday ? colors.primaryForeground : colors.foreground }}>
                         {d}
@@ -187,6 +204,9 @@ export default function CalendarScreen() {
                     </View>
                     {hasSum && (
                       <View style={{ alignItems: 'center', marginTop: 2 }}>
+                        {sum!.transfer > 0 && (
+                          <Text style={{ fontSize: 8.5, color: colors.transfer, fontVariant: ['tabular-nums'], lineHeight: 12 }} numberOfLines={1}>↻{formatMoneyShort(sum!.transfer)}</Text>
+                        )}
                         {sum!.expense > 0 && (
                           <Text style={{ fontSize: 8.5, color: colors.expense, fontVariant: ['tabular-nums'], lineHeight: 12 }} numberOfLines={1}>-{formatMoneyShort(sum!.expense)}</Text>
                         )}

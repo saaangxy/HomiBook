@@ -1,11 +1,14 @@
 import { Pressable, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { useUIShell } from './chrome';
 
 // 顶栏:☰ 菜单(开侧边栏) + 当前账本名(开账本弹窗)
+// 顶部加 insets.top,避免内容延伸到状态栏后(覆盖通知栏)
 export function GlobalBar() {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const { currentLedger, openSidebar, openLedger } = useUIShell();
 
   return (
@@ -13,7 +16,8 @@ export function GlobalBar() {
       style={{
         flexDirection: 'row',
         alignItems: 'center',
-        height: 56,
+        paddingTop: insets.top,
+        height: 56 + insets.top,
         paddingHorizontal: 12,
         gap: 10,
         backgroundColor: colors.card,

@@ -32,6 +32,7 @@ export default function TabLayout() {
           'books',
           'users',
           'ai-audit',
+          'ai',
           'theme',
         ].map((name) => (
           <Tabs.Screen key={name} name={name} options={{ href: null }} />

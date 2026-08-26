@@ -8,6 +8,12 @@
       ],
       "@/assets/*": [
         "./assets/*"
+      ],
+      "@homibook/core": [
+        "../packages/core/src/index.ts"
+      ],
+      "@homibook/core/*": [
+        "../packages/core/src/*"
       ]
     }
   },

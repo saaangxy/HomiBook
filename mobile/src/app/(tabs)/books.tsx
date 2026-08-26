@@ -1,20 +1,21 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
   ScrollView, View, Pressable, Alert, TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
-import { BookPlus, Pencil, Trash2, Users, Link, Copy, LogOut, Crown, UserCheck, ChevronRight } from 'lucide-react-native';
+import { BookPlus, Pencil, Trash2, Users, Link, Copy, LogOut, Crown, UserCheck } from 'lucide-react-native';
 import { useTheme, alpha } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { mockLedgers, mockLedgerMembers } from '@/mock/data';
+import { useUIShell } from '@/components/chrome/chrome';
+import { deleteBookApi, updateBookApi, fetchBookMembers } from '@/services/records';
 import type { Ledger, LedgerMember } from '@/types';
 
 // 账本管理页:对齐网页端 CRUD(创建/编辑/删除/成员管理/分享码/加入/退出)
 export default function BooksPage() {
   const { colors } = useTheme();
-  const [ledgers, setLedgers] = useState<Ledger[]>(mockLedgers);
+  const { ledgers, createLedger } = useUIShell();
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Ledger | null>(null);
   const [joining, setJoining] = useState(false);
@@ -23,28 +24,31 @@ export default function BooksPage() {
   const [newIcon, setNewIcon] = useState('📒');
   const [joinCode, setJoinCode] = useState('');
 
+  // 成员列表:打开管理弹窗时从后端加载
+  const [members, setMembers] = useState<LedgerMember[]>([]);
+  useEffect(() => {
+    if (!managing) { setMembers([]); return; }
+    fetchBookMembers(managing.id).then(setMembers);
+  }, [managing]);
+
   // ── CRUD ──
   const handleCreate = useCallback(() => {
     if (!newName.trim()) return;
-    const ledger: Ledger = {
-      id: `l${Date.now()}`, name: newName.trim(), icon: newIcon,
-      memberCount: 1, shareCode: `${newName.slice(0, 3).toUpperCase()}${Date.now() % 10000}`, role: 'OWNER',
-    };
-    setLedgers(prev => [...prev, ledger]);
+    createLedger(newName.trim());
     setCreating(false); setNewName(''); setNewIcon('📒');
-  }, [newName, newIcon]);
+  }, [newName, createLedger]);
 
-  const handleEdit = useCallback(() => {
+  const handleEdit = useCallback(async () => {
     if (!editing || !newName.trim()) return;
-    setLedgers(prev => prev.map(l => l.id === editing.id ? { ...l, name: newName.trim(), icon: newIcon } : l));
+    await updateBookApi(editing.id, { name: newName.trim() });
     setEditing(null); setNewName(''); setNewIcon('📒');
-  }, [editing, newName, newIcon]);
+  }, [editing, newName]);
 
   const handleDelete = useCallback((ledger: Ledger) => {
     if (ledger.role !== 'OWNER') return;
     Alert.alert('删除账本', `确定要删除「${ledger.name}」吗？此操作不可恢复。`, [
       { text: '取消', style: 'cancel' },
-      { text: '删除', style: 'destructive', onPress: () => setLedgers(prev => prev.filter(l => l.id !== ledger.id)) },
+      { text: '删除', style: 'destructive', onPress: async () => { await deleteBookApi(ledger.id); } },
     ]);
   }, []);
 
@@ -52,17 +56,13 @@ export default function BooksPage() {
     if (ledger.role === 'OWNER') return;
     Alert.alert('退出账本', `确定要退出「${ledger.name}」吗？`, [
       { text: '取消', style: 'cancel' },
-      { text: '退出', style: 'destructive', onPress: () => setLedgers(prev => prev.filter(l => l.id !== ledger.id)) },
+      { text: '退出', style: 'destructive', onPress: async () => {} },
     ]);
   }, []);
 
   const handleJoin = useCallback(() => {
     if (!joinCode.trim()) return;
-    const ledger: Ledger = {
-      id: `l${Date.now()}`, name: `共享账本(${joinCode})`, icon: '🤝',
-      memberCount: 1, shareCode: joinCode.trim(), role: 'MEMBER',
-    };
-    setLedgers(prev => [...prev, ledger]);
+    // 加入账本:通过分享码(对接 POST /api/books/join)
     setJoining(false); setJoinCode('');
   }, [joinCode]);
 
@@ -140,8 +140,6 @@ export default function BooksPage() {
       </View>
     </View>
   );
-
-  const members = managing ? (mockLedgerMembers[managing.id] ?? []) : [];
 
   const renderManageSheet = () => managing && (
     <View style={{ padding: 20, gap: 16 }}>
