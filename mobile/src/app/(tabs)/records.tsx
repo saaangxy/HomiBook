@@ -32,7 +32,6 @@ export default function RecordsScreen() {
   // 后端筛选结果(独立请求,不受 store 前 100 条限制)
   const [list, setList] = useState<RecordItem[]>([]);
 
-  const catMap = useMemo(() => Object.fromEntries(categories.map((x) => [x.code, x.icon])), [categories]);
   const catLabelMap = useMemo(() => Object.fromEntries(categories.map((x) => [x.code, x.label])), [categories]);
 
   // 有筛选时按后端条件请求;无筛选时用 store 全量(下拉刷新更新)
@@ -47,7 +46,7 @@ export default function RecordsScreen() {
     const singleAccount = filters.accountIds.length === 1 ? filters.accountIds[0] : undefined;
     const singleCategory = filters.categoryCodes.length === 1 ? filters.categoryCodes[0] : undefined;
     fetchRecords(bookId, {
-      pageSize: 200,
+      pageSize: 100,
       types: filters.types,
       dateFrom: filters.dateFrom || undefined,
       dateTo: filters.dateTo || undefined,
@@ -226,7 +225,7 @@ export default function RecordsScreen() {
                         ]}
                       >
                         <Pressable onPress={() => { haptics.tap(); openRecord(r); }}>
-                          <RecordRow record={r} icon={catMap[r.categoryCode ?? '']} />
+                          <RecordRow record={r} />
                         </Pressable>
                       </SwipeRow>
                       {i < groups[d].length - 1 && <View style={{ height: 14 }} />}

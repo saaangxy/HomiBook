@@ -31,7 +31,6 @@ export default function CalendarScreen() {
   const { categories, refresh } = useRecords();
   const { currentLedger, openRecord } = useUIShell();
   const bookId = currentLedger.id;
-  const catMap = useMemo(() => Object.fromEntries(categories.map((x) => [x.code, x.icon])), [categories]);
   const [ymOpen, setYmOpen] = useState(false);
   const [pickY, setPickY] = useState(year);
   const [expanded, setExpanded] = useState(true); // 日历展开态(选中日压缩后为 false)
@@ -289,7 +288,7 @@ export default function CalendarScreen() {
                         openRecord(r);
                       }}
                     >
-                      <RecordRow record={r} icon={catMap[r.categoryCode ?? '']} showDivider={i < dayRecords.length - 1} />
+                      <RecordRow record={r} showDivider={i < dayRecords.length - 1} />
                     </Pressable>
                     {i < dayRecords.length - 1 && <View style={{ height: 14 }} />}
                   </View>

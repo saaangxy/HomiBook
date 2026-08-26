@@ -29,9 +29,8 @@ export default function HomeScreen() {
   const [budgetExp, setBudgetExp] = useState(false);
   const [yearIncome, setYearIncome] = useState(0);
   const [yearExpense, setYearExpense] = useState(0);
-  const { records, summary, categories, refresh } = useRecords();
+  const { records, summary, refresh } = useRecords();
   const { currentLedger } = useUIShell();
-  const catMap = useMemo(() => Object.fromEntries(categories.map((x) => [x.code, x.icon])), [categories]);
   const [refreshing, setRefreshing] = useState(false);
 
   // 下拉刷新:重拉 store(流水/账户/分类) + 预算 + 当年收支
@@ -234,7 +233,7 @@ export default function HomeScreen() {
           <Card className="px-5 py-4 mb-4">
             {recent.map((r, i) => (
               <View key={r.id}>
-                <RecordRow record={r} icon={catMap[r.categoryCode ?? '']} showDivider={i < recent.length - 1} />
+                <RecordRow record={r} showDivider={i < recent.length - 1} />
                 {i < recent.length - 1 && <View style={{ height: 12 }} />}
               </View>
             ))}

@@ -1,59 +1,47 @@
 import { View } from 'react-native';
-import dayjs from 'dayjs';
-import { Utensils, ShoppingBag, Car, Home, BookOpen, HeartPulse, Gamepad2, Shield, Wallet, Gift, TrendingUp, Landmark, CircleDollarSign, type LucideIcon } from 'lucide-react-native';
 import type { RecordItem } from '@/types';
-import { useTheme, alpha } from '@/theme';
+import { useTheme } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { formatMoney } from '@/lib/format';
 
-const ICON_MAP: Record<string, LucideIcon> = {
-  utensils: Utensils,
-  'shopping-bag': ShoppingBag,
-  car: Car,
-  home: Home,
-  'book-open': BookOpen,
-  'heart-pulse': HeartPulse,
-  'gamepad-2': Gamepad2,
-  shield: Shield,
-  wallet: Wallet,
-  gift: Gift,
-  'trending-up': TrendingUp,
-  landmark: Landmark,
-};
-
 interface RecordRowProps {
   record: RecordItem;
-  icon?: string;
   showDivider?: boolean;
 }
 
-// 精致流水行:44px 圆角图标(收入绿/支出红淡彩底) + 分类/备注 + 金额
-export function RecordRow({ record, icon, showDivider = false }: RecordRowProps) {
+const TYPE_LABEL: Record<string, string> = {
+  INCOME: '收入',
+  EXPENSE: '支出',
+  TRANSFER: '转账',
+};
+
+// 流水卡片:商家/标题(粗体) + 类型|分类|账户(浅灰) + 备注(浅灰) + 右侧金额
+export function RecordRow({ record, showDivider = false }: RecordRowProps) {
   const { colors } = useTheme();
-  const Icon = ICON_MAP[icon ?? ''] ?? CircleDollarSign;
   const isIncome = record.type === 'INCOME';
   const isTransfer = record.type === 'TRANSFER';
   const amountColor = isTransfer ? colors.transfer : isIncome ? colors.income : colors.expense;
-  const iconColor = isTransfer ? colors.transfer : isIncome ? colors.income : colors.primary;
-  const iconBg = alpha(iconColor, 0.12);
-  const dateLabel = record.date ? dayjs(record.date).format('MM-DD HH:mm') : '';
-  const subtitle = isTransfer
-    ? `${record.accountName ?? ''} → ${record.toAccountName ?? '其他账户'}`
-    : (record.counterparty || record.remark || record.accountName || dateLabel);
+  // 标题:优先用交易方(商家/对方),回退到分类名
+  const title = record.counterparty?.trim() || record.categoryName || '未分类';
+  const typeLabel = TYPE_LABEL[record.type] ?? '';
+  const categoryName = record.categoryName ?? '未分类';
+  const accountName = record.accountName ?? '';
 
   return (
     <View>
-      <View className="flex-row items-center gap-3">
-        <View className="w-11 h-11 rounded-[14px] items-center justify-center" style={{ backgroundColor: iconBg }}>
-          <Icon size={20} color={iconColor} />
-        </View>
+      <View className="flex-row items-start gap-3 py-1">
         <View className="flex-1">
-          <Text numberOfLines={1} style={{ fontSize: 15, fontWeight: '600' }}>
-            {record.categoryName ?? '未分类'}
+          <Text numberOfLines={1} style={{ fontSize: 16, fontWeight: '700', color: colors.foreground }}>
+            {title}
           </Text>
-          <Text numberOfLines={1} variant="muted" style={{ fontSize: 12, marginTop: 2 }}>
-            {subtitle}
+          <Text numberOfLines={1} style={{ fontSize: 12, color: colors.mutedForeground, marginTop: 4 }}>
+            {typeLabel} | {categoryName} | {accountName}
           </Text>
+          {record.remark ? (
+            <Text numberOfLines={1} style={{ fontSize: 12, color: colors.mutedForeground, marginTop: 2 }}>
+              {record.remark}
+            </Text>
+          ) : null}
         </View>
         <Text style={{ color: amountColor, fontWeight: '700', fontSize: 16, fontVariant: ['tabular-nums'] }}>
           {isIncome ? '+' : '-'}{formatMoney(record.amount)}
