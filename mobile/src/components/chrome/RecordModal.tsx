@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Dimensions, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Dimensions, Image, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
 import Animated, { Easing, FadeIn, SlideInDown } from 'react-native-reanimated';
+import { ImagePlus, X } from 'lucide-react-native';
 import { useTheme, haptics } from '@/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '@/components/ui/Text';
@@ -9,11 +10,13 @@ import { Button } from '@/components/ui/Button';
 import { DatePicker } from '@/components/ui/DatePicker';
 import { ChipSelect } from '@/components/ui/ChipSelect';
 import { TagPicker } from '@/components/ui/TagPicker';
+import { ImageLightbox, isImageUrl } from '@/components/ui/AttachmentViewer';
 import { AIAssistant } from '@/components/chat/AIAssistant';
 import { useUIShell } from './chrome';
 import { useRecords } from '@/stores/records';
 import { useAuth } from '@/stores/auth';
-import { fetchBookMembers, fetchRecordTags, fetchBudgetTags } from '@/services/records';
+import { fetchBookMembers, fetchRecordTags, fetchBudgetTags, uploadRecordAttachment } from '@/services/records';
+import { resolveRemoteUrl } from '@/services/http';
 import dayjs from 'dayjs';
 
 type RecordType = 'EXPENSE' | 'INCOME' | 'TRANSFER';
@@ -72,6 +75,10 @@ export function RecordModal() {
   // 归属人:默认本人,选项来自账本成员
   const [ownerId, setOwnerId] = useState('');
   const [members, setMembers] = useState<{ id: string; label: string }[]>([]);
+  // 流水附件(编辑回填/本地新增;提交时全量覆盖 attachmentIds,与 web 一致)
+  const [formAttachments, setFormAttachments] = useState<{ id: string; url: string; originalFilename: string }[]>([]);
+  const [uploadingAtt, setUploadingAtt] = useState(false);
+  const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
   // 加载账本成员(归属人选项)
   useEffect(() => {
     if (!bookId) return;
@@ -106,6 +113,7 @@ export function RecordModal() {
       setCounterparty(editingRecord.counterparty ?? '');
       setTags(editingRecord.tags ?? []);
       setOwnerId(editingRecord.ownerId ?? user?.id ?? '');
+      setFormAttachments(editingRecord.attachments ?? []);
     } else {
       setType('EXPENSE');
       setAmount('0');
@@ -117,12 +125,43 @@ export function RecordModal() {
       setCounterparty('');
       setTags([]);
       setOwnerId(user?.id ?? '');
+      setFormAttachments([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recordOpen, editingRecord]);
 
   const close = () => {
     closeRecord();
+  };
+
+  // 选择并上传流水附件(支持多选,单张失败不阻断其余)
+  const handlePickAttachments = async () => {
+    try {
+      const { launchImageLibraryAsync, requestMediaLibraryPermissionsAsync } = await import('expo-image-picker');
+      const perm = await requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) { Alert.alert('需要相册权限'); return; }
+      const result = await launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7, allowsMultipleSelection: true, selectionLimit: 9 });
+      if (result.canceled || !result.assets?.length) return;
+      setUploadingAtt(true);
+      try {
+        const uploaded: { id: string; url: string; originalFilename: string }[] = [];
+        for (const asset of result.assets) {
+          const fileName = asset.fileName || `receipt-${Date.now()}.jpg`;
+          try {
+            const up = await uploadRecordAttachment(asset.uri, fileName, asset.mimeType || 'image/jpeg');
+            uploaded.push({ id: up.id, url: up.url || up.fullUrl, originalFilename: up.originalFilename || fileName });
+          } catch (e: any) {
+            Alert.alert('上传失败', `${fileName}: ${e?.message || '未知错误'}`);
+          }
+        }
+        if (uploaded.length > 0) setFormAttachments((prev) => [...prev, ...uploaded]);
+      } finally {
+        setUploadingAtt(false);
+      }
+    } catch (e: any) {
+      Alert.alert('选择图片失败', e?.message || '未知错误');
+      setUploadingAtt(false);
+    }
   };
 
   const save = () => {
@@ -149,6 +188,7 @@ export function RecordModal() {
         counterparty: counterparty.trim() || undefined,
         ...owner,
         tags,
+        attachmentIds: formAttachments.map((a) => a.id),
       };
       if (editingRecord) updateRecord(editingRecord.id, payload);
       else addRecord(payload);
@@ -168,6 +208,7 @@ export function RecordModal() {
       counterparty: counterparty.trim() || undefined,
       ...owner,
       tags,
+      attachmentIds: formAttachments.map((a) => a.id),
     };
     if (editingRecord) updateRecord(editingRecord.id, payload);
     else addRecord(payload);
@@ -354,6 +395,49 @@ export function RecordModal() {
                 multiline
                 style={[inputStyle, { minHeight: 64, textAlignVertical: 'top' }]}
               />
+
+              {/* 附件(小票/发票等):缩略图网格,点图全屏预览,支持多选上传/本地删除(提交时全量覆盖) */}
+              {fieldLabel('附件')}
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 14 }}>
+                {formAttachments.map((att, i) => {
+                  const isImg = isImageUrl(att.url);
+                  return (
+                    <View key={att.id || `${att.url}-${i}`}>
+                      <Pressable onPress={() => { if (isImg) setLightboxIdx(formAttachments.filter((a) => isImageUrl(a.url)).findIndex((x) => x.id === (att.id || att.url))); }}>
+                        {isImg ? (
+                          <Image source={{ uri: resolveRemoteUrl(att.url) }} style={{ width: 64, height: 64, borderRadius: 10, backgroundColor: colors.muted }} />
+                        ) : (
+                          <View style={{
+                            width: 92, height: 64, borderRadius: 10, backgroundColor: colors.muted,
+                            alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6,
+                          }}>
+                            <Text numberOfLines={2} style={{ fontSize: 10, color: colors.mutedForeground }}>{att.originalFilename}</Text>
+                          </View>
+                        )}
+                      </Pressable>
+                      {/* 删除:纯本地移除(attachmentIds 全量覆盖后端即同步),与 web 一致 */}
+                      <Pressable
+                        onPress={() => setFormAttachments((prev) => prev.filter((_, idx) => idx !== i))}
+                        hitSlop={8}
+                        style={{ position: 'absolute', top: -7, right: -7, width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}
+                      >
+                        <X size={15} color={colors.expense} />
+                      </Pressable>
+                    </View>
+                  );
+                })}
+                <Pressable
+                  onPress={handlePickAttachments}
+                  disabled={uploadingAtt}
+                  style={{
+                    width: 64, height: 64, borderRadius: 10, borderWidth: 1.5, borderStyle: 'dashed',
+                    borderColor: colors.border, alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: colors.muted,
+                  }}
+                >
+                  {uploadingAtt ? <ActivityIndicator size="small" color={colors.primary} /> : <ImagePlus size={20} color={colors.mutedForeground} />}
+                </Pressable>
+              </View>
             </ScrollView>
 
             {/* 底部操作 */}
@@ -372,6 +456,15 @@ export function RecordModal() {
           </View>
         </Animated.View>
       </KeyboardAvoidingView>
+
+      {/* 附件全屏预览(仅手动模式附件区) */}
+      {lightboxIdx !== null && formAttachments.some((a) => isImageUrl(a.url)) && (
+        <ImageLightbox
+          images={formAttachments.filter((a) => isImageUrl(a.url)).map((a) => resolveRemoteUrl(a.url))}
+          initialIndex={Math.max(lightboxIdx, 0)}
+          onClose={() => setLightboxIdx(null)}
+        />
+      )}
     </Modal>
   );
 }

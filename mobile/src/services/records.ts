@@ -1,5 +1,5 @@
 import type { AccountItem, BudgetItem, Category, Ledger, LedgerMember, RadarMetric, RecordItem, RecordSummary, ShareCodeItem } from '@/types';
-import { http } from './http';
+import { http, getBaseUrl, uploadFileNative } from './http';
 import type {
   AccountItem as CoreAccount,
   BookItem,
@@ -34,6 +34,7 @@ function toRecordItem(r: CoreRecord): RecordItem {
     ownerId: r.ownerId ?? undefined,
     ownerName: r.ownerName,
     tags: r.tags ?? [],
+    attachments: r.attachments ?? [],
   };
 }
 
@@ -157,6 +158,8 @@ export interface RecordCreatePayload {
   toAccountId?: string;
   categoryCode?: string | null;
   payer?: string | null;
+  /** 流水附件(全量覆盖语义,与 web 一致) */
+  attachmentIds?: string[];
 }
 
 export async function createRecord(bookId: string, payload: RecordCreatePayload): Promise<void> {
@@ -165,6 +168,20 @@ export async function createRecord(bookId: string, payload: RecordCreatePayload)
 
 export async function updateRecordApi(bookId: string, id: string, payload: Partial<RecordCreatePayload>): Promise<void> {
   await http.patch(`/api/records/${id}`, payload);
+}
+
+/** 上传流水附件(POST /api/records/upload,multipart),返回附件 id/url */
+export interface RecordAttachmentUpload {
+  id: string;
+  url: string;
+  fullUrl: string;
+  originalFilename: string;
+}
+
+export async function uploadRecordAttachment(uri: string, fileName: string, mimeType: string): Promise<RecordAttachmentUpload> {
+  const baseUrl = getBaseUrl();
+  if (!baseUrl) throw new Error('请先配置服务器并登录');
+  return uploadFileNative<RecordAttachmentUpload>(`${baseUrl}/api/records/upload`, uri, mimeType);
 }
 
 export async function deleteRecordApi(bookId: string, id: string): Promise<void> {

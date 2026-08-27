@@ -20,7 +20,7 @@ interface RecordsValue {
 const RecordsContext = createContext<RecordsValue | null>(null);
 
 // mobile 扁平展示类型 -> 后端创建/更新记录 payload
-function toCreatePayload(r: Partial<Omit<RecordItem, 'id'>>, accountBookId: string): RecordCreatePayload {
+function toCreatePayload(r: Partial<Omit<RecordItem, 'id'>> & { attachmentIds?: string[] }, accountBookId: string): RecordCreatePayload {
   return {
     accountBookId,
     type: r.type ?? 'EXPENSE',
@@ -33,6 +33,7 @@ function toCreatePayload(r: Partial<Omit<RecordItem, 'id'>>, accountBookId: stri
     toAccountId: r.toAccountId ?? undefined,
     categoryCode: r.categoryCode ?? null,
     payer: r.counterparty ?? null,
+    ...(r.attachmentIds ? { attachmentIds: r.attachmentIds } : {}),
   };
 }
 

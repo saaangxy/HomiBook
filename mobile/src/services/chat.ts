@@ -1,5 +1,5 @@
 import { consumeSSEStream, type ChatSSEEvent } from '@homibook/core';
-import { getBaseUrl, getCredential } from './http';
+import { getBaseUrl, getCredential, uploadFileNative } from './http';
 
 // AI 聊天数据访问层 —— 完整复刻 web 端 frontend/src/api/chat.ts
 // 流式接口:sendMessageStream / confirmActionStream / respondSuggestionStream / switchBookStream
@@ -203,49 +203,23 @@ export interface UploadResult {
   originalFilename: string;
 }
 
-// RN 新架构(bridgeless)不再接受 {uri,name,type} 文件描述符(报 Unsupported FormDataPart
-// implementation),统一先读本地文件转 Blob 再进 FormData
-async function localFileBlob(uri: string, type: string): Promise<Blob> {
-  const res = await fetch(uri);
-  const buf = await res.arrayBuffer();
-  return new Blob([buf], { type: type || 'application/octet-stream' });
-}
-
 export async function uploadImage(uri: string, fileName: string, mimeType: string): Promise<UploadResult> {
   const baseUrl = getBaseUrl();
-  const cred = await getCredential();
-  if (!baseUrl || !cred) throw new Error('请先配置服务器并登录');
-  const form = new FormData();
-  form.append('file', await localFileBlob(uri, mimeType), fileName);
-  const res = await fetch(`${baseUrl}/api/records/upload`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${cred.value}` },
-    body: form,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ message: '上传失败' }));
-    throw new Error(err.message || `上传失败(${res.status})`);
-  }
-  return res.json();
+  if (!baseUrl) throw new Error('请先配置服务器并登录');
+  return uploadFileNative<UploadResult>(`${baseUrl}/api/records/upload`, uri, mimeType);
 }
 
 // ── 账单导入(对接 /api/records/import/*) ──
-export async function uploadImportFile(uri: string, fileName: string): Promise<{ fileId: string; fileName: string; originalName: string; rows: number; errors: string[] }> {
+// 上传临时文件供 preview_import 工具使用;后端返回 { fileId, filename, size }
+export async function uploadImportFile(uri: string, fileName: string): Promise<{ fileId: string; filename: string; size: number }> {
   const baseUrl = getBaseUrl();
-  const cred = await getCredential();
-  if (!baseUrl || !cred) throw new Error('请先配置服务器并登录');
-  const form = new FormData();
-  form.append('file', await localFileBlob(uri, 'text/csv'), fileName);
-  const res = await fetch(`${baseUrl}/api/records/import/upload`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${cred.value}` },
-    body: form,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ message: '导入上传失败' }));
-    throw new Error(err.message || `导入上传失败(${res.status})`);
-  }
-  return res.json();
+  if (!baseUrl) throw new Error('请先配置服务器并登录');
+  // 按扩展名推断类型(表格类账单常为 csv/xlsx)
+  const lower = fileName.toLowerCase();
+  const mime = lower.endsWith('.xlsx')
+    ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    : lower.endsWith('.xls') ? 'application/vnd.ms-excel' : 'text/csv';
+  return uploadFileNative(`${baseUrl}/api/records/import/upload`, uri, mime);
 }
 
 export async function analyzeImportCsv(bookId: string, params: { filePath?: string; fileName?: string; mappings?: Record<string, string>; currency?: string }): Promise<unknown> {

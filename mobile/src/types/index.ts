@@ -63,6 +63,8 @@ export interface RecordItem {
   ownerId?: string;
   ownerName?: string;
   tags: string[];
+  /** 流水附件(小票/发票等),url 为相对路径 */
+  attachments?: { id: string; url: string; originalFilename: string }[];
 }
 
 // ── 本地保留:账户 ──

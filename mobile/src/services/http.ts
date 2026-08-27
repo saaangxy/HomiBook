@@ -1,7 +1,10 @@
+import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system/legacy';
 import { secureDelete, secureGet, secureSet } from './storage';
 
 // HTTP 客户端:baseUrl 注入 + Bearer 凭据(JWT 与 API Key 同通道,后端自动识别)
 // + 10s 超时 + 统一错误解析 + 全局 401 拦截
+// + 原生 multipart 文件上传 / 附件下载(保存到本地分享面板)
 
 const CREDENTIAL_KEY = 'homibook.credential';
 
@@ -137,3 +140,49 @@ export const http = {
   put: <T>(path: string, body?: unknown, opts?: RequestOptions) => request<T>('PUT', path, body, opts),
   delete: <T>(path: string, opts?: RequestOptions) => request<T>('DELETE', path, undefined, opts),
 };
+
+// ── 文件上传/下载(原生实现,RN 新架构下 fetch+FormData+Blob 链路兼容性差,统一走原生通道) ──
+
+function parseBodyLoose(body: string): Record<string, unknown> {
+  try { return body ? JSON.parse(body) : {}; } catch { return {}; }
+}
+
+/** 原生 multipart 上传:原样传输文件字节;返回服务端 JSON */
+export async function uploadFileNative<T>(url: string, fileUri: string, mimeType: string): Promise<T> {
+  const cred = await getCredential();
+  if (!url || !fileUri) throw new Error('缺少上传参数');
+  if (!cred) throw new Error('请先配置服务器并登录');
+  const res = await FileSystem.uploadAsync(url, fileUri, {
+    httpMethod: 'POST',
+    uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+    fieldName: 'file',
+    mimeType,
+    headers: { Authorization: `Bearer ${cred.value}` },
+  });
+  const data = parseBodyLoose(res.body);
+  if (res.status < 200 || res.status >= 300) {
+    throw new Error((data as any).message || `上传失败(${res.status})`);
+  }
+  return data as T;
+}
+
+/** 相对附件路径转完整 URL(相对时拼 baseUrl,绝对原样返回) */
+export function resolveRemoteUrl(url: string): string {
+  return url.startsWith('http') ? url : `${currentBaseUrl}${url.startsWith('/') ? url : `/${url}`}`;
+}
+
+/** 下载附件到本地并通过系统分享面板保存(等价 web 端的「下载」按钮) */
+export async function downloadAndShareAttachment(path: string, fileName: string): Promise<void> {
+  const cred = await getCredential();
+  if (!cred) throw new Error('请先配置服务器并登录');
+  // 后端下载接口(GET /api/records/download?path=&name=),二进制流
+  const qs = `path=${encodeURIComponent(path)}&name=${encodeURIComponent(fileName)}`;
+  const url = `${currentBaseUrl}/api/records/download?${qs}`;
+  const res = await FileSystem.downloadAsync(url, `${FileSystem.cacheDirectory}${fileName}`, {
+    headers: { Authorization: `Bearer ${cred.value}` },
+  });
+  if (res.status < 200 || res.status >= 300) throw new Error(`下载失败(${res.status})`);
+  const ok = await Sharing.isAvailableAsync();
+  if (!ok) throw new Error('当前环境不支持保存文件');
+  await Sharing.shareAsync(res.uri, { mimeType: 'application/octet-stream', dialogTitle: fileName });
+}

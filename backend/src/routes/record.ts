@@ -1054,7 +1054,8 @@ export async function recordRoutes(app: FastifyInstance) {
             data: {path: url, originalFilename: data.filename},
         })
 
-        const origin = (req.headers.origin || 'http://localhost:3002').replace(/\/$/, '')
+        // RN 等非浏览器客户端不携带 Origin 头,回退用 Host 构造,避免生成 localhost 地址导致移动端无法加载
+        const origin = (req.headers.origin || `${req.protocol}://${req.headers.host || 'localhost:3002'}`).replace(/\/$/, '')
         return {id: attachment.id, url, fullUrl: `${origin}${url}`, originalFilename: data.filename}
     })
 

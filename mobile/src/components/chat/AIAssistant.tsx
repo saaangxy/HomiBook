@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
-import {
-  Alert, FlatList, Image, Platform, Pressable, ScrollView, TextInput, View,
-} from 'react-native';
+import { Alert, ActivityIndicator, FlatList, Image, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
 import Markdown from 'react-native-markdown-display';
-import { Bot, FileUp, Globe, ImagePlus, List, Plus, RefreshCw, Send, Sparkles, StopCircle, Trash2, X } from 'lucide-react-native';
+import { Bot, Brain, ChevronDown, FileUp, Globe, ImagePlus, List, Plus, RefreshCw, Send, Sparkles, StopCircle, Trash2, X } from 'lucide-react-native';
 import { useTheme, alpha, haptics } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { FormSheet } from '@/components/chrome/FormSheet';
+import { ImageLightbox } from '@/components/ui/AttachmentViewer';
 import { useChatStore } from '@/stores/chat';
 import { useUIShell } from '@/components/chrome/chrome';
 import { uploadImage, uploadImportFile } from '@/services/chat';
+import { getBaseUrl } from '@/services/http';
 import type { Message, MessageBlock, ToolCallEntry } from '@homibook/core';
 import type { Ledger } from '@/types';
 
@@ -56,10 +56,13 @@ export function AIAssistant({ onClose }: { onClose?: () => void }) {
   const bookId = currentLedger.id;
 
   const [input, setInput] = useState('');
-  const [webSearch, setWebSearch] = useState(false);
-  const [pendingImages, setPendingImages] = useState<{ id: string; uri: string; fullUrl: string }[]>([]);
+  const [webSearch, setWebSearch] = useState(true);
+  const [pendingImages, setPendingImages] = useState<{ id: string; uri: string; fullUrl: string; originalFilename: string }[]>([]);
   const [sessionListOpen, setSessionListOpen] = useState(false);
-  const [pendingImport, setPendingImport] = useState<{ fileId: string; name: string } | null>(null);
+  // 导入弹窗(自定义来源选择,对齐 web DropdownMenu 的支付宝/微信/京东三选项)
+  const [importSheetOpen, setImportSheetOpen] = useState(false);
+  // 全屏图片预览(待发缩略图 / 消息附件图共用)
+  const [lightbox, setLightbox] = useState<{ images: string[]; index: number } | null>(null);
   const listRef = useRef<FlatList>(null);
 
   const {
@@ -71,6 +74,25 @@ export function AIAssistant({ onClose }: { onClose?: () => void }) {
 
   // 当前会话(标题栏展示)
   const currentSession = sessions.find((s) => s.id === currentSessionId);
+  // 服务端返回的附件/图片 url 多为相对路径,统一拼完整地址供 Image 加载;
+  // 绝对地址若 host 与当前服务器不一致(如 RN 请求无 Origin 头时后端回退 localhost)则校准到配置的服务器
+  const resolveFileUrl = (u: string): string => {
+    if (!u) return u;
+    const base = getBaseUrl();
+    if (!u.startsWith('http')) return `${base}${u.startsWith('/') ? u : `/${u}`}`;
+    try {
+      if (!base) return u;
+      const bu = new URL(base);
+      const au = new URL(u);
+      if (au.origin !== bu.origin) {
+        au.protocol = bu.protocol;
+        au.host = bu.host;
+      }
+      return au.toString();
+    } catch {
+      return u;
+    }
+  };
   const isStreaming = useChatStore((s) => s.sessionCache[s.currentSessionId ?? '']?.isStreaming ?? false);
 
   useEffect(() => {
@@ -87,11 +109,16 @@ export function AIAssistant({ onClose }: { onClose?: () => void }) {
     const hasPendingImages = pendingImages.length > 0;
     if ((!msg && !hasPendingImages) || isStreaming || !bookId) return;
     haptics.tap();
+    // 待发附件快照:ids 给后端,完整信息给本地回显
+    const pending = [...pendingImages];
     setPendingImages([]);
-    const attachmentIds = pendingImages.map((p) => p.id);
+    const attachmentIds = pending.map((p) => p.id);
+    const localAttachments = hasPendingImages
+      ? pending.map((p) => ({ id: p.id, url: p.fullUrl, originalFilename: p.originalFilename }))
+      : undefined;
     if (!currentSessionId) {
       newSession(bookId).then((s) => {
-        if (s) sendMessage(bookId, msg, undefined, undefined, attachmentIds.length ? attachmentIds : undefined, webSearch);
+        if (s) sendMessage(bookId, msg, undefined, undefined, attachmentIds.length ? attachmentIds : undefined, webSearch, localAttachments);
       });
       return;
     }
@@ -99,7 +126,7 @@ export function AIAssistant({ onClose }: { onClose?: () => void }) {
     for (let i = messages.length - 1; i >= 0; i--) {
       if (messages[i].dbId) { parentId = messages[i].dbId; break; }
     }
-    sendMessage(bookId, msg, parentId, undefined, attachmentIds.length ? attachmentIds : undefined, webSearch);
+    sendMessage(bookId, msg, parentId, undefined, attachmentIds.length ? attachmentIds : undefined, webSearch, localAttachments);
   };
 
   const handleSend = () => {
@@ -112,30 +139,46 @@ export function AIAssistant({ onClose }: { onClose?: () => void }) {
   // 选择并上传小票图片
   const handlePickImage = async () => {
     try {
-      const { launchImageLibraryAsync } = await import('expo-image-picker');
-      const perm = await (await import('expo-image-picker')).requestMediaLibraryPermissionsAsync();
+      const { launchImageLibraryAsync, requestMediaLibraryPermissionsAsync } = await import('expo-image-picker');
+      const perm = await requestMediaLibraryPermissionsAsync();
       if (!perm.granted) { Alert.alert('需要相册权限'); return; }
-      const result = await launchImageLibraryAsync({ mediaTypes: (await import('expo-image-picker')).MediaTypeOptions?.Images, quality: 0.8 });
+      // mediaTypes 用新 API(字符串数组);MediaTypeOptions 已废弃
+      const result = await launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
       if (result.canceled || !result.assets?.length) return;
       const asset = result.assets[0];
-      const up = await uploadImage(asset.uri, asset.fileName || 'receipt.jpg', asset.mimeType || 'image/jpeg');
-      setPendingImages((p) => [...p, { id: up.id, uri: up.fullUrl || up.url, fullUrl: up.fullUrl || up.url }]);
+      const fileName = asset.fileName || 'receipt.jpg';
+      const up = await uploadImage(asset.uri, fileName, asset.mimeType || 'image/jpeg');
+      setPendingImages((p) => [...p, { id: up.id, uri: resolveFileUrl(up.fullUrl || up.url), fullUrl: up.fullUrl || up.url, originalFilename: up.originalFilename || fileName }]);
     } catch (e: any) {
       Alert.alert('上传失败', e?.message || '未知错误');
     }
   };
 
-  // 账单导入:上传 → 由 AI(preview_import 工具)引导预览/确认导入
-  const handleImport = async () => {
+  // 账单导入(csv/excel):选来源 → 上传临时文件 → 自动发送含 fileId 的消息(与 web 端一致,
+  // AI 从消息中解析 fileId/source 并调用 preview_import 工具引导预览/确认)
+  const SOURCE_LABELS: Record<string, string> = { alipay: '支付宝', wechat: '微信', jd: '京东' };
+
+  const handleImport = async (source: string) => {
+    setImportSheetOpen(false);
     try {
-      const { getDocumentAsync } = await import('expo-document-picker');
-      const result = await getDocumentAsync({ copyToCacheDirectory: true });
+      const DocumentPicker = await import('expo-document-picker');
+      // 仅允许 csv / excel(web input accept 同规则)
+      const result = await DocumentPicker.getDocumentAsync({
+        copyToCacheDirectory: true,
+        multiple: false,
+        type: [
+          'text/csv',
+          'application/vnd.ms-excel', // .xls
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+        ],
+      });
       if (result.canceled || !result.assets?.length) return;
       const asset = result.assets[0];
-      const up = await uploadImportFile(asset.uri, asset.name);
-      setPendingImport({ fileId: (up as any).fileId, name: (up as any).filename || asset.name });
-      setInput('请分析我刚上传的账单并预览，确认无误后导入。');
-      Alert.alert('上传成功', '账单已上传，AI 将分析并引导你预览、确认导入。');
+      const fileName = asset.name || '账单.csv';
+      const up = await uploadImportFile(asset.uri, fileName);
+      if (!up?.fileId) throw new Error('服务端未返回文件标识');
+      // 发送格式化消息(fileId 进文本,AI 解析后调用 preview_import)
+      sendText(`请导入${SOURCE_LABELS[source] ?? source}账单文件\nfileId: ${up.fileId}\nsource: ${source}\n文件名: ${up.filename}`);
     } catch (e: any) {
       Alert.alert('导入失败', e?.message || '未知错误');
     }
@@ -172,13 +215,13 @@ export function AIAssistant({ onClose }: { onClose?: () => void }) {
     haptics.tap();
   };
 
-  const renderBlock = (block: MessageBlock) => {
+  const renderBlock = (block: MessageBlock, isUser = false) => {
     switch (block.type) {
       case 'thinking':
         return <ThinkingBlock key={block.id} block={block} />;
       case 'text':
         return block.content.trim()
-          ? <MarkdownBody key={block.id} content={block.content} />
+          ? <MarkdownBody key={block.id} content={block.content} inverted={isUser} />
           : null;
       case 'tool-call':
         return <ToolCard key={block.id} toolCall={block} bookId={bookId} />;
@@ -187,76 +230,113 @@ export function AIAssistant({ onClose }: { onClose?: () => void }) {
     }
   };
 
+  // 消息气泡基础样式(对齐 web MessageBubble:rounded-2xl + 角部差异化)
+  const bubbleBase = {
+    borderRadius: 16,
+    paddingHorizontal: 13,
+    paddingVertical: 10,
+  } as const;
+  // 头像(28 方圆角:user 主色/「我」,assistant muted/Bot 图标)
+  const avatar = (kind: 'user' | 'ai') => (
+    <View style={{
+      width: 28, height: 28, borderRadius: 9, alignItems: 'center', justifyContent: 'center',
+      backgroundColor: kind === 'user' ? colors.primary : colors.muted,
+    }}>
+      {kind === 'user'
+        ? <Text style={{ fontSize: 11, fontWeight: '700', color: '#fff' }}>我</Text>
+        : <Bot size={15} color={colors.foreground} />}
+    </View>
+  );
+
   const renderMessage = ({ item }: { item: Message }) => {
     const isUser = item.role === 'user';
     // 分支版本:以当前消息为父,找所有子消息(存在多个分支时显示版本选择)
     const parentKey = item.dbId || item.id;
     const childBranches = allMessages.filter((m) => m.parentMessageId === parentKey);
     const hasBranches = childBranches.length > 1;
-    // 用户消息:右对齐主色气泡;AI 回复:通栏无气泡,给 Markdown/工具卡更大空间
+
     if (isUser) {
       return (
-        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 14 }}>
-          <View style={{
-            maxWidth: '86%',
-            backgroundColor: colors.primary,
-            borderRadius: 18,
-            borderTopRightRadius: 5,
-            paddingHorizontal: 13,
-            paddingVertical: 9,
-          }}>
-            <View style={{ gap: 6 }}>
-              {item.attachments && item.attachments.length > 0 && (
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end' }}>
-                  {item.attachments.map((a) => (
-                    <Image key={a.id} source={{ uri: a.url }} style={{ width: 116, height: 116, borderRadius: 10 }} />
-                  ))}
-                </View>
-              )}
-              {item.blocks.map(renderBlock)}
+        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'flex-start', gap: 8, marginBottom: 14 }}>
+          <View style={{ maxWidth: '82%' }}>
+            {/* 用户气泡:主色,右上角收窄(web: rounded-2xl rounded-tr-md) */}
+            <View style={[bubbleBase, { backgroundColor: colors.primary, borderTopRightRadius: 5 }]}>
+              <View style={{ gap: 6 }}>
+                {item.attachments && item.attachments.length > 0 && (
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end' }}>
+                    {item.attachments.map((a, i) => {
+                      const full = resolveFileUrl(a.url);
+                      return (
+                        <Pressable key={a.id} onPress={() => setLightbox({ images: item.attachments!.map((x) => resolveFileUrl(x.url)), index: i })}>
+                          <Image source={{ uri: full }} style={{ width: 116, height: 116, borderRadius: 8 }} />
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                )}
+                {item.blocks.map((b) => renderBlock(b, true))}
+              </View>
             </View>
           </View>
+          {avatar('user')}
         </View>
       );
     }
+
+    const isEmptyStreaming = item.isStreaming && !item.blocks.some((b) => (b.type === 'text' && b.content.trim()) || b.type === 'tool-call' || (b.type === 'thinking' && b.content));
     return (
-      <View style={{ marginBottom: 16 }}>
-        <View style={{ gap: 8 }}>{item.blocks.map(renderBlock)}</View>
-        {/* 次要信息行:Token 消耗 + 重试(流式结束后才显示) */}
-        {!item.isStreaming && (item.usage || item.blocks.some((b) => b.type === 'text')) ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6, minHeight: 22 }}>
-            <UsageBadge usage={item.usage} />
-            <View style={{ flex: 1 }} />
-            <Pressable hitSlop={10} onPress={() => handleRetry(item.id)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4, paddingHorizontal: 8, borderRadius: 999, backgroundColor: colors.muted }}>
-              <RefreshCw size={12} color={colors.mutedForeground} />
-              <Text style={{ fontSize: 11, color: colors.mutedForeground }}>重试</Text>
-            </Pressable>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 16 }}>
+        {avatar('ai')}
+        <View style={{ flexShrink: 1, maxWidth: '86%' }}>
+          {/* AI 气泡:浅灰底(通栏下的层次),左上角收窄;流式空态显示「思考中...」 */}
+          <View style={[bubbleBase, { backgroundColor: alpha(colors.foreground, 0.05), borderTopLeftRadius: 5, alignSelf: isEmptyStreaming ? 'flex-start' : undefined }]}>
+            {isEmptyStreaming ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <ActivityIndicator size="small" color={colors.mutedForeground} />
+                <Text style={{ fontSize: 13, color: colors.mutedForeground }}>思考中...</Text>
+              </View>
+            ) : (
+              <View style={{ gap: 8 }}>{item.blocks.length > 0 ? item.blocks.map((b) => renderBlock(b)) : null}</View>
+            )}
           </View>
-        ) : null}
-        {/* 分支版本选择 */}
-        {hasBranches && (
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
-            {childBranches.map((cb, i) => {
-              const cbKey = cb.dbId || cb.id;
-              const isSelected = branchSelections[parentKey] === cbKey;
-              return (
-                <Pressable
-                  key={cbKey}
-                  onPress={() => selectBranch(parentKey, cbKey)}
-                  style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, borderWidth: 1, borderColor: isSelected ? colors.primary : colors.hairline, backgroundColor: isSelected ? alpha(colors.primary, 0.1) : 'transparent' }}
-                >
-                  <Text style={{ fontSize: 11, color: isSelected ? colors.primary : colors.mutedForeground, fontWeight: isSelected ? '600' : '400' }}>版本 {i + 1}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        )}
+          {/* 次要信息行:Token 消耗 + 重试(流式结束后才显示) */}
+          {!item.isStreaming && (item.usage || item.blocks.some((b) => b.type === 'text')) ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6, minHeight: 22 }}>
+              <UsageBadge usage={item.usage} />
+              <View style={{ flex: 1 }} />
+              <Pressable hitSlop={10} onPress={() => handleRetry(item.id)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4, paddingHorizontal: 8, borderRadius: 999, backgroundColor: colors.muted }}>
+                <RefreshCw size={12} color={colors.mutedForeground} />
+                <Text style={{ fontSize: 11, color: colors.mutedForeground }}>重试</Text>
+              </Pressable>
+            </View>
+          ) : null}
+          {/* 分支版本选择 */}
+          {hasBranches && (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+              {childBranches.map((cb, i) => {
+                const cbKey = cb.dbId || cb.id;
+                const isSelected = branchSelections[parentKey] === cbKey;
+                return (
+                  <Pressable
+                    key={cbKey}
+                    onPress={() => selectBranch(parentKey, cbKey)}
+                    style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, borderWidth: 1, borderColor: isSelected ? colors.primary : colors.hairline, backgroundColor: isSelected ? alpha(colors.primary, 0.1) : 'transparent' }}
+                  >
+                    <Text style={{ fontSize: 11, color: isSelected ? colors.primary : colors.mutedForeground, fontWeight: isSelected ? '600' : '400' }}>版本 {i + 1}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
+        </View>
       </View>
     );
   };
 
+  // 顶部工具行按钮(对齐 web outline 风格:透明底 + 细边框)
   const iconBtn = {
-    width: 32, height: 32, borderRadius: 16, alignItems: 'center' as const, justifyContent: 'center' as const, backgroundColor: colors.muted,
+    width: 32, height: 32, borderRadius: 9, alignItems: 'center' as const, justifyContent: 'center' as const,
+    borderWidth: 1, borderColor: colors.border, backgroundColor: 'transparent',
   };
   // 输入区工具按钮
   const composerBtn = { padding: 3, borderRadius: 8 };
@@ -314,21 +394,27 @@ export function AIAssistant({ onClose }: { onClose?: () => void }) {
         }
       />
       {error ? (
-        <Text style={{ color: colors.expense, fontSize: 12, textAlign: 'center', paddingBottom: 4 }}>{error}</Text>
+        // 兜底截断:后端异常信息可能携带大段原始数据,只展示头部关键内容
+        <Text style={{ color: colors.expense, fontSize: 12, textAlign: 'center', paddingBottom: 4 }}>
+          {error.length > 200 ? `${error.slice(0, 200)}…` : error}
+        </Text>
       ) : null}
 
       {/* 输入区(仿网页组合式输入框:文本框在上,工具行在下,发送靠右) */}
       <View style={{ paddingHorizontal: 12, paddingTop: 6, paddingBottom: 8, borderTopWidth: 1, borderTopColor: colors.hairline }}>
         {pendingImages.length > 0 && (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingBottom: 8 }}>
-            {pendingImages.map((img) => (
+            {pendingImages.map((img, i) => (
               <View key={img.id}>
-                <Image source={{ uri: img.uri }} style={{ width: 54, height: 54, borderRadius: 8 }} />
+                <Pressable onPress={() => setLightbox({ images: pendingImages.map((x) => x.uri), index: i })}>
+                  <Image source={{ uri: img.uri }} style={{ width: 54, height: 54, borderRadius: 8 }} />
+                </Pressable>
                 <Pressable
                   onPress={() => setPendingImages((p) => p.filter((x) => x.id !== img.id))}
-                  style={{ position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: 9, backgroundColor: colors.expense, alignItems: 'center', justifyContent: 'center' }}
+                  hitSlop={6}
+                  style={{ position: 'absolute', top: 0, right: 0, width: 20, height: 20, borderRadius: 8, borderTopRightRadius: 8, borderBottomLeftRadius: 8, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' }}
                 >
-                  <Text style={{ color: '#fff', fontSize: 11, lineHeight: 13 }}>×</Text>
+                  <X size={12} color="#fff" />
                 </Pressable>
               </View>
             ))}
@@ -347,7 +433,7 @@ export function AIAssistant({ onClose }: { onClose?: () => void }) {
             <Pressable hitSlop={8} onPress={handlePickImage} style={composerBtn}>
               <ImagePlus size={17} color={colors.mutedForeground} />
             </Pressable>
-            <Pressable hitSlop={8} onPress={handleImport} style={composerBtn}>
+            <Pressable hitSlop={8} onPress={() => setImportSheetOpen(true)} style={composerBtn}>
               <FileUp size={17} color={colors.mutedForeground} />
             </Pressable>
             {/* 联网搜索开关(激活态胶囊) */}
@@ -371,8 +457,8 @@ export function AIAssistant({ onClose }: { onClose?: () => void }) {
             ) : (
               <Pressable
                 onPress={handleSend}
-                disabled={!input.trim()}
-                style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', opacity: input.trim() ? 1 : 0.35 }}
+                disabled={!input.trim() && pendingImages.length === 0}
+                style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', opacity: (input.trim() || pendingImages.length > 0) ? 1 : 0.35 }}
               >
                 <Send size={16} color="#fff" />
               </Pressable>
@@ -423,14 +509,57 @@ export function AIAssistant({ onClose }: { onClose?: () => void }) {
           )}
         </ScrollView>
       </FormSheet>
+
+      {/* 导入弹窗:自定义来源选择(对齐 web DropdownMenu),选择后打开系统文件选择器 */}
+      <FormSheet visible={importSheetOpen} title="导入账单" onClose={() => setImportSheetOpen(false)}>
+        <Text style={{ fontSize: 12, color: colors.mutedForeground, marginBottom: 12 }}>
+          选择账单来源，支持导出的 CSV / XLS / XLSX 文件
+        </Text>
+        <View style={{ gap: 8 }}>
+          {(['alipay', 'wechat', 'jd'] as const).map((src) => {
+            const badge: Record<string, { bg: string; ch: string }> = {
+              alipay: { bg: '#1677ff', ch: '支' },
+              wechat: { bg: '#07c160', ch: '微' },
+              jd: { bg: '#e1251b', ch: '京' },
+            };
+            const b = badge[src];
+            return (
+              <Pressable
+                key={src}
+                onPress={() => handleImport(src)}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 12,
+                  paddingVertical: 12, paddingHorizontal: 12, borderRadius: 12,
+                  backgroundColor: colors.muted,
+                }}
+              >
+                <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: b.bg, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff' }}>{b.ch}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.foreground }}>{SOURCE_LABELS[src]}账单</Text>
+                  <Text style={{ fontSize: 11, color: colors.mutedForeground, marginTop: 1 }}>导入对应平台导出的账单明细</Text>
+                </View>
+                <ChevronDown size={15} color={colors.mutedForeground} style={{ transform: [{ rotate: '-90deg' }] }} />
+              </Pressable>
+            );
+          })}
+        </View>
+      </FormSheet>
+
+      {/* 全屏图片预览(待发缩略图 / 消息附件图) */}
+      {lightbox && (
+        <ImageLightbox images={lightbox.images} initialIndex={lightbox.index} onClose={() => setLightbox(null)} />
+      )}
     </View>
   );
 }
 
 // ── Markdown 渲染(react-native-markdown-display) ──
-function MarkdownBody({ content }: { content: string }) {
+// inverted=true 时渲染于主色用户气泡内,正文用反色(web: text-primary-foreground)
+function MarkdownBody({ content, inverted = false }: { content: string; inverted?: boolean }) {
   const { colors } = useTheme();
-  const fg = colors.foreground;
+  const fg = inverted ? (colors.primaryForeground || '#fff') : colors.foreground;
   const bodyStyle = {
     body: { fontSize: 14, lineHeight: 21, color: fg },
     paragraph: { marginVertical: 2 },
@@ -444,9 +573,9 @@ function MarkdownBody({ content }: { content: string }) {
     em: { fontStyle: 'italic' as const },
     s: { textDecorationLine: 'line-through' as const },
     link: { color: colors.primary, textDecorationLine: 'underline' as const },
-    code_inline: { fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace' }), backgroundColor: alpha(colors.primary, 0.1), color: colors.primary, paddingHorizontal: 3, borderRadius: 3 },
-    code_block: { backgroundColor: alpha(colors.foreground, 0.06), padding: 10, borderRadius: 6 },
-    fence: { backgroundColor: alpha(colors.foreground, 0.06), padding: 10, borderRadius: 6 },
+    code_inline: { fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace' }), backgroundColor: inverted ? 'rgba(255,255,255,0.2)' : alpha(colors.primary, 0.1), color: inverted ? fg : colors.primary, paddingHorizontal: 3, borderRadius: 3 },
+    code_block: { backgroundColor: inverted ? 'rgba(255,255,255,0.12)' : alpha(colors.foreground, 0.06), padding: 10, borderRadius: 6 },
+    fence: { backgroundColor: inverted ? 'rgba(255,255,255,0.12)' : alpha(colors.foreground, 0.06), padding: 10, borderRadius: 6 },
     blockquote: { borderLeftWidth: 3, borderLeftColor: colors.hairline, paddingLeft: 10, opacity: 0.9 },
     bullet_list_icon: { color: fg },
     ordered_list_icon: { color: fg },
@@ -473,8 +602,9 @@ function ThinkingBlock({ block }: { block: Extract<MessageBlock, { type: 'thinki
   return (
     <View style={{ borderRadius: 10, borderWidth: 1, borderColor: colors.hairline, overflow: 'hidden' }}>
       <Pressable onPress={() => setOpen((v) => !v)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: colors.muted }}>
+        <Brain size={12} color={colors.mutedForeground} />
         <Text style={{ fontSize: 11, color: colors.mutedForeground, fontWeight: '500' }}>思考过程</Text>
-        <Text style={{ fontSize: 10, color: colors.mutedForeground, marginLeft: 'auto' }}>{open ? '收起' : '展开'}</Text>
+        <ChevronDown size={12} color={colors.mutedForeground} style={{ marginLeft: 'auto', transform: [{ rotate: open ? '180deg' : '0deg' }] }} />
       </Pressable>
       {open && (
         <View style={{ padding: 10, backgroundColor: alpha(colors.foreground, 0.03) }}>

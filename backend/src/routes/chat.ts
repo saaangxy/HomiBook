@@ -44,6 +44,27 @@ interface StreamAssistantOptions {
   initialSSEEvents?: { event: string; data: any }[]
 }
 
+// 将 AI SDK 异常规范化为简洁可读的提示,避免整段堆栈(如 zod 校验失败的原始 JSON)直达客户端 UI
+function friendlyAIErrorMessage(err: unknown): string {
+  const raw = typeof err === 'string' ? err : (err as any)?.message || String(err ?? '')
+  // 无效响应体:先看上游 API 是否给出业务可读 message(如"无效的 API Key")
+  const body = (err as any)?.responseBody
+  if (body) {
+    try {
+      const p = typeof body === 'string' ? JSON.parse(body) : body
+      const m = p?.error?.message || p?.message
+      if (m) return String(m)
+    } catch { /* ignore */ }
+  }
+  // 模型返回与工具调用协议不兼容(zod 校验失败/JSON 解析失败等):给固定中文提示
+  if (/Type validation failed|does not match expected schema|JSON parsing failed|NoObjectGeneratedError/i.test(raw)) {
+    return '模型返回数据异常（可能与当前模型的工具调用协议不兼容），请重试或更换模型'
+  }
+  // 其余超长错误信息截断,保留关键头部
+  const MAX = 300
+  return raw.length > MAX ? `${raw.slice(0, MAX)}…` : (raw || 'AI 服务异常')
+}
+
 async function streamAssistantResponse(opts: StreamAssistantOptions) {
   const { reply, sessionId, accountBookId, userId, systemPrompt, messages, parentMessageId, provider, model, apiKey, baseURL, temperature, maxTokens, maxSteps, autoConfirmCreate, disabledTools } = opts
 
@@ -241,17 +262,7 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
       } else if (part.type === 'error') {
         // AI SDK 把 API 错误作为流内 error part 发出，不会走 throw
         const errPart = part as { type: 'error'; error: unknown }
-        const err = errPart.error as any
-        const body = err?.responseBody
-        let msg = ''
-        if (body) {
-          try {
-            const p = typeof body === 'string' ? JSON.parse(body) : body
-            msg = p?.error?.message || p?.message || ''
-          } catch { /* ignore */ }
-        }
-        if (!msg) msg = err?.data?.error?.message || err?.message || String(err)
-        sendSSE('error', { message: msg || 'AI 服务异常' })
+        sendSSE('error', { message: friendlyAIErrorMessage(errPart.error) })
         return { assistantMessageId: msgState.dbId, usage: null }
       }
     }
@@ -293,7 +304,7 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
       return { assistantMessageId: msgState.dbId, usage: null }
     }
     await saveMessageSnapshot().catch(() => {})
-    sendSSE('error', { message: err.message || 'AI 服务异常' })
+    sendSSE('error', { message: friendlyAIErrorMessage(err) })
     return { assistantMessageId: msgState.dbId, usage: null }
   } finally {
     reply.raw.end()

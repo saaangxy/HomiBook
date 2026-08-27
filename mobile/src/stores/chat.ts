@@ -58,7 +58,7 @@ interface ChatState {
   deleteSession: (sessionId: string) => Promise<void>;
   renameSession: (sessionId: string, title: string) => Promise<void>;
 
-  sendMessage: (accountBookId: string, message: string, parentMessageId?: string, replaceAssistantDbId?: string, attachmentIds?: string[], enableWebSearch?: boolean) => void;
+  sendMessage: (accountBookId: string, message: string, parentMessageId?: string, replaceAssistantDbId?: string, attachmentIds?: string[], enableWebSearch?: boolean, localAttachments?: Message['attachments']) => void;
   confirmAndContinue: (accountBookId: string, toolCallId: string, approved: boolean, data?: Record<string, unknown>) => void;
   respondToSuggestion: (accountBookId: string, toolCallId: string, values: Record<string, string> | null) => void;
   switchBook: (toolCallId: string, bookId: string) => void;
@@ -431,7 +431,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       return { messages: msgs, allMessages: allMsgs };
     }),
 
-  sendMessage: (accountBookId, message, parentMessageId, replaceAssistantDbId, attachmentIds, enableWebSearch) => {
+  sendMessage: (accountBookId, message, parentMessageId, replaceAssistantDbId, attachmentIds, enableWebSearch, localAttachments) => {
     const state = get();
     const sid = state.currentSessionId;
     if (!sid) return;
@@ -441,6 +441,8 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       id: nextId(),
       role: 'user',
       blocks: message.trim() ? [{ id: nextId(), type: 'text', content: message }] : [],
+      // 本地回显已上传附件,发送后气泡内立即可见(服务端返回后由 dbId 合并)
+      ...(localAttachments?.length ? { attachments: localAttachments } : {}),
       parentMessageId,
     };
     const assistantMsg: Message = {
