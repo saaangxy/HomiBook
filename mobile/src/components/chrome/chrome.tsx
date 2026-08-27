@@ -27,6 +27,10 @@ interface UIShellValue {
   openRecord: (record?: RecordItem) => void;
   closeRecord: () => void;
   editingRecord: RecordItem | null;
+  /** AI 财务助手弹窗 */
+  aiOpen: boolean;
+  openAI: () => void;
+  closeAI: () => void;
 }
 
 const UIShellContext = createContext<UIShellValue | null>(null);
@@ -83,6 +87,7 @@ export function UIShellProvider({ children }: { children: ReactNode }) {
   const [ledgerOpen, setLedgerOpen] = useState(false);
   const [recordOpen, setRecordOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<RecordItem | null>(null);
+  const [aiOpen, setAiOpen] = useState(false);
 
   const value = useMemo<UIShellValue>(
     () => ({
@@ -128,8 +133,14 @@ export function UIShellProvider({ children }: { children: ReactNode }) {
         setEditingRecord(null);
       },
       editingRecord,
+      aiOpen,
+      openAI: () => {
+        setSidebarOpen(false);
+        setAiOpen(true);
+      },
+      closeAI: () => setAiOpen(false),
     }),
-    [ledgers, currentLedgerId, sidebarOpen, ledgerOpen, recordOpen, editingRecord, baseUrl, account],
+    [ledgers, currentLedgerId, sidebarOpen, ledgerOpen, recordOpen, editingRecord, aiOpen, baseUrl, account],
   );
 
   return (

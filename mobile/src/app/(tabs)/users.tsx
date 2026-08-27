@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, TextInput, View } from 'react-native';
-import { Plus, Trash2 } from 'lucide-react-native';
+import { Alert, Pressable, RefreshControl, ScrollView, TextInput, View } from 'react-native';
+import { Plus, Trash2, KeyRound, UserCheck, Power, PowerOff } from 'lucide-react-native';
 import { useTheme, alpha } from '@/theme';
 import { useAuth } from '@/stores/auth';
 import { Screen } from '@/components/Screen';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
-import { Button } from '@/components/ui/Button';
 import { FadeInView } from '@/components/FadeInView';
 import { FormSheet } from '@/components/chrome/FormSheet';
 import { fetchUsers } from '@/services/admin';
@@ -14,13 +13,13 @@ import type { AdminUser, UserRole } from '@/types';
 
 const ROLE_LABEL: Record<UserRole, string> = { ADMIN: '管理员', USER: '成员' };
 
-// 用户管理:用户卡片(操作列表) + 创建 + 角色/启停/改密/删除(设计优先 mock)
+// 用户管理:用户卡片(操作按钮直接置于列表卡,对齐账本管理) + 创建 + 改密弹层
 export default function UsersScreen() {
   const { colors } = useTheme();
   const { username } = useAuth();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
-  const [manage, setManage] = useState<AdminUser | null>(null); // 编辑管理弹窗
+  const [pwdTarget, setPwdTarget] = useState<AdminUser | null>(null); // 改密弹层
 
   // 创建字段
   const [nUsername, setNUsername] = useState('');
@@ -79,17 +78,35 @@ export default function UsersScreen() {
     setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, status: x.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE' } : x)));
   };
 
-  const changePwd = (u: AdminUser) => {
-    if (!newPwd) return;
+  const confirmPwd = () => {
+    if (!newPwd || newPwd.length < 6) return;
     setNewPwd('');
-    setManage(null);
+    setPwdTarget(null);
   };
 
   const remove = (u: AdminUser) => {
-    setUsers((prev) => prev.filter((x) => x.id !== u.id));
-    setManage(null);
+    Alert.alert('删除用户', `确定要删除「${u.nickname}」吗？此操作不可恢复。`, [
+      { text: '取消', style: 'cancel' },
+      {
+        text: '删除', style: 'destructive',
+        onPress: () => {
+          setUsers((prev) => prev.filter((x) => x.id !== u.id));
+          setPwdTarget(null);
+        },
+      },
+    ]);
   };
 
+  // 卡片操作按钮统一样式(对齐账户管理页 opBtn)
+  const opBtn = {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: colors.muted,
+  };
   const inputStyle = {
     backgroundColor: colors.elevated,
     borderWidth: 1,
@@ -125,7 +142,7 @@ export default function UsersScreen() {
             const active = u.status === 'ACTIVE';
             return (
               <FadeInView key={u.id} index={i}>
-                <Card className="px-5 py-4 mb-3" onPress={() => setManage(u)}>
+                <Card className="px-5 py-4 mb-3">
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                     <View style={{ width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: u.role === 'ADMIN' ? alpha(colors.primary, 0.12) : colors.muted }}>
                       <Text style={{ fontSize: 18, fontWeight: '700', color: u.role === 'ADMIN' ? colors.primary : colors.mutedForeground }}>{u.nickname.slice(0, 1)}</Text>
@@ -146,6 +163,27 @@ export default function UsersScreen() {
                         <Text style={{ fontSize: 10, color: active ? colors.income : colors.mutedForeground }}>{active ? '正常' : '已停用'}</Text>
                       </View>
                     </View>
+                  </View>
+                  {/* 操作按钮(直接置于列表卡片,对齐账本/账户管理页) */}
+                  <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginTop: 12, borderTopWidth: 1, borderTopColor: colors.hairline, paddingTop: 10 }}>
+                    <Pressable onPress={() => toggleRole(u)} style={opBtn}>
+                      <UserCheck size={13} color={colors.foreground} />
+                      <Text style={{ fontSize: 12, color: colors.foreground }}>{u.role === 'ADMIN' ? '设为成员' : '设为管理员'}</Text>
+                    </Pressable>
+                    <Pressable onPress={() => toggleStatus(u)} style={opBtn}>
+                      {active ? <Power size={13} color={colors.foreground} /> : <PowerOff size={13} color={colors.foreground} />}
+                      <Text style={{ fontSize: 12, color: colors.foreground }}>{active ? '停用' : '启用'}</Text>
+                    </Pressable>
+                    <Pressable onPress={() => { setNewPwd(''); setPwdTarget(u); }} style={opBtn}>
+                      <KeyRound size={13} color={colors.foreground} />
+                      <Text style={{ fontSize: 12, color: colors.foreground }}>改密</Text>
+                    </Pressable>
+                    {!isMe && (
+                      <Pressable onPress={() => remove(u)} style={[opBtn, { backgroundColor: alpha(colors.expense, 0.1) }]}>
+                        <Trash2 size={13} color={colors.expense} />
+                        <Text style={{ fontSize: 12, color: colors.expense }}>删除</Text>
+                      </Pressable>
+                    )}
                   </View>
                 </Card>
               </FadeInView>
@@ -180,25 +218,10 @@ export default function UsersScreen() {
         </ScrollView>
       </FormSheet>
 
-      {/* 编辑管理 */}
-      <FormSheet visible={!!manage} title={manage ? `管理 · ${manage.nickname}` : ''} onClose={() => setManage(null)}>
-        {manage && (
-          <View>
-            <Text style={{ fontSize: 12, color: colors.mutedForeground, marginBottom: 8 }}>权限</Text>
-            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
-              <Button title={manage.role === 'ADMIN' ? '设为成员' : '设为管理员'} variant="secondary" style={{ flex: 1 }} onPress={() => toggleRole(manage)} />
-              <Button title={manage.status === 'ACTIVE' ? '停用账号' : '启用账号'} variant="outline" style={{ flex: 1 }} onPress={() => toggleStatus(manage)} />
-            </View>
-
-            <Text style={{ fontSize: 12, color: colors.mutedForeground, marginBottom: 6 }}>重置密码</Text>
-            <TextInput value={newPwd} onChangeText={setNewPwd} placeholder="输入新密码(≥6位)" placeholderTextColor={colors.mutedForeground} secureTextEntry style={inputStyle} />
-            <Button title="保存新密码" variant="secondary" style={{ marginTop: 10 }} onPress={() => changePwd(manage)} />
-
-            {manage.username !== username && (
-              <Button title="删除该用户" variant="outline" icon={<Trash2 size={16} color={colors.expense} />} style={{ marginTop: 16, borderColor: colors.expense }} onPress={() => remove(manage)} />
-            )}
-          </View>
-        )}
+      {/* 重置密码 */}
+      <FormSheet visible={!!pwdTarget} title={`重置密码 · ${pwdTarget?.nickname ?? ''}`} onClose={() => { setPwdTarget(null); setNewPwd(''); }} onSave={confirmPwd} saveLabel="保存新密码">
+        <Text style={labelStyle}>新密码</Text>
+        <TextInput value={newPwd} onChangeText={setNewPwd} placeholder="输入新密码(≥6位)" placeholderTextColor={colors.mutedForeground} secureTextEntry autoCapitalize="none" style={inputStyle} />
       </FormSheet>
     </Screen>
   );

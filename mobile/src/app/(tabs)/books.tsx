@@ -27,7 +27,6 @@ export default function BooksPage() {
   const [joining, setJoining] = useState(false);
   const [managing, setManaging] = useState<Ledger | null>(null);
   const [newName, setNewName] = useState('');
-  const [newIcon, setNewIcon] = useState('📒');
   const [joinCode, setJoinCode] = useState('');
   const [addEmail, setAddEmail] = useState('');
 
@@ -44,13 +43,13 @@ export default function BooksPage() {
   const handleCreate = useCallback(() => {
     if (!newName.trim()) return;
     createLedger(newName.trim());
-    setCreating(false); setNewName(''); setNewIcon('📒');
+    setCreating(false); setNewName('');
   }, [newName, createLedger]);
 
   const handleEdit = useCallback(async () => {
     if (!editing || !newName.trim()) return;
     await updateBookApi(editing.id, { name: newName.trim() });
-    setEditing(null); setNewName(''); setNewIcon('📒');
+    setEditing(null); setNewName('');
   }, [editing, newName]);
 
   const handleDelete = useCallback((ledger: Ledger) => {
@@ -91,28 +90,10 @@ export default function BooksPage() {
     await Clipboard.setStringAsync(code);
   }, []);
 
-  const ICONS = ['📒', '🏠', '👤', '✈️', '💰', '🎮', '👶', '🎓', '🚗', '❤️'];
-
   // ── 渲染辅助 ──
-  const renderFormSheet = (title: string, onConfirm: () => void, showIconPicker = true) => (
+  const renderFormSheet = (title: string, onConfirm: () => void) => (
     <View style={{ padding: 20, gap: 16 }}>
       <Text style={{ fontSize: 18, fontWeight: '700', color: colors.foreground }}>{title}</Text>
-      {showIconPicker && (
-        <View style={{ gap: 8 }}>
-          <Text style={{ fontSize: 13, color: colors.mutedForeground }}>选择图标</Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            {ICONS.map(icon => (
-              <Pressable key={icon} onPress={() => setNewIcon(icon)} style={{
-                width: 44, height: 44, alignItems: 'center', justifyContent: 'center',
-                borderRadius: 10, backgroundColor: newIcon === icon ? alpha(colors.primary, 0.15) : colors.muted,
-                borderWidth: 2, borderColor: newIcon === icon ? colors.primary : 'transparent',
-              }}>
-                <Text style={{ fontSize: 22 }}>{icon}</Text>
-              </Pressable>
-            ))}
-          </View>
-        </View>
-      )}
       <TextInput
         placeholder="账本名称" value={newName} onChangeText={setNewName}
         style={{
@@ -122,7 +103,7 @@ export default function BooksPage() {
         placeholderTextColor={colors.mutedForeground}
       />
       <View style={{ flexDirection: 'row', gap: 10, justifyContent: 'flex-end' }}>
-        <Pressable onPress={() => { setCreating(false); setEditing(null); setNewName(''); setNewIcon('📒'); }}
+        <Pressable onPress={() => { setCreating(false); setEditing(null); setNewName(''); }}
           style={{ paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8 }}>
           <Text style={{ color: colors.mutedForeground }}>取消</Text>
         </Pressable>
@@ -165,7 +146,6 @@ export default function BooksPage() {
   const renderManageSheet = () => managing && (
     <View style={{ padding: 20, gap: 16 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-        <Text style={{ fontSize: 28 }}>{managing.icon}</Text>
         <Text style={{ fontSize: 18, fontWeight: '700', color: colors.foreground, flex: 1 }}>{managing.name}</Text>
       </View>
       {/* 分享码管理(OWNER 可生成/删除) */}
@@ -298,7 +278,6 @@ export default function BooksPage() {
           }}>
             {/* 主体行 */}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-              <Text style={{ fontSize: 28 }}>{ledger.icon}</Text>
               <View style={{ flex: 1, gap: 2 }}>
                 <Text style={{ fontSize: 16, fontWeight: '600', color: colors.foreground }}>{ledger.name}</Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -326,7 +305,7 @@ export default function BooksPage() {
               </Pressable>
               {ledger.role === 'OWNER' && (
                 <>
-                  <Pressable onPress={() => { setEditing(ledger); setNewName(ledger.name); setNewIcon(ledger.icon); }} style={{
+                  <Pressable onPress={() => { setEditing(ledger); setNewName(ledger.name); }} style={{
                     flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6,
                     borderRadius: 8, backgroundColor: colors.muted,
                   }}>

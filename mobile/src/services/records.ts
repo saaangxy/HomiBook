@@ -60,6 +60,10 @@ function toBudgetItem(b: CoreBudget): BudgetItem {
     actualAmount: b.actualAmount ?? 0,
     year: b.year,
     month: b.month,
+    tags: b.tags ?? [],
+    startDate: b.startDate,
+    endDate: b.endDate,
+    remark: b.remark,
   };
 }
 
@@ -266,8 +270,19 @@ export async function createBudgetApi(bookId: string, payload: BudgetCreatePaylo
   await http.post('/api/budgets/', { ...payload, accountBookId: bookId });
 }
 
-export async function updateBudgetApi(id: string, payload: Partial<BudgetCreatePayload>): Promise<void> {
+export async function updateBudgetApi(id: string, payload: BudgetUpdatePayload): Promise<void> {
   await http.patch(`/api/budgets/${id}`, payload);
+}
+
+/** 编辑预算可清空字段(null=清空) */
+export interface BudgetUpdatePayload {
+  name?: string;
+  amount?: number;
+  categoryCode?: string | null;
+  tags?: string[];
+  startDate?: string | null;
+  endDate?: string | null;
+  remark?: string | null;
 }
 
 export async function deleteBudgetApi(id: string): Promise<void> {
@@ -275,8 +290,19 @@ export async function deleteBudgetApi(id: string): Promise<void> {
 }
 
 /** 批量创建预算(一个预算同时生成多个指定月份) */
-export async function batchCreateBudgetApi(bookId: string, data: { name: string; type: 'FIXED' | 'FREE'; amount: number; categoryCode?: string; year: number; months: number[] }): Promise<void> {
+export async function batchCreateBudgetApi(
+  bookId: string,
+  data: {
+    name: string; type: 'FIXED' | 'FREE'; amount: number; categoryCode?: string; tags?: string[];
+    year: number; months: number[]; startDate?: string; endDate?: string; remark?: string;
+  },
+): Promise<void> {
   await http.post('/api/budgets/batch', { ...data, accountBookId: bookId });
+}
+
+/** 批量编辑预算(仅提交传入的字段) */
+export async function batchUpdateBudgetApi(data: { ids: string[]; data: BudgetUpdatePayload }): Promise<void> {
+  await http.patch('/api/budgets/batch', data);
 }
 
 /** 复制预算:把 sourceYear/sourceMonth 的预算复制到 targetMonths */
@@ -299,10 +325,11 @@ export async function fetchBudgetTags(bookId: string): Promise<string[]> {
 export async function fetchCategories(): Promise<Category[]> {
   const income = await http.get<{ code: string; label: string; order: number }[]>('/api/settings/dictionary/transaction_category_income').catch(() => []);
   const expense = await http.get<{ code: string; label: string; order: number }[]>('/api/settings/dictionary/transaction_category_expense').catch(() => []);
+  const transfer = await http.get<{ code: string; label: string; order: number }[]>('/api/settings/dictionary/transaction_category_transfer').catch(() => []);
   // 分类不再带 logo/emoji 图标(icon 置空)
-  const map = (items: { code: string; label: string }[], type: 'INCOME' | 'EXPENSE'): Category[] =>
+  const map = (items: { code: string; label: string }[], type: Category['type']): Category[] =>
     items.map((d) => ({ code: d.code, label: d.label, type, icon: '' }));
-  return [...map(income, 'INCOME'), ...map(expense, 'EXPENSE')];
+  return [...map(income, 'INCOME'), ...map(expense, 'EXPENSE'), ...map(transfer, 'TRANSFER')];
 }
 
 // ── 账本 ──

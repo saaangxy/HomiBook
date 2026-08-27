@@ -19,6 +19,12 @@ const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日'];
 const ROW_FULL = 64; // 日历行高(始终不变,压缩的是可视高度)
 const CALM_ROWS = 3; // 压缩态可见行数(其余上下滚动展示)
 
+// 真实"今天"的 yyyy-mm-dd(独立于日历正在浏览的年月,每次渲染重取以处理跨天)
+const todayDateKey = () => {
+  const t = new Date();
+  return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+};
+
 // 流水日历:月历网格(日期下常显当日收支) + 选中压缩日历可视高度(整月仍可滚动)+ 放大当日流水(点击记录可编辑)+ 年月快速导航
 export default function CalendarScreen() {
   const { colors } = useTheme();
@@ -163,7 +169,7 @@ export default function CalendarScreen() {
     setYmOpen(false);
   };
 
-  const todayKey = key(new Date().getDate());
+  const todayKey = todayDateKey();
   const cellW = `${100 / 7}%`;
 
   return (

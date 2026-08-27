@@ -159,45 +159,6 @@ export interface SendMessageParams {
   enableWebSearch?: boolean;
 }
 
-// ── 兼容接口:RecordModal 简化 AI 会话仍使用(完整 AI 页将走 zustand store) ──
-export interface ChatStreamCallbacks {
-  onDelta: (delta: string) => void;
-  onToolCall: (tc: { toolCallId: string; toolName: string; args?: unknown }) => void;
-  onFinish: () => void;
-  onError: (message: string) => void;
-}
-
-export async function sendChatMessage(
-  bookId: string,
-  message: string,
-  cb: ChatStreamCallbacks,
-  signal?: AbortSignal,
-): Promise<void> {
-  await sendMessageStream(
-    { accountBookId: bookId, message },
-    (evt) => {
-      switch (evt.type) {
-        case 'text-delta':
-          cb.onDelta(evt.delta ?? '');
-          break;
-        case 'tool-call':
-          cb.onToolCall({ toolCallId: evt.toolCallId, toolName: evt.toolName, args: evt.args });
-          break;
-        case 'error':
-          cb.onError(evt.message ?? 'AI 服务异常');
-          break;
-        case 'finish':
-          cb.onFinish();
-          break;
-        default:
-          break;
-      }
-    },
-    () => cb.onFinish(),
-    signal,
-  );
-}
-
 export async function sendMessageStream(
   params: SendMessageParams,
   onEvent: (event: SSEEvent) => void,
@@ -242,13 +203,20 @@ export interface UploadResult {
   originalFilename: string;
 }
 
+// RN 新架构(bridgeless)不再接受 {uri,name,type} 文件描述符(报 Unsupported FormDataPart
+// implementation),统一先读本地文件转 Blob 再进 FormData
+async function localFileBlob(uri: string, type: string): Promise<Blob> {
+  const res = await fetch(uri);
+  const buf = await res.arrayBuffer();
+  return new Blob([buf], { type: type || 'application/octet-stream' });
+}
+
 export async function uploadImage(uri: string, fileName: string, mimeType: string): Promise<UploadResult> {
   const baseUrl = getBaseUrl();
   const cred = await getCredential();
   if (!baseUrl || !cred) throw new Error('请先配置服务器并登录');
   const form = new FormData();
-  // RN FormData:文件对象
-  (form as any).append('file', { uri, name: fileName, type: mimeType } as any);
+  form.append('file', await localFileBlob(uri, mimeType), fileName);
   const res = await fetch(`${baseUrl}/api/records/upload`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${cred.value}` },
@@ -267,7 +235,7 @@ export async function uploadImportFile(uri: string, fileName: string): Promise<{
   const cred = await getCredential();
   if (!baseUrl || !cred) throw new Error('请先配置服务器并登录');
   const form = new FormData();
-  (form as any).append('file', { uri, name: fileName, type: 'text/csv' } as any);
+  form.append('file', await localFileBlob(uri, 'text/csv'), fileName);
   const res = await fetch(`${baseUrl}/api/records/import/upload`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${cred.value}` },

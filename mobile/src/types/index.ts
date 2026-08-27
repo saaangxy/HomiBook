@@ -28,7 +28,6 @@ export type {
   BookMember,
   BookRole,
   ShareCode,
-  AuditAction,
 } from '@homibook/core';
 export { ACCOUNT_TYPE_LABELS } from '@homibook/core';
 
@@ -42,23 +41,6 @@ export interface AdminUser {
   nickname: string;
   role: _UR;
   status: _US;
-  createdAt: string;
-}
-
-// ── 本地保留:AI 审计日志(mobile 简化版) ──
-import type { AuditAction as _Audit } from '@homibook/core';
-
-export interface AuditLogItem {
-  id: string;
-  userNickname: string;
-  action: _Audit;
-  toolName?: string;
-  input?: string; // JSON 字符串
-  output?: string; // JSON 字符串
-  modelName?: string;
-  durationMs?: number;
-  status: 'success' | 'error';
-  errorMessage?: string;
   createdAt: string;
 }
 
@@ -97,7 +79,7 @@ export interface AccountItem {
   status: 'ACTIVE' | 'ARCHIVED';
 }
 
-// ── 本地保留:预算(month 可 null) ──
+// ── 本地保留:预算(month 可 null;FREE 带标签与统计区间) ──
 import type { BudgetType as _BudgetType } from '@homibook/core';
 
 export interface BudgetItem {
@@ -109,10 +91,14 @@ export interface BudgetItem {
   actualAmount: number;
   year: number;
   month: number | null;
+  tags: string[];
+  startDate: string | null;
+  endDate: string | null;
+  remark: string | null;
 }
 
 // ── 本地保留:固定收支 ──
-import type { RecordType as _RT, RecurringType as _RecT } from '@homibook/core';
+import type { RecordType as _RT, RecurringType as _RecT, LoanInterestMethod as _LIM } from '@homibook/core';
 
 export interface RecurringTransaction {
   id: string;
@@ -123,13 +109,22 @@ export interface RecurringTransaction {
   accountId: string;
   accountName: string;
   toAccountId?: string;
+  toAccountName?: string;
   categoryCode?: string;
   categoryName?: string;
   payer?: string;
   remark?: string;
+  tags: string[];
   cron: string; // '0 0 5 * *' 简化为周期描述
   active: boolean;
   nextGenerateAt?: string;
+  // 贷款类型字段
+  loanTotalAmount?: number | null;
+  loanRemainingAmount?: number | null;
+  loanInterestRate?: number | null;
+  loanInterestMethod?: _LIM | null;
+  loanStartDate?: string | null;
+  loanTermMonths?: number | null;
 }
 
 // ── 本地保留:账本(mobile 使用 Ledger 命名) ──

@@ -240,11 +240,12 @@ function startContinuationStream(
   get: () => ChatState,
   parentDbId: string,
   parentId: string,
-  streamStarter: (handleEvent: (e: SSEEvent) => void, handleDone: () => void) => void,
+  streamStarter: (handleEvent: (e: SSEEvent) => void, handleDone: () => void, signal?: AbortSignal) => void,
 ) {
   const state = get();
   const sid = state.currentSessionId!;
   if (state.sessionCache[sid]?.isStreaming || state.abortControllers[sid]) return;
+  const controller = new AbortController();
 
   const continuationMsg: Message = {
     id: nextId(),
@@ -269,6 +270,9 @@ function startContinuationStream(
     };
     return { messages: buildActivePath(newAllMessages, newSelections), allMessages: newAllMessages, branchSelections: newSelections, sessionCache: newCache, error: null };
   });
+
+  // 注册中止控制器,供「停止」按钮中断流式请求(完成/出错时在 handler 内清除)
+  set((s) => ({ abortControllers: { ...s.abortControllers, [sid]: controller } }));
 
   const ctx: SSEStreamContext = {
     sid, assistantMsgId: continuationMsgId, parentMsgId: parentId,
@@ -297,7 +301,7 @@ function startContinuationStream(
     });
   });
 
-  streamStarter(handleEvent, handleDone);
+  streamStarter(handleEvent, handleDone, controller.signal);
 }
 
 export const useChatStore = create<ChatState>()((set, get) => ({
@@ -466,6 +470,10 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     const existingUserMsgCount = state.allMessages.filter((m) => m.role === 'user').length;
     const shouldGenerateTitle = existingUserMsgCount === 1 || (existingUserMsgCount === 0 && !message.trim());
 
+    // 注册中止控制器,供「停止」按钮中断流式请求
+    const controller = new AbortController();
+    set((s) => ({ abortControllers: { ...s.abortControllers, [sid]: controller } }));
+
     const ctx: SSEStreamContext = {
       sid, assistantMsgId, get, set, shouldGenerateTitle,
       thinkState: { value: 'text' },
@@ -540,6 +548,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       { sessionId: sid, accountBookId, message, parentMessageId, replaceAssistantDbId, attachmentIds, enableWebSearch },
       handleEvent,
       handleDone,
+      controller.signal,
     );
   },
 
@@ -567,7 +576,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     const decisions = allConfirming.map((b) => ({ toolCallId: b.toolCallId, approved: b.status !== 'error', ...(data ? { data } : {}) }));
     startContinuationStream(
       set, get, parentDbId, parentId,
-      (handleEvent, handleDone) => confirmActionStream({ decisions, accountBookId, sessionId: sid }, handleEvent, handleDone),
+      (handleEvent, handleDone, signal) => confirmActionStream({ decisions, accountBookId, sessionId: sid }, handleEvent, handleDone, signal),
     );
   },
 
@@ -593,7 +602,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     }
     startContinuationStream(
       set, get, parentDbId, parentId,
-      (handleEvent, handleDone) => respondSuggestionStream({ toolCallId, values, accountBookId, sessionId: sid }, handleEvent, handleDone),
+      (handleEvent, handleDone, signal) => respondSuggestionStream({ toolCallId, values, accountBookId, sessionId: sid }, handleEvent, handleDone, signal),
     );
   },
 
@@ -607,7 +616,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     const parentId = parentMsg!.id;
     startContinuationStream(
       set, get, parentDbId, parentId,
-      (handleEvent, handleDone) => switchBookStream({ toolCallId, bookId }, handleEvent, handleDone),
+      (handleEvent, handleDone, signal) => switchBookStream({ toolCallId, bookId }, handleEvent, handleDone, signal),
     );
   },
 

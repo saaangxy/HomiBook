@@ -61,7 +61,6 @@ export function LedgerModal() {
                 }}
               >
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <Text style={{ fontSize: 20 }}>{l.icon}</Text>
                   <Text style={{ fontSize: 15, fontWeight: '600' }}>{l.name}</Text>
                 </View>
                 {active ? <Check size={18} color={colors.primary} /> : null}

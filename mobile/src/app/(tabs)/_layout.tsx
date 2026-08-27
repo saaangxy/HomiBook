@@ -8,7 +8,7 @@ export default function TabLayout() {
         screenOptions={{
           headerShown: true,
           header: () => <GlobalBar />,
-          // 性能:懒加载 + 失焦冻结,避免每次切换 13 个 screen 全部参与渲染
+          // 性能:懒加载 + 失焦冻结,避免每次切换多个 screen 全部参与渲染
           lazy: true,
           freezeOnBlur: true,
         }}
@@ -34,8 +34,6 @@ export default function TabLayout() {
           'recurring',
           'books',
           'users',
-          'ai-audit',
-          'ai',
           'theme',
         ].map((name) => (
           <Tabs.Screen key={name} name={name} options={{ href: null }} />

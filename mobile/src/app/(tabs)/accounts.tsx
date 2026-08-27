@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, TextInput, View } from 'react-native';
+import { Alert, Pressable, RefreshControl, ScrollView, TextInput, View } from 'react-native';
 import { Plus, CreditCard, Wallet, MessageCircle, Banknote, TrendingUp, Landmark, Archive, RotateCcw, Trash2, SlidersHorizontal, Pencil } from 'lucide-react-native';
 import { useTheme, alpha } from '@/theme';
 import { Screen } from '@/components/Screen';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
-import { Button } from '@/components/ui/Button';
 import { FadeInView } from '@/components/FadeInView';
 import { FormSheet } from '@/components/chrome/FormSheet';
 import { useUIShell } from '@/components/chrome/chrome';
@@ -146,11 +145,20 @@ export default function AccountsScreen() {
     setSheet(false);
   };
 
-  const remove = async (a: AccountItem) => {
-    await deleteAccountApi(a.id);
-    if (bookId) fetchAccounts(bookId).then(setAccounts);
-    setEditing(null);
+  const remove = (a: AccountItem) => {
+    // 先关表单,再弹确认(避免叠加)
     setSheet(false);
+    Alert.alert('删除账户', `确定要删除「${a.name}」吗？此操作不可恢复。`, [
+      { text: '取消', style: 'cancel' },
+      {
+        text: '删除', style: 'destructive',
+        onPress: async () => {
+          await deleteAccountApi(a.id);
+          if (bookId) fetchAccounts(bookId).then(setAccounts);
+          setEditing(null);
+        },
+      },
+    ]);
   };
 
   // ── 余额调整 ──
@@ -319,19 +327,6 @@ export default function AccountsScreen() {
 
           <Text style={labelStyle}>开户行</Text>
           <TextInput value={bankName} onChangeText={setBankName} placeholder="选填" placeholderTextColor={colors.mutedForeground} style={inputStyle} />
-
-          {editing && (
-            <>
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 18 }}>
-                <Button title="余额调整" variant="outline" icon={<SlidersHorizontal size={16} color={colors.foreground} />} style={{ flex: 1 }} onPress={() => openAdjust(editing)} />
-                <Button title="调整记录" variant="outline" icon={<TrendingUp size={16} color={colors.foreground} />} style={{ flex: 1 }} onPress={() => { setSheet(false); openHistory(editing); }} />
-              </View>
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
-                <Button title={editing.status === 'ACTIVE' ? '归档' : '恢复'} variant="outline" icon={editing.status === 'ACTIVE' ? <Archive size={16} color={colors.foreground} /> : <RotateCcw size={16} color={colors.foreground} />} style={{ flex: 1 }} onPress={() => toggleArchive(editing)} />
-                <Button title="删除" variant="outline" icon={<Trash2 size={16} color={colors.expense} />} style={{ flex: 1, borderColor: colors.expense }} onPress={() => remove(editing)} />
-              </View>
-            </>
-          )}
         </ScrollView>
       </FormSheet>
 

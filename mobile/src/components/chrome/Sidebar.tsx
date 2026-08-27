@@ -4,7 +4,7 @@ import { usePathname, useRouter } from 'expo-router';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming, Easing } from 'react-native-reanimated';
 import {
   ArrowLeftRight, BarChart3, Book, CalendarDays, LayoutDashboard, Repeat, Settings,
-  ShieldCheck, Target, Users, Wallet, type LucideIcon,
+  Target, Users, Wallet, type LucideIcon,
 } from 'lucide-react-native';
 import { useTheme, alpha, haptics } from '@/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -25,7 +25,6 @@ const MENU: MenuItem[] = [
   { icon: Repeat, label: '固定收支', to: '/recurring' },
   { icon: Book, label: '账本管理', to: '/books' },
   { icon: Users, label: '用户管理', to: '/users', adminOnly: true },
-  { icon: ShieldCheck, label: 'AI审计', to: '/ai-audit', adminOnly: true },
   { icon: Settings, label: '设置', to: '/settings' },
 ];
 

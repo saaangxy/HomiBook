@@ -19,6 +19,7 @@ import { UIShellProvider } from '@/components/chrome/chrome';
 import { Sidebar } from '@/components/chrome/Sidebar';
 import { LedgerModal } from '@/components/chrome/LedgerModal';
 import { RecordModal } from '@/components/chrome/RecordModal';
+import { AIAssistantModal } from '@/components/chrome/AIAssistantModal';
 import { Splash } from '@/components/Splash';
 
 function RootNavigator() {
@@ -74,6 +75,7 @@ export default function RootLayout() {
                 <Sidebar />
                 <LedgerModal />
                 <RecordModal />
+                <AIAssistantModal />
                 {showSplash && <Splash onDone={() => setShowSplash(false)} />}
               </RecordsProvider>
             </UIShellProvider>

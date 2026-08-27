@@ -30,7 +30,7 @@ export default function HomeScreen() {
   const [yearIncome, setYearIncome] = useState(0);
   const [yearExpense, setYearExpense] = useState(0);
   const { records, summary, refresh } = useRecords();
-  const { currentLedger } = useUIShell();
+  const { currentLedger, openAI } = useUIShell();
   const [refreshing, setRefreshing] = useState(false);
 
   // 下拉刷新:重拉 store(流水/账户/分类) + 预算 + 当年收支
@@ -213,9 +213,9 @@ export default function HomeScreen() {
           </FadeInView>
         )}
 
-        {/* AI 助手(点击进入完整 AI 助手页) */}
+        {/* AI 财务助手(点击直接弹出 AI 弹窗) */}
         <FadeInView index={3}>
-          <Pressable onPress={() => router.push('/ai')} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: alpha(colors.primary, 0.06), borderRadius: 20, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: alpha(colors.primary, 0.2) }}>
+          <Pressable onPress={openAI} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: alpha(colors.primary, 0.06), borderRadius: 20, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: alpha(colors.primary, 0.2) }}>
             <View style={{ width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: alpha(colors.primary, 0.12) }}>
               <Text style={{ fontSize: 22 }}>🤖</Text>
             </View>

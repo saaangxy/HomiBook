@@ -1,8 +1,8 @@
 import { http } from './http';
-import type { AdminUser, AuditLogItem } from '@/types';
-import type { AdminUser as CoreAdminUser, AuditLogItem as CoreAuditLog } from '@homibook/core';
+import type { AdminUser } from '@/types';
+import type { AdminUser as CoreAdminUser } from '@homibook/core';
 
-// 用户与 AI 审计数据访问层 —— 真实后端 API
+// 用户管理数据访问层 —— 真实后端 API
 
 function toAdminUser(u: CoreAdminUser): AdminUser {
   return {
@@ -16,28 +16,8 @@ function toAdminUser(u: CoreAdminUser): AdminUser {
   };
 }
 
-function toAuditLog(l: CoreAuditLog): AuditLogItem {
-  return {
-    id: l.id,
-    userNickname: l.userNickname ?? '',
-    action: l.action as AuditLogItem['action'],
-    toolName: l.toolName ?? undefined,
-    input: l.input ?? undefined,
-    output: l.output ?? undefined,
-    modelName: l.modelName ?? undefined,
-    durationMs: l.durationMs ?? undefined,
-    status: l.status === 'error' ? 'error' : 'success',
-    errorMessage: l.errorMessage ?? undefined,
-    createdAt: l.createdAt,
-  };
-}
-
 export async function fetchUsers(): Promise<AdminUser[]> {
-  const res = await http.get<CoreAdminUser[]>('/api/admin/users');
-  return (res ?? []).map(toAdminUser);
-}
-
-export async function fetchAuditLogs(): Promise<AuditLogItem[]> {
-  const res = await http.get<CoreAuditLog[]>('/api/admin/audit-logs');
-  return (res ?? []).map(toAuditLog);
+  // 后端返回 { users: [...] }(对齐 frontend/src/api/admin.ts)
+  const res = await http.get<{ users?: CoreAdminUser[] }>('/api/admin/users');
+  return (res?.users ?? []).map(toAdminUser);
 }
