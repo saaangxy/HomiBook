@@ -78,6 +78,7 @@ export interface RecordItem {
   toAccountId?: string;
   toAccountName?: string;
   counterparty?: string;
+  ownerId?: string;
   ownerName?: string;
   tags: string[];
 }
@@ -143,9 +144,18 @@ export interface Ledger {
 
 export interface LedgerMember {
   id: string;
+  /** 成员对应的用户 id(归属人 ownerId 用) */
+  userId?: string;
   nickname: string;
   role: 'OWNER' | 'MEMBER';
   joinedAt: string;
+}
+
+export interface ShareCodeItem {
+  id: string;
+  code: string;
+  expiresAt: string | null;
+  createdAt: string;
 }
 
 export type LedgerMenu = {

@@ -1,4 +1,4 @@
-import type { AccountItem, BudgetItem, Category, Ledger, LedgerMember, RadarMetric, RecordItem, RecordSummary } from '@/types';
+import type { AccountItem, BudgetItem, Category, Ledger, LedgerMember, RadarMetric, RecordItem, RecordSummary, ShareCodeItem } from '@/types';
 import { http } from './http';
 import type {
   AccountItem as CoreAccount,
@@ -31,6 +31,7 @@ function toRecordItem(r: CoreRecord): RecordItem {
     toAccountId: r.toAccountId ?? undefined,
     toAccountName: r.toAccount?.name ?? r.toAccountName,
     counterparty: r.payer ?? undefined,
+    ownerId: r.ownerId ?? undefined,
     ownerName: r.ownerName,
     tags: r.tags ?? [],
   };
@@ -69,6 +70,7 @@ function toLedger(b: BookItem): Ledger {
     icon: '📒',
     memberCount: b.memberCount ?? 1,
     role: b.role?.toUpperCase() as Ledger['role'],
+    shareCode: b.shareCode || undefined,
   };
 }
 
@@ -218,6 +220,25 @@ export async function deleteAccountApi(id: string): Promise<void> {
   await http.delete(`/api/accounts/${id}`);
 }
 
+export interface BalanceAdjustment {
+  id: string;
+  accountId: string;
+  date: string;
+  amount: number;
+  balanceAfter: number;
+  remark?: string;
+}
+
+/** 余额调整历史 */
+export async function listAdjustmentsApi(accountId: string): Promise<BalanceAdjustment[]> {
+  return (await http.get<BalanceAdjustment[]>(`/api/accounts/${accountId}/adjustments`).catch(() => [])) ?? [];
+}
+
+/** 创建余额调整(同步更新账户余额) */
+export async function createAdjustmentApi(accountId: string, data: { date: string; balanceAfter: number; remark?: string }): Promise<void> {
+  await http.post(`/api/accounts/${accountId}/adjustments`, data);
+}
+
 // ── 预算 ──
 
 export async function fetchBudgets(bookId: string): Promise<BudgetItem[]> {
@@ -251,6 +272,26 @@ export async function updateBudgetApi(id: string, payload: Partial<BudgetCreateP
 
 export async function deleteBudgetApi(id: string): Promise<void> {
   await http.delete(`/api/budgets/${id}`);
+}
+
+/** 批量创建预算(一个预算同时生成多个指定月份) */
+export async function batchCreateBudgetApi(bookId: string, data: { name: string; type: 'FIXED' | 'FREE'; amount: number; categoryCode?: string; year: number; months: number[] }): Promise<void> {
+  await http.post('/api/budgets/batch', { ...data, accountBookId: bookId });
+}
+
+/** 复制预算:把 sourceYear/sourceMonth 的预算复制到 targetMonths */
+export async function copyBudgetApi(bookId: string, data: { sourceYear: number; sourceMonth: number; targetMonths: Array<{ year: number; month: number }> }): Promise<void> {
+  await http.post('/api/budgets/copy', { ...data, accountBookId: bookId });
+}
+
+/** 账本下所有记录的标签 */
+export async function fetchRecordTags(bookId: string): Promise<string[]> {
+  return (await http.get<string[]>(`/api/records/tags?bookId=${bookId}`).catch(() => [])) ?? [];
+}
+
+/** 账本下预算的标签 */
+export async function fetchBudgetTags(bookId: string): Promise<string[]> {
+  return (await http.get<string[]>(`/api/budgets/tags?bookId=${bookId}`).catch(() => [])) ?? [];
 }
 
 // ── 分类 ──
@@ -287,8 +328,51 @@ export async function fetchBookMembers(bookId: string): Promise<LedgerMember[]> 
   const res = await http.get<BookMember[]>(`/api/books/${bookId}/members`).catch(() => []);
   return (res ?? []).map((m) => ({
     id: m.id,
+    userId: m.user?.id ?? m.userId ?? m.id,
     nickname: m.user?.nickname ?? m.nickname ?? '成员',
     role: m.role === 'admin' || m.role === 'owner' ? 'OWNER' : 'MEMBER',
     joinedAt: m.joinedAt,
   }));
+}
+
+// ── 账本管理(成员/分享码/加入退出) ──
+
+/** 添加成员(按邮箱) */
+export async function addBookMemberApi(bookId: string, email: string): Promise<void> {
+  await http.post(`/api/books/${bookId}/members`, { email });
+}
+
+/** 移除成员(按成员 id) */
+export async function removeBookMemberApi(bookId: string, memberId: string): Promise<void> {
+  await http.delete(`/api/books/${bookId}/members/${memberId}`);
+}
+
+/** 修改成员角色 OWNER/MEMBER */
+export async function updateBookMemberRoleApi(bookId: string, memberId: string, role: string): Promise<void> {
+  await http.patch(`/api/books/${bookId}/members/${memberId}/role`, { role });
+}
+
+/** 生成分享码 */
+export async function generateShareCodeApi(bookId: string, expiresInHours?: number): Promise<ShareCodeItem> {
+  return http.post<ShareCodeItem>(`/api/books/${bookId}/share-codes`, { expiresInHours });
+}
+
+/** 分享码列表 */
+export async function listShareCodesApi(bookId: string): Promise<ShareCodeItem[]> {
+  return (await http.get<ShareCodeItem[]>(`/api/books/${bookId}/share-codes`).catch(() => [])) ?? [];
+}
+
+/** 删除分享码 */
+export async function deleteShareCodeApi(bookId: string, codeId: string): Promise<void> {
+  await http.delete(`/api/books/${bookId}/share-codes/${codeId}`);
+}
+
+/** 校验分享码,返回账本信息 */
+export async function lookupShareCodeApi(code: string): Promise<{ bookId: string; bookName: string; code: string; expiresAt: string | null } | null> {
+  return (await http.get<{ bookId: string; bookName: string; code: string; expiresAt: string | null }>(`/api/books/share-codes/${code}`).catch(() => null)) ?? null;
+}
+
+/** 通过分享码加入账本 */
+export async function joinBookByCodeApi(code: string): Promise<void> {
+  await http.post('/api/books/join', { code });
 }

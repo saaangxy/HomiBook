@@ -203,7 +203,7 @@ export default function CalendarScreen() {
 
         {/* 日历网格:选中后压缩可视高度,整月上下滚动展示;日期下收支金额常显 */}
         <Animated.View style={gridBoxStyle}>
-          <ScrollView showsVerticalScrollIndicator={false} nestedScrollEnabled>
+          <ScrollView showsVerticalScrollIndicator={false} nestedScrollEnabled refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
               {days.map((d, i) => {
                 if (d === 0) return <View key={`b${i}`} style={{ width: cellW, alignItems: 'center', justifyContent: 'center', height: ROW_FULL }} />;
@@ -275,7 +275,7 @@ export default function CalendarScreen() {
               <Text style={{ fontSize: 15, fontWeight: '600' }}>当日流水</Text>
             </View>
           )}
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 24 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}>
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 24 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <Card className="px-5 py-4">
               {dayRecords.length === 0 ? (
                 <View className="items-center py-10"><Text variant="muted">当天暂无流水</Text></View>

@@ -3,12 +3,12 @@ import {
   RefreshControl, ScrollView, View, Pressable, Alert, TextInput, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Plus, Pencil, Trash2, Search, ChevronDown } from 'lucide-react-native';
+import { Plus, Pencil, Trash2, Search, ChevronDown, Copy } from 'lucide-react-native';
 import { useTheme, alpha } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useUIShell } from '@/components/chrome/chrome';
-import { createBudgetApi, deleteBudgetApi, fetchBudgets, fetchCategories, updateBudgetApi } from '@/services/records';
+import { copyBudgetApi, createBudgetApi, deleteBudgetApi, fetchBudgets, fetchCategories, updateBudgetApi } from '@/services/records';
 import type { BudgetItem, BudgetType, Category } from '@/types';
 
 const BUDGET_TYPES: { key: BudgetType | 'ALL'; label: string }[] = [
@@ -26,8 +26,9 @@ export default function BudgetPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [typeFilter, setTypeFilter] = useState<BudgetType | 'ALL'>('ALL');
   const [search, setSearch] = useState('');
-  const [year, setYear] = useState(2026);
-  const [month, setMonth] = useState(8);
+  const now = new Date();
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth() + 1);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<BudgetItem | null>(null);
   const [deleting, setDeleting] = useState<BudgetItem | null>(null);
@@ -117,6 +118,16 @@ export default function BudgetPage() {
     setEditing(b); setFormName(b.name); setFormType(b.type);
     setFormAmount(String(b.amount)); setFormCategory(b.categoryCode ?? '');
   }, []);
+
+  // ── 复制预算到指定月份 ──
+  const [copying, setCopying] = useState<BudgetItem | null>(null);
+  const [copyTarget, setCopyTarget] = useState('');
+  const handleCopy = useCallback(async () => {
+    if (!copying || !copyTarget) return;
+    const [ty, tm] = copyTarget.split('-').map(Number);
+    await copyBudgetApi(bookId, { sourceYear: year, sourceMonth: month, targetMonths: [{ year: ty, month: tm }] });
+    setCopying(null); setCopyTarget(''); reload();
+  }, [copying, copyTarget, bookId, year, month, reload]);
 
   const expenseCategories = categories.filter(c => c.type === 'EXPENSE');
 
@@ -237,7 +248,14 @@ export default function BudgetPage() {
           )}
         </View>
         {/* 操作 */}
-        <View style={{ flexDirection: 'row', gap: 8 }}>
+        <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+          <Pressable onPress={() => { setCopying(b); setCopyTarget(''); }} style={{
+            flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5,
+            borderRadius: 8, backgroundColor: colors.muted,
+          }}>
+            <Copy size={14} color={colors.foreground} />
+            <Text style={{ fontSize: 12, color: colors.foreground }}>复制</Text>
+          </Pressable>
           <Pressable onPress={() => openEdit(b)} style={{
             flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5,
             borderRadius: 8, backgroundColor: colors.muted,
@@ -262,17 +280,29 @@ export default function BudgetPage() {
       <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}>
         {/* 年月选择 + 搜索 */}
         <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-          <Pressable onPress={() => setMonth(m => Math.max(1, m - 1))} style={{
-            width: 36, height: 36, alignItems: 'center', justifyContent: 'center',
+          <Pressable onPress={() => setYear(y => y - 1)} style={{
+            width: 32, height: 36, alignItems: 'center', justifyContent: 'center',
             borderRadius: 8, backgroundColor: colors.muted,
           }}>
             <Text style={{ color: colors.foreground }}>‹</Text>
           </Pressable>
-          <Text style={{ fontSize: 15, fontWeight: '600', color: colors.foreground, minWidth: 80, textAlign: 'center' }}>
+          <Pressable onPress={() => setMonth(m => (m <= 1 ? (setYear(y => y - 1), 12) : m - 1))} style={{
+            width: 36, height: 36, alignItems: 'center', justifyContent: 'center',
+            borderRadius: 8, backgroundColor: colors.muted,
+          }}>
+            <Text style={{ color: colors.foreground }}>月‹</Text>
+          </Pressable>
+          <Text style={{ fontSize: 15, fontWeight: '600', color: colors.foreground, minWidth: 96, textAlign: 'center' }}>
             {year}年{month}月
           </Text>
-          <Pressable onPress={() => setMonth(m => Math.min(12, m + 1))} style={{
+          <Pressable onPress={() => setMonth(m => (m >= 12 ? (setYear(y => y + 1), 1) : m + 1))} style={{
             width: 36, height: 36, alignItems: 'center', justifyContent: 'center',
+            borderRadius: 8, backgroundColor: colors.muted,
+          }}>
+            <Text style={{ color: colors.foreground }}>月›</Text>
+          </Pressable>
+          <Pressable onPress={() => setYear(y => y + 1)} style={{
+            width: 32, height: 36, alignItems: 'center', justifyContent: 'center',
             borderRadius: 8, backgroundColor: colors.muted,
           }}>
             <Text style={{ color: colors.foreground }}>›</Text>
@@ -343,7 +373,7 @@ export default function BudgetPage() {
 
         {/* 列表 */}
         {filtered.length === 0 ? (
-          <EmptyState icon="Target" title="暂无预算" description="创建一个预算开始管理支出" />
+          <EmptyState icon="" title="暂无预算" description="创建一个预算开始管理支出" />
         ) : filtered.map(b => renderBudgetCard(b))}
       </ScrollView>
 
@@ -357,6 +387,31 @@ export default function BudgetPage() {
           }} onPress={() => {}}>
             {creating && renderFormSheet('新建预算', handleCreate)}
             {editing && renderFormSheet('编辑预算', handleEdit)}
+          </Pressable>
+        </Pressable>
+      )}
+
+      {/* 复制到月份 */}
+      {copying && (
+        <Pressable style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)' }} onPress={() => setCopying(null)}>
+          <Pressable style={{ position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: colors.background, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, gap: 14 }} onPress={() => {}}>
+            <Text style={{ fontSize: 18, fontWeight: '700', color: colors.foreground }}>复制到月份</Text>
+            <Text style={{ fontSize: 13, color: colors.mutedForeground }}>
+              将「{copying.name}」从 {year}年{month}月 复制到:
+            </Text>
+            <TextInput
+              value={copyTarget} onChangeText={setCopyTarget}
+              placeholder="格式: 2027-1" placeholderTextColor={colors.mutedForeground}
+              style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 12, fontSize: 15, color: colors.foreground }}
+            />
+            <View style={{ flexDirection: 'row', gap: 10, justifyContent: 'flex-end' }}>
+              <Pressable onPress={() => setCopying(null)} style={{ paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8 }}>
+                <Text style={{ color: colors.mutedForeground }}>取消</Text>
+              </Pressable>
+              <Pressable onPress={handleCopy} style={{ paddingVertical: 8, paddingHorizontal: 20, borderRadius: 8, backgroundColor: colors.primary }}>
+                <Text style={{ color: colors.primaryForeground, fontWeight: '600' }}>复制</Text>
+              </Pressable>
+            </View>
           </Pressable>
         </Pressable>
       )}

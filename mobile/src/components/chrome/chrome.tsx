@@ -13,6 +13,8 @@ interface UIShellValue {
   currentLedger: Ledger;
   switchLedger: (id: string) => void;
   createLedger: (name: string) => void;
+  /** 重新拉取账本列表并保留当前选择(加入/退出账本后调用) */
+  refreshLedgers: () => Promise<void>;
   // 抽屉 / 弹窗开关
   sidebarOpen: boolean;
   openSidebar: () => void;
@@ -99,6 +101,15 @@ export function UIShellProvider({ children }: { children: ReactNode }) {
           setLedgers(books);
           setCurrentLedgerId(books[books.length - 1].id);
           saveLedgerId(books[books.length - 1].id);
+        }
+      },
+      refreshLedgers: async () => {
+        const books = await fetchBooks().catch(() => []);
+        setLedgers(books);
+        if (books.length > 0) {
+          setCurrentLedgerId((prev) => (books.some((b) => b.id === prev) ? prev : books[0].id));
+        } else {
+          setCurrentLedgerId('');
         }
       },
       sidebarOpen,

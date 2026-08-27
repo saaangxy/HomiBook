@@ -4,18 +4,24 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
-import { BookPlus, Pencil, Trash2, Users, Link, Copy, LogOut, Crown, UserCheck } from 'lucide-react-native';
+import { BookPlus, Pencil, Trash2, Users, Link, Copy, LogOut, Crown, UserCheck, Plus, RefreshCw } from 'lucide-react-native';
 import { useTheme, alpha } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useUIShell } from '@/components/chrome/chrome';
-import { deleteBookApi, updateBookApi, fetchBookMembers } from '@/services/records';
-import type { Ledger, LedgerMember } from '@/types';
+import { useAuth } from '@/stores/auth';
+import {
+  deleteBookApi, updateBookApi, fetchBookMembers,
+  addBookMemberApi, removeBookMemberApi, updateBookMemberRoleApi,
+  generateShareCodeApi, listShareCodesApi, deleteShareCodeApi, joinBookByCodeApi,
+} from '@/services/records';
+import type { Ledger, LedgerMember, ShareCodeItem } from '@/types';
 
 // 账本管理页:对齐网页端 CRUD(创建/编辑/删除/成员管理/分享码/加入/退出)
 export default function BooksPage() {
   const { colors } = useTheme();
-  const { ledgers, createLedger } = useUIShell();
+  const { ledgers, createLedger, refreshLedgers } = useUIShell();
+  const { user } = useAuth();
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Ledger | null>(null);
   const [joining, setJoining] = useState(false);
@@ -23,12 +29,15 @@ export default function BooksPage() {
   const [newName, setNewName] = useState('');
   const [newIcon, setNewIcon] = useState('📒');
   const [joinCode, setJoinCode] = useState('');
+  const [addEmail, setAddEmail] = useState('');
 
-  // 成员列表:打开管理弹窗时从后端加载
+  // 成员列表 + 分享码:打开管理弹窗时从后端加载
   const [members, setMembers] = useState<LedgerMember[]>([]);
+  const [shareCodes, setShareCodes] = useState<ShareCodeItem[]>([]);
   useEffect(() => {
-    if (!managing) { setMembers([]); return; }
+    if (!managing) { setMembers([]); setShareCodes([]); return; }
     fetchBookMembers(managing.id).then(setMembers);
+    listShareCodesApi(managing.id).then(setShareCodes);
   }, [managing]);
 
   // ── CRUD ──
@@ -56,15 +65,27 @@ export default function BooksPage() {
     if (ledger.role === 'OWNER') return;
     Alert.alert('退出账本', `确定要退出「${ledger.name}」吗？`, [
       { text: '取消', style: 'cancel' },
-      { text: '退出', style: 'destructive', onPress: async () => {} },
+      {
+        text: '退出', style: 'destructive',
+        onPress: async () => {
+          // 当前用户对应成员 id:退出=移除自己
+          const ms = await fetchBookMembers(ledger.id).catch(() => []);
+          const me = ms.find((m) => m.userId === user?.id);
+          if (me) {
+            await removeBookMemberApi(ledger.id, me.id).catch(() => {});
+            await refreshLedgers();
+          }
+        },
+      },
     ]);
-  }, []);
+  }, [user, refreshLedgers]);
 
-  const handleJoin = useCallback(() => {
+  const handleJoin = useCallback(async () => {
     if (!joinCode.trim()) return;
-    // 加入账本:通过分享码(对接 POST /api/books/join)
+    await joinBookByCodeApi(joinCode.trim()).catch(() => {});
     setJoining(false); setJoinCode('');
-  }, [joinCode]);
+    await refreshLedgers();
+  }, [joinCode, refreshLedgers]);
 
   const handleCopyCode = useCallback(async (code: string) => {
     await Clipboard.setStringAsync(code);
@@ -147,26 +168,57 @@ export default function BooksPage() {
         <Text style={{ fontSize: 28 }}>{managing.icon}</Text>
         <Text style={{ fontSize: 18, fontWeight: '700', color: colors.foreground, flex: 1 }}>{managing.name}</Text>
       </View>
-      {/* 分享码 */}
-      {managing.shareCode && (
-        <View style={{
-          padding: 12, borderRadius: 10, backgroundColor: alpha(colors.primary, 0.08),
-          flexDirection: 'row', alignItems: 'center', gap: 10,
-        }}>
-          <Link size={16} color={colors.primary} />
-          <Text style={{ flex: 1, fontSize: 14, color: colors.foreground, fontFamily: 'monospace' }}>
-            分享码: {managing.shareCode}
-          </Text>
-          <Pressable onPress={() => handleCopyCode(managing.shareCode!)} style={{ padding: 6 }}>
-            <Copy size={16} color={colors.primary} />
-          </Pressable>
+      {/* 分享码管理(OWNER 可生成/删除) */}
+      <View style={{ gap: 8 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Text style={{ fontSize: 13, fontWeight: '600', color: colors.mutedForeground }}>分享码</Text>
+          {managing.role === 'OWNER' && (
+            <Pressable onPress={async () => { await generateShareCodeApi(managing.id, 168); setShareCodes(await listShareCodesApi(managing.id)); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, backgroundColor: alpha(colors.primary, 0.1) }}>
+              <RefreshCw size={12} color={colors.primary} />
+              <Text style={{ fontSize: 11, color: colors.primary }}>生成</Text>
+            </Pressable>
+          )}
         </View>
-      )}
-      {/* 成员列表 */}
+        {shareCodes.length === 0 ? (
+          <Text variant="muted" style={{ fontSize: 12 }}>暂无分享码</Text>
+        ) : (
+          shareCodes.map(sc => (
+            <View key={sc.id} style={{
+              padding: 10, borderRadius: 8, backgroundColor: alpha(colors.primary, 0.06),
+              flexDirection: 'row', alignItems: 'center', gap: 8,
+            }}>
+              <Link size={14} color={colors.primary} />
+              <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: 'monospace' }}>{sc.code}</Text>
+              <Pressable onPress={() => handleCopyCode(sc.code)} style={{ padding: 4 }}>
+                <Copy size={14} color={colors.primary} />
+              </Pressable>
+              {managing.role === 'OWNER' && (
+                <Pressable onPress={async () => { await deleteShareCodeApi(managing.id, sc.id); setShareCodes(await listShareCodesApi(managing.id)); }} style={{ padding: 4 }}>
+                  <Trash2 size={14} color={colors.destructive} />
+                </Pressable>
+              )}
+            </View>
+          ))
+        )}
+      </View>
+      {/* 成员列表(OWNER 可添加/移除/改角色) */}
       <View style={{ gap: 8 }}>
         <Text style={{ fontSize: 13, fontWeight: '600', color: colors.mutedForeground }}>
           成员 ({members.length})
         </Text>
+        {managing.role === 'OWNER' && (
+          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+            <TextInput
+              value={addEmail} onChangeText={setAddEmail} placeholder="成员邮箱"
+              autoCapitalize="none" style={{ flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: 8, fontSize: 13, color: colors.foreground }}
+              placeholderTextColor={colors.mutedForeground}
+            />
+            <Pressable onPress={async () => { if (!addEmail.trim()) return; await addBookMemberApi(managing.id, addEmail.trim()).catch(() => {}); setAddEmail(''); setMembers(await fetchBookMembers(managing.id)); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: colors.primary }}>
+              <Plus size={14} color={colors.primaryForeground} />
+              <Text style={{ fontSize: 12, color: colors.primaryForeground }}>添加</Text>
+            </Pressable>
+          </View>
+        )}
         {members.map(m => (
           <View key={m.id} style={{
             flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10,
@@ -184,7 +236,21 @@ export default function BooksPage() {
             {m.role === 'OWNER' ? (
               <Crown size={14} color={colors.primary} />
             ) : (
-              <UserCheck size={14} color={colors.mutedForeground} />
+              <>
+                {managing.role === 'OWNER' && (
+                  <Pressable onPress={async () => { await updateBookMemberRoleApi(managing.id, m.id, 'OWNER').catch(() => {}); setMembers(await fetchBookMembers(managing.id)); }}>
+                    <UserCheck size={14} color={colors.foreground} />
+                  </Pressable>
+                )}
+                <Pressable onPress={() => {
+                  Alert.alert('移除成员', `确定移除「${m.nickname}」吗？`, [
+                    { text: '取消', style: 'cancel' },
+                    { text: '移除', style: 'destructive', onPress: async () => { await removeBookMemberApi(managing.id, m.id).catch(() => {}); setMembers(await fetchBookMembers(managing.id)); } },
+                  ]);
+                }}>
+                  <Trash2 size={14} color={colors.destructive} />
+                </Pressable>
+              </>
             )}
           </View>
         ))}

@@ -9,9 +9,12 @@ import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { DatePicker } from '@/components/ui/DatePicker';
 import { SelectSheet } from '@/components/ui/SelectSheet';
+import { TagPicker } from '@/components/ui/TagPicker';
 import { FormSheet } from './FormSheet';
 import { useUIShell } from './chrome';
 import { useRecords } from '@/stores/records';
+import { useAuth } from '@/stores/auth';
+import { fetchBookMembers, fetchRecordTags, fetchBudgetTags } from '@/services/records';
 import dayjs from 'dayjs';
 import { sendChatMessage } from '@/services/chat';
 
@@ -55,6 +58,7 @@ export function RecordModal() {
   const { recordOpen, closeRecord, editingRecord, currentLedger } = useUIShell();
   const bookId = currentLedger.id;
   const { addRecord, updateRecord, accounts: allAccounts, categories: allCategories } = useRecords();
+  const { user } = useAuth();
   const insets = useSafeAreaInsets();
   // 缓存初始窗口高度:Android 键盘弹出时窗口会 resize 变小,用固定快照保持弹窗高度不变
   const screenH = useRef(Dimensions.get('window').height).current;
@@ -70,19 +74,18 @@ export function RecordModal() {
     AsyncStorage.setItem('homibook.recordmodal.mode', mode).catch(() => {});
   }, [mode]);
 
-  // 键盘显示状态:用于只在键盘弹出时上移 sheet(避免弹窗初始就偏高)
-  const [kbVisible, setKbVisible] = useState(false);
+  // 键盘高度:用于键盘弹出时把 sheet 压缩到键盘上方(两个 tab 高度始终一致)
+  const [kbH, setKbH] = useState(0);
   useEffect(() => {
-    const show = Keyboard.addListener('keyboardDidShow', () => {
-      setKbVisible(true);
-      requestAnimationFrame(() => sheetScrollRef.current?.scrollToEnd({ animated: true }));
-    });
-    const hide = Keyboard.addListener('keyboardDidHide', () => setKbVisible(false));
+    const show = Keyboard.addListener('keyboardDidShow', (e) => setKbH(e.endCoordinates.height));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKbH(0));
     return () => {
       show.remove();
       hide.remove();
     };
   }, []);
+  // 统一外部高度:手动/AI 两 tab 共用同一固定高度;键盘弹出时整体缩到键盘上方
+  const sheetH = Math.round(kbH > 0 ? Math.min(screenH * 0.84, screenH - kbH - 12) : screenH * 0.84);
   const [type, setType] = useState<RecordType>('EXPENSE');
   const [amount, setAmount] = useState('0');
   const [cat, setCat] = useState('餐饮');
@@ -91,18 +94,31 @@ export function RecordModal() {
   const [date, setDate] = useState(todayStr);
   const [remark, setRemark] = useState('');
   const [counterparty, setCounterparty] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
+  // 归属人:默认本人,选项来自账本成员
+  const [ownerId, setOwnerId] = useState('');
+  const [members, setMembers] = useState<{ id: string; label: string }[]>([]);
+  // 加载账本成员(归属人选项)
+  useEffect(() => {
+    if (!bookId) return;
+    fetchBookMembers(bookId).then((ms) => {
+      setMembers(ms.map((m) => ({ id: m.userId ?? m.id, label: m.nickname || '成员' })));
+    }).catch(() => {});
+  }, [bookId]);
+  // 加载标签建议(预算标签 + 流水已有标签,去重)
+  useEffect(() => {
+    if (!bookId) return;
+    Promise.all([fetchBudgetTags(bookId), fetchRecordTags(bookId)]).then(([b, r]) => {
+      setTagSuggestions([...new Set([...b, ...r])]);
+    }).catch(() => {});
+  }, [bookId]);
   // AI 会话(本地 mock:多会话独立消息,首条消息自动命名)
   const [sessions, setSessions] = useState<ChatSession[]>([newSession()]);
   const [currentSessionId, setCurrentSessionId] = useState<string>('');
   const [sessionListOpen, setSessionListOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [chatTyping, setChatTyping] = useState(false);
-  const sheetScrollRef = useRef<ScrollView>(null);
-  // 两个 tab 高度一致:分别测量手动/AI 容器实际高度,取较高者作为公共最小高度
-  const manualH = useRef(screenH * 0.55);
-  const aiH = useRef(screenH * 0.55);
-  const [contentMinH, setContentMinH] = useState(screenH * 0.55);
-  const syncMinH = () => setContentMinH(Math.max(manualH.current, aiH.current, screenH * 0.55));
 
   const categories = allCategories.filter((c) => (type === 'EXPENSE' ? c.type === 'EXPENSE' : c.type === 'INCOME'));
   const accounts = allAccounts.filter((a) => a.status === 'ACTIVE');
@@ -111,6 +127,13 @@ export function RecordModal() {
   // 当前会话(无则取第一个)
   const currentSession = sessions.find((s) => s.id === currentSessionId) ?? sessions[0];
   const chatMsgs = currentSession?.msgs ?? [];
+  // 消息变化(含流式追加、识别结果替换)时自动贴底
+  const chatScrollRef = useRef<ScrollView>(null);
+  const lastMsgLen = currentSession?.msgs[currentSession.msgs.length - 1]?.text.length;
+  useEffect(() => {
+    if (mode !== 'ai') return;
+    chatScrollRef.current?.scrollToEnd({ animated: false });
+  }, [mode, currentSession?.msgs.length, lastMsgLen]);
 
   // 打开时:编辑模式预填表单(强制手动模式);新建则重置默认
   useEffect(() => {
@@ -125,6 +148,8 @@ export function RecordModal() {
       setDate(editingRecord.date);
       setRemark(editingRecord.remark ?? '');
       setCounterparty(editingRecord.counterparty ?? '');
+      setTags(editingRecord.tags ?? []);
+      setOwnerId(editingRecord.ownerId ?? user?.id ?? '');
     } else {
       // 新建模式:保留记忆的 tab(不强制 manual),仅重置表单字段
       setType('EXPENSE');
@@ -135,6 +160,8 @@ export function RecordModal() {
       setDate(todayStr());
       setRemark('');
       setCounterparty('');
+      setTags([]);
+      setOwnerId(user?.id ?? '');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recordOpen, editingRecord]);
@@ -148,6 +175,9 @@ export function RecordModal() {
   const save = () => {
     const amt = parseFloat(amount);
     if (!amt || amt <= 0) return;
+    // 归属人:本人(id 为当前用户)时显示"我",否则取成员名
+    const ownerLabel = members.find((m) => m.id === ownerId)?.label ?? (ownerId === user?.id ? '我' : '本人');
+    const owner = { ownerId: ownerId || user?.id || '', ownerName: ownerId ? ownerLabel : '我' };
     if (type === 'TRANSFER') {
       const from = accounts.find((a) => a.id === accountId) ?? accounts[0];
       const to = accounts.find((a) => a.id === toId) ?? accounts[1] ?? accounts[0];
@@ -157,15 +187,15 @@ export function RecordModal() {
         amount: amt,
         date,
         remark: remark.trim() || `转至 ${to?.name ?? ''}`,
-        categoryCode: null,
-        categoryName: '转账',
+        categoryCode: cat || null,
+        categoryName: cat || '转账',
         accountId: from?.id ?? '',
         accountName: from?.name ?? '',
         toAccountId: to?.id,
         toAccountName: to?.name,
         counterparty: counterparty.trim() || undefined,
-        ownerName: '我',
-        tags: [],
+        ...owner,
+        tags,
       };
       if (editingRecord) updateRecord(editingRecord.id, payload);
       else addRecord(payload);
@@ -183,8 +213,8 @@ export function RecordModal() {
       accountId: account?.id ?? '',
       accountName: account?.name ?? '',
       counterparty: counterparty.trim() || undefined,
-      ownerName: '我',
-      tags: [],
+      ...owner,
+      tags,
     };
     if (editingRecord) updateRecord(editingRecord.id, payload);
     else addRecord(payload);
@@ -333,10 +363,10 @@ export function RecordModal() {
 
         <Animated.View
           entering={SlideInDown.duration(260).easing(Easing.out(Easing.cubic))}
-          style={{ backgroundColor: colors.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingTop: 14, paddingBottom: Math.max(insets.bottom, 18), maxHeight: '94%', bottom: Platform.OS === 'android' && kbVisible ? Math.max(insets.bottom + 24, 42) : 0 }}
+          style={{ backgroundColor: colors.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingTop: 14, paddingBottom: Math.max(insets.bottom, 18), height: sheetH, overflow: 'hidden' }}
         >
-          {/* 整个弹窗内容可滚动:键盘弹出导致弹窗高度受限时,可滚动到输入框 */}
-          <ScrollView ref={sheetScrollRef} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" nestedScrollEnabled style={{ maxHeight: '100%' }}>
+          {/* 弹窗内容容器:占满统一高度,内部按模式各自布局 */}
+          <View style={{ flex: 1 }}>
           {/* 标题 + 模式切换(编辑模式隐藏) + 关闭 */}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <Text style={{ fontSize: 18, fontWeight: '700' }}>{editingRecord ? '编辑流水' : '记一笔'}</Text>
@@ -360,9 +390,9 @@ export function RecordModal() {
           </View>
 
           {mode === 'manual' ? (
-            /* 手动模式容器 minHeight 与 AI 模式一致,保证切换 tab 时弹窗高度不跳变 */
-            <View style={{ minHeight: contentMinH }} onLayout={(e) => { manualH.current = e.nativeEvent.layout.height; syncMinH(); }}>
-              <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets nestedScrollEnabled>
+            /* 手动模式:表单在固定高度内滚动,保存按钮常驻底部 */
+            <View style={{ flex: 1 }}>
+              <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets nestedScrollEnabled>
                 {/* 类型(仿网页 Tabs 分段控件) */}
                 {fieldLabel('类型')}
                 <View style={{ flexDirection: 'row', backgroundColor: colors.muted, borderRadius: 12, padding: 4, marginBottom: 14 }}>
@@ -427,33 +457,39 @@ export function RecordModal() {
                   <DatePicker value={date} onChange={setDate} />
                 </View>
 
-                {/* 分类:下拉列表(对齐网页 DictCombobox;转账无分类) */}
-                {type !== 'TRANSFER' && (
-                  <>
-                    {fieldLabel('分类')}
-                    <View style={{ marginBottom: 14 }}>
-                      <SelectSheet
-                        value={cat}
-                        onChange={setCat}
-                        options={categories.map((c) => ({ value: c.code, label: c.label }))}
-                      />
-                    </View>
-                  </>
-                )}
+                {/* 分类:下拉列表(对齐网页,所有类型含转账都显示) */}
+                {fieldLabel('分类')}
+                <View style={{ marginBottom: 14 }}>
+                  <SelectSheet
+                    value={cat}
+                    onChange={setCat}
+                    options={categories.map((c) => ({ value: c.code, label: c.label }))}
+                  />
+                </View>
+
+                {/* 标签(对齐网页 TagCombobox:从已有标签下拉选择或新建,多选) */}
+                {fieldLabel('标签')}
+                <TagPicker value={tags} onChange={setTags} suggestions={tagSuggestions} />
 
                 {/* 交易方 */}
-                {type !== 'TRANSFER' && (
-                  <>
-                    {fieldLabel('交易方')}
-                    <TextInput
-                      value={counterparty}
-                      onChangeText={setCounterparty}
-                      placeholder="选填,如商户/对方名称"
-                      placeholderTextColor={colors.mutedForeground}
-                      style={[inputStyle, { marginBottom: 14 }]}
-                    />
-                  </>
-                )}
+                {fieldLabel('交易方')}
+                <TextInput
+                  value={counterparty}
+                  onChangeText={setCounterparty}
+                  placeholder="选填,如商户/对方名称"
+                  placeholderTextColor={colors.mutedForeground}
+                  style={[inputStyle, { marginBottom: 14 }]}
+                />
+
+                {/* 归属人:所有类型(含转账)都显示,选项为本人+账本成员 */}
+                {fieldLabel('归属人')}
+                <View style={{ marginBottom: 14 }}>
+                  <SelectSheet
+                    value={ownerId || 'self'}
+                    onChange={(v) => setOwnerId(v === 'self' ? '' : v)}
+                    options={[{ value: 'self', label: '本人' }, ...members.map((m) => ({ value: m.id, label: m.label }))]}
+                  />
+                </View>
 
                 {/* 备注 */}
                 {fieldLabel('备注')}
@@ -473,8 +509,8 @@ export function RecordModal() {
               </View>
             </View>
           ) : (
-            /* AI 模式:顶部会话切换工具行(仿网页移动端) + 消息区 + 输入区;高度与手动侧一致 */
-            <View style={{ paddingVertical: 4, minHeight: contentMinH }} onLayout={(e) => { aiH.current = e.nativeEvent.layout.height; syncMinH(); }}>
+            /* AI 模式:会话工具行钉顶、输入框钉底,消息区占满中间并内部滚动 */
+            <View style={{ flex: 1, paddingVertical: 4 }}>
               {/* 会话工具行:菜单按钮 + 当前会话标题 + 新建 */}
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: colors.hairline, marginBottom: 10 }}>
                 <Pressable
@@ -492,8 +528,8 @@ export function RecordModal() {
                 </Pressable>
               </View>
 
-              {/* 消息列表 */}
-              <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+              {/* 消息列表:占满剩余空间,内容多时内部滚动;新消息自动贴底 */}
+              <ScrollView ref={chatScrollRef} style={{ flex: 1 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
                 {chatMsgs.map((m, i) => {
                   const isUser = m.role === 'user';
                   return (
@@ -523,25 +559,16 @@ export function RecordModal() {
                 )}
               </ScrollView>
 
-              {/* 快捷例句 */}
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10, marginTop: 4 }}>
-                {['中午星巴克拿铁 32 元', '打车去机场 45 元'].map((q) => (
-                  <Pressable key={q} disabled={chatTyping} onPress={() => setChatInput(q)} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, backgroundColor: colors.muted }}>
-                    <Text style={{ fontSize: 12, color: colors.foreground }}>{q}</Text>
-                  </Pressable>
-                ))}
-              </View>
-
-              {/* 输入区 */}
-              <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8 }}>
+              {/* 输入区:始终在底部,键盘弹起时随之抬升 */}
+              <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8, marginTop: 10 }}>
                 <TextInput
                   value={chatInput}
                   onChangeText={setChatInput}
-                  placeholder="描述一笔收支，如「中午星巴克拿铁 32 元」"
+                  placeholder="描述一笔收支..."
                   placeholderTextColor={colors.mutedForeground}
                   multiline
                   editable={!chatTyping}
-                  style={{ flex: 1, minHeight: 46, maxHeight: 88, borderRadius: 18, backgroundColor: colors.muted, paddingHorizontal: 14, paddingVertical: 11, color: colors.foreground, fontSize: 14, textAlignVertical: 'center', borderWidth: 1, borderColor: colors.border }}
+                  style={{ flex: 1, minHeight: 44, maxHeight: 88, borderRadius: 18, backgroundColor: colors.elevated, paddingHorizontal: 14, paddingVertical: 10, color: colors.foreground, fontSize: 14, textAlignVertical: 'center', borderWidth: 1, borderColor: colors.border }}
                 />
                 <Pressable
                   onPress={sendAI}
@@ -551,9 +578,18 @@ export function RecordModal() {
                   <Send size={17} color={colors.primaryForeground} />
                 </Pressable>
               </View>
+
+              {/* 快捷例句:放在输入区下方作为提示,点击即填入输入框 */}
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                {['中午星巴克拿铁 32 元', '打车去机场 45 元'].map((q) => (
+                  <Pressable key={q} disabled={chatTyping} onPress={() => setChatInput(q)} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.muted }}>
+                    <Text style={{ fontSize: 12, color: colors.foreground }}>{q}</Text>
+                  </Pressable>
+                ))}
+              </View>
             </View>
           )}
-          </ScrollView>
+          </View>
         </Animated.View>
       </KeyboardAvoidingView>
 

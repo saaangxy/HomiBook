@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import * as authService from '@/services/auth';
 import type { ServerCredential } from '@/services/auth';
 import { clearCredential, getCredential, isCredentialExpired, setUnauthorizedHandler } from '@/services/http';
@@ -169,31 +169,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await refreshServers();
   }, [refreshServers]);
 
+  // 注意:useMemo 必须在条件 return 之前调用(不能跳过 hooks)
+  const value = useMemo(
+    () => ({
+      isLoggedIn,
+      user,
+      nickname: user?.nickname ?? '',
+      username: user?.username ?? user?.email ?? '',
+      currentServer,
+      servers,
+      login,
+      loginWithApiKey,
+      logout,
+      switchServer,
+      quickLogin,
+      addServer,
+      updateServer,
+      removeServer,
+      refreshServers,
+    }),
+    [isLoggedIn, user, currentServer, servers, login, loginWithApiKey, logout, switchServer, quickLogin, addServer, updateServer, removeServer, refreshServers],
+  );
+
   if (!ready) return null;
 
-  return (
-    <AuthContext.Provider
-      value={{
-        isLoggedIn,
-        user,
-        nickname: user?.nickname ?? '',
-        username: user?.username ?? user?.email ?? '',
-        currentServer,
-        servers,
-        login,
-        loginWithApiKey,
-        logout,
-        switchServer,
-        quickLogin,
-        addServer,
-        updateServer,
-        removeServer,
-        refreshServers,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {

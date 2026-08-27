@@ -50,8 +50,10 @@ export function Sidebar() {
 
   const overlayStyle = useAnimatedStyle(() => {
     // translateX 从 -PANEL_W(关)到 0(开),进度 = (translateX + PANEL_W) / PANEL_W
-    const p = (translateX.value + PANEL_W) / PANEL_W;
-    return { backgroundColor: `rgba(0,0,0,${0.45 * p})` };
+    // alpha 量化到 0.01,避免 withTiming 收敛的浮点误差(如 1.28e-8)生成 processColor 无法处理的极小 alpha
+    const p = Math.min(1, Math.max(0, (translateX.value + PANEL_W) / PANEL_W));
+    const alpha = Math.round(0.45 * p * 100) / 100;
+    return { backgroundColor: `rgba(0,0,0,${alpha})` };
   });
   const panelStyle = useAnimatedStyle(() => ({ transform: [{ translateX: translateX.value }] }));
 
@@ -83,52 +85,57 @@ export function Sidebar() {
           },
         ]}
       >
-        {/* Logo 头(对齐网页:primary 圆角方块 Book 图标 + Homibook) */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 6, paddingTop: 4, paddingBottom: 18 }}>
-          <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' }}>
-            <Book size={22} color={colors.primaryForeground} />
-          </View>
-          <Text style={{ fontSize: 20, fontWeight: '800', letterSpacing: -0.5, color: colors.primary }}>Homibook</Text>
-        </View>
+        {/* 内容仅在打开时渲染,关闭时只保留 translateX 动画容器,减少全局 reconcile 开销 */}
+        {sidebarOpen && (
+          <>
+            {/* Logo 头(对齐网页:primary 圆角方块 Book 图标 + Homibook) */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 6, paddingTop: 4, paddingBottom: 18 }}>
+              <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' }}>
+                <Book size={22} color={colors.primaryForeground} />
+              </View>
+              <Text style={{ fontSize: 20, fontWeight: '800', letterSpacing: -0.5, color: colors.primary }}>Homibook</Text>
+            </View>
 
-        {/* 单列菜单 */}
-        <ScrollView showsVerticalScrollIndicator={false}>
-          {items.map((m) => {
-            const active = pathname === m.to || (m.to === '/' && pathname === '/');
-            const Icon = m.icon;
-            return (
-              <Pressable
-                key={m.label}
-                onPress={() => {
-                  haptics.tap();
-                  router.navigate(m.to as never);
-                  closeSidebar();
-                }}
-                style={{
-                  flexDirection: 'row', alignItems: 'center', gap: 12,
-                  paddingVertical: 12, paddingHorizontal: 12, borderRadius: 12, marginBottom: 2,
-                  backgroundColor: active ? alpha(colors.primary, 0.1) : 'transparent',
-                }}
-              >
-                <Icon size={19} color={active ? colors.primary : colors.mutedForeground} strokeWidth={active ? 2.3 : 1.9} />
-                <Text style={{ fontSize: 15, fontWeight: active ? '600' : '400', color: active ? colors.primary : colors.foreground }}>{m.label}</Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
+            {/* 单列菜单 */}
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {items.map((m) => {
+                const active = pathname === m.to || (m.to === '/' && pathname === '/');
+                const Icon = m.icon;
+                return (
+                  <Pressable
+                    key={m.label}
+                    onPress={() => {
+                      haptics.tap();
+                      router.navigate(m.to as never);
+                      closeSidebar();
+                    }}
+                    style={{
+                      flexDirection: 'row', alignItems: 'center', gap: 12,
+                      paddingVertical: 12, paddingHorizontal: 12, borderRadius: 12, marginBottom: 2,
+                      backgroundColor: active ? alpha(colors.primary, 0.1) : 'transparent',
+                    }}
+                  >
+                    <Icon size={19} color={active ? colors.primary : colors.mutedForeground} strokeWidth={active ? 2.3 : 1.9} />
+                    <Text style={{ fontSize: 15, fontWeight: active ? '600' : '400', color: active ? colors.primary : colors.foreground }}>{m.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
 
-        {/* 底部用户卡(对齐网页 SidebarFooter) */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10, borderRadius: 12, backgroundColor: colors.muted, marginTop: 8 }}>
-          <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontSize: 15, fontWeight: '700', color: colors.primaryForeground }}>{avatarChar}</Text>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: '600' }}>{displayName}</Text>
-            {!!user?.email && (
-              <Text numberOfLines={1} variant="muted" style={{ fontSize: 11, marginTop: 1 }}>{user.email}</Text>
-            )}
-          </View>
-        </View>
+            {/* 底部用户卡(对齐网页 SidebarFooter) */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10, borderRadius: 12, backgroundColor: colors.muted, marginTop: 8 }}>
+              <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: colors.primaryForeground }}>{avatarChar}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: '600' }}>{displayName}</Text>
+                {!!user?.email && (
+                  <Text numberOfLines={1} variant="muted" style={{ fontSize: 11, marginTop: 1 }}>{user.email}</Text>
+                )}
+              </View>
+            </View>
+          </>
+        )}
       </Animated.View>
     </View>
   );

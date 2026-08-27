@@ -8,6 +8,9 @@ export default function TabLayout() {
         screenOptions={{
           headerShown: true,
           header: () => <GlobalBar />,
+          // 性能:懒加载 + 失焦冻结,避免每次切换 13 个 screen 全部参与渲染
+          lazy: true,
+          freezeOnBlur: true,
         }}
         tabBar={(props) => (
           <MobileTabBar

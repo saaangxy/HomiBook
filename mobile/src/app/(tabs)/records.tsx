@@ -86,21 +86,21 @@ export default function RecordsScreen() {
 
   // 数据源:有筛选 → 后端结果;无筛选 → store 全量
   const source = hasActiveFilter ? list : records;
-  // 多选账户/分类(后端仅支持单值)在客户端补过滤
-  const filtered = source.filter((r) => {
-    if (filters.accountIds.length > 1 && !filters.accountIds.includes(r.accountId)) return false;
-    if (filters.categoryCodes.length > 1 && !filters.categoryCodes.includes(r.categoryCode ?? '')) return false;
-    return true;
-  });
+  // 多选账户/分类(后端仅支持单值)在客户端补过滤 + 按日分组(useMemo 避免每次渲染重算)
+  const { filtered, groups, dates } = useMemo(() => {
+    const f = source.filter((r) => {
+      if (filters.accountIds.length > 1 && !filters.accountIds.includes(r.accountId)) return false;
+      if (filters.categoryCodes.length > 1 && !filters.categoryCodes.includes(r.categoryCode ?? '')) return false;
+      return true;
+    });
+    const g = f.reduce<Record<string, RecordItem[]>>((acc, r) => {
+      const day = r.date.slice(0, 10);
+      (acc[day] ??= []).push(r);
+      return acc;
+    }, {});
+    return { filtered: f, groups: g, dates: Object.keys(g).sort((a, b) => (a < b ? 1 : -1)) };
+  }, [source, filters]);
   const activeCount = countActiveFilters(filters);
-
-  // 按日分组(由近及远)
-  const groups = filtered.reduce<Record<string, RecordItem[]>>((acc, r) => {
-    const day = r.date.slice(0, 10);
-    (acc[day] ??= []).push(r);
-    return acc;
-  }, {});
-  const dates = Object.keys(groups).sort((a, b) => (a < b ? 1 : -1));
 
   const onClone = (r: RecordItem) => {
     cloneRecord(r);

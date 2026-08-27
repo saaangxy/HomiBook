@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, Switch, TextInput, View } from 'react-native';
+import { Alert, Pressable, RefreshControl, ScrollView, Switch, TextInput, View } from 'react-native';
 import { Plus, ArrowUpRight, ArrowDownRight, ArrowLeftRight, Trash2 } from 'lucide-react-native';
 import { useTheme, alpha } from '@/theme';
 import { Screen } from '@/components/Screen';
@@ -91,11 +91,20 @@ export default function RecurringScreen() {
     reload();
   };
 
-  const remove = async (t: RecurringTransaction) => {
-    await deleteRecurringApi(t.id);
-    setEditing(null);
+  const remove = (t: RecurringTransaction) => {
+    // 先关表单,再弹确认(避免叠加)
     setSheet(false);
-    reload();
+    Alert.alert('删除固定收支', `确定要删除「${t.name}」吗？`, [
+      { text: '取消', style: 'cancel' },
+      {
+        text: '删除', style: 'destructive',
+        onPress: async () => {
+          await deleteRecurringApi(t.id);
+          setEditing(null);
+          reload();
+        },
+      },
+    ]);
   };
 
   const save = async () => {

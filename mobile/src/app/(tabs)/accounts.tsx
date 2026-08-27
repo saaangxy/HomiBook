@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, TextInput, View } from 'react-native';
-import { Plus, CreditCard, Wallet, MessageCircle, Banknote, TrendingUp, Landmark, Archive, RotateCcw, Trash2 } from 'lucide-react-native';
+import { Plus, CreditCard, Wallet, MessageCircle, Banknote, TrendingUp, Landmark, Archive, RotateCcw, Trash2, SlidersHorizontal, Pencil } from 'lucide-react-native';
 import { useTheme, alpha } from '@/theme';
 import { Screen } from '@/components/Screen';
 import { Card } from '@/components/ui/Card';
@@ -9,7 +9,8 @@ import { Button } from '@/components/ui/Button';
 import { FadeInView } from '@/components/FadeInView';
 import { FormSheet } from '@/components/chrome/FormSheet';
 import { useUIShell } from '@/components/chrome/chrome';
-import { createAccountApi, deleteAccountApi, fetchAccounts, updateAccountApi } from '@/services/records';
+import { createAccountApi, createAdjustmentApi, deleteAccountApi, fetchAccounts, listAdjustmentsApi, updateAccountApi } from '@/services/records';
+import type { BalanceAdjustment } from '@/services/records';
 import { formatMoney } from '@/lib/format';
 import type { AccountItem, AccountType } from '@/types';
 
@@ -48,6 +49,16 @@ const TYPE_KEYS = Object.keys(TYPE_LABEL) as AccountType[];
 // 账户管理:筛选 + 账户卡片列表 + 新建/编辑/归档/删除(设计优先 mock)
 export default function AccountsScreen() {
   const { colors } = useTheme();
+  // 卡片操作按钮统一样式
+  const opBtn = {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: colors.muted,
+  };
   const { currentLedger } = useUIShell();
   const bookId = currentLedger.id;
   const [accounts, setAccounts] = useState<AccountItem[]>([]);
@@ -142,6 +153,41 @@ export default function AccountsScreen() {
     setSheet(false);
   };
 
+  // ── 余额调整 ──
+  const [adjusting, setAdjusting] = useState(false);
+  const [adjustBalance, setAdjustBalance] = useState('');
+  const [adjustRemark, setAdjustRemark] = useState('');
+  const openAdjust = (a: AccountItem) => {
+    setEditing(a);
+    setAdjustBalance(String(a.balance ?? 0));
+    setAdjustRemark('');
+    setSheet(false);
+    setAdjusting(true);
+  };
+  const saveAdjust = async () => {
+    if (!editing) return;
+    const amt = parseFloat(adjustBalance);
+    if (isNaN(amt)) return;
+    await createAdjustmentApi(editing.id, {
+      date: new Date().toISOString().slice(0, 10),
+      balanceAfter: amt,
+      remark: adjustRemark.trim() || undefined,
+    });
+    if (bookId) fetchAccounts(bookId).then(setAccounts);
+    setAdjusting(false);
+    setEditing(null);
+  };
+
+  // ── 调整历史查看 ──
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyAccount, setHistoryAccount] = useState<AccountItem | null>(null);
+  const [adjustments, setAdjustments] = useState<BalanceAdjustment[]>([]);
+  const openHistory = (a: AccountItem) => {
+    setHistoryAccount(a);
+    setHistoryOpen(true);
+    listAdjustmentsApi(a.id).then(setAdjustments);
+  };
+
   const inputStyle = {
     backgroundColor: colors.elevated,
     borderWidth: 1,
@@ -193,25 +239,47 @@ export default function AccountsScreen() {
               const negative = a.balance < 0;
               return (
                 <FadeInView key={a.id} index={i}>
-                  <Card className="px-5 py-4 mb-3" onPress={() => openEdit(a)}>
+                  <Card className="px-5 py-4 mb-3">
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                       <View style={{ width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: negative ? alpha(colors.expense, 0.1) : alpha(colors.primary, 0.12) }}>
                         <Icon size={20} color={negative ? colors.expense : colors.primary} />
                       </View>
                       <View style={{ flex: 1 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                          <Text style={{ fontSize: 15, fontWeight: '600' }}>{a.name}</Text>
+                        <Text style={{ fontSize: 15, fontWeight: '600' }}>{a.name}</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
                           <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, backgroundColor: colors.muted }}>
                             <Text style={{ fontSize: 10, color: colors.mutedForeground, fontWeight: '600' }}>{TYPE_LABEL[a.type]}</Text>
                           </View>
+                          {a.accountNo ? <Text variant="muted" style={{ fontSize: 11 }}>{a.accountNo}</Text> : null}
+                          {a.status === 'ARCHIVED' ? <Text variant="muted" style={{ fontSize: 11 }}>已归档</Text> : null}
                         </View>
-                        <Text variant="muted" style={{ fontSize: 12, marginTop: 2 }}>
-                          {a.bankName ? `${a.bankName}` : '余额卡'} {a.accountNo ? `· ${a.accountNo}` : ''} {a.status === 'ARCHIVED' ? '· 已归档' : ''}
-                        </Text>
                       </View>
                       <Text style={{ fontSize: 16, fontWeight: '700', fontVariant: ['tabular-nums'], color: negative ? colors.expense : colors.foreground }} numberOfLines={1}>
                         {formatMoney(a.balance)}
                       </Text>
+                    </View>
+                    {/* 操作按钮(直接置于列表卡片,对齐预算/账本页) */}
+                    <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginTop: 12, borderTopWidth: 1, borderTopColor: colors.hairline, paddingTop: 10 }}>
+                      <Pressable onPress={() => openEdit(a)} style={opBtn}>
+                        <Pencil size={13} color={colors.foreground} />
+                        <Text style={{ fontSize: 12, color: colors.foreground }}>编辑</Text>
+                      </Pressable>
+                      <Pressable onPress={() => openAdjust(a)} style={opBtn}>
+                        <SlidersHorizontal size={13} color={colors.foreground} />
+                        <Text style={{ fontSize: 12, color: colors.foreground }}>调整</Text>
+                      </Pressable>
+                      <Pressable onPress={() => openHistory(a)} style={opBtn}>
+                        <TrendingUp size={13} color={colors.foreground} />
+                        <Text style={{ fontSize: 12, color: colors.foreground }}>记录</Text>
+                      </Pressable>
+                      <Pressable onPress={() => toggleArchive(a)} style={opBtn}>
+                        {a.status === 'ACTIVE' ? <Archive size={13} color={colors.foreground} /> : <RotateCcw size={13} color={colors.foreground} />}
+                        <Text style={{ fontSize: 12, color: colors.foreground }}>{a.status === 'ACTIVE' ? '归档' : '恢复'}</Text>
+                      </Pressable>
+                      <Pressable onPress={() => remove(a)} style={opBtn}>
+                        <Trash2 size={13} color={colors.expense} />
+                        <Text style={{ fontSize: 12, color: colors.expense }}>删除</Text>
+                      </Pressable>
                     </View>
                   </Card>
                 </FadeInView>
@@ -253,12 +321,43 @@ export default function AccountsScreen() {
           <TextInput value={bankName} onChangeText={setBankName} placeholder="选填" placeholderTextColor={colors.mutedForeground} style={inputStyle} />
 
           {editing && (
-            <View style={{ flexDirection: 'row', gap: 10, marginTop: 18 }}>
-              <Button title={editing.status === 'ACTIVE' ? '归档' : '恢复'} variant="outline" icon={editing.status === 'ACTIVE' ? <Archive size={16} color={colors.foreground} /> : <RotateCcw size={16} color={colors.foreground} />} style={{ flex: 1 }} onPress={() => toggleArchive(editing)} />
-              <Button title="删除" variant="outline" icon={<Trash2 size={16} color={colors.expense} />} style={{ flex: 1, borderColor: colors.expense }} onPress={() => remove(editing)} />
-            </View>
+            <>
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 18 }}>
+                <Button title="余额调整" variant="outline" icon={<SlidersHorizontal size={16} color={colors.foreground} />} style={{ flex: 1 }} onPress={() => openAdjust(editing)} />
+                <Button title="调整记录" variant="outline" icon={<TrendingUp size={16} color={colors.foreground} />} style={{ flex: 1 }} onPress={() => { setSheet(false); openHistory(editing); }} />
+              </View>
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+                <Button title={editing.status === 'ACTIVE' ? '归档' : '恢复'} variant="outline" icon={editing.status === 'ACTIVE' ? <Archive size={16} color={colors.foreground} /> : <RotateCcw size={16} color={colors.foreground} />} style={{ flex: 1 }} onPress={() => toggleArchive(editing)} />
+                <Button title="删除" variant="outline" icon={<Trash2 size={16} color={colors.expense} />} style={{ flex: 1, borderColor: colors.expense }} onPress={() => remove(editing)} />
+              </View>
+            </>
           )}
         </ScrollView>
+      </FormSheet>
+
+      {/* 余额调整 */}
+      <FormSheet visible={adjusting} title="余额调整" onClose={() => { setAdjusting(false); setEditing(null); }} onSave={saveAdjust} saveLabel="确认调整">
+        <Text style={labelStyle}>调整后余额</Text>
+        <TextInput value={adjustBalance} onChangeText={setAdjustBalance} placeholder="0.00" placeholderTextColor={colors.mutedForeground} keyboardType="decimal-pad" style={inputStyle} />
+        <Text style={labelStyle}>备注(选填)</Text>
+        <TextInput value={adjustRemark} onChangeText={setAdjustRemark} placeholder="如 更正账单" placeholderTextColor={colors.mutedForeground} style={inputStyle} />
+      </FormSheet>
+
+      {/* 调整历史 */}
+      <FormSheet visible={historyOpen} title={`调整记录 · ${historyAccount?.name ?? ''}`} onClose={() => { setHistoryOpen(false); setHistoryAccount(null); }}>
+        <Text variant="muted" style={{ fontSize: 12, marginBottom: 10 }}>当前余额 {historyAccount ? formatMoney(historyAccount.balance) : '-'}</Text>
+        {adjustments.length === 0 ? (
+          <Text variant="muted" style={{ textAlign: 'center', paddingVertical: 24, fontSize: 13 }}>暂无调整记录</Text>
+        ) : (
+          adjustments.map((adj) => (
+            <View key={adj.id} style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.hairline, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View>
+                <Text style={{ fontSize: 13, color: colors.foreground }}>调整后 {formatMoney(adj.balanceAfter)}</Text>
+                <Text variant="muted" style={{ fontSize: 11, marginTop: 2 }}>{adj.date}{adj.remark ? ` · ${adj.remark}` : ''}</Text>
+              </View>
+            </View>
+          ))
+        )}
       </FormSheet>
     </Screen>
   );

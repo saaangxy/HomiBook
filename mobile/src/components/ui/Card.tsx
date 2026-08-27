@@ -28,7 +28,7 @@ export function Card({ children, className = '', style, onPress, variant = 'defa
         <View className={className}>{children}</View>
       </LinearGradient>
     );
-    if (onPress) return <AnimatedPressable>{grad}</AnimatedPressable>;
+    if (onPress) return <AnimatedPressable onPress={onPress}>{grad}</AnimatedPressable>;
     return grad;
   }
 
@@ -42,7 +42,7 @@ export function Card({ children, className = '', style, onPress, variant = 'defa
 
   if (onPress) {
     return (
-      <AnimatedPressable style={[base, style]}>
+      <AnimatedPressable onPress={onPress} style={[base, style]}>
         <View className={className}>{children}</View>
       </AnimatedPressable>
     );
