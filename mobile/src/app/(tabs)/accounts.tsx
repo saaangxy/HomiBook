@@ -45,7 +45,7 @@ const TYPE_ICON: Record<AccountType, typeof CreditCard> = {
 
 const TYPE_KEYS = Object.keys(TYPE_LABEL) as AccountType[];
 
-// 账户管理:筛选 + 账户卡片列表 + 新建/编辑/归档/删除(设计优先 mock)
+// 账户管理:筛选 + 账户卡片列表 + 新建/编辑/归档/删除(对接真实 API)
 export default function AccountsScreen() {
   const { colors } = useTheme();
   // 卡片操作按钮统一样式

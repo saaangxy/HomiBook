@@ -160,7 +160,7 @@ export async function fetchCalendar(bookId: string, year: number, month: number)
   return res ?? [];
 }
 
-export async function fetchSummary(bookId: string, opts?: { dateFrom?: string; dateTo?: string; type?: string; categoryCode?: string }): Promise<RecordSummary> {
+export async function fetchSummary(bookId: string, opts?: { dateFrom?: string; dateTo?: string; type?: string; categoryCode?: string; accountId?: string; ownerId?: string }): Promise<RecordSummary> {
   const res = await http.get<CoreSummary>('/api/records/summary', {
     query: {
       bookId,
@@ -170,6 +170,8 @@ export async function fetchSummary(bookId: string, opts?: { dateFrom?: string; d
       dateTo: opts?.dateTo,
       type: opts?.type,
       categoryCode: opts?.categoryCode,
+      accountId: opts?.accountId,
+      ownerId: opts?.ownerId,
     },
   });
   return {
@@ -214,6 +216,8 @@ export async function fetchCategoryTrend(bookId: string, params: {
   month?: number;
   dateFrom?: string;
   dateTo?: string;
+  accountId?: string;
+  ownerId?: string;
 }): Promise<CategoryTrendResult> {
   const res = await http.get<CategoryTrendResult>('/api/records/category-trend', { query: { bookId, ...params } });
   return { periods: res?.periods ?? [], categories: res?.categories ?? [] };

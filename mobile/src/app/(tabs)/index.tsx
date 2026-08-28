@@ -80,6 +80,25 @@ export default function HomeScreen() {
   const income = summary.income;
   const expense = summary.expense;
 
+  // AI 助手卡片洞察:基于本月真实数据生成(预算进度优先,否则最高支出分类)
+  const insight = useMemo(() => {
+    if (totalBudget > 0) {
+      if (totalUsed <= 0) return '本月预算尚无消耗，记一笔开始吧';
+      return pct >= 100
+        ? `本月预算已超支，已使用 ${formatMoney(totalUsed)}`
+        : `本月预算已使用 ${pct}%（${formatMoney(totalUsed)}/${formatMoney(totalBudget)}）`;
+    }
+    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const byCat = new Map<string, number>();
+    for (const r of records) {
+      if (r.type !== 'EXPENSE' || r.date.slice(0, 7) !== ym) continue;
+      const key = r.categoryName ?? '未分类';
+      byCat.set(key, (byCat.get(key) ?? 0) + r.amount);
+    }
+    const top = [...byCat.entries()].sort((a, b) => b[1] - a[1])[0];
+    return top ? `本月「${top[0]}」支出最高，共 ${formatMoney(top[1])}` : '本月暂无支出记录，记一笔开始吧';
+  }, [totalBudget, totalUsed, pct, records, now]);
+
   return (
     <Screen scroll refreshing={refreshing} onRefresh={onRefresh}>
       <View className="px-5 pt-4">
@@ -221,7 +240,7 @@ export default function HomeScreen() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 15, fontWeight: '600' }}>AI 财务助手</Text>
-              <Text variant="muted" style={{ fontSize: 12, marginTop: 2 }}>本月餐饮支出偏高，建议控制晚餐消费</Text>
+              <Text variant="muted" style={{ fontSize: 12, marginTop: 2 }} numberOfLines={1}>{insight}</Text>
             </View>
             <ChevronRight size={16} color={colors.primary} />
           </Pressable>

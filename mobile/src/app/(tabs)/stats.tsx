@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
-  RefreshControl, ScrollView, View, Pressable, TextInput, Dimensions, Platform, ActivityIndicator, FlatList,
+  RefreshControl, ScrollView, View, Pressable, Dimensions, Platform, ActivityIndicator, FlatList,
   Animated as RNAnimated, Easing as RNEasing,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,16 +16,17 @@ import type { SharedValue } from 'react-native-reanimated';
 import { useTheme, alpha } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { FormSheet } from '@/components/chrome/FormSheet';
+import { DatePicker } from '@/components/ui/DatePicker';
 import { RecordRow } from '@/components/RecordRow';
 import { useRecords } from '@/stores/records';
 import { useUIShell } from '@/components/chrome/chrome';
 import {
   fetchMonthlyTrend, fetchBalanceHistory, fetchAccounts, fetchGroupSummary, fetchCategoryTrend, fetchSummary,
-  fetchRecordsPaged, type GroupSummaryItem, type CategoryTrendResult,
+  fetchRecordsPaged, fetchBookMembers, fetchBudgets, type GroupSummaryItem, type CategoryTrendResult,
 } from '@/services/records';
 import { fetchRecurring } from '@/services/recurring';
-import { computeRadarMetrics } from '@/lib/financial-health';
-import type { RadarMetric, RecordItem, RecordSummary } from '@/types';
+import { computeRadarMetrics, computeTimeRadar } from '@/lib/financial-health';
+import type { BudgetItem, LedgerMember, RadarMetric, RecordItem, RecordSummary } from '@/types';
 
 // ── Tab 定义:对齐网页端 4 视图 ──
 type StatsTab = 'overview' | 'yearly' | 'monthly' | 'free';
@@ -578,15 +579,6 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
   );
 }
 
-// ── mock:模拟时间段5维雷达 ──
-const TIME_RADAR = [
-  { name: '储蓄率', value: 82, detail: '储蓄率 35.2%' },
-  { name: '收支平衡', value: 100, detail: '收入/支出 ≥100%' },
-  { name: '预算执行', value: 76, detail: '预算契合度 76分' },
-  { name: '偿债压力', value: 100, detail: '无贷款' },
-  { name: '财务自由度', value: 30, detail: '被动收入覆盖18%' },
-];
-
 // 图表点击后的选中信息块(名称+金额+取消+查看流水)
 function SelectionBlock({ label, amount, color, onCancel, onDetail }: {
   label: string; amount: number; color: string; onCancel: () => void; onDetail: () => void;
@@ -614,10 +606,18 @@ function SelectionBlock({ label, amount, color, onCancel, onDetail }: {
 // ════════════════════════════════════════
 export default function StatsPage() {
   const { colors } = useTheme();
-  const { summary, refresh } = useRecords();
+  const { summary, refresh, accounts } = useRecords();
   const { currentLedger } = useUIShell();
   const bookId = currentLedger.id;
   const [tab, setTab] = useState<StatsTab>('overview');
+  // 账本成员(归属筛选选项)
+  const [members, setMembers] = useState<LedgerMember[]>([]);
+  // 成员列表(归属筛选选项)
+  useEffect(() => {
+    if (!bookId) { setMembers([]); return; }
+    fetchBookMembers(bookId).then(setMembers).catch(() => setMembers([]));
+  }, [bookId]);
+  const activeAccounts = useMemo(() => accounts.filter((a) => a.status === 'ACTIVE'), [accounts]);
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -625,7 +625,11 @@ export default function StatsPage() {
   // 自由筛选
   const [freeDateFrom, setFreeDateFrom] = useState('');
   const [freeDateTo, setFreeDateTo] = useState('');
+  const [freeAccountIds, setFreeAccountIds] = useState<string[]>([]);
+  const [freeOwnerIds, setFreeOwnerIds] = useState<string[]>([]);
   const [freeSearched, setFreeSearched] = useState(false);
+  // 搜索时固化的筛选参数(对齐 web searchParams:修改条件需重新点击搜索)
+  const [freeParams, setFreeParams] = useState<{ dateFrom?: string; dateTo?: string; accountId?: string; ownerId?: string }>({});
 
   // 真实数据:月度趋势 / 资产净值 / 财务健康雷达
   const [trend, setTrend] = useState<{ months: string[]; income: number[]; expense: number[] }>({ months: [], income: [], expense: [] });
@@ -695,8 +699,8 @@ export default function StatsPage() {
       const last = new Date(year, month, 0).getDate();
       return { dateFrom: `${year}-${pad2(month)}-01`, dateTo: `${year}-${pad2(month)}-${last}` };
     }
-    return { dateFrom: freeDateFrom || undefined, dateTo: freeDateTo || undefined };
-  }, [tab, year, month, freeDateFrom, freeDateTo]);
+    return { dateFrom: freeParams.dateFrom, dateTo: freeParams.dateTo };
+  }, [tab, year, month, freeParams]);
 
   const [analysis, setAnalysis] = useState<{ category: GroupSummaryItem[]; owner: GroupSummaryItem[]; account: GroupSummaryItem[] }>({ category: [], owner: [], account: [] });
   const [stacked, setStacked] = useState<CategoryTrendResult>({ periods: [], categories: [] });
@@ -707,11 +711,16 @@ export default function StatsPage() {
   const [barSelected, setBarSelected] = useState<{ periodIdx: number; catIdx: number } | null>(null);
 
   const isTimeTab = tab === 'yearly' || tab === 'monthly' || (tab === 'free' && freeSearched);
-  const rangeReady = tab === 'free' ? !!(freeDateFrom && freeDateTo) : true;
+  // 自由筛选的账户/归属(搜索时固化,仅自由 tab 生效)
+  const freeAccountId = tab === 'free' ? freeParams.accountId : undefined;
+  const freeOwnerId = tab === 'free' ? freeParams.ownerId : undefined;
+  // 时间段财务健康 5 维(真实计算,对齐 web StatsTimeView)
+  const [timeRadar, setTimeRadar] = useState<RadarMetric[]>([]);
 
-  // 时间视图主体:分类趋势 + 汇总(不随分析面板类型变化)
+  // 时间视图主体:分类趋势 + 汇总 + 5维雷达(不随分析面板类型变化)
   useEffect(() => {
-    if (!bookId || !isTimeTab || !rangeReady || !range.dateFrom || !range.dateTo) return;
+    if (!bookId || !isTimeTab) return;
+    if (tab !== 'free' && (!range.dateFrom || !range.dateTo)) return;
     let cancel = false;
     setTimeLoading(true);
     setBarSelected(null);
@@ -722,33 +731,57 @@ export default function StatsPage() {
         ? { granularity: 'daily' as const, year, month, dateFrom: range.dateFrom, dateTo: range.dateTo }
         : { granularity: 'daily' as const, dateFrom: range.dateFrom, dateTo: range.dateTo };
     Promise.all([
-      fetchCategoryTrend(bookId, { type: 'EXPENSE', ...trendParams }),
-      fetchSummary(bookId, { dateFrom: range.dateFrom, dateTo: range.dateTo }),
-    ]).then(([trendRes, sum]) => {
+      fetchCategoryTrend(bookId, { type: 'EXPENSE', ...trendParams, accountId: freeAccountId, ownerId: freeOwnerId }),
+      fetchSummary(bookId, { dateFrom: range.dateFrom, dateTo: range.dateTo, accountId: freeAccountId, ownerId: freeOwnerId }),
+      // 5维雷达数据源:固定预算 / 活跃贷款 / 被动收入(投资收益,分红)
+      fetchBudgets(bookId).catch(() => []),
+      fetchRecurring(bookId).catch(() => []),
+      fetchSummary(bookId, { type: 'INCOME', categoryCode: '投资收益,分红', dateFrom: range.dateFrom, dateTo: range.dateTo, accountId: freeAccountId, ownerId: freeOwnerId }),
+    ]).then(([trendRes, sum, budgets, loans, passive]) => {
       if (cancel) return;
       // 过滤全零分类(对齐 web)
       setStacked({ periods: trendRes.periods, categories: trendRes.categories.filter((c) => c.data.some((v) => v > 0)) });
       setRangeSummary(sum);
+      // ── 5维雷达(对齐 web fetchBudgetHealth + computeRadar) ──
+      const fixed = (budgets as BudgetItem[]).filter((b) => b.type === 'FIXED' && b.month != null);
+      const inScope = fixed.filter((b) => {
+        if (tab === 'yearly') return b.year === year;
+        if (tab === 'monthly') return b.year === year && b.month === month;
+        // free:预算所在月与所选范围相交
+        if (!range.dateFrom || !range.dateTo) return false;
+        const bFrom = `${b.year}-${pad2(b.month!)}-01`;
+        const bTo = `${b.year}-${pad2(b.month!)}-${new Date(b.year, b.month!, 0).getDate()}`;
+        return bFrom <= range.dateTo && bTo >= range.dateFrom;
+      });
+      const totalBudgeted = inScope.reduce((s, b) => s + b.amount, 0);
+      const totalActual = inScope.reduce((s, b) => s + b.actualAmount, 0);
+      const budgetHealth = totalBudgeted === 0 ? 100 : Math.max(0, Math.round((1 - Math.max(0, totalActual - totalBudgeted) / totalBudgeted) * 100));
+      const monthlyPayment = loans.filter((l) => l.recurringType === 'LOAN' && l.active).reduce((s, l) => s + (l.amount ?? 0), 0);
+      const monthsInPeriod = range.dateFrom && range.dateTo
+        ? Math.max(1, (new Date(range.dateTo).getFullYear() - new Date(range.dateFrom).getFullYear()) * 12 + (new Date(range.dateTo).getMonth() - new Date(range.dateFrom).getMonth()) + 1)
+        : 1;
+      setTimeRadar(computeTimeRadar({ summary: sum, budgetHealth, monthlyPayment, monthsInPeriod, passiveIncome: passive.income }));
     }).finally(() => { if (!cancel) setTimeLoading(false); });
     return () => { cancel = true; };
-  }, [bookId, isTimeTab, rangeReady, range.dateFrom, range.dateTo, tab, year, month]);
+  }, [bookId, isTimeTab, range.dateFrom, range.dateTo, tab, year, month, freeAccountId, freeOwnerId]);
 
   // 分析面板:分组汇总随类型/时间段独立刷新(对齐 web AnalysisPanel,不触发整页 loading)
   useEffect(() => {
-    if (!bookId || !isTimeTab || !rangeReady || !range.dateFrom || !range.dateTo) return;
+    if (!bookId || !isTimeTab) return;
+    if (tab !== 'free' && (!range.dateFrom || !range.dateTo)) return;
     let cancel = false;
     setPieSelected(null);
     setAnalysisLoading(true);
     Promise.all([
-      fetchGroupSummary(bookId, { type: analysisType, groupBy: 'category', dateFrom: range.dateFrom, dateTo: range.dateTo }),
-      fetchGroupSummary(bookId, { type: analysisType, groupBy: 'ownerId', dateFrom: range.dateFrom, dateTo: range.dateTo }),
-      fetchGroupSummary(bookId, { type: analysisType, groupBy: 'accountId', dateFrom: range.dateFrom, dateTo: range.dateTo }),
+      fetchGroupSummary(bookId, { type: analysisType, groupBy: 'category', dateFrom: range.dateFrom, dateTo: range.dateTo, accountId: freeAccountId, ownerId: freeOwnerId }),
+      fetchGroupSummary(bookId, { type: analysisType, groupBy: 'ownerId', dateFrom: range.dateFrom, dateTo: range.dateTo, accountId: freeAccountId, ownerId: freeOwnerId }),
+      fetchGroupSummary(bookId, { type: analysisType, groupBy: 'accountId', dateFrom: range.dateFrom, dateTo: range.dateTo, accountId: freeAccountId, ownerId: freeOwnerId }),
     ]).then(([category, owner, account]) => {
       if (cancel) return;
       setAnalysis({ category, owner, account });
     }).finally(() => { if (!cancel) setAnalysisLoading(false); });
     return () => { cancel = true; };
-  }, [bookId, isTimeTab, rangeReady, range.dateFrom, range.dateTo, analysisType]);
+  }, [bookId, isTimeTab, range.dateFrom, range.dateTo, analysisType, freeAccountId, freeOwnerId]);
 
   // ── 图表详情弹层:点击「查看流水」后上滑分页加载流水(对齐 web Dialog) ──
   const [detail, setDetail] = useState<{ title: string; params: Record<string, unknown> } | null>(null);
@@ -776,6 +809,8 @@ export default function StatsPage() {
       type: analysisType,
       dateFrom: range.dateFrom,
       dateTo: range.dateTo,
+      // 自由筛选下继承账户/归属(对应 groupBy 时被选中项覆盖,对齐 web)
+      ...(tab === 'free' ? { accountId: freeParams.accountId, ownerId: freeParams.ownerId } : {}),
       ...(sel.groupBy === 'category' ? { categoryCode: sel.item.key } : {}),
       ...(sel.groupBy === 'accountId' ? { accountId: sel.item.key } : {}),
       ...(sel.groupBy === 'ownerId' ? { ownerId: sel.item.key } : {}),
@@ -901,20 +936,80 @@ export default function StatsPage() {
           </Pressable>
         </View>
       )}
-      {/* 自由筛选 */}
+      {/* 自由筛选(对齐 web:日期范围 + 账户/成员多选,点搜索后固化查询) */}
       {mode === 'free' && (
-        <View style={{ gap: 10 }}>
+        <View style={{ gap: 12 }}>
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 11, color: colors.mutedForeground, marginBottom: 4 }}>开始日期</Text>
-              <TextInput value={freeDateFrom} onChangeText={setFreeDateFrom} placeholder="YYYY-MM-DD" placeholderTextColor={colors.mutedForeground} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: 10, fontSize: 13, color: colors.foreground, backgroundColor: colors.card }} />
+              <DatePicker value={freeDateFrom} onChange={(v) => setFreeDateFrom(v.slice(0, 10))} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 11, color: colors.mutedForeground, marginBottom: 4 }}>结束日期</Text>
-              <TextInput value={freeDateTo} onChangeText={setFreeDateTo} placeholder="YYYY-MM-DD" placeholderTextColor={colors.mutedForeground} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: 10, fontSize: 13, color: colors.foreground, backgroundColor: colors.card }} />
+              <DatePicker value={freeDateTo} onChange={(v) => setFreeDateTo(v.slice(0, 10))} />
             </View>
           </View>
-          <Pressable onPress={() => setFreeSearched(true)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 10, backgroundColor: colors.primary }}>
+          {/* 账户(可多选,不选=全部) */}
+          {activeAccounts.length > 0 && (
+            <View>
+              <Text style={{ fontSize: 11, color: colors.mutedForeground, marginBottom: 6 }}>账户(可多选,不选=全部)</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {activeAccounts.map((a) => {
+                  const active = freeAccountIds.includes(a.id);
+                  return (
+                    <Pressable
+                      key={a.id}
+                      onPress={() => setFreeAccountIds((list) => (list.includes(a.id) ? list.filter((x) => x !== a.id) : [...list, a.id]))}
+                      style={{
+                        paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, borderWidth: 1,
+                        borderColor: active ? colors.primary : colors.border,
+                        backgroundColor: active ? alpha(colors.primary, 0.12) : colors.card,
+                      }}
+                    >
+                      <Text style={{ fontSize: 12, color: active ? colors.primary : colors.foreground, fontWeight: active ? '600' : '400' }}>{a.name}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+          {/* 成员(可多选,不选=全部) */}
+          {members.length > 0 && (
+            <View>
+              <Text style={{ fontSize: 11, color: colors.mutedForeground, marginBottom: 6 }}>成员(可多选,不选=全部)</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {members.map((m) => {
+                  const uid = m.userId || m.id;
+                  const active = freeOwnerIds.includes(uid);
+                  return (
+                    <Pressable
+                      key={m.id}
+                      onPress={() => setFreeOwnerIds((list) => (list.includes(uid) ? list.filter((x) => x !== uid) : [...list, uid]))}
+                      style={{
+                        paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, borderWidth: 1,
+                        borderColor: active ? colors.primary : colors.border,
+                        backgroundColor: active ? alpha(colors.primary, 0.12) : colors.card,
+                      }}
+                    >
+                      <Text style={{ fontSize: 12, color: active ? colors.primary : colors.foreground, fontWeight: active ? '600' : '400' }}>{m.nickname}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+          <Pressable
+            onPress={() => {
+              setFreeParams({
+                dateFrom: freeDateFrom || undefined,
+                dateTo: freeDateTo || undefined,
+                accountId: freeAccountIds.length ? freeAccountIds.join(',') : undefined,
+                ownerId: freeOwnerIds.length ? freeOwnerIds.join(',') : undefined,
+              });
+              setFreeSearched(true);
+            }}
+            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 10, backgroundColor: colors.primary }}
+          >
             <Search size={16} color={colors.primaryForeground} />
             <Text style={{ color: colors.primaryForeground, fontWeight: '600', fontSize: 14 }}>搜索</Text>
           </Pressable>
@@ -947,13 +1042,13 @@ export default function StatsPage() {
             </View>
           ) : (
             <>
-          {/* 5维雷达 */}
+          {/* 5维雷达(时间段真实计算) */}
           <ChartCard title="财务健康评估(5维)">
             <View style={{ alignItems: 'center' }}>
-              <TimeRadar metrics={TIME_RADAR} size={Math.min(CW, 260)} />
+              <TimeRadar metrics={timeRadar} size={Math.min(CW, 260)} />
             </View>
             <View style={{ gap: 6, marginTop: 8 }}>
-              {TIME_RADAR.map(m => (
+              {timeRadar.map(m => (
                 <View key={m.name} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: m.value >= 80 ? '#22c55e' : m.value >= 50 ? '#f59e0b' : '#ef4444' }} />
                   <Text style={{ fontSize: 12, color: colors.mutedForeground, flex: 1 }}>{m.name}</Text>
