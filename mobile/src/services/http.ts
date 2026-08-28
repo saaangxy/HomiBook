@@ -1,6 +1,7 @@
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
 import { File, UploadType } from 'expo-file-system';
+import { requireNativeModule } from 'expo-modules-core';
 import { secureDelete, secureGet, secureSet } from './storage';
 
 // HTTP 客户端:baseUrl 注入 + Bearer 凭据(JWT 与 API Key 同通道,后端自动识别)
@@ -150,20 +151,44 @@ function parseBodyLoose(body: string): Record<string, unknown> {
 
 /**
  * 原生 multipart 上传:原样传输文件字节;返回服务端 JSON。
- * 用新 API File.upload 而非 legacy uploadAsync —— legacy 在 Android(尤其 Expo Go)对
- * 上传路径做白名单可读性检查,DocumentPicker 复制出的 cache/DocumentPicker 文件会被
- * 误判 "isn't readable";新 API 直接原生 File IO 读取,无此限制。
+ * 优先用新 API File.upload —— legacy uploadAsync 在 Android(尤其 Expo Go)对上传路径
+ * 做白名单可读性检查,DocumentPicker 复制出的 cache/DocumentPicker 文件会被误判
+ * "isn't readable";新 API 直接原生 File IO 读取,无此限制。
+ * 新 API 依赖原生模块导出的 FileSystemUploadTask 类,旧版 Expo Go 未内置(报
+ * "undefined is not a function"),故探测能力后自动回退 legacy 通道。
  */
+let nativeUploadSupported: boolean | null = null;
+function supportsNativeUpload(): boolean {
+  if (nativeUploadSupported === null) {
+    try {
+      const mod = requireNativeModule<{ FileSystemUploadTask?: unknown }>('FileSystem');
+      nativeUploadSupported = typeof mod?.FileSystemUploadTask === 'function';
+    } catch {
+      nativeUploadSupported = false; // 原生模块缺失(极旧环境)
+    }
+  }
+  return nativeUploadSupported;
+}
+
 export async function uploadFileNative<T>(url: string, fileUri: string, mimeType: string): Promise<T> {
   const cred = await getCredential();
   if (!url || !fileUri) throw new Error('缺少上传参数');
   if (!cred) throw new Error('请先配置服务器并登录');
-  const res = await new File(fileUri).upload(url, {
-    uploadType: UploadType.MULTIPART,
-    fieldName: 'file',
-    mimeType,
-    headers: { Authorization: `Bearer ${cred.value}` },
-  });
+  const headers = { Authorization: `Bearer ${cred.value}` };
+  const res = supportsNativeUpload()
+    ? await new File(fileUri).upload(url, {
+        uploadType: UploadType.MULTIPART,
+        fieldName: 'file',
+        mimeType,
+        headers,
+      })
+    : await FileSystem.uploadAsync(url, fileUri, {
+        httpMethod: 'POST',
+        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+        fieldName: 'file',
+        mimeType,
+        headers,
+      });
   const data = parseBodyLoose(res.body);
   if (res.status < 200 || res.status >= 300) {
     throw new Error((data as any).message || `上传失败(${res.status})`);
