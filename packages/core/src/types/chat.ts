@@ -8,6 +8,8 @@ export interface ChatMessage {
   content: string;
   parentMessageId: string | null;
   createdAt: string;
+  /** 用户消息关联的附件(历史会话回显;仅带附件的消息返回) */
+  attachments?: { id: string; url: string; originalFilename: string }[];
 }
 
 export interface ChatSession {

@@ -790,6 +790,13 @@ export async function chatRoutes(app: FastifyInstance) {
     })
     historyIds.push(userMsgDb.id)
 
+    // 持久化消息与附件的关联（历史会话回显附件 + 防止孤儿清理误删聊天中的附件）
+    if (attachments.length > 0) {
+      await prisma.chatMessageAttachment.createMany({
+        data: attachments.map(a => ({ messageId: userMsgDb.id, attachmentId: a.id })),
+      })
+    }
+
     // 查询账本名称用于提示词
     const book = await prisma.accountBook.findUnique({
       where: { id: accountBookId },
@@ -1025,10 +1032,24 @@ export async function chatRoutes(app: FastifyInstance) {
 
     const messages = await prisma.chatMessage.findMany({
       where: { sessionId: id },
-      select: { id: true, role: true, content: true, toolCalls: true, modelProvider: true, modelName: true, parentMessageId: true, createdAt: true },
+      select: {
+        id: true, role: true, content: true, toolCalls: true, modelProvider: true, modelName: true, parentMessageId: true, createdAt: true,
+        attachments: {
+          orderBy: { createdAt: 'asc' },
+          select: { attachment: { select: { id: true, path: true, originalFilename: true } } },
+        },
+      },
       orderBy: { createdAt: 'asc' },
     })
-    return { messages }
+    // 附件关联展平为 { id, url, originalFilename } 列表供前端回显
+    return {
+      messages: messages.map(({ attachments, ...m }) => ({
+        ...m,
+        ...(attachments.length > 0 ? {
+          attachments: attachments.map(a => ({ id: a.attachment.id, url: a.attachment.path, originalFilename: a.attachment.originalFilename })),
+        } : {}),
+      })),
+    }
   })
 
   // 确认操作 → 始终批量处理（decisions 数组）

@@ -22,6 +22,8 @@ export interface ChatMessage {
   modelName?: string;
   parentMessageId?: string | null;
   createdAt: string;
+  /** 用户消息关联的附件(仅带附件的消息返回) */
+  attachments?: { id: string; url: string; originalFilename: string }[];
   usage?: {
     inputTokens: number;
     outputTokens: number;

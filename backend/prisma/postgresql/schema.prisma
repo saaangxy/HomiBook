@@ -144,12 +144,26 @@ model Record {
 
 // 流水附件
 model RecordAttachment {
-  id               String   @id @default(uuid())
-  recordId         String?  // 关联的流水 ID（创建前为 null）
-  path             String   // 文件存储路径
-  originalFilename String   // 原始文件名
-  createdAt        DateTime @default(now())
-  record           Record?  @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  id               String                   @id @default(uuid())
+  recordId         String?                  // 关联的流水 ID（创建前为 null）
+  path             String                   // 文件存储路径
+  originalFilename String                   // 原始文件名
+  createdAt        DateTime                 @default(now())
+  record           Record?                  @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  chatMessages     ChatMessageAttachment[]  // 引用此附件的聊天消息
+}
+
+// AI 聊天消息附件关联
+model ChatMessageAttachment {
+  id           String           @id @default(uuid())
+  messageId    String
+  message      ChatMessage      @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  attachmentId String
+  attachment   RecordAttachment @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
+  createdAt    DateTime         @default(now())
+
+  @@index([messageId])
+  @@index([attachmentId])
 }
 
 // 系统分类
@@ -342,19 +356,20 @@ model ChatSession {
 
 // AI 聊天消息
 model ChatMessage {
-  id              String       @id @default(uuid())
+  id              String                   @id @default(uuid())
   sessionId       String
-  session         ChatSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session         ChatSession              @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   accountBookId   String?
-  accountBook     AccountBook? @relation(fields: [accountBookId], references: [id], onDelete: SetNull)
+  accountBook     AccountBook?             @relation(fields: [accountBookId], references: [id], onDelete: SetNull)
   role            String
   content         String @db.Text
   toolCalls       String? @db.Text
-  tokenCount      Int          @default(0)
+  tokenCount      Int                      @default(0)
   modelProvider   String?
   modelName       String?
   parentMessageId String?
-  createdAt       DateTime     @default(now())
+  createdAt       DateTime                 @default(now())
+  attachments     ChatMessageAttachment[]
 
   @@index([sessionId, createdAt])
 }

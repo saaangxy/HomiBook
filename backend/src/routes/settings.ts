@@ -233,9 +233,13 @@ export async function settingsRoutes(app: FastifyInstance) {
             }, async () => {
                 const uploadsDir = path.join(process.cwd(), 'uploads')
 
-                // 1. 数据库孤儿：recordId 为 null 的 RecordAttachment 记录
+                // 被聊天消息引用的附件不算孤儿（AI 聊天中的图片/文件 recordId 为 null 但仍在使用）
+                const chatted = await prisma.chatMessageAttachment.findMany({select: {attachmentId: true}, distinct: ['attachmentId']})
+                const chatReferencedIds = chatted.map((c) => c.attachmentId)
+
+                // 1. 数据库孤儿：recordId 为 null 且未被聊天消息引用的 RecordAttachment 记录
                 const dbOrphans = await prisma.recordAttachment.findMany({
-                    where: {recordId: null},
+                    where: {recordId: null, id: {notIn: chatReferencedIds}},
                     select: {id: true, path: true, originalFilename: true, createdAt: true},
                     orderBy: {createdAt: 'asc'},
                 })
@@ -281,9 +285,13 @@ export async function settingsRoutes(app: FastifyInstance) {
                 let deletedFiles = 0
                 let deletedRecords = 0
 
-                // 1. 清理数据库孤儿（recordId 为 null）的记录和文件
+                // 被聊天消息引用的附件不清理（AI 聊天中的图片/文件仍在使用）
+                const chatted = await prisma.chatMessageAttachment.findMany({select: {attachmentId: true}, distinct: ['attachmentId']})
+                const chatReferencedIds = chatted.map((c) => c.attachmentId)
+
+                // 1. 清理数据库孤儿（recordId 为 null 且未被聊天引用）的记录和文件
                 const dbOrphans = await prisma.recordAttachment.findMany({
-                    where: {recordId: null},
+                    where: {recordId: null, id: {notIn: chatReferencedIds}},
                     select: {id: true, path: true},
                 })
                 for (const att of dbOrphans) {
@@ -299,7 +307,7 @@ export async function settingsRoutes(app: FastifyInstance) {
                 }
                 if (dbOrphans.length > 0) {
                     const result = await prisma.recordAttachment.deleteMany({
-                        where: {recordId: null},
+                        where: {recordId: null, id: {notIn: chatReferencedIds}},
                     })
                     deletedRecords = result.count
                 }

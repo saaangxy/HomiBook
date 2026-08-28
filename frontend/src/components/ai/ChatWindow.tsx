@@ -111,6 +111,8 @@ export function ChatWindow() {
           role: m.role as 'user' | 'assistant',
           blocks,
           parentMessageId: m.parentMessageId ?? undefined,
+          // 恢复用户消息附件(服务端 URL,刷新/冷启动后仍可回显)
+          ...(m.attachments?.length ? { attachments: m.attachments } : {}),
         }
       })
       setMessages(parsed.length > 0 ? parsed : [greetingMsg])

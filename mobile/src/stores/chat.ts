@@ -376,6 +376,8 @@ export const useChatStore = create<ChatState>()((set, get) => ({
           parentMessageId: m.parentMessageId ?? undefined,
           role: m.role === 'user' ? 'user' : 'assistant',
           blocks,
+          // 恢复用户消息附件(服务端相对 URL,渲染时经 resolveFileUrl 转绝对地址)
+          ...(m.attachments?.length ? { attachments: m.attachments } : {}),
           usage: m.role === 'assistant' ? m.usage : undefined,
         };
       });
