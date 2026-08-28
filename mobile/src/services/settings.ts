@@ -32,8 +32,16 @@ export const settingsApi = {
   cleanOrphanAttachments: () => http.post<{ deletedFiles: number; deletedRecords: number }>('/api/settings/attachments/clean-orphans', {}),
 };
 
+export interface HolidayItem {
+  id: string;
+  date: string;       // yyyy-mm-dd
+  name: string;       // 节假日名称
+  isWorkday: boolean; // true=调休上班日(班)
+}
+
 export const holidayApi = {
   sync: () => http.post<{ imported: number }>('/api/holidays/sync', {}),
+  getByYear: (year: number) => http.get<HolidayItem[]>(`/api/holidays?year=${year}`),
 };
 
 export interface ApiKeyItem {

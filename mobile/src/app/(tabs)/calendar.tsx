@@ -11,6 +11,7 @@ import { RecordRow } from '@/components/RecordRow';
 import { FormSheet } from '@/components/chrome/FormSheet';
 import { useUIShell } from '@/components/chrome/chrome';
 import { fetchCalendar, fetchRecords, type CalendarDay } from '@/services/records';
+import { holidayApi, type HolidayItem } from '@/services/settings';
 import { useRecords } from '@/stores/records';
 import type { RecordItem } from '@/types';
 import { formatMoney, formatMoneyShort } from '@/lib/format';
@@ -58,6 +59,14 @@ export default function CalendarScreen() {
     return () => { cancel = true; };
   }, [bookId, year, month, selected]);
 
+  // 节假日/调休数据(按年拉取,同 web 端 /api/holidays)
+  const [holidays, setHolidays] = useState<HolidayItem[]>([]);
+  useEffect(() => {
+    let cancel = false;
+    holidayApi.getByYear(year).then((d) => { if (!cancel) setHolidays(d); }).catch(() => {});
+    return () => { cancel = true; };
+  }, [year]);
+
   const [refreshing, setRefreshing] = useState(false);
   // 下拉刷新:重拉 store(分类) + 月汇总 + 当日流水
   const onRefresh = useCallback(async () => {
@@ -104,6 +113,13 @@ export default function CalendarScreen() {
     }
     return m;
   }, [monthlyDays]);
+
+  // 节假日索引(yyyy-mm-dd → 节假日信息)
+  const holidayMap = useMemo(() => {
+    const m: Record<string, HolidayItem> = {};
+    for (const h of holidays) m[h.date.slice(0, 10)] = h;
+    return m;
+  }, [holidays]);
 
   const dayRecords = dayList;
   const dayTotals = useMemo(() => {
@@ -217,13 +233,21 @@ export default function CalendarScreen() {
                 const isSel = d === selected;
                 const sum = daySum[key(d)];
                 const hasSum = !!sum && (sum.income > 0 || sum.expense > 0 || sum.transfer > 0);
+                const holiday = holidayMap[key(d)];
                 return (
                   <Pressable key={d} onPress={() => onPressDay(d)} style={{ width: cellW, height: ROW_FULL, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 3 }}>
                     <View style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: isSel || isToday ? colors.primary : 'transparent' }}>
-                      <Text style={{ fontSize: 13, fontWeight: isToday || isSel ? '700' : '400', color: isSel || isToday ? colors.primaryForeground : colors.foreground }}>
+                      {/* 节假日数字标红(同 web 端法定休日 rose 色),选中/今天保持主色 */}
+                      <Text style={{ fontSize: 13, fontWeight: isToday || isSel ? '700' : '400', color: isSel || isToday ? colors.primaryForeground : holiday && !holiday.isWorkday ? colors.expense : colors.foreground }}>
                         {d}
                       </Text>
                     </View>
+                    {/* 节假日名称/调休班标记(同 web 端:休日显示名称,调休日显示"班") */}
+                    {holiday && (
+                      <Text numberOfLines={1} style={{ fontSize: 8.5, lineHeight: 11, marginTop: 1, maxWidth: '100%', color: holiday.isWorkday ? colors.mutedForeground : colors.expense, fontWeight: holiday.isWorkday ? '400' : '500' }}>
+                        {holiday.isWorkday ? '班' : holiday.name}
+                      </Text>
+                    )}
                     {hasSum && (
                       <View style={{ alignItems: 'center', marginTop: 2 }}>
                         {sum!.transfer > 0 && (

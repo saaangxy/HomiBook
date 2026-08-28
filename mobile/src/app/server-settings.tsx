@@ -3,10 +3,10 @@ import { Alert, Pressable, ScrollView, View } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, Bot, Brain, BookOpen, Database, FolderOpen, Key, Link2, Settings, Wallet } from 'lucide-react-native';
-import { useTheme } from '@/theme';
+import { useTheme, paletteOrder, palettes } from '@/theme';
 import { useAuth } from '@/stores/auth';
 import { Text } from '@/components/ui/Text';
-import { Section, FieldRow, Chips, Btn, ErrorText, OkText, LabeledInput } from '@/components/settings/shared';
+import { Section, Field, Chips, Btn, ErrorText, OkText, LabeledInput } from '@/components/settings/shared';
 import { AccountMappingManager, ApiKeyManager, CategoryMappingManager, DictManager, DICT_GROUPS } from '@/components/settings/Managers';
 import { AIAssistantSettings } from '@/components/settings/AIAssistantSettings';
 import { holidayApi, memoryApi, settingsApi, type UserMemory } from '@/services/settings';
@@ -131,9 +131,15 @@ const AUDIT_RETENTION_OPTIONS = [
   { value: '90', label: '90 天' },
   { value: '180', label: '180 天' },
 ];
+// 全局默认主题选项:跟随系统 + 全部调色板(与移动端外观主题/网页端一致)
+const THEME_OPTIONS = [
+  { value: 'system', label: '跟随系统' },
+  ...paletteOrder.map((id) => ({ value: id, label: palettes[id].name })),
+];
 
 // ── 通用设置(管理员) ──
 function GeneralSettings() {
+  const { colors } = useTheme();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -201,43 +207,41 @@ function GeneralSettings() {
 
   if (loading) return <Text variant="muted" style={{ fontSize: 12.5, textAlign: 'center', paddingVertical: 12 }}>加载中...</Text>;
 
+  // 字段间分隔线(纵向布局:label/说明在上,控件全宽在下,不再左右挤压)
+  const divider = <View style={{ height: 1, backgroundColor: colors.hairline }} />;
+
   return (
-    <View style={{ gap: 14 }}>
+    <View style={{ gap: 12 }}>
       <ErrorText msg={error} />
       <OkText msg={ok} />
-      <FieldRow label="开放注册" desc="关闭后登录页面将隐藏注册入口">
-        <View style={{ width: 150 }}>
-          <Chips options={[{ value: 'true', label: '已开启' }, { value: 'false', label: '已关闭' }]} value={String(cfg.registrationOpen)} onChange={(v) => setCfg((s) => ({ ...s, registrationOpen: v === 'true' }))} />
-        </View>
-      </FieldRow>
-      <FieldRow label="默认货币" desc="新建账本时使用的默认货币单位">
-        <View style={{ width: 200 }}>
-          <Chips options={CURRENCIES.map((c) => ({ value: c, label: c }))} value={cfg.defaultCurrency} onChange={(v) => setCfg((s) => ({ ...s, defaultCurrency: v }))} />
-        </View>
-      </FieldRow>
+      <Field label="开放注册" desc="关闭后登录页面将隐藏注册入口">
+        <Chips options={[{ value: 'true', label: '已开启' }, { value: 'false', label: '已关闭' }]} value={String(cfg.registrationOpen)} onChange={(v) => setCfg((s) => ({ ...s, registrationOpen: v === 'true' }))} />
+      </Field>
+      {divider}
+      <Field label="默认货币" desc="新建账本时使用的默认货币单位">
+        <Chips options={CURRENCIES.map((c) => ({ value: c, label: c }))} value={cfg.defaultCurrency} onChange={(v) => setCfg((s) => ({ ...s, defaultCurrency: v }))} />
+      </Field>
+      {divider}
       <LabeledInput label="支出高亮阈值(元)" desc="流水日历中当日支出超过此金额的日期高亮显示" value={cfg.amountHighlightThreshold} onChangeText={(v) => setCfg((s) => ({ ...s, amountHighlightThreshold: v }))} keyboardType="numeric" />
-      <FieldRow label="登录有效期" desc="Token 有效时长,修改仅对后续登录生效">
-        <View style={{ width: 170 }}>
-          <Chips options={JWT_EXPIRE_OPTIONS} value={cfg.jwtExpiresIn} onChange={(v) => setCfg((s) => ({ ...s, jwtExpiresIn: v }))} />
-        </View>
-      </FieldRow>
-      <FieldRow label="AI 审计日志保留" desc="超过保留天数的 AI 操作记录自动删除">
-        <View style={{ width: 170 }}>
-          <Chips options={AUDIT_RETENTION_OPTIONS} value={cfg.auditLogRetentionDays} onChange={(v) => setCfg((s) => ({ ...s, auditLogRetentionDays: v }))} />
-        </View>
-      </FieldRow>
-      <FieldRow label="节假日数据源" desc="用于同步和显示节假日/调休信息">
-        <View style={{ width: 260 }}>
-          <Chips options={HOLIDAY_API_OPTIONS} value={HOLIDAY_API_OPTIONS.some((o) => o.value === cfg.holidayApiUrl) ? cfg.holidayApiUrl : '__custom__'} onChange={(v) => setCfg((s) => ({ ...s, holidayApiUrl: v === '__custom__' ? '' : v }))} />
-        </View>
-      </FieldRow>
+      {divider}
+      <Field label="登录有效期" desc="Token 有效时长,修改仅对后续登录生效">
+        <Chips options={JWT_EXPIRE_OPTIONS} value={cfg.jwtExpiresIn} onChange={(v) => setCfg((s) => ({ ...s, jwtExpiresIn: v }))} />
+      </Field>
+      {divider}
+      <Field label="AI 审计日志保留" desc="超过保留天数的 AI 操作记录自动删除">
+        <Chips options={AUDIT_RETENTION_OPTIONS} value={cfg.auditLogRetentionDays} onChange={(v) => setCfg((s) => ({ ...s, auditLogRetentionDays: v }))} />
+      </Field>
+      {divider}
+      <Field label="节假日数据源" desc="用于同步和显示节假日/调休信息">
+        <Chips options={HOLIDAY_API_OPTIONS} value={HOLIDAY_API_OPTIONS.some((o) => o.value === cfg.holidayApiUrl) ? cfg.holidayApiUrl : '__custom__'} onChange={(v) => setCfg((s) => ({ ...s, holidayApiUrl: v === '__custom__' ? '' : v }))} />
+      </Field>
       <LabeledInput label="自定义节假日 API 地址({year} 为年份占位符)" value={cfg.holidayApiUrl} onChangeText={(v) => setCfg((s) => ({ ...s, holidayApiUrl: v }))} />
       <Btn title="同步节假日" variant="secondary" onPress={syncHolidays} loading={syncing} />
-      <FieldRow label="全局默认主题" desc="未设置个人主题的用户使用此主题">
-        <View style={{ width: 180 }}>
-          <Chips options={[{ value: 'system', label: '跟随系统' }, { value: 'light', label: '浅色' }, { value: 'dark', label: '深色' }]} value={cfg.defaultTheme} onChange={(v) => setCfg((s) => ({ ...s, defaultTheme: v }))} />
-        </View>
-      </FieldRow>
+      {divider}
+      <Field label="全局默认主题" desc="未设置个人主题的用户使用此主题">
+        <Chips options={THEME_OPTIONS} value={cfg.defaultTheme} onChange={(v) => setCfg((s) => ({ ...s, defaultTheme: v }))} />
+      </Field>
+      {divider}
       <Btn title="保存配置" onPress={save} loading={saving} />
     </View>
   );

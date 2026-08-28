@@ -1,5 +1,6 @@
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
+import { File, UploadType } from 'expo-file-system';
 import { secureDelete, secureGet, secureSet } from './storage';
 
 // HTTP 客户端:baseUrl 注入 + Bearer 凭据(JWT 与 API Key 同通道,后端自动识别)
@@ -147,14 +148,18 @@ function parseBodyLoose(body: string): Record<string, unknown> {
   try { return body ? JSON.parse(body) : {}; } catch { return {}; }
 }
 
-/** 原生 multipart 上传:原样传输文件字节;返回服务端 JSON */
+/**
+ * 原生 multipart 上传:原样传输文件字节;返回服务端 JSON。
+ * 用新 API File.upload 而非 legacy uploadAsync —— legacy 在 Android(尤其 Expo Go)对
+ * 上传路径做白名单可读性检查,DocumentPicker 复制出的 cache/DocumentPicker 文件会被
+ * 误判 "isn't readable";新 API 直接原生 File IO 读取,无此限制。
+ */
 export async function uploadFileNative<T>(url: string, fileUri: string, mimeType: string): Promise<T> {
   const cred = await getCredential();
   if (!url || !fileUri) throw new Error('缺少上传参数');
   if (!cred) throw new Error('请先配置服务器并登录');
-  const res = await FileSystem.uploadAsync(url, fileUri, {
-    httpMethod: 'POST',
-    uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+  const res = await new File(fileUri).upload(url, {
+    uploadType: UploadType.MULTIPART,
     fieldName: 'file',
     mimeType,
     headers: { Authorization: `Bearer ${cred.value}` },
