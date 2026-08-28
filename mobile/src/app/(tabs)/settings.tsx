@@ -1,41 +1,68 @@
-import { Pressable, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Linking, Pressable, View } from 'react-native';
+import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
-import { ChevronRight, Palette, LogOut, CircleUserRound, Server } from 'lucide-react-native';
+import { ChevronRight, CircleUserRound, ExternalLink, LogOut, Palette, Server, ServerCog, Smartphone, User } from 'lucide-react-native';
 import { useTheme, alpha } from '@/theme';
 import { useAuth } from '@/stores/auth';
 import { Screen } from '@/components/Screen';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { FadeInView } from '@/components/FadeInView';
+import { fetchAppVersion } from '@/services/settings';
 
-interface RowProps {
-  icon: React.ReactNode;
-  iconBg?: string;
-  label: string;
-  right?: React.ReactNode;
-  onPress?: () => void;
-  danger?: boolean;
-  last?: boolean;
+// 设置分区标题(App / 服务器)
+function GroupTitle({ title }: { title: string }) {
+  return (
+    <Text variant="muted" style={{ fontSize: 12, fontWeight: '600', letterSpacing: 1, marginTop: 8, marginBottom: 8 }}>
+      {title}
+    </Text>
+  );
 }
 
-function Row({ icon, iconBg, label, right, onPress, danger, last }: RowProps) {
+function Row({ icon, label, right, onPress, last }: {
+  icon: React.ReactNode; label: string; right?: React.ReactNode; onPress?: () => void; last?: boolean;
+}) {
   const { colors } = useTheme();
   return (
     <Pressable onPress={onPress} className="flex-row items-center gap-3 px-5 py-4" style={!last ? { borderBottomWidth: 1, borderBottomColor: colors.hairline } : null}>
-      <View style={{ width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: iconBg ?? colors.muted }}>
+      <View style={{ width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.muted }}>
         {icon}
       </View>
-      <Text style={{ color: danger ? colors.expense : colors.foreground, fontSize: 15, flex: 1, fontWeight: '500' }}>{label}</Text>
+      <Text style={{ fontSize: 15, flex: 1, fontWeight: '500' }}>{label}</Text>
       {right ?? <ChevronRight size={17} color={colors.mutedForeground} />}
     </Pressable>
   );
 }
 
+// ── 关于(App 风格信息行,并入 App 卡片) ──
+function useAboutRows() {
+  const { colors } = useTheme();
+  const [serverVersion, setServerVersion] = useState('');
+  useEffect(() => { fetchAppVersion().then(setServerVersion); }, []);
+  const appVersion = Constants.expoConfig?.version ?? '';
+
+  const rows: { icon: React.ReactNode; label: string; right: React.ReactNode; onPress?: () => void }[] = [
+    { icon: <Smartphone size={15} color={colors.primary} />, label: 'App 版本', right: <Text variant="muted" style={{ fontSize: 13 }}>{appVersion ? `v${appVersion}` : '—'}</Text> },
+    { icon: <Server size={15} color={colors.primary} />, label: '服务端版本', right: <Text variant="muted" style={{ fontSize: 13 }}>{serverVersion ? `v${serverVersion}` : '—'}</Text> },
+    { icon: <User size={15} color={colors.primary} />, label: '开发者', right: <Text variant="muted" style={{ fontSize: 13 }}>saaangxy</Text> },
+    {
+      icon: <ExternalLink size={15} color={colors.primary} />, label: 'GitHub 仓库',
+      right: <Text variant="muted" style={{ fontSize: 13 }}>saaangxy/HomiBook</Text>,
+      onPress: () => Linking.openURL('https://github.com/saaangxy/HomiBook').catch(() => {}),
+    },
+  ];
+  return rows;
+}
+
+// 设置页(App 本身;服务端管理拆分至 server-settings 页面)
 export default function SettingsScreen() {
   const { colors, themeId, palette } = useTheme();
-  const { nickname, username, currentServer, logout } = useAuth();
+  const { user, nickname, username, currentServer, logout } = useAuth();
   const router = useRouter();
+  const isAdmin = user?.role === 'ADMIN';
   const themeName = themeId === 'system' ? '跟随系统' : palette.name;
+  const aboutRows = useAboutRows();
 
   return (
     <Screen scroll>
@@ -50,15 +77,16 @@ export default function SettingsScreen() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 17, fontWeight: '600' }}>{nickname || username}</Text>
-              <Text variant="muted" style={{ fontSize: 12, marginTop: 2 }}>@{username}</Text>
+              <Text variant="muted" style={{ fontSize: 12, marginTop: 2 }}>@{username}{isAdmin ? ' · 管理员' : ''}</Text>
             </View>
             <ChevronRight size={17} color={colors.mutedForeground} />
           </Card>
         </FadeInView>
 
-        {/* 服务器 + 外观 */}
+        {/* ══ App ══ */}
+        <GroupTitle title="App" />
         <FadeInView index={1}>
-          <Card className="px-0 py-2 mb-4 overflow-hidden">
+          <Card className="px-0 py-2 mb-2 overflow-hidden">
             <Row
               icon={<Server size={16} color={colors.foreground} />}
               label="服务器切换"
@@ -75,8 +103,36 @@ export default function SettingsScreen() {
           </Card>
         </FadeInView>
 
+        {/* ══ 服务器(仅管理员:入口跳转独立管理页) ══ */}
+        {isAdmin && (
+          <>
+            <GroupTitle title="服务器" />
+            <FadeInView index={2}>
+              <Card className="px-0 py-2 mb-2 overflow-hidden">
+                <Row
+                  icon={<ServerCog size={16} color={colors.primary} />}
+                  label="服务器管理"
+                  right={<Text variant="muted" style={{ fontSize: 12 }}>通用 · AI · 字典 · 记忆 · 密钥</Text>}
+                  onPress={() => router.push('/server-settings')}
+                  last
+                />
+              </Card>
+            </FadeInView>
+          </>
+        )}
+
+        {/* ══ 关于 ══ */}
+        <GroupTitle title="关于" />
+        <FadeInView index={3}>
+          <Card className="px-0 py-2 overflow-hidden">
+            {aboutRows.map((row, i) => (
+              <Row key={row.label} icon={row.icon} label={row.label} right={row.right} onPress={row.onPress} last={i === aboutRows.length - 1} />
+            ))}
+          </Card>
+        </FadeInView>
+
         {/* 退出 */}
-        <FadeInView index={2}>
+        <FadeInView index={4}>
           <Pressable
             onPress={async () => {
               await logout();
@@ -92,6 +148,8 @@ export default function SettingsScreen() {
               borderWidth: 1,
               borderColor: colors.expense,
               backgroundColor: colors.card,
+              marginTop: 16,
+              marginBottom: 24,
             }}
           >
             <LogOut size={16} color={colors.expense} />
