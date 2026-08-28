@@ -226,6 +226,56 @@ export async function analyzeImportCsv(bookId: string, params: { filePath?: stri
   return httpJson('POST', `/api/records/import/csv/analyze`, { accountBookId: bookId, ...params });
 }
 
+// ── 工具显示名称(web tool-names 同款:接口缓存 + 静态表兜底) ──
+const STATIC_TOOL_NAMES: Record<string, string> = {
+  create_record: '记一笔',
+  batch_create_records: '批量记账',
+  update_record: '修改流水',
+  delete_record: '删除流水',
+  query_records: '查询流水',
+  query_summary: '收支统计',
+  query_budgets: '查询预算',
+  create_budget: '创建预算',
+  batch_create_budgets: '批量创建预算',
+  update_budget: '修改预算',
+  delete_budget: '删除预算',
+  query_recurring: '查询固定收支',
+  create_recurring: '创建固定收支',
+  query_accounts: '查询账户',
+  create_account: '创建账户',
+  adjust_balance: '余额调整',
+  web_search: '联网搜索',
+  read_webpage: '读取网页',
+  suggest_options: '补充信息',
+  switch_book: '切换账本',
+  preview_import: '导入预览',
+  confirm_import: '确认导入',
+};
+
+let toolNamesCache: Record<string, string> | null = null;
+let toolNamesLoading: Promise<void> | null = null;
+
+/** 预加载工具名称(GET /api/chat/tools,首次后缓存) */
+export function loadToolNames(): Promise<void> {
+  if (toolNamesCache) return Promise.resolve();
+  if (toolNamesLoading) return toolNamesLoading;
+  toolNamesLoading = httpJson<{ groups?: { tools?: { name: string; displayName: string }[] }[] }>('GET', `${BASE}/tools`)
+    .then((res) => {
+      const cache: Record<string, string> = {};
+      for (const g of res.groups ?? []) {
+        for (const t of g.tools ?? []) cache[t.name] = t.displayName;
+      }
+      toolNamesCache = cache;
+    })
+    .catch(() => {});
+  return toolNamesLoading;
+}
+
+/** 同步获取工具显示名称:接口缓存 → 静态表 → 原始名 */
+export function getToolDisplayName(toolName: string): string {
+  return toolNamesCache?.[toolName] ?? STATIC_TOOL_NAMES[toolName] ?? toolName;
+}
+
 export async function previewImport(bookId: string, params: Record<string, unknown>): Promise<unknown> {
   return httpJson('POST', `/api/records/import/preview`, { accountBookId: bookId, ...params });
 }

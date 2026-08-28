@@ -1,11 +1,10 @@
-import type { AccountItem, BudgetItem, Category, Ledger, LedgerMember, RadarMetric, RecordItem, RecordSummary, ShareCodeItem } from '@/types';
+import type { AccountItem, BudgetItem, Category, Ledger, LedgerMember, RecordItem, RecordSummary, ShareCodeItem } from '@/types';
 import { http, getBaseUrl, uploadFileNative } from './http';
 import type {
   AccountItem as CoreAccount,
   BookItem,
   BookMember,
   BudgetItem as CoreBudget,
-  CategorySummary,
   MonthlyTrendPoint,
   RecordItem as CoreRecord,
   RecordSummary as CoreSummary,
@@ -94,6 +93,7 @@ export interface RecordQuery {
   remark?: string;
   tags?: string;
   payer?: string;
+  ownerId?: string;
 }
 
 export async function fetchRecords(bookId: string, opts?: RecordQuery): Promise<RecordItem[]> {
@@ -120,6 +120,32 @@ export async function fetchRecords(bookId: string, opts?: RecordQuery): Promise<
   return (res.records ?? []).map(toRecordItem);
 }
 
+/** 分页查询(含 total,统计详情弹层用) */
+export async function fetchRecordsPaged(bookId: string, opts?: RecordQuery): Promise<{ records: RecordItem[]; total: number }> {
+  const res = await http.get<{ records: CoreRecord[]; total: number; page: number; pageSize: number; totalPages: number }>(
+    '/api/records/',
+    {
+      query: {
+        bookId,
+        page: opts?.page ?? 1,
+        pageSize: opts?.pageSize ?? 20,
+        dateFrom: opts?.dateFrom,
+        dateTo: opts?.dateTo,
+        type: opts?.types?.length ? opts.types.join(',') : undefined,
+        accountId: opts?.accountId,
+        categoryCode: opts?.categoryCode,
+        amountFrom: opts?.amountFrom,
+        amountTo: opts?.amountTo,
+        remark: opts?.remark,
+        tags: opts?.tags,
+        payer: opts?.payer,
+        ownerId: opts?.ownerId,
+      },
+    },
+  );
+  return { records: (res.records ?? []).map(toRecordItem), total: res.total ?? 0 };
+}
+
 /** 月视图每日汇总(GET /api/records/calendar) */
 export interface CalendarDay {
   date: string;
@@ -134,9 +160,17 @@ export async function fetchCalendar(bookId: string, year: number, month: number)
   return res ?? [];
 }
 
-export async function fetchSummary(bookId: string): Promise<RecordSummary> {
+export async function fetchSummary(bookId: string, opts?: { dateFrom?: string; dateTo?: string; type?: string; categoryCode?: string }): Promise<RecordSummary> {
   const res = await http.get<CoreSummary>('/api/records/summary', {
-    query: { bookId, page: 1, pageSize: 1 },
+    query: {
+      bookId,
+      page: 1,
+      pageSize: 1,
+      dateFrom: opts?.dateFrom,
+      dateTo: opts?.dateTo,
+      type: opts?.type,
+      categoryCode: opts?.categoryCode,
+    },
   });
   return {
     income: res.income ?? 0,
@@ -144,6 +178,45 @@ export async function fetchSummary(bookId: string): Promise<RecordSummary> {
     transfer: res.transfer ?? 0,
     netIncome: res.netIncome ?? 0,
   };
+}
+
+/** 分组汇总(饼图数据:分类/归属/账户占比),金额降序由调用方处理 */
+export interface GroupSummaryItem {
+  key: string;
+  label: string;
+  amount: number;
+}
+
+export async function fetchGroupSummary(bookId: string, params: {
+  type: string;
+  groupBy: 'category' | 'ownerId' | 'accountId';
+  dateFrom?: string;
+  dateTo?: string;
+  accountId?: string;
+  ownerId?: string;
+  categoryCode?: string;
+  tags?: string;
+}): Promise<GroupSummaryItem[]> {
+  const res = await http.get<GroupSummaryItem[]>('/api/records/group-summary', { query: { bookId, ...params } });
+  return (res ?? []).sort((a, b) => b.amount - a.amount);
+}
+
+/** 分类趋势(堆叠柱图:yearly→按月,monthly/free→按日) */
+export interface CategoryTrendResult {
+  periods: string[];
+  categories: { code: string | null; name: string; data: number[] }[];
+}
+
+export async function fetchCategoryTrend(bookId: string, params: {
+  type?: string;
+  granularity: 'monthly' | 'daily';
+  year?: number;
+  month?: number;
+  dateFrom?: string;
+  dateTo?: string;
+}): Promise<CategoryTrendResult> {
+  const res = await http.get<CategoryTrendResult>('/api/records/category-trend', { query: { bookId, ...params } });
+  return { periods: res?.periods ?? [], categories: res?.categories ?? [] };
 }
 
 export interface RecordCreatePayload {
@@ -188,19 +261,29 @@ export async function deleteRecordApi(bookId: string, id: string): Promise<void>
   await http.delete(`/api/records/${id}`);
 }
 
-export async function fetchMonthlyTrend(bookId: string) {
-  const res = await http.get<MonthlyTrendPoint[]>('/api/records/monthly-trend', { query: { bookId } });
+export async function fetchMonthlyTrend(bookId: string, dateFrom?: string, dateTo?: string) {
+  const res = await http.get<MonthlyTrendPoint[]>('/api/records/monthly-trend', { query: { bookId, dateFrom, dateTo } });
   return {
+    months: (res ?? []).map((p) => p.month),
     income: (res ?? []).map((p) => p.income ?? 0),
     expense: (res ?? []).map((p) => p.expense ?? 0),
   };
 }
 
-export async function fetchRadar(bookId: string, type?: string): Promise<RadarMetric[]> {
-  const res = await http
-    .get<CategorySummary[]>('/api/records/category-summary', { query: { bookId, type: type ?? 'EXPENSE' } })
-    .catch(() => []);
-  return (res ?? []).map((c) => ({ name: c.categoryName, value: c.amount }));
+/** 账户余额历史(按月/按日),资产净值趋势用(对齐 web accountApi.balanceHistory) */
+export interface BalanceHistoryItem {
+  accountId: string;
+  accountName: string;
+  balances: { date: string; balance: number }[];
+}
+
+export async function fetchBalanceHistory(bookId: string, params: {
+  accountIds?: string;
+  granularity: 'daily' | 'monthly';
+  dateFrom: string;
+  dateTo: string;
+}): Promise<BalanceHistoryItem[]> {
+  return (await http.get<BalanceHistoryItem[]>('/api/accounts/balance-history', { query: { bookId, ...params } }).catch(() => [])) ?? [];
 }
 
 // ── 账户 ──
