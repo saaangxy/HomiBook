@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import type { Message, MessageBlock } from '@/stores/chat'
 import { useAuthStore } from '@/stores/auth'
 import { ToolCallCard } from './ToolCallCard'
-import { Bot, Brain, ChevronDown, ChevronLeft, ChevronRight, Copy, RefreshCw, Pencil, Check, Loader2 } from 'lucide-react'
+import { Bot, Brain, ChevronDown, ChevronLeft, ChevronRight, Copy, FileSpreadsheet, RefreshCw, Pencil, Check, Loader2 } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 
@@ -24,6 +24,15 @@ export function getMessageText(message: Message): string {
     .filter((b): b is Extract<MessageBlock, { type: 'text' }> => b.type === 'text')
     .map((b) => b.content)
     .join('\n')
+}
+
+const IMPORT_SOURCE_LABELS: Record<string, string> = { alipay: '支付宝', wechat: '微信', jd: '京东' }
+
+/** 解析导入消息文本(发送时为 AI 解析拼接的元数据行,渲染时转为文件卡片) */
+function parseImportMeta(text: string): { desc: string; fileName: string; source: string } | null {
+  const m = text.match(/^([\s\S]*?)\s*\nfileId:\s*(\S+)\s*\nsource:\s*(\S+)\s*\n文件名:\s*(.+?)\s*$/)
+  if (!m) return null
+  return { desc: m[1].trim(), fileName: m[4], source: IMPORT_SOURCE_LABELS[m[3]] ?? m[3] }
 }
 
 export function MessageBubble({ message, onRetry, onEditSubmit, versions, onSwitchVersion }: Props) {
@@ -176,12 +185,26 @@ export function MessageBubble({ message, onRetry, onEditSubmit, versions, onSwit
             ) : (
               message.blocks.map((block) => {
                 if (block.type === 'text' && !block.content.trim()) return null
+                // 导入消息:fileId/source/文件名 元数据行渲染为文件卡片,仅保留描述文本
+                const importMeta = block.type === 'text' ? parseImportMeta(block.content) : null
                 return (
-                <div
-                  key={block.id}
-                  className="bg-primary text-primary-foreground rounded-2xl rounded-tr-md px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words max-w-full"
-                >
-                  {block.type === 'text' ? block.content : ''}
+                <div key={block.id} className="space-y-1.5 max-w-full">
+                  <div
+                    className="bg-primary text-primary-foreground rounded-2xl rounded-tr-md px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words max-w-full"
+                  >
+                    {block.type === 'text' ? (importMeta ? importMeta.desc : block.content) : ''}
+                  </div>
+                  {importMeta && (
+                    <div className="flex items-center gap-2.5 bg-primary/90 text-primary-foreground rounded-xl px-3.5 py-2.5">
+                      <div className="w-9 h-9 rounded-lg bg-white/20 flex items-center justify-center shrink-0">
+                        <FileSpreadsheet size={17} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{importMeta.fileName}</p>
+                        <p className="text-xs opacity-75 mt-0.5">{importMeta.source}账单 · 待导入</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )})
             )}

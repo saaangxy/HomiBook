@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Alert, ActivityIndicator, FlatList, Image, Linking, Platform, Pressable, ScrollView, Switch, TextInput, View } from 'react-native';
 import Markdown from 'react-native-markdown-display';
-import { AlertTriangle, Bot, Brain, CheckCircle2, ChevronDown, Copy, ExternalLink, FileUp, Globe, HelpCircle, ImagePlus, List, Loader2, MessageSquareMore, Plus, RefreshCw, Search, Send, Sparkles, StopCircle, Trash2, Wrench, X, XCircle } from 'lucide-react-native';
+import { AlertTriangle, Bot, Brain, CheckCircle2, ChevronDown, Copy, ExternalLink, FileSpreadsheet, FileUp, Globe, HelpCircle, ImagePlus, List, Loader2, MessageSquareMore, Plus, RefreshCw, Search, Send, Sparkles, StopCircle, Trash2, Wrench, X, XCircle } from 'lucide-react-native';
 import { useTheme, alpha, haptics } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { FormSheet } from '@/components/chrome/FormSheet';
@@ -204,10 +204,22 @@ export function AIAssistant({ onClose }: { onClose?: () => void }) {
     switch (block.type) {
       case 'thinking':
         return <ThinkingBlock key={block.id} block={block} />;
-      case 'text':
-        return block.content.trim()
-          ? <MarkdownBody key={block.id} content={block.content} inverted={isUser} />
-          : null;
+      case 'text': {
+        if (!block.content.trim()) return null;
+        // 导入消息:fileId/source/文件名 元数据行渲染为文件卡片,仅保留描述文本
+        if (isUser) {
+          const meta = parseImportMeta(block.content);
+          if (meta) {
+            return (
+              <View key={block.id} style={{ gap: 6 }}>
+                {meta.desc ? <MarkdownBody content={meta.desc} inverted /> : null}
+                <ImportFileCard fileName={meta.fileName} source={meta.source} />
+              </View>
+            );
+          }
+        }
+        return <MarkdownBody key={block.id} content={block.content} inverted={isUser} />;
+      }
       case 'tool-call':
         return <ToolCard key={block.id} toolCall={block} bookId={bookId} />;
       default:
@@ -716,6 +728,32 @@ function BatchIndicator({ toolCallId }: { toolCallId: string }) {
   const remaining = messages.filter((m) => m.role === 'assistant').reduce((acc, m) => acc + m.blocks.filter((b) => b.type === 'tool-call' && (b as ToolCallEntry).status === 'confirming').length, 0);
   if (remaining <= 1) return null;
   return <Text style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>等待全部确认 · 剩余 {remaining} 个</Text>;
+}
+
+// ── 导入消息文件卡片:把"请导入XX账单文件/fileId/source/文件名"文本渲染为附件卡片 ──
+
+const IMPORT_SOURCE_LABELS: Record<string, string> = { alipay: '支付宝', wechat: '微信', jd: '京东' };
+
+/** 解析导入消息文本(发送时为 AI 解析拼接的元数据行,渲染时转为文件卡片) */
+function parseImportMeta(text: string): { desc: string; fileName: string; source: string } | null {
+  const m = text.match(/^([\s\S]*?)\s*\nfileId:\s*(\S+)\s*\nsource:\s*(\S+)\s*\n文件名:\s*(.+?)\s*$/);
+  if (!m) return null;
+  return { desc: m[1].trim(), fileName: m[4], source: IMPORT_SOURCE_LABELS[m[3]] ?? m[3] };
+}
+
+/** 导入账单文件卡片(用户主色气泡内:白色半透明底) */
+function ImportFileCard({ fileName, source }: { fileName: string; source: string }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9, backgroundColor: alpha('#ffffff', 0.18), borderRadius: 12, paddingHorizontal: 11, paddingVertical: 9 }}>
+      <View style={{ width: 36, height: 36, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: alpha('#ffffff', 0.22) }}>
+        <FileSpreadsheet size={18} color="#fff" />
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text numberOfLines={1} style={{ fontSize: 13, fontWeight: '600', color: '#fff' }}>{fileName}</Text>
+        <Text style={{ fontSize: 10.5, color: alpha('#ffffff', 0.75), marginTop: 1 }}>{source}账单 · 待导入</Text>
+      </View>
+    </View>
+  );
 }
 
 // ── 导入预览交互卡(复刻 web ImportPreviewInteractive,UI 适配移动端) ──
