@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useIsFocused } from 'expo-router';
 import {
   RefreshControl, ScrollView, View, Pressable, Dimensions, Platform, ActivityIndicator, FlatList,
   Animated as RNAnimated, Easing as RNEasing,
@@ -19,7 +20,7 @@ import { FormSheet } from '@/components/chrome/FormSheet';
 import { DatePicker } from '@/components/ui/DatePicker';
 import { RecordRow } from '@/components/RecordRow';
 import { useRecords } from '@/stores/records';
-import { useUIShell } from '@/components/chrome/chrome';
+import { useUIShell, usePageRefresh } from '@/components/chrome/chrome';
 import {
   fetchMonthlyTrend, fetchBalanceHistory, fetchAccounts, fetchGroupSummary, fetchCategoryTrend, fetchSummary,
   fetchRecordsPaged, fetchBookMembers, fetchBudgets, type GroupSummaryItem, type CategoryTrendResult,
@@ -607,6 +608,8 @@ function SelectionBlock({ label, amount, color, onCancel, onDetail }: {
 export default function StatsPage() {
   const { colors } = useTheme();
   const { summary, refresh, accounts } = useRecords();
+  // 刷新时机:切到本页时(isFocused)重拉各视图数据
+  const isFocused = useIsFocused();
   const { currentLedger } = useUIShell();
   const bookId = currentLedger.id;
   const [tab, setTab] = useState<StatsTab>('overview');
@@ -689,7 +692,10 @@ export default function StatsPage() {
     }));
   }, [bookId, summary]);
 
-  useEffect(() => { loadOverview(); }, [loadOverview]);
+  useEffect(() => {
+    if (!isFocused) return;
+    loadOverview();
+  }, [isFocused, loadOverview]);
 
   // ── 时间视图数据(对齐 web StatsTimeView/AnalysisPanel):时间段 + 分组汇总 + 分类趋势 ──
   const pad2 = (n: number) => String(n).padStart(2, '0');
@@ -718,7 +724,7 @@ export default function StatsPage() {
   const [timeRadar, setTimeRadar] = useState<RadarMetric[]>([]);
 
   // 时间视图主体:分类趋势 + 汇总 + 5维雷达(不随分析面板类型变化)
-  useEffect(() => {
+  const loadTimeView = useCallback(() => {
     if (!bookId || !isTimeTab) return;
     if (tab !== 'free' && (!range.dateFrom || !range.dateTo)) return;
     let cancel = false;
@@ -765,8 +771,14 @@ export default function StatsPage() {
     return () => { cancel = true; };
   }, [bookId, isTimeTab, range.dateFrom, range.dateTo, tab, year, month, freeAccountId, freeOwnerId]);
 
-  // 分析面板:分组汇总随类型/时间段独立刷新(对齐 web AnalysisPanel,不触发整页 loading)
   useEffect(() => {
+    if (!isFocused) return;
+    const cleanup = loadTimeView();
+    return typeof cleanup === 'function' ? cleanup : undefined;
+  }, [isFocused, loadTimeView]); // 切到本页时即时重拉
+
+  // 分析面板:分组汇总随类型/时间段独立刷新(对齐 web AnalysisPanel,不触发整页 loading)
+  const loadAnalysis = useCallback(() => {
     if (!bookId || !isTimeTab) return;
     if (tab !== 'free' && (!range.dateFrom || !range.dateTo)) return;
     let cancel = false;
@@ -782,6 +794,20 @@ export default function StatsPage() {
     }).finally(() => { if (!cancel) setAnalysisLoading(false); });
     return () => { cancel = true; };
   }, [bookId, isTimeTab, range.dateFrom, range.dateTo, analysisType, freeAccountId, freeOwnerId]);
+
+  useEffect(() => {
+    if (!isFocused) return;
+    const cleanup = loadAnalysis();
+    return typeof cleanup === 'function' ? cleanup : undefined;
+  }, [isFocused, loadAnalysis]);
+
+  // 记一笔/编辑保存后由 RecordModal 直接调用:按当前视图重拉数据
+  const reloadPage = useCallback(() => {
+    loadOverview();
+    loadTimeView();
+    loadAnalysis();
+  }, [loadOverview, loadTimeView, loadAnalysis]);
+  usePageRefresh(reloadPage);
 
   // ── 图表详情弹层:点击「查看流水」后上滑分页加载流水(对齐 web Dialog) ──
   const [detail, setDetail] = useState<{ title: string; params: Record<string, unknown> } | null>(null);

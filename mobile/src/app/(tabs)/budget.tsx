@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { RefreshControl, ScrollView, View, Pressable, Alert, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useIsFocused } from 'expo-router';
 import { Plus, Pencil, Trash2, Search, X } from 'lucide-react-native';
 import { useTheme, alpha } from '@/theme';
 import { Text } from '@/components/ui/Text';
@@ -9,7 +10,7 @@ import { ChipSelect } from '@/components/ui/ChipSelect';
 import { DatePicker } from '@/components/ui/DatePicker';
 import { TagPicker } from '@/components/ui/TagPicker';
 import { FormSheet } from '@/components/chrome/FormSheet';
-import { useUIShell } from '@/components/chrome/chrome';
+import { useUIShell, usePageRefresh } from '@/components/chrome/chrome';
 import { useRecords } from '@/stores/records';
 import {
   fetchBudgets, fetchBudgetTags, createBudgetApi, updateBudgetApi,
@@ -30,7 +31,9 @@ export default function BudgetPage() {
   const { currentLedger } = useUIShell();
   const bookId = currentLedger.id;
   // 分类复用 records store(关联分类取 支出+收入 两字典,对齐网页端)
+  // 刷新时机:切到本页时(isFocused)重拉预算数据
   const { categories: allCategories } = useRecords();
+  const isFocused = useIsFocused();
   const now = new Date();
   const [budgets, setBudgets] = useState<BudgetItem[]>([]);
   const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
@@ -77,9 +80,9 @@ export default function BudgetPage() {
   const [copySaving, setCopySaving] = useState(false);
 
   useEffect(() => {
-    if (!bookId) return;
+    if (!isFocused || !bookId) return;
     fetchBudgets(bookId).then(setBudgets);
-  }, [bookId]);
+  }, [isFocused, bookId]);
 
   // 标签建议(预算标签,与网页端 getTags 一致)
   useEffect(() => {
@@ -90,6 +93,9 @@ export default function BudgetPage() {
   const reload = useCallback(() => {
     if (bookId) fetchBudgets(bookId).then(setBudgets);
   }, [bookId]);
+
+  // 记一笔/编辑保存后由 RecordModal 直接调用:重拉预算已用金额
+  usePageRefresh(reload);
 
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = useCallback(async () => {

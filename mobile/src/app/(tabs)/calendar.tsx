@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, View, useWindowDimensions } from 'react-native';
+import { useIsFocused } from 'expo-router';
 import { ChevronLeft, ChevronRight, CalendarCheck } from 'lucide-react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -9,7 +10,7 @@ import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { RecordRow } from '@/components/RecordRow';
 import { FormSheet } from '@/components/chrome/FormSheet';
-import { useUIShell } from '@/components/chrome/chrome';
+import { useUIShell, usePageRefresh } from '@/components/chrome/chrome';
 import { fetchCalendar, fetchRecords, type CalendarDay } from '@/services/records';
 import { holidayApi, type HolidayItem } from '@/services/settings';
 import { useRecords } from '@/stores/records';
@@ -43,21 +44,32 @@ export default function CalendarScreen() {
   const [expanded, setExpanded] = useState(true); // 日历展开态(选中日压缩后为 false)
 
   // 月视图每日汇总(独立请求,按年月拉取)与选中日流水
+  // 刷新时机:切到本页时(isFocused)重拉
+  const isFocused = useIsFocused();
   const [monthlyDays, setMonthlyDays] = useState<CalendarDay[]>([]);
   const [dayList, setDayList] = useState<RecordItem[]>([]);
   useEffect(() => {
-    if (!bookId) return;
+    if (!isFocused || !bookId) return;
     let cancel = false;
     fetchCalendar(bookId, year, month).then((d) => { if (!cancel) setMonthlyDays(d); });
     return () => { cancel = true; };
-  }, [bookId, year, month]);
+  }, [isFocused, bookId, year, month]);
   useEffect(() => {
-    if (!bookId) return;
+    if (!isFocused || !bookId) return;
     let cancel = false;
     const date = key(selected);
     fetchRecords(bookId, { page: 1, pageSize: 100, dateFrom: date, dateTo: date }).then((list) => { if (!cancel) setDayList(list); });
     return () => { cancel = true; };
+  }, [isFocused, bookId, year, month, selected]);
+
+  // 记一笔/编辑保存后由 RecordModal 直接调用:重拉月汇总与当日流水
+  const reloadPage = useCallback(() => {
+    if (!bookId) return;
+    fetchCalendar(bookId, year, month).then(setMonthlyDays);
+    const date = `${year}-${String(month).padStart(2, '0')}-${String(selected).padStart(2, '0')}`;
+    fetchRecords(bookId, { page: 1, pageSize: 100, dateFrom: date, dateTo: date }).then(setDayList);
   }, [bookId, year, month, selected]);
+  usePageRefresh(reloadPage);
 
   // 节假日/调休数据(按年拉取,同 web 端 /api/holidays)
   const [holidays, setHolidays] = useState<HolidayItem[]>([]);

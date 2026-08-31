@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { useIsFocused } from 'expo-router';
 import { ArrowUpRight, ArrowDownRight, ArrowLeftRight, SlidersHorizontal, X, Copy, Trash2, Pencil } from 'lucide-react-native';
 import { useTheme, alpha, haptics } from '@/theme';
-import { useUIShell } from '@/components/chrome/chrome';
+import { useUIShell, usePageRefresh } from '@/components/chrome/chrome';
 import { useRecords } from '@/stores/records';
 import { fetchRecords } from '@/services/records';
 import { Screen } from '@/components/Screen';
@@ -26,6 +27,8 @@ export default function RecordsScreen() {
   const { currentLedger } = useUIShell();
   const bookId = currentLedger.id;
   const { records, summary, accounts, categories, refresh, cloneRecord, deleteRecord } = useRecords();
+  // 刷新时机:切到本页时(isFocused)重拉筛选结果
+  const isFocused = useIsFocused();
   const [filters, setFilters] = useState<RecordFilters>(emptyFilters);
   const [filterOpen, setFilterOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -37,7 +40,7 @@ export default function RecordsScreen() {
   // 有筛选时按后端条件请求;无筛选时用 store 全量(下拉刷新更新)
   const hasActiveFilter = countActiveFilters(filters) > 0;
   useEffect(() => {
-    if (!bookId) return;
+    if (!isFocused || !bookId) return;
     if (!hasActiveFilter) {
       setList([]);
       return;
@@ -57,7 +60,26 @@ export default function RecordsScreen() {
       categoryCode: singleCategory,
     }).then((r) => { if (!cancel) setList(r); });
     return () => { cancel = true; };
+  }, [isFocused, bookId, hasActiveFilter, filters.types, filters.accountIds, filters.categoryCodes, filters.dateFrom, filters.dateTo, filters.minAmount, filters.maxAmount, filters.keyword]);
+
+  // 记一笔/编辑保存后由 RecordModal 直接调用:重拉筛选结果(无筛选时列表来自 store,已自动更新)
+  const reloadPage = useCallback(() => {
+    if (!bookId || !hasActiveFilter) return;
+    const singleAccount = filters.accountIds.length === 1 ? filters.accountIds[0] : undefined;
+    const singleCategory = filters.categoryCodes.length === 1 ? filters.categoryCodes[0] : undefined;
+    fetchRecords(bookId, {
+      pageSize: 100,
+      types: filters.types,
+      dateFrom: filters.dateFrom || undefined,
+      dateTo: filters.dateTo || undefined,
+      amountFrom: filters.minAmount ? Number(filters.minAmount) : undefined,
+      amountTo: filters.maxAmount ? Number(filters.maxAmount) : undefined,
+      remark: filters.keyword.trim() || undefined,
+      accountId: singleAccount,
+      categoryCode: singleCategory,
+    }).then(setList);
   }, [bookId, hasActiveFilter, filters.types, filters.accountIds, filters.categoryCodes, filters.dateFrom, filters.dateTo, filters.minAmount, filters.maxAmount, filters.keyword]);
+  usePageRefresh(reloadPage);
 
   const onRefresh = async () => {
     setRefreshing(true);

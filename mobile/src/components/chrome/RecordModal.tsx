@@ -12,7 +12,7 @@ import { ChipSelect } from '@/components/ui/ChipSelect';
 import { TagPicker } from '@/components/ui/TagPicker';
 import { ImageLightbox, isImageUrl } from '@/components/ui/AttachmentViewer';
 import { AIAssistant } from '@/components/chat/AIAssistant';
-import { useUIShell } from './chrome';
+import { useUIShell, notifyPageRefresh } from './chrome';
 import { useRecords } from '@/stores/records';
 import { useAuth } from '@/stores/auth';
 import { fetchBookMembers, fetchRecordTags, fetchBudgetTags, uploadRecordAttachment } from '@/services/records';
@@ -64,6 +64,7 @@ export function RecordModal() {
 
   const [type, setType] = useState<RecordType>('EXPENSE');
   const [amount, setAmount] = useState('0');
+  const [saving, setSaving] = useState(false); // 保存中:防重复提交,按钮转 loading
   const [cat, setCat] = useState('餐饮');
   const [accountId, setAccountId] = useState('');
   const [toId, setToId] = useState('');
@@ -164,9 +165,9 @@ export function RecordModal() {
     }
   };
 
-  const save = () => {
+  const save = async () => {
     const amt = parseFloat(amount);
-    if (!amt || amt <= 0) return;
+    if (!amt || amt <= 0 || saving) return;
     // 归属人:本人(id 为当前用户)时显示"我",否则取成员名
     const ownerLabel = members.find((m) => m.id === ownerId)?.label ?? (ownerId === user?.id ? '我' : '本人');
     const owner = { ownerId: ownerId || user?.id || '', ownerName: ownerId ? ownerLabel : '我' };
@@ -190,10 +191,17 @@ export function RecordModal() {
         tags,
         attachmentIds: formAttachments.map((a) => a.id),
       };
-      if (editingRecord) updateRecord(editingRecord.id, payload);
-      else addRecord(payload);
-      haptics.success();
-      close();
+      setSaving(true);
+      try {
+        if (editingRecord) await updateRecord(editingRecord.id, payload);
+        else await addRecord(payload);
+        haptics.success();
+        // 保存成功:直接刷新发起编辑的当前页面(仅前台页响应)
+        notifyPageRefresh();
+        close();
+      } finally {
+        setSaving(false);
+      }
       return;
     }
     const payload = {
@@ -210,10 +218,16 @@ export function RecordModal() {
       tags,
       attachmentIds: formAttachments.map((a) => a.id),
     };
-    if (editingRecord) updateRecord(editingRecord.id, payload);
-    else addRecord(payload);
-    haptics.success();
-    close();
+    setSaving(true);
+    try {
+      if (editingRecord) await updateRecord(editingRecord.id, payload);
+      else await addRecord(payload);
+      haptics.success();
+      notifyPageRefresh();
+      close();
+    } finally {
+      setSaving(false);
+    }
   };
 
   const display = amount === '0' ? '0.00' : amount.indexOf('.') >= 0 ? parseFloat(amount).toFixed(2) : amount;
@@ -442,7 +456,7 @@ export function RecordModal() {
 
             {/* 底部操作 */}
             <View style={{ marginTop: 10 }}>
-              <Button title={`保存${typeLabel} ¥${display}`} onPress={save} />
+              <Button title={`保存${typeLabel} ¥${display}`} onPress={save} loading={saving} />
             </View>
           </View>
           ) : (

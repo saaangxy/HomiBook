@@ -1,4 +1,5 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useIsFocused } from 'expo-router';
 import type { Ledger, RecordItem } from '@/types';
 import { createBookApi, fetchBooks } from '@/services/records';
 import { secureGet, secureSet } from '@/services/storage';
@@ -154,4 +155,29 @@ export function useUIShell() {
   const ctx = useContext(UIShellContext);
   if (!ctx) throw new Error('useUIShell must be used within UIShellProvider');
   return ctx;
+}
+
+// ── 页面刷新注册:编辑/记一笔保存成功后直接刷新发起页 ──
+// 页面在前台时注册自己的刷新方法(离开自动注销),RecordModal 保存成功后由 notifyPageRefresh()
+// 触发当前前台页面刷新 —— 只有发起页响应,不广播,避免后台页并发请求。
+
+let pageRefreshFn: (() => void) | null = null;
+
+/** 页面刷新注册 hook:fn 引用始终取最新闭包,调用时无需担心依赖过期 */
+export function usePageRefresh(refresh: () => void) {
+  const isFocused = useIsFocused();
+  const ref = useRef(refresh);
+  ref.current = refresh;
+  useEffect(() => {
+    if (!isFocused) return;
+    pageRefreshFn = () => ref.current();
+    return () => {
+      pageRefreshFn = null;
+    };
+  }, [isFocused]);
+}
+
+/** 通知当前前台页面刷新数据(无注册页面时为空操作) */
+export function notifyPageRefresh() {
+  pageRefreshFn?.();
 }

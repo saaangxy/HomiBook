@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { router } from 'expo-router';
+import { useIsFocused } from 'expo-router';
 import { Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ChevronRight } from 'lucide-react-native';
@@ -12,7 +12,7 @@ import { RecordRow } from '@/components/RecordRow';
 import { FadeInView } from '@/components/FadeInView';
 import { fetchBudgets, fetchMonthlyTrend } from '@/services/records';
 import { useRecords } from '@/stores/records';
-import { useUIShell } from '@/components/chrome/chrome';
+import { useUIShell, usePageRefresh } from '@/components/chrome/chrome';
 import { formatMoney, formatMoneyShort } from '@/lib/format';
 import type { BudgetItem } from '@/types';
 
@@ -30,6 +30,8 @@ export default function HomeScreen() {
   const [yearIncome, setYearIncome] = useState(0);
   const [yearExpense, setYearExpense] = useState(0);
   const { records, summary, refresh } = useRecords();
+  // 刷新时机:切到本页时(isFocused)重拉预算与年度收支
+  const isFocused = useIsFocused();
   const { currentLedger, openAI } = useUIShell();
   const [refreshing, setRefreshing] = useState(false);
 
@@ -57,14 +59,26 @@ export default function HomeScreen() {
 
   useEffect(() => {
     const bookId = currentLedger.id;
-    if (!bookId) return;
+    if (!isFocused || !bookId) return;
     fetchBudgets(bookId).then(setBudgets);
     // 当年收支:由月度趋势累计
     fetchMonthlyTrend(bookId).then((t) => {
       setYearIncome(t.income.reduce((s, x) => s + x, 0));
       setYearExpense(t.expense.reduce((s, x) => s + x, 0));
     });
+  }, [isFocused, currentLedger.id]); // 切到本页时,预算进度与年度收支即时重算
+
+  // 记一笔/编辑保存后由 RecordModal 直接调用:重拉预算与年度收支
+  const reloadPage = useCallback(() => {
+    const bookId = currentLedger.id;
+    if (!bookId) return;
+    fetchBudgets(bookId).then(setBudgets);
+    fetchMonthlyTrend(bookId).then((t) => {
+      setYearIncome(t.income.reduce((s, x) => s + x, 0));
+      setYearExpense(t.expense.reduce((s, x) => s + x, 0));
+    });
   }, [currentLedger.id]);
+  usePageRefresh(reloadPage);
   const recent = records.slice(0, 4);
 
   // 本月预算项:当年当月 + 年度预算(month:null,与预算管理页当月视图口径一致)

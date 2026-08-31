@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Pressable, RefreshControl, ScrollView, TextInput, View } from 'react-native';
+import { useIsFocused } from 'expo-router';
 import { Plus, CreditCard, Wallet, MessageCircle, Banknote, TrendingUp, Landmark, Archive, RotateCcw, Trash2, SlidersHorizontal, Pencil } from 'lucide-react-native';
 import { useTheme, alpha } from '@/theme';
 import { Screen } from '@/components/Screen';
@@ -7,7 +8,7 @@ import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { FadeInView } from '@/components/FadeInView';
 import { FormSheet } from '@/components/chrome/FormSheet';
-import { useUIShell } from '@/components/chrome/chrome';
+import { useUIShell, usePageRefresh } from '@/components/chrome/chrome';
 import { createAccountApi, createAdjustmentApi, deleteAccountApi, fetchAccounts, listAdjustmentsApi, updateAccountApi } from '@/services/records';
 import type { BalanceAdjustment } from '@/services/records';
 import { formatMoney } from '@/lib/format';
@@ -60,6 +61,8 @@ export default function AccountsScreen() {
   };
   const { currentLedger } = useUIShell();
   const bookId = currentLedger.id;
+  // 刷新时机:切到本页时(isFocused)重拉账户余额
+  const isFocused = useIsFocused();
   const [accounts, setAccounts] = useState<AccountItem[]>([]);
   const [filter, setFilter] = useState<Filter>('全部');
 
@@ -74,9 +77,15 @@ export default function AccountsScreen() {
   const [bankName, setBankName] = useState('');
 
   useEffect(() => {
-    if (!bookId) return;
+    if (!isFocused || !bookId) return;
     fetchAccounts(bookId).then(setAccounts);
+  }, [isFocused, bookId]);
+
+  // 记一笔/编辑保存后由 RecordModal 直接调用:重拉账户余额
+  const reloadPage = useCallback(() => {
+    if (bookId) fetchAccounts(bookId).then(setAccounts);
   }, [bookId]);
+  usePageRefresh(reloadPage);
 
   const [refreshing, setRefreshing] = useState(false);
   // 下拉刷新:重拉账户列表
