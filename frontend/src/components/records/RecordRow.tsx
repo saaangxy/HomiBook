@@ -23,6 +23,7 @@ import type { AccountItem } from '@/api/account'
 import type { DictItem } from '@/api/settings'
 import type { BookMember } from '@/api/book'
 import { cn } from '@/lib/utils'
+import { formatMoney } from '@homibook/core'
 
 const TYPE_COLORS: Record<RecordType, string> = {
   INCOME: 'text-[#22c55e] bg-[#22c55e]/10',
@@ -33,10 +34,6 @@ const TYPE_LABELS: Record<RecordType, string> = {
   INCOME: '收入',
   EXPENSE: '支出',
   TRANSFER: '转账',
-}
-
-function formatMoney(amount: number): string {
-  return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(amount)
 }
 
 function getCategoryGroup(type: RecordType) {

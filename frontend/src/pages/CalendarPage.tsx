@@ -40,6 +40,7 @@ import { AttachmentViewer, type AttachmentItem } from '@/components/AttachmentVi
 import { recordApi, type RecordItem, type RecordType } from '@/api/record'
 import { accountApi, type AccountItem } from '@/api/account'
 import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
+import { formatMoney } from '@homibook/core'
 import { settingsApi } from '@/api/settings'
 import { holidayApi, type HolidayItem } from '@/api/holiday'
 import { useBookStore } from '../stores/book'
@@ -50,10 +51,6 @@ const TYPE_LABELS: Record<RecordType, string> = {
   INCOME: '收入',
   EXPENSE: '支出',
   TRANSFER: '转账',
-}
-
-function formatMoney(amount: number): string {
-  return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(amount)
 }
 
 export function CalendarPage() {

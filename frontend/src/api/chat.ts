@@ -1,12 +1,5 @@
 import { api } from './http'
-
-interface SuggestionOption {
-  label?: string
-  name?: string
-  value?: string
-  code?: string
-  description?: string
-}
+import type { ChatSSEEvent } from '@homibook/core'
 
 const BASE = '/api/chat'
 
@@ -72,24 +65,8 @@ export interface UserProviderConfig {
   updatedAt: string
 }
 
-// SSE 事件类型
-export type SSEEvent =
-  | { type: 'text-delta'; delta: string }
-  | { type: 'tool-call'; toolCallId: string; toolName: string; args: unknown }
-  | { type: 'tool-result'; toolCallId: string; toolName: string; result: unknown; durationMs: number; status: string; error?: string; merge?: { action?: 'append'; batch?: number; total: number } }
-  | { type: 'tool-confirm-required'; toolCallId: string; toolName: string; preview: string }
-  | { type: 'tool-suggest-required'; toolCallId: string; toolName: string; questions: { question: string; field: string; options: (string | SuggestionOption)[]; allowCustom: boolean }[] }
-  | { type: 'tool-switch-book'; toolCallId: string; books: BookOption[]; currentBookId: string }
-  | { type: 'finish'; usage?: unknown; userMessageId: string; assistantMessageId: string; pendingConfirmation?: { toolCallId: string; toolName: string }; pendingConfirmations?: { toolCallId: string; toolName: string }[]; pendingSuggestion?: { toolCallId: string }; pendingSwitchBook?: { toolCallId: string } }
-  | { type: 'error'; message: string }
-
-export interface BookOption {
-  id: string
-  name: string
-  role: string
-  memberCount: number
-  isCurrent: boolean
-}
+// SSE 事件类型(权威定义在 @homibook/core,与 mobile 共享)
+export type SSEEvent = ChatSSEEvent
 
 // GET APIs
 export async function fetchSessions() {

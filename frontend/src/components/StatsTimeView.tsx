@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/table'
 import { recordApi, type RecordSummary, type RecordItem } from '@/api/record'
 import { accountApi, type AccountItem } from '@/api/account'
+import { formatMoney } from '@homibook/core'
 import { adminApi, type AdminUser } from '@/api/admin'
 import { budgetApi } from '@/api/budget'
 import { recurringApi } from '@/api/recurring'
@@ -31,10 +32,6 @@ import { BarChart3, Search, X, List, ChevronLeft, ChevronRight, HelpCircle } fro
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { useChartTheme, type ChartTheme, generateChartColors } from '@/hooks/useChartTheme'
 import dayjs from 'dayjs'
-
-function formatMoney(amount: number): string {
-  return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(amount)
-}
 
 function buildStackedBar(periods: string[], categories: { name: string; data: number[] }[], t: ChartTheme): { option: EChartsOption; chartHeight: number } {
   // 图例换行时才增加空间，每额外行约16px（fontSize 13）

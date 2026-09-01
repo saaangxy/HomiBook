@@ -15,7 +15,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Send, StopCircle, Upload, Image as ImageIcon, X, Globe, Menu, Plus } from 'lucide-react'
-import { parseContentIntoBlocks } from '@/stores/chat-content-parser'
+import { parseContentIntoBlocks } from '@homibook/core'
 import { type MessageBlock } from '@/stores/chat'
 import { useIsMobile } from '@/hooks/use-mobile'
 import {

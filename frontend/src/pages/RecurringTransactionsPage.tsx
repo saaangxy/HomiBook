@@ -29,6 +29,7 @@ import { TagCombobox } from '@/components/TagCombobox'
 import { recurringApi, type RecurringTransaction, type LoanPreview } from '@/api/recurring'
 import { accountApi, type AccountItem } from '@/api/account'
 import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
+import { formatMoney } from '@homibook/core'
 import { useBookStore } from '@/stores/book'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { Plus, Pencil, Trash2, Power, PowerOff, FileText } from 'lucide-react'
@@ -44,10 +45,6 @@ const RECURRING_TYPE_LABELS: Record<string, string> = { PERIODIC: '周期', LOAN
 const METHOD_LABELS: Record<string, string> = {
   EQUAL_INSTALLMENT: '等额本息',
   EQUAL_PRINCIPAL: '等额本金',
-}
-
-function formatMoney(amount: number): string {
-  return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(amount)
 }
 
 export function RecurringTransactionsPage() {

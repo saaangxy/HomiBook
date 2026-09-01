@@ -22,10 +22,7 @@ import {
   scoreInsurance,
   type RadarMetric,
 } from '@/lib/financial-health'
-
-function formatMoney(amount: number): string {
-  return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(amount)
-}
+import { formatMoney } from '@homibook/core'
 
 const RADAR_TIPS: Record<string, string> = {
   '应急能力': '紧急备用金 ÷ 月均支出，反映应对突发开支的现金缓冲。健康区间 ≥6 个月',

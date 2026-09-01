@@ -23,6 +23,7 @@ import { ChevronLeft, ChevronRight, Filter, X } from 'lucide-react'
 import { recordApi, type RecordItem } from '@/api/record'
 import { accountApi, type AccountItem } from '@/api/account'
 import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
+import { formatMoney } from '@homibook/core'
 import type { BudgetItem } from '@/api/budget'
 import { useBudgetFilterParams } from '@/hooks/useBudgetFilterParams'
 import { useChartTheme, type ChartTheme, generateChartColors } from '@/hooks/useChartTheme'
@@ -36,10 +37,6 @@ const TYPE_COLORS: Record<string, string> = {
   INCOME: '#22c55e',
   EXPENSE: '#ef4444',
   TRANSFER: '#3b82f6',
-}
-
-function formatMoney(amount: number): string {
-  return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(amount)
 }
 
 function UsageBadge({ percent }: { percent: number }) {

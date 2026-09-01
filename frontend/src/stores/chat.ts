@@ -1,9 +1,16 @@
 import { create } from 'zustand'
-import type { Message, MessageBlock, SuggestionOption, ToolCallEntry } from '@homibook/core'
+import {
+  buildActivePath,
+  collectDescendantIds,
+  processTextDelta,
+  type DeltaState,
+  type Message,
+  type MessageBlock,
+  type SuggestionOption,
+  type ToolCallEntry,
+} from '@homibook/core'
 import type { SSEEvent } from '../api/chat'
 import { sendMessageStream, confirmActionStream } from '../api/chat'
-import { processTextDelta, type DeltaState } from './chat-content-parser'
-import { buildActivePath, collectDescendantIds } from './chat-branch-utils'
 
 // ---- 消息块类型 ----
 // 权威定义在 @homibook/core(与 mobile 共享),此处 re-export 供组件引用

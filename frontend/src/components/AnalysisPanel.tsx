@@ -20,10 +20,7 @@ import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
 import { adminApi, type AdminUser } from '@/api/admin'
 import { PieChart, Users, Wallet, X, List, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useChartTheme, type ChartTheme, generateChartColors } from '@/hooks/useChartTheme'
-
-function formatMoney(amount: number): string {
-  return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(amount)
-}
+import { formatMoney } from '@homibook/core'
 
 const ANALYSIS_TYPES = [
   { value: 'EXPENSE', label: '支出分析', color: '#ef4444' },

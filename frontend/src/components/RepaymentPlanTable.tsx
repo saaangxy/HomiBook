@@ -8,13 +8,10 @@ import {
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import type { RepaymentPlan } from '@/api/recurring'
+import { formatMoney } from '@homibook/core'
 
 interface Props {
   plans: RepaymentPlan[]
-}
-
-function formatMoney(amount: number): string {
-  return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(amount)
 }
 
 export function RepaymentPlanTable({ plans }: Props) {
