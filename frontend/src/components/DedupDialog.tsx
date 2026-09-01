@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -26,6 +26,8 @@ import { Badge } from '@/components/ui/badge'
 import { Spinner } from '@/components/ui/spinner'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { recordApi, type RecordItem } from '@/api/record'
+import { accountApi, type AccountItem } from '@/api/account'
+import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
 import { CopyMinus, Check } from 'lucide-react'
 import dayjs from 'dayjs'
 
@@ -44,6 +46,7 @@ interface MatchFields {
   accountId: boolean
   payer: boolean
   amount: boolean
+  ownerId: boolean
 }
 
 interface DuplicateGroup {
@@ -69,9 +72,10 @@ const FIELD_LABELS: { key: keyof MatchFields; label: string }[] = [
   { key: 'accountId', label: '账户' },
   { key: 'payer', label: '交易方' },
   { key: 'amount', label: '金额' },
+  { key: 'ownerId', label: '归属人' },
 ]
 
-function parseGroupKey(key: string, fields: MatchFields): string[] {
+function parseGroupKey(key: string, fields: MatchFields, accountDisplay: Map<string, string>, ownerNames: Map<string, string>): string[] {
   const parts = key.split('||')
   const labels: string[] = []
   let idx = 0
@@ -81,9 +85,10 @@ function parseGroupKey(key: string, fields: MatchFields): string[] {
     labels.push(`日期: ${fields.date === 'date' ? val : dayjs(val).format('YYYY-MM-DD HH:mm:ss')}`)
   }
   if (fields.type) labels.push(`类型: ${TYPE_LABELS[parts[idx++]] || parts[idx - 1]}`)
-  if (fields.accountId) labels.push(`账户: ${parts[idx++]}`)
+  if (fields.accountId) labels.push(`账户: ${accountDisplay.get(parts[idx++]) || parts[idx - 1]}`)
   if (fields.payer) labels.push(`交易方: ${parts[idx++]}`)
   if (fields.amount) labels.push(`金额: ${parts[idx++]}`)
+  if (fields.ownerId) labels.push(`归属人: ${ownerNames.get(parts[idx++]) || parts[idx - 1]}`)
 
   return labels
 }
@@ -95,6 +100,7 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
     accountId: true,
     payer: true,
     amount: true,
+    ownerId: false,
   })
 
   const [groups, setGroups] = useState<DuplicateGroup[]>([])
@@ -106,6 +112,16 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
 
   // 选中要删除的记录 ID
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+
+  // 账户列表(用于组头标签显示"账户名 · 归属人")
+  const [accounts, setAccounts] = useState<AccountItem[]>([])
+  useEffect(() => {
+    if (open && bookId) {
+      accountApi.list(bookId).then(setAccounts).catch(() => {})
+    }
+  }, [open, bookId])
+  const multiOwner = isMultiOwnerAccounts(accounts)
+  const accountDisplay = new Map(accounts.map((a) => [a.id, accountLabel(a, multiOwner)]))
 
   const toggleField = (key: keyof MatchFields) => {
     if (key === 'date') return // 日期用 dropdown
@@ -191,6 +207,7 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
       accountId: true,
       payer: true,
       amount: true,
+      ownerId: false,
     })
   }
 
@@ -202,6 +219,14 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
   // 至少需要两个匹配字段
   const activeFieldCount = FIELD_LABELS.filter(f => matchFields[f.key]).length + (matchFields.date ? 1 : 0)
   const canDetect = activeFieldCount >= 1
+
+  // 归属人 id → 名称映射(从检测结果记录收集,避免额外拉取成员列表)
+  const ownerNames = new Map<string, string>()
+  for (const g of groups) {
+    for (const r of g.records) {
+      if (r.ownerId && r.ownerName) ownerNames.set(r.ownerId, r.ownerName)
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -296,7 +321,7 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
                     {groups.map((group, gi) => {
                       const groupIds = group.records.map(r => r.id)
                       const allSelected = groupIds.every(id => selectedIds.has(id))
-                      const keyLabels = parseGroupKey(group.key, matchFields)
+                      const keyLabels = parseGroupKey(group.key, matchFields, accountDisplay, ownerNames)
 
                       return (
                         <div key={gi} className="border rounded-lg overflow-hidden">

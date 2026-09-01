@@ -268,6 +268,33 @@ export async function deleteRecordApi(bookId: string, id: string): Promise<void>
   await http.delete(`/api/records/${id}`);
 }
 
+// ── 去重检测(对齐 web 端 DedupDialog / POST /api/records/detect-duplicates) ──
+
+export interface DedupMatchFields {
+  /** 日期匹配精度:exact=精确到秒,date=同日,null=忽略 */
+  date: 'exact' | 'date' | null;
+  type: boolean;
+  accountId: boolean;
+  payer: boolean;
+  amount: boolean;
+  ownerId: boolean;
+}
+
+export interface DuplicateGroup {
+  key: string;
+  count: number;
+  records: RecordItem[];
+}
+
+export async function detectDuplicatesApi(bookId: string, matchFields: DedupMatchFields): Promise<{ groups: DuplicateGroup[]; totalDuplicates: number }> {
+  const res = await http.post<{ groups: DuplicateGroup[]; totalDuplicates: number }>('/api/records/detect-duplicates', { bookId, matchFields });
+  return res ?? { groups: [], totalDuplicates: 0 };
+}
+
+export async function batchDeleteRecordsApi(ids: string[]): Promise<void> {
+  await http.post('/api/records/batch-delete', { ids });
+}
+
 export async function fetchMonthlyTrend(bookId: string, dateFrom?: string, dateTo?: string) {
   const res = await http.get<MonthlyTrendPoint[]>('/api/records/monthly-trend', { query: { bookId, dateFrom, dateTo } });
   return {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useIsFocused } from 'expo-router';
-import { ArrowUpRight, ArrowDownRight, ArrowLeftRight, SlidersHorizontal, X, Copy, Trash2, Pencil } from 'lucide-react-native';
+import { ArrowUpRight, ArrowDownRight, ArrowLeftRight, SlidersHorizontal, X, Copy, Trash2, Pencil, CopyMinus } from 'lucide-react-native';
 import { useTheme, alpha, haptics } from '@/theme';
 import { useUIShell, usePageRefresh } from '@/components/chrome/chrome';
 import { useRecords } from '@/stores/records';
@@ -14,6 +14,7 @@ import { SwipeRow } from '@/components/SwipeRow';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { FadeInView } from '@/components/FadeInView';
 import { FilterSheet, countActiveFilters, emptyFilters, type RecordFilters } from '@/components/FilterSheet';
+import { DedupSheet } from '@/components/DedupSheet';
 import { formatMoney } from '@/lib/format';
 import type { RecordItem, RecordType } from '@/types';
 
@@ -31,6 +32,7 @@ export default function RecordsScreen() {
   const isFocused = useIsFocused();
   const [filters, setFilters] = useState<RecordFilters>(emptyFilters);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [dedupOpen, setDedupOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   // 后端筛选结果(独立请求,不受 store 前 100 条限制)
   const [list, setList] = useState<RecordItem[]>([]);
@@ -209,6 +211,18 @@ export default function RecordsScreen() {
             )}
           </Pressable>
 
+          {/* 去重入口 */}
+          <Pressable
+            onPress={() => {
+              setDedupOpen(true);
+              haptics.tap();
+            }}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border }}
+          >
+            <CopyMinus size={13} color={colors.foreground} />
+            <Text style={{ fontSize: 13, color: colors.foreground, fontWeight: '500' }}>去重</Text>
+          </Pressable>
+
           {activeChips.map((c) => (
             <View key={c.key} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingLeft: 12, paddingRight: 8, paddingVertical: 6, borderRadius: 999, backgroundColor: alpha(colors.primary, 0.1), borderWidth: 1, borderColor: alpha(colors.primary, 0.3) }}>
               <Text style={{ fontSize: 12, color: colors.primary }}>{c.label}</Text>
@@ -261,6 +275,7 @@ export default function RecordsScreen() {
       </View>
 
       <FilterSheet visible={filterOpen} initial={filters} onApply={setFilters} onClose={() => setFilterOpen(false)} />
+      {bookId ? <DedupSheet visible={dedupOpen} onClose={() => setDedupOpen(false)} bookId={bookId} /> : null}
     </Screen>
   );
 }

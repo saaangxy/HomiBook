@@ -769,6 +769,7 @@ export async function recordRoutes(app: FastifyInstance) {
                     accountId: z.boolean(),
                     payer: z.boolean(),
                     amount: z.boolean(),
+                    ownerId: z.boolean(),
                 }),
             })),
         },
@@ -780,7 +781,8 @@ export async function recordRoutes(app: FastifyInstance) {
                 type: boolean;
                 accountId: boolean;
                 payer: boolean;
-                amount: boolean
+                amount: boolean;
+                ownerId: boolean;
             }
         }
         const userId = (req as any).user.id as string
@@ -812,6 +814,7 @@ export async function recordRoutes(app: FastifyInstance) {
             if (matchFields.accountId) parts.push(r.accountId)
             if (matchFields.payer) parts.push(r.payer || '__empty__')
             if (matchFields.amount) parts.push(r.amount.toFixed(2))
+            if (matchFields.ownerId) parts.push(r.ownerId)
 
             const key = parts.join('||')
             if (!groups.has(key)) groups.set(key, [])
