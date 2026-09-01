@@ -188,13 +188,12 @@ export async function applyAccountMappings(
         let best: string | null = null
         let bestScore = -1
         for (const m of candidates) {
+          // 带条件的规则必须条件全部命中才参与匹配,避免同账户名多条规则时条件未命中的记录被误映射;无条件规则作兜底
+          if (m.payerContains && !(r.payer && testMatch(m.payerContains, r.payer))) continue
+          if (m.descriptionContains && !(r.remark && testMatch(m.descriptionContains, r.remark))) continue
           let score = 0
-          if (m.payerContains && r.payer && testMatch(m.payerContains, r.payer)) {
-            score += 1
-          }
-          if (m.descriptionContains && r.remark && testMatch(m.descriptionContains, r.remark)) {
-            score += 1
-          }
+          if (m.payerContains) score += 1
+          if (m.descriptionContains) score += 1
           if (score > bestScore) {
             bestScore = score
             best = m.targetAccountName
@@ -321,6 +320,8 @@ export async function applyCategoryMappings(
     select: { code: true, label: true, group: true },
   })
   const expenseCodes = new Set(allDictItems.filter(d => d.group === 'transaction_category_expense').map(d => d.code))
+  const incomeCodes = new Set(allDictItems.filter(d => d.group === 'transaction_category_income').map(d => d.code))
+  const transferCodes = new Set(allDictItems.filter(d => d.group === 'transaction_category_transfer').map(d => d.code))
 
   // 收集每个分类出现的记录类型
   const categoryTypes = new Map<string, Set<string>>()
@@ -349,11 +350,21 @@ export async function applyCategoryMappings(
     seen.add(cat)
 
     let matched: string | null = null
-    for (const code of expenseCodes) {
-      if (cat.includes(code) || code.includes(cat)) {
-        matched = code
-        break
+    // 按该分类出现的记录类型,在对应类型字典中做包含匹配(收入分类不再只按支出字典建议)
+    const types = categoryTypes.get(cat) || new Set<string>()
+    const codeSets: Set<string>[] = []
+    if (types.has('EXPENSE')) codeSets.push(expenseCodes)
+    if (types.has('INCOME')) codeSets.push(incomeCodes)
+    if (types.has('TRANSFER')) codeSets.push(transferCodes)
+    if (codeSets.length === 0) codeSets.push(expenseCodes, incomeCodes)
+    for (const codes of codeSets) {
+      for (const code of codes) {
+        if (cat.includes(code) || code.includes(cat)) {
+          matched = code
+          break
+        }
       }
+      if (matched) break
     }
     unmatched.push({ sourceCategory: cat, suggestedCode: matched, types: [...(categoryTypes.get(cat) || [])] })
   }
@@ -369,14 +380,13 @@ export async function applyCategoryMappings(
 
     for (const m of candidates) {
       if (m.recordType && m.recordType !== row.type) continue
+      // 带条件的规则必须条件全部命中才参与匹配(与前端确认阶段语义一致);无条件规则作兜底
+      if (m.payerContains && !(row.payer && testMatch(m.payerContains, row.payer))) continue
+      if (m.descriptionContains && !(row.remark && testMatch(m.descriptionContains, row.remark))) continue
       let score = 0
       if (m.recordType === row.type) score += 1
-      if (m.payerContains && row.payer && testMatch(m.payerContains, row.payer)) {
-        score += 1
-      }
-      if (m.descriptionContains && row.remark && testMatch(m.descriptionContains, row.remark)) {
-        score += 1
-      }
+      if (m.payerContains) score += 1
+      if (m.descriptionContains) score += 1
       if (score > bestScore) {
         bestScore = score
         best = m.targetCategoryCode

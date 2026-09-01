@@ -20,6 +20,7 @@ import { Sidebar } from '@/components/chrome/Sidebar';
 import { LedgerModal } from '@/components/chrome/LedgerModal';
 import { RecordModal } from '@/components/chrome/RecordModal';
 import { AIAssistantModal } from '@/components/chrome/AIAssistantModal';
+import { ToastHost } from '@/components/chrome/Toast';
 import { Splash } from '@/components/Splash';
 
 function RootNavigator() {
@@ -76,6 +77,7 @@ export default function RootLayout() {
                 <LedgerModal />
                 <RecordModal />
                 <AIAssistantModal />
+                <ToastHost />
                 {showSplash && <Splash onDone={() => setShowSplash(false)} />}
               </RecordsProvider>
             </UIShellProvider>

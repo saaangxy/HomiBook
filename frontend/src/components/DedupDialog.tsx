@@ -28,6 +28,13 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { recordApi, type RecordItem } from '@/api/record'
 import { accountApi, type AccountItem } from '@/api/account'
 import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
+import {
+  DEFAULT_DEDUP_MATCH_FIELDS,
+  DEDUP_TOGGLE_FIELDS,
+  DEDUP_TYPE_LABELS,
+  parseDuplicateGroupKey,
+  type DedupMatchFields,
+} from '@homibook/core'
 import { CopyMinus, Check } from 'lucide-react'
 import dayjs from 'dayjs'
 
@@ -38,70 +45,29 @@ interface DedupDialogProps {
   onComplete: () => void
 }
 
-type DatePrecision = 'date' | 'exact' | null
-
-interface MatchFields {
-  date: DatePrecision
-  type: boolean
-  accountId: boolean
-  payer: boolean
-  amount: boolean
-  ownerId: boolean
-}
-
 interface DuplicateGroup {
   key: string
   count: number
   records: RecordItem[]
 }
 
-const TYPE_LABELS: Record<string, string> = {
-  INCOME: '收入',
-  EXPENSE: '支出',
-  TRANSFER: '转账',
-}
-
+const TYPE_LABELS = DEDUP_TYPE_LABELS
 const TYPE_COLORS: Record<string, string> = {
   INCOME: 'text-[#22c55e]',
   EXPENSE: 'text-[#ef4444]',
   TRANSFER: 'text-[#3b82f6]',
 }
 
-const FIELD_LABELS: { key: keyof MatchFields; label: string }[] = [
-  { key: 'type', label: '类型' },
-  { key: 'accountId', label: '账户' },
-  { key: 'payer', label: '交易方' },
-  { key: 'amount', label: '金额' },
-  { key: 'ownerId', label: '归属人' },
-]
-
-function parseGroupKey(key: string, fields: MatchFields, accountDisplay: Map<string, string>, ownerNames: Map<string, string>): string[] {
-  const parts = key.split('||')
-  const labels: string[] = []
-  let idx = 0
-
-  if (fields.date) {
-    const val = parts[idx++]
-    labels.push(`日期: ${fields.date === 'date' ? val : dayjs(val).format('YYYY-MM-DD HH:mm:ss')}`)
-  }
-  if (fields.type) labels.push(`类型: ${TYPE_LABELS[parts[idx++]] || parts[idx - 1]}`)
-  if (fields.accountId) labels.push(`账户: ${accountDisplay.get(parts[idx++]) || parts[idx - 1]}`)
-  if (fields.payer) labels.push(`交易方: ${parts[idx++]}`)
-  if (fields.amount) labels.push(`金额: ${parts[idx++]}`)
-  if (fields.ownerId) labels.push(`归属人: ${ownerNames.get(parts[idx++]) || parts[idx - 1]}`)
-
-  return labels
+function parseGroupKey(key: string, fields: DedupMatchFields, accountDisplay: Map<string, string>, ownerNames: Map<string, string>): string[] {
+  return parseDuplicateGroupKey(key, fields, {
+    accountDisplay,
+    ownerNames,
+    formatDateTime: (iso) => dayjs(iso).format('YYYY-MM-DD HH:mm:ss'),
+  })
 }
 
 export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDialogProps) {
-  const [matchFields, setMatchFields] = useState<MatchFields>({
-    date: 'date',
-    type: true,
-    accountId: true,
-    payer: true,
-    amount: true,
-    ownerId: false,
-  })
+  const [matchFields, setMatchFields] = useState<DedupMatchFields>(DEFAULT_DEDUP_MATCH_FIELDS)
 
   const [groups, setGroups] = useState<DuplicateGroup[]>([])
   const [totalDuplicates, setTotalDuplicates] = useState(0)
@@ -123,7 +89,7 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
   const multiOwner = isMultiOwnerAccounts(accounts)
   const accountDisplay = new Map(accounts.map((a) => [a.id, accountLabel(a, multiOwner)]))
 
-  const toggleField = (key: keyof MatchFields) => {
+  const toggleField = (key: keyof DedupMatchFields) => {
     if (key === 'date') return // 日期用 dropdown
     setMatchFields(prev => ({ ...prev, [key]: !prev[key] }))
   }
@@ -201,14 +167,7 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
     setDeleting(false)
     setError('')
     setSelectedIds(new Set())
-    setMatchFields({
-      date: 'date',
-      type: true,
-      accountId: true,
-      payer: true,
-      amount: true,
-      ownerId: false,
-    })
+    setMatchFields(DEFAULT_DEDUP_MATCH_FIELDS)
   }
 
   const handleClose = () => {
@@ -216,8 +175,8 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
     onOpenChange(false)
   }
 
-  // 至少需要两个匹配字段
-  const activeFieldCount = FIELD_LABELS.filter(f => matchFields[f.key]).length + (matchFields.date ? 1 : 0)
+  // 至少需要一个匹配字段
+  const activeFieldCount = DEDUP_TOGGLE_FIELDS.filter(f => matchFields[f.key]).length + (matchFields.date ? 1 : 0)
   const canDetect = activeFieldCount >= 1
 
   // 归属人 id → 名称映射(从检测结果记录收集,避免额外拉取成员列表)
@@ -249,7 +208,7 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
             {/* 日期精度 */}
             <Select
               value={matchFields.date || 'ignore'}
-              onValueChange={(v) => setMatchFields(prev => ({ ...prev, date: (v === 'ignore' ? null : v as DatePrecision) }))}
+              onValueChange={(v) => setMatchFields(prev => ({ ...prev, date: (v === 'ignore' ? null : v as 'date' | 'exact') }))}
             >
               <SelectTrigger className="h-8 text-xs w-28 bg-background">
                 <SelectValue />
@@ -261,7 +220,7 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
               </SelectContent>
             </Select>
 
-            {FIELD_LABELS.map(f => (
+            {DEDUP_TOGGLE_FIELDS.map(f => (
               <button
                 key={f.key}
                 onClick={() => toggleField(f.key)}

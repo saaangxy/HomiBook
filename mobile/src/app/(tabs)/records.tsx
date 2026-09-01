@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { Alert, Platform, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useIsFocused } from 'expo-router';
-import { ArrowUpRight, ArrowDownRight, ArrowLeftRight, SlidersHorizontal, X, Copy, Trash2, Pencil, CopyMinus } from 'lucide-react-native';
+import { ArrowUpRight, ArrowDownRight, ArrowLeftRight, SlidersHorizontal, X, Copy, Trash2, Pencil, CopyMinus, FileUp, Download, Save, Share2 } from 'lucide-react-native';
 import { useTheme, alpha, haptics } from '@/theme';
 import { useUIShell, usePageRefresh } from '@/components/chrome/chrome';
 import { useRecords } from '@/stores/records';
@@ -15,6 +15,9 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { FadeInView } from '@/components/FadeInView';
 import { FilterSheet, countActiveFilters, emptyFilters, type RecordFilters } from '@/components/FilterSheet';
 import { DedupSheet } from '@/components/DedupSheet';
+import { ImportSheet } from '@/components/import/ImportSheet';
+import { FormSheet } from '@/components/chrome/FormSheet';
+import { exportRecordsCsv, type ExportMode } from '@/services/import';
 import { formatMoney } from '@/lib/format';
 import type { RecordItem, RecordType } from '@/types';
 
@@ -33,6 +36,9 @@ export default function RecordsScreen() {
   const [filters, setFilters] = useState<RecordFilters>(emptyFilters);
   const [filterOpen, setFilterOpen] = useState(false);
   const [dedupOpen, setDedupOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [exportSheetOpen, setExportSheetOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   // 后端筛选结果(独立请求,不受 store 前 100 条限制)
   const [list, setList] = useState<RecordItem[]>([]);
@@ -135,6 +141,32 @@ export default function RecordsScreen() {
     haptics.warn();
   };
 
+  // 按当前筛选条件导出 CSV(与 web 一致:筛选即导出范围);方式由导出弹层选择
+  const onExport = async (mode: ExportMode) => {
+    if (!bookId || exporting) return;
+    setExportSheetOpen(false);
+    setExporting(true);
+    haptics.tap();
+    try {
+      await exportRecordsCsv(
+        {
+          bookId,
+          types: filters.types,
+          accountIds: filters.accountIds,
+          categoryCodes: filters.categoryCodes,
+          dateFrom: filters.dateFrom || undefined,
+          dateTo: filters.dateTo || undefined,
+        },
+        mode,
+      );
+      haptics.success();
+    } catch (e: any) {
+      Alert.alert('导出失败', e.message?.slice(0, 200) || '未知错误');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   // 活跃条件胶囊(点 × 单个移除)
   const activeChips: { key: string; label: string; onClear: () => void }[] = [
     ...filters.types.map((t) => ({
@@ -223,6 +255,31 @@ export default function RecordsScreen() {
             <Text style={{ fontSize: 13, color: colors.foreground, fontWeight: '500' }}>去重</Text>
           </Pressable>
 
+          {/* 导入入口 */}
+          <Pressable
+            onPress={() => {
+              setImportOpen(true);
+              haptics.tap();
+            }}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border }}
+          >
+            <FileUp size={13} color={colors.foreground} />
+            <Text style={{ fontSize: 13, color: colors.foreground, fontWeight: '500' }}>导入</Text>
+          </Pressable>
+
+          {/* 导出入口 */}
+          <Pressable
+            onPress={() => {
+              setExportSheetOpen(true);
+              haptics.tap();
+            }}
+            disabled={exporting}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border, opacity: exporting ? 0.5 : 1 }}
+          >
+            <Download size={13} color={colors.foreground} />
+            <Text style={{ fontSize: 13, color: colors.foreground, fontWeight: '500' }}>{exporting ? '导出中...' : '导出'}</Text>
+          </Pressable>
+
           {activeChips.map((c) => (
             <View key={c.key} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingLeft: 12, paddingRight: 8, paddingVertical: 6, borderRadius: 999, backgroundColor: alpha(colors.primary, 0.1), borderWidth: 1, borderColor: alpha(colors.primary, 0.3) }}>
               <Text style={{ fontSize: 12, color: colors.primary }}>{c.label}</Text>
@@ -275,7 +332,42 @@ export default function RecordsScreen() {
       </View>
 
       <FilterSheet visible={filterOpen} initial={filters} onApply={setFilters} onClose={() => setFilterOpen(false)} />
+      {/* 导出方式选择:保存到设备(SAF,仅 Android)/系统分享 */}
+      <FormSheet visible={exportSheetOpen} title="导出 CSV" onClose={() => setExportSheetOpen(false)}>
+        {Platform.OS === 'android' ? (
+          <Pressable
+            onPress={() => onExport('save')}
+            disabled={exporting}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14, borderWidth: 1.5, borderColor: colors.border, marginBottom: 10, opacity: exporting ? 0.5 : 1 }}
+          >
+            <Save size={20} color={colors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 15, fontWeight: '600' }}>保存到设备</Text>
+              <Text variant="muted" style={{ fontSize: 11, marginTop: 2 }}>选择文件夹后直接写入,再次导出免选择</Text>
+            </View>
+          </Pressable>
+        ) : null}
+        <Pressable
+          onPress={() => onExport('share')}
+          disabled={exporting}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14, borderWidth: 1.5, borderColor: colors.border, opacity: exporting ? 0.5 : 1 }}
+        >
+          <Share2 size={20} color={colors.primary} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 15, fontWeight: '600' }}>系统分享</Text>
+            <Text variant="muted" style={{ fontSize: 11, marginTop: 2 }}>调起分享面板,发送或保存到任意位置</Text>
+          </View>
+        </Pressable>
+      </FormSheet>
       {bookId ? <DedupSheet visible={dedupOpen} onClose={() => setDedupOpen(false)} bookId={bookId} /> : null}
+      {bookId ? (
+        <ImportSheet
+          visible={importOpen}
+          onClose={() => setImportOpen(false)}
+          bookId={bookId}
+          dictCodes={categories.map((c) => ({ code: c.code, label: c.label, group: c.type === 'EXPENSE' ? 'transaction_category_expense' : c.type === 'INCOME' ? 'transaction_category_income' : 'transaction_category_transfer' }))}
+        />
+      ) : null}
     </Screen>
   );
 }

@@ -608,16 +608,15 @@ export async function importExportRoutes(app: FastifyInstance) {
       orderBy: { date: 'desc' },
       include: {
         account: { select: { name: true } },
-        fromAccount: { select: { name: true } },
         toAccount: { select: { name: true } },
         owner: { select: { nickname: true, email: true } },
       },
       take: 10000,
     })
 
-    // 构建 CSV
+    // 构建 CSV(列名与系统字段/导入列映射一致;转账来源恒等于账户故不导出)
     const typeLabels: Record<string, string> = { INCOME: '收入', EXPENSE: '支出', TRANSFER: '转账' }
-    const header = '日期,类型,金额,账户,转账来源,转账目标,分类,交易方,备注,归属人,标签'
+    const header = '日期,类型,金额,账户,转账目标,分类,交易方,备注,归属人,标签'
     const csvRows = records.map(r => {
       const tags = JSON.parse(r.tags || '[]') as string[]
       const owner = r.owner.nickname || r.owner.email
@@ -626,7 +625,6 @@ export async function importExportRoutes(app: FastifyInstance) {
         typeLabels[r.type] || r.type,
         String(r.amount),
         r.account?.name || '',
-        r.fromAccount?.name || '',
         r.toAccount?.name || '',
         r.categoryCode || '',
         r.payer || '',

@@ -31,6 +31,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip'
 import { importExportApi, type UnmatchedAccount, type UnmatchedCategory, type ParsedImportRow, type DictEntry } from '@/api/import-export'
 import { ACCOUNT_TYPE_LABELS, type AccountItem, type AccountType } from '@/api/account'
+import { IMPORT_COLUMN_FIELDS, autoDetectColumns, detectTypeValues, autoDetectTypeMapping } from '@homibook/core'
 import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
 import { bookApi, type BookMember } from '@/api/book'
 import { useAuthStore } from '@/stores/auth'
@@ -244,55 +245,6 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
     if (f) setFile(f)
   }
 
-  // 列名自动检测
-  const autoDetectColumns = (headers: string[]): Record<string, string> => {
-    const mapping: Record<string, string> = {}
-    const rules: Record<string, RegExp[]> = {
-      date: [/日期/, /时间/, /date/i, /time/i],
-      amount: [/金额/, /金额/, /amount/i],
-      type: [/收.?支/, /方向/, /类型/, /type/i, /出入/],
-      account: [/支付方式/, /账户/, /付款方式/, /收款方式/, /account/i],
-      toAccount: [/目标账户/, /对方账户/, /收款账户/, /toAccount/i, /to_account/i],
-      payer: [/对方/, /交易方/, /商户/, /商家/, /payer/i, /merchant/i],
-      category: [/分类/, /category/i],
-      description: [/说明/, /商品/, /描述/, /description/i, /desc/i],
-      remark: [/备注/, /remark/i, /note/i, /附言/],
-    }
-    for (const [field, patterns] of Object.entries(rules)) {
-      for (const header of headers) {
-        for (const pattern of patterns) {
-          if (pattern.test(header)) {
-            mapping[field] = header
-            break
-          }
-        }
-        if (mapping[field]) break
-      }
-    }
-    return mapping
-  }
-
-  // 提取类型列的唯一值
-  const detectTypeValues = (columnName: string, sampleRows: Record<string, string>[]): string[] => {
-    const values = new Set<string>()
-    for (const row of sampleRows) {
-      const v = (row[columnName] || '').trim()
-      if (v) values.add(v)
-    }
-    return Array.from(values)
-  }
-
-  // 自动推断类型映射（同后端正则逻辑）
-  const autoDetectTypeMapping = (values: string[]): Record<string, string> => {
-    const mapping: Record<string, string> = {}
-    for (const v of values) {
-      if (/^收入|^入账|^收款|income/i.test(v)) mapping[v] = 'INCOME'
-      else if (/^不计收支|^不计|^转账|^transfer/i.test(v)) mapping[v] = 'TRANSFER'
-      else if (/^支出|^出账|^付款|^expense/i.test(v)) mapping[v] = 'EXPENSE'
-    }
-    return mapping
-  }
-
   // CSV 文件分析（第一步上传）
   const handleAnalyze = async () => {
     if (!file || !bookId) return
@@ -308,7 +260,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
       if (detected.type) {
         const typeVals = detectTypeValues(detected.type, result.sampleRows)
         setCsvTypeValues(typeVals)
-        setTypeMapping(autoDetectTypeMapping(typeVals))
+        setTypeMapping(autoDetectTypeMapping(typeVals) as Record<string, string>)
       }
       setStep('columnMapping')
     } catch (e: any) {
@@ -843,7 +795,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                       if (detected.type) {
                         const typeVals = detectTypeValues(detected.type, result.sampleRows)
                         setCsvTypeValues(typeVals)
-                        setTypeMapping(autoDetectTypeMapping(typeVals))
+                        setTypeMapping(autoDetectTypeMapping(typeVals) as Record<string, string>)
                       }
                     } catch (e: any) {
                       setError(e.message)
@@ -868,17 +820,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {([
-                        { key: 'date', label: '日期', required: true },
-                        { key: 'amount', label: '金额', required: true },
-                        { key: 'type', label: '收支类型', required: true },
-                        { key: 'account', label: '账户' },
-                        { key: 'toAccount', label: '目标账户' },
-                        { key: 'payer', label: '交易方' },
-                        { key: 'category', label: '分类' },
-                        { key: 'description', label: '说明' },
-                        { key: 'remark', label: '备注' },
-                      ] as { key: string; label: string; required?: boolean }[]).map(field => (
+                      {IMPORT_COLUMN_FIELDS.map(field => (
                         <TableRow key={field.key}>
                           <TableCell className="text-xs py-2 font-medium">
                             {field.label}
@@ -898,7 +840,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                                 if (field.key === 'type' && v) {
                                   const typeVals = detectTypeValues(v, csvSampleData)
                                   setCsvTypeValues(typeVals)
-                                  setTypeMapping(autoDetectTypeMapping(typeVals))
+                                  setTypeMapping(autoDetectTypeMapping(typeVals) as Record<string, string>)
                                 }
                               }}
                             >

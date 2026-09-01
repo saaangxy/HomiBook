@@ -4,3 +4,5 @@ export * from './format';
 export * from './ai/sse';
 export * from './ai/content-parser';
 export * from './ai/branch-utils';
+export * from './dedup';
+export * from './record-import';

@@ -170,7 +170,12 @@ function supportsNativeUpload(): boolean {
   return nativeUploadSupported;
 }
 
-export async function uploadFileNative<T>(url: string, fileUri: string, mimeType: string): Promise<T> {
+export async function uploadFileNative<T>(
+  url: string,
+  fileUri: string,
+  mimeType: string,
+  fields?: Record<string, string>,
+): Promise<T> {
   const cred = await getCredential();
   if (!url || !fileUri) throw new Error('缺少上传参数');
   if (!cred) throw new Error('请先配置服务器并登录');
@@ -181,6 +186,7 @@ export async function uploadFileNative<T>(url: string, fileUri: string, mimeType
         fieldName: 'file',
         mimeType,
         headers,
+        parameters: fields,
       })
     : await FileSystem.uploadAsync(url, fileUri, {
         httpMethod: 'POST',
@@ -188,6 +194,7 @@ export async function uploadFileNative<T>(url: string, fileUri: string, mimeType
         fieldName: 'file',
         mimeType,
         headers,
+        parameters: fields,
       });
   const data = parseBodyLoose(res.body);
   if (res.status < 200 || res.status >= 300) {

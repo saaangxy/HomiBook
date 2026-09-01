@@ -9,44 +9,21 @@ import { notifyPageRefresh } from '@/components/chrome/chrome';
 import { useRecords } from '@/stores/records';
 import { accountLabel, isMultiOwnerAccounts } from '@/lib/account';
 import {
+  DEFAULT_DEDUP_MATCH_FIELDS,
+  DEDUP_TOGGLE_FIELDS,
+  DEDUP_TYPE_LABELS,
+  parseDuplicateGroupKey,
+  type DedupMatchFields,
+} from '@homibook/core';
+import {
   detectDuplicatesApi,
   batchDeleteRecordsApi,
-  type DedupMatchFields,
   type DuplicateGroup,
 } from '@/services/records';
 import type { RecordItem, RecordType } from '@/types';
 
-const TYPE_LABEL: Record<RecordType, string> = { EXPENSE: '支出', INCOME: '收入', TRANSFER: '转账' };
+const TYPE_LABEL = DEDUP_TYPE_LABELS;
 const TYPE_COLOR: Record<RecordType, string> = { EXPENSE: '#ef4444', INCOME: '#22c55e', TRANSFER: '#3b82f6' };
-
-const TOGGLE_FIELDS: { key: 'type' | 'accountId' | 'payer' | 'amount' | 'ownerId'; label: string }[] = [
-  { key: 'type', label: '类型' },
-  { key: 'accountId', label: '账户' },
-  { key: 'payer', label: '交易方' },
-  { key: 'amount', label: '金额' },
-  { key: 'ownerId', label: '归属人' },
-];
-
-const DEFAULT_FIELDS: DedupMatchFields = { date: 'date', type: true, accountId: true, payer: true, amount: true, ownerId: false };
-
-/** 解析分组 key 为可读标签(账户段显示"账户名 · 归属人"、归属人段显示名称,均非 id) */
-function parseGroupKey(key: string, fields: DedupMatchFields, accountDisplay: Map<string, string>, ownerNames: Map<string, string>): string[] {
-  const parts = key.split('||');
-  const labels: string[] = [];
-  let idx = 0;
-
-  if (fields.date) {
-    const val = parts[idx++];
-    labels.push(`日期: ${fields.date === 'date' ? val : val.replace('T', ' ').slice(0, 19)}`);
-  }
-  if (fields.type) labels.push(`类型: ${TYPE_LABEL[parts[idx++] as RecordType] ?? parts[idx - 1]}`);
-  if (fields.accountId) labels.push(`账户: ${accountDisplay.get(parts[idx++]) ?? parts[idx - 1]}`);
-  if (fields.payer) labels.push(`交易方: ${parts[idx++] === '__empty__' ? '(空)' : parts[idx - 1]}`);
-  if (fields.amount) labels.push(`金额: ${parts[idx++]}`);
-  if (fields.ownerId) labels.push(`归属人: ${ownerNames.get(parts[idx++]) ?? parts[idx - 1]}`);
-
-  return labels;
-}
 
 /** 格式化 ISO 日期为 YYYY-MM-DD HH:mm:ss */
 function fmtDate(iso: string): string {
@@ -64,7 +41,7 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
   const { colors, palette } = useTheme();
   const { accounts } = useRecords();
 
-  const [matchFields, setMatchFields] = useState<DedupMatchFields>(DEFAULT_FIELDS);
+  const [matchFields, setMatchFields] = useState<DedupMatchFields>(DEFAULT_DEDUP_MATCH_FIELDS);
   const [groups, setGroups] = useState<DuplicateGroup[]>([]);
   const [totalDuplicates, setTotalDuplicates] = useState(0);
   const [detected, setDetected] = useState(false);
@@ -92,7 +69,7 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
     setDeleting(false);
     setError('');
     setSelectedIds(new Set());
-    setMatchFields(DEFAULT_FIELDS);
+    setMatchFields(DEFAULT_DEDUP_MATCH_FIELDS);
   };
 
   const handleClose = () => {
@@ -171,7 +148,7 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
     ]);
   };
 
-  const activeFieldCount = TOGGLE_FIELDS.filter((f) => matchFields[f.key]).length + (matchFields.date ? 1 : 0);
+  const activeFieldCount = DEDUP_TOGGLE_FIELDS.filter((f) => matchFields[f.key]).length + (matchFields.date ? 1 : 0);
 
   const toggleBtnStyle = (on: boolean) => ({
     flexDirection: 'row' as const,
@@ -208,7 +185,7 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
           />
         </View>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-          {TOGGLE_FIELDS.map((f) => {
+          {DEDUP_TOGGLE_FIELDS.map((f) => {
             const on = matchFields[f.key];
             return (
               <Pressable
@@ -274,7 +251,7 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
             {groups.map((group, gi) => {
               const groupIds = group.records.map((r) => r.id);
               const allSelected = groupIds.every((id) => selectedIds.has(id));
-              const keyLabels = parseGroupKey(group.key, matchFields, accountDisplay, ownerNames);
+              const keyLabels = parseDuplicateGroupKey(group.key, matchFields, { accountDisplay, ownerNames });
               return (
                 <View key={gi} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 14, overflow: 'hidden', marginBottom: 14 }}>
                   {/* 组头 */}

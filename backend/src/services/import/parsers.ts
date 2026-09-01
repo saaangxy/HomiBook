@@ -540,7 +540,6 @@ export function parseCsvWithMapping(
       const toAccount = getField('toAccount')
       const payer = getField('payer')
       const category = getField('category')
-      const description = getField('description')
       const remark = getField('remark')
 
       const date = parseDateStr(dateStr)
@@ -564,17 +563,13 @@ export function parseCsvWithMapping(
         recordType = 'UNKNOWN'
       }
 
-      const remarkParts: string[] = []
-      if (description) remarkParts.push(description)
-      if (remark) remarkParts.push(remark)
-
       rows.push({
         date, type: recordType, amount,
         accountName: account || '导入账户', accountId: null,
         toAccountName: toAccount || null, toAccountId: null,
         categoryCode: category || null, mappedCategoryCode: null,
         payer: payer || null,
-        remark: remarkParts.join(' | '),
+        remark: remark || '',
         tags: ['导入', 'CSV'], rowIndex,
       })
     } catch (e: any) {
