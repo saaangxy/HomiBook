@@ -726,7 +726,8 @@ function MiniTable({ columns, rows, aligns, maxHeight }: { columns: string[]; ro
 
 function BatchIndicator({ toolCallId }: { toolCallId: string }) {
   const messages = useChatStore((s) => s.messages);
-  const remaining = messages.filter((m) => m.role === 'assistant').reduce((acc, m) => acc + m.blocks.filter((b) => b.type === 'tool-call' && (b as ToolCallEntry).status === 'confirming').length, 0);
+  // 待决定状态:confirming(待确认)/suggesting(待选择)/switching(待选账本)
+  const remaining = messages.filter((m) => m.role === 'assistant').reduce((acc, m) => acc + m.blocks.filter((b) => b.type === 'tool-call' && ['confirming', 'suggesting', 'switching'].includes((b as ToolCallEntry).status)).length, 0);
   if (remaining <= 1) return null;
   return <Text style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>等待全部确认 · 剩余 {remaining} 个</Text>;
 }

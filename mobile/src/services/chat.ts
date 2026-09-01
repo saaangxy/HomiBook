@@ -179,24 +179,6 @@ export async function confirmActionStream(
   await streamRequest(`${BASE}/confirm`, params, onEvent, onDone, signal);
 }
 
-export async function respondSuggestionStream(
-  params: { toolCallId: string; values: Record<string, string> | null; accountBookId: string; sessionId?: string },
-  onEvent: (event: SSEEvent) => void,
-  onDone: () => void,
-  signal?: AbortSignal,
-): Promise<void> {
-  await streamRequest(`${BASE}/respond-suggestion`, params, onEvent, onDone, signal);
-}
-
-export async function switchBookStream(
-  params: { toolCallId: string; bookId: string },
-  onEvent: (event: SSEEvent) => void,
-  onDone: () => void,
-  signal?: AbortSignal,
-): Promise<void> {
-  await streamRequest(`${BASE}/switch-book`, params, onEvent, onDone, signal);
-}
-
 // ── 小票图片上传(POST /api/records/upload,multipart) ──
 export interface UploadResult {
   id: string;

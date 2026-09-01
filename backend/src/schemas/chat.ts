@@ -35,14 +35,8 @@ export const confirmActionSchema = z.object({
   decisions: z.array(z.object({
     toolCallId: z.string().describe('工具调用ID'),
     approved: z.boolean().describe('是否批准'),
-    data: z.object({}).passthrough().optional().describe('附加数据'),
+    data: z.object({}).passthrough().optional().describe('附加数据（导入 overrides / suggest_options 的 values / switch_book 的 bookId）'),
   })).min(1).describe('决策列表'),
-})
-
-// 回复建议
-export const respondSuggestionSchema = z.object({
-  toolCallId: z.string().describe('工具调用ID'),
-  values: z.record(z.string(), z.string()).nullable().describe('字段值映射，null表示取消'),
 })
 
 // 更新助手配置

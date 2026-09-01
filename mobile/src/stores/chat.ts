@@ -8,9 +8,7 @@ import {
   fetchMessages,
   fetchSessions,
   generateSessionTitle,
-  respondSuggestionStream,
   sendMessageStream,
-  switchBookStream,
   updateSession,
   type SSEEvent,
 } from '@/services/chat';
@@ -304,6 +302,65 @@ function startContinuationStream(
   streamStarter(handleEvent, handleDone, controller.signal);
 }
 
+/**
+ * 工具决定的统一入口（覆盖全部工具：普通确认/导入/建议选项/切换账本）。
+ * 同一 assistant 消息内存在待决定块（confirming/suggesting/switching）时等待，
+ * 全部决定后把 decisions（含各自暂存的 decisionData）统一提交给 /confirm 续流。
+ */
+function decideTool(
+  set: (p: Partial<ChatState> | ((s: ChatState) => Partial<ChatState>)) => void,
+  get: () => ChatState,
+  accountBookId: string,
+  toolCallId: string,
+  approved: boolean,
+  data?: Record<string, unknown>,
+) {
+  const sid = get().currentSessionId;
+  if (!sid) return;
+
+  const parentMsg = get().messages.find((m) => m.role === 'assistant' && m.blocks.some((b) => b.type === 'tool-call' && b.toolCallId === toolCallId));
+  const parentDbId = parentMsg?.dbId;
+  if (!parentDbId) return;
+  const parentId = parentMsg!.id;
+
+  // 标记当前块为已决定：批准 → pending（保留旧 result，避免 SSE tool-result 到达前被误判为"数据已过期"）
+  // 并暂存 decisionData，提交时各 decision 携带自己的 data
+  get().updateStreamMessage(sid, parentId, (msg) => ({
+    ...msg,
+    blocks: msg.blocks.map((b) =>
+      b.type === 'tool-call' && b.toolCallId === toolCallId
+        ? {
+            ...b,
+            status: approved ? ('pending' as const) : ('error' as const),
+            preview: undefined,
+            decisionData: data,
+            ...(approved ? {} : { result: { error: '用户拒绝了此操作' } as any }),
+          }
+        : b,
+    ),
+  }));
+
+  // 待决定块仍在 → 等待（confirming/suggesting/switching = 等待用户决定）
+  const updatedMsg = get().messages.find((m) => m.id === parentId);
+  const awaiting = (updatedMsg?.blocks.filter((b) => b.type === 'tool-call' && (b.status === 'confirming' || b.status === 'suggesting' || b.status === 'switching')) || []) as Extract<MessageBlock, { type: 'tool-call' }>[];
+  if (awaiting.length > 0) return;
+
+  // 全部决定，收集已决定块（pending=刚批准 / error=刚拒绝），各 decision 带自己的 decisionData
+  const decidedBlocks = (updatedMsg?.blocks.filter((b) => b.type === 'tool-call' && (b.status === 'pending' || b.status === 'error')) || []) as Extract<MessageBlock, { type: 'tool-call' }>[];
+  if (decidedBlocks.length === 0) return;
+
+  const decisions = decidedBlocks.map((b) => ({
+    toolCallId: b.toolCallId,
+    approved: b.status !== 'error',
+    ...(b.decisionData ? { data: b.decisionData } : {}),
+  }));
+
+  startContinuationStream(
+    set, get, parentDbId, parentId,
+    (handleEvent, handleDone, signal) => confirmActionStream({ decisions, accountBookId, sessionId: sid }, handleEvent, handleDone, signal),
+  );
+}
+
 export const useChatStore = create<ChatState>()((set, get) => ({
   sessions: [],
   currentSessionId: null,
@@ -557,71 +614,16 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   },
 
   confirmAndContinue: (accountBookId, toolCallId, approved, data) => {
-    const state = get();
-    const sid = state.currentSessionId;
-    if (!sid) return;
-    const parentMsg = state.messages.find((m) => m.role === 'assistant' && m.blocks.some((b) => b.type === 'tool-call' && b.toolCallId === toolCallId));
-    const parentDbId = parentMsg?.dbId;
-    if (!parentDbId) return;
-    const parentId = parentMsg!.id;
-    const newDecidedStatus = approved ? 'pending' as const : 'error' as const;
-    get().updateStreamMessage(sid, parentId, (msg) => ({
-      ...msg,
-      blocks: msg.blocks.map((b) =>
-        b.type === 'tool-call' && b.toolCallId === toolCallId
-          ? { ...b, status: newDecidedStatus, preview: undefined, ...(approved ? {} : { result: { error: '用户拒绝了此操作' } as any }) }
-          : b,
-      ),
-    }));
-    const updatedMsg = get().messages.find((m) => m.id === parentId);
-    const allConfirming = (updatedMsg?.blocks.filter((b) => b.type === 'tool-call' && (b.status === 'confirming' || b.status === 'pending' || b.status === 'error')) || []) as Extract<MessageBlock, { type: 'tool-call' }>[];
-    const stillConfirming = allConfirming.filter((b) => b.status === 'confirming');
-    if (stillConfirming.length > 0) return;
-    const decisions = allConfirming.map((b) => ({ toolCallId: b.toolCallId, approved: b.status !== 'error', ...(data ? { data } : {}) }));
-    startContinuationStream(
-      set, get, parentDbId, parentId,
-      (handleEvent, handleDone, signal) => confirmActionStream({ decisions, accountBookId, sessionId: sid }, handleEvent, handleDone, signal),
-    );
+    decideTool(set, get, accountBookId, toolCallId, approved, data);
   },
 
   respondToSuggestion: (accountBookId, toolCallId, values) => {
-    const state = get();
-    const sid = state.currentSessionId;
-    if (!sid) return;
-    const parentMsg = state.messages.find((m) => m.role === 'assistant' && m.blocks.some((b) => b.type === 'tool-call' && b.toolCallId === toolCallId));
-    const parentDbId = parentMsg?.dbId;
-    if (!parentDbId) return;
-    const parentId = parentMsg!.id;
-    if (values === null) {
-      get().updateStreamMessage(sid, parentId, (msg) => ({
-        ...msg,
-        blocks: msg.blocks.map((b) =>
-          b.type === 'tool-call' && b.toolCallId === toolCallId
-            ? { ...b, status: 'error' as const, result: { error: '用户取消了选择' } }
-            : b,
-        ),
-      }));
-      respondSuggestionStream({ toolCallId, values: null, accountBookId, sessionId: sid }, () => {}, () => {});
-      return;
-    }
-    startContinuationStream(
-      set, get, parentDbId, parentId,
-      (handleEvent, handleDone, signal) => respondSuggestionStream({ toolCallId, values, accountBookId, sessionId: sid }, handleEvent, handleDone, signal),
-    );
+    // 取消 = 拒绝决定；选择 = 批准并携带 values，统一走 /confirm 批量决策
+    decideTool(set, get, accountBookId, toolCallId, values !== null, values !== null ? { values } : undefined);
   },
 
   switchBook: (toolCallId, bookId) => {
-    const state = get();
-    const sid = state.currentSessionId;
-    if (!sid) return;
-    const parentMsg = state.messages.find((m) => m.role === 'assistant' && m.blocks.some((b) => b.type === 'tool-call' && b.toolCallId === toolCallId));
-    const parentDbId = parentMsg?.dbId;
-    if (!parentDbId) return;
-    const parentId = parentMsg!.id;
-    startContinuationStream(
-      set, get, parentDbId, parentId,
-      (handleEvent, handleDone, signal) => switchBookStream({ toolCallId, bookId }, handleEvent, handleDone, signal),
-    );
+    decideTool(set, get, '', toolCallId, true, { bookId });
   },
 
   retryMessage: (assistantMsgId) => {

@@ -2,7 +2,7 @@
  * AI 消息块解析 —— 纯 TS,三端共享(web/mobile)。
  * 解析历史消息的 <think> 块与 storedToolCalls,以及 SSE 流式 text-delta 的分块。
  */
-import type { MessageBlock, ToolCallEntry } from '../types/chat';
+import type { MessageBlock, ToolCallEntry } from '../types';
 
 // ---- 解析历史消息 ----
 

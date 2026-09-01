@@ -711,7 +711,8 @@ function BatchIndicator({ toolCallId }: { toolCallId: string }) {
       b.type === 'tool-call' && b.toolCallId === toolCallId
     )
   )
-  const remaining = parentMsg?.blocks.filter(b => b.type === 'tool-call' && b.status === 'confirming').length || 0
+  // 待决定状态:confirming(待确认)/suggesting(待选择)/switching(待选账本)
+  const remaining = parentMsg?.blocks.filter(b => b.type === 'tool-call' && ['confirming', 'suggesting', 'switching'].includes(b.status)).length || 0
   if (remaining <= 1) return null
   return (
     <div className="flex items-center gap-1.5 text-xs text-amber-600 mt-1">

@@ -8,7 +8,7 @@ import { assertIsMember } from '../services/ai/security.js'
 import { logToolCall } from '../services/ai/audit.js'
 import { ALL_TOOLS, TOOL_GROUPS, storeImportOverrides, peekImportOverrides, consumeImportOverrides } from '../services/ai/tools/index.js'
 import { buildConfirmPreview } from '../services/ai/confirm-preview.js'
-import { sendMessageSchema, createSessionSchema, updateSessionSchema, confirmActionSchema, respondSuggestionSchema, updateAIConfigSchema, createProviderConfigSchema, updateProviderConfigSchema } from '../schemas/chat.js'
+import { sendMessageSchema, createSessionSchema, updateSessionSchema, confirmActionSchema, updateAIConfigSchema, createProviderConfigSchema, updateProviderConfigSchema } from '../schemas/chat.js'
 import { detectSkills, buildSkillsPrompt, extractUserMessageForSkills } from '../services/ai/skills/index.js'
 import { loadMemoriesForPrompt, listMemories, deleteMemory, updateMemory } from '../services/ai/memory.js'
 import { estimateTokens } from '../services/ai/token-estimate.js'
@@ -575,17 +575,8 @@ const ROUTE_DOC: Record<string, RouteDoc> = {
   },
   'POST /confirm': {
     summary: '确认工具操作',
-    description: '用户确认或拒绝AI工具调用（如创建/修改/删除记录）',
+    description: '用户确认或拒绝AI工具调用（覆盖全部工具：普通确认/导入/建议选项/切换账本，支持批量 decisions）',
     bodySchema: confirmActionSchema
-  },
-  'POST /respond-suggestion': {
-    summary: '响应选项建议',
-    description: '用户选择AI提供的选项（如选择账户、分类）',
-    bodySchema: respondSuggestionSchema
-  },
-  'POST /switch-book': {
-    summary: '切换账本',
-    description: '用户选择要切换的目标账本，AI将以新账本上下文继续对话',
   },
   'GET /provider-configs': {
     summary: '获取供应商配置列表',
@@ -1052,7 +1043,7 @@ export async function chatRoutes(app: FastifyInstance) {
     }
   })
 
-  // 确认操作 → 始终批量处理（decisions 数组）
+  // 确认操作 → 始终批量处理（decisions 数组，覆盖全部工具类型：普通确认/导入/建议选项/切换账本）
   app.post('/confirm', async (req, reply) => {
     const parsed = confirmActionSchema.safeParse(req.body)
     if (!parsed.success) return reply.status(400).send({ message: parsed.error.issues[0].message })
@@ -1066,32 +1057,77 @@ export async function chatRoutes(app: FastifyInstance) {
     if (!found.success) return reply.status(found.status).send({ message: found.message })
     const { message, toolCalls, accountBookId } = found.data
 
-    // 存储用户修改后的导入映射数据
-    const firstData = decisions[0].data as Record<string, unknown> | undefined
-    if (firstData?.fileId) {
-      const existing = peekImportOverrides(firstData.fileId as string) || {}
-      storeImportOverrides(firstData.fileId as string, {
-        accountResolutions: (firstData.accountResolutions ?? existing.accountResolutions) as any,
-        categoryResolutions: (firstData.categoryResolutions ?? existing.categoryResolutions) as any,
-        unrecognizedResolutions: (firstData.unrecognizedResolutions ?? existing.unrecognizedResolutions) as any,
-        ownerId: (firstData.ownerId ?? existing.ownerId) as any,
-      })
-    }
-
     const initialSSEEvents: { event: string; data: any }[] = []
     const pendingToolResults: { toolCallId: string; toolName: string; result: unknown }[] = []
+    // 若本批包含 switch_book 决定，续流账本上下文切换为新账本
+    let continuationBookId: string | null = null
 
-    for (const { toolCallId, approved } of decisions) {
+    for (const { toolCallId, approved, data } of decisions) {
       const entry = toolCalls.find((tc: any) => tc.toolCallId === toolCallId)
       if (!entry) continue
 
       if (!approved) {
-        const toolResult = { success: false, error: '用户拒绝了此操作', retryable: false }
+        const toolResult = { success: false, error: entry.toolName === 'suggest_options' ? '用户取消了选择' : '用户拒绝了此操作', retryable: false }
         entry.status = 'error'
         entry.result = toolResult
         initialSSEEvents.push({ event: 'tool-result', data: { toolCallId, toolName: entry.toolName, result: toolResult, durationMs: 0, status: 'error' } })
         pendingToolResults.push({ toolCallId, toolName: entry.toolName, result: toolResult })
         logToolCall({ userId, sessionId: message.sessionId, action: 'reject', toolName: entry.toolName })
+        continue
+      }
+
+      // 每个 decision 各自存储自己的导入覆盖数据（先存再执行，避免多工具并行时 data 串扰）
+      const decData = data as Record<string, unknown> | undefined
+      if (decData?.fileId) {
+        const existing = peekImportOverrides(decData.fileId as string) || {}
+        storeImportOverrides(decData.fileId as string, {
+          accountResolutions: (decData.accountResolutions ?? existing.accountResolutions) as any,
+          categoryResolutions: (decData.categoryResolutions ?? existing.categoryResolutions) as any,
+          unrecognizedResolutions: (decData.unrecognizedResolutions ?? existing.unrecognizedResolutions) as any,
+          ownerId: (decData.ownerId ?? existing.ownerId) as any,
+        })
+      }
+
+      // switch_book 不执行工具本体（其结果是待选账本列表），按用户选择构造结果
+      if (entry.toolName === 'switch_book') {
+        const bookId = typeof decData?.bookId === 'string' ? decData.bookId : ''
+        if (!bookId) {
+          const toolResult = { success: false, error: '缺少账本ID', retryable: false }
+          entry.status = 'error'
+          entry.result = toolResult
+          initialSSEEvents.push({ event: 'tool-result', data: { toolCallId, toolName: entry.toolName, result: toolResult, durationMs: 0, status: 'error' } })
+          pendingToolResults.push({ toolCallId, toolName: entry.toolName, result: toolResult })
+          continue
+        }
+        try {
+          await assertIsMember(bookId, userId)
+        } catch (e: any) {
+          const toolResult = { success: false, error: e.message, retryable: false }
+          entry.status = 'error'
+          entry.result = toolResult
+          initialSSEEvents.push({ event: 'tool-result', data: { toolCallId, toolName: entry.toolName, result: toolResult, durationMs: 0, status: 'error' } })
+          pendingToolResults.push({ toolCallId, toolName: entry.toolName, result: toolResult })
+          continue
+        }
+        const book = await prisma.accountBook.findUnique({ where: { id: bookId }, select: { name: true } })
+        const toolResult = { success: true, data: { switched: true, bookId, bookName: book?.name || bookId } }
+        entry.status = 'success'
+        entry.result = toolResult
+        initialSSEEvents.push({ event: 'tool-result', data: { toolCallId, toolName: entry.toolName, result: toolResult, durationMs: 0, status: 'success' } })
+        pendingToolResults.push({ toolCallId, toolName: entry.toolName, result: toolResult })
+        continuationBookId = bookId
+        logToolCall({ userId, sessionId: message.sessionId, action: 'confirm', toolName: entry.toolName, input: entry.args, output: toolResult })
+        continue
+      }
+
+      // suggest_options：用户已选择/填写的字段值直接作为工具结果
+      if (entry.toolName === 'suggest_options') {
+        const toolResult = { success: true, values: (decData?.values ?? {}) as Record<string, string> }
+        entry.status = 'success'
+        entry.result = toolResult
+        initialSSEEvents.push({ event: 'tool-result', data: { toolCallId, toolName: entry.toolName, result: toolResult, durationMs: 0, status: 'success' } })
+        pendingToolResults.push({ toolCallId, toolName: entry.toolName, result: toolResult })
+        logToolCall({ userId, sessionId: message.sessionId, action: 'confirm', toolName: entry.toolName, input: entry.args, output: toolResult })
         continue
       }
 
@@ -1148,93 +1184,7 @@ export async function chatRoutes(app: FastifyInstance) {
     }).catch(() => {})
 
     const { messages, messageIds } = await buildChatMessages(message.sessionId, pendingToolResults)
-    await continueWithLLM(reply, message.sessionId, accountBookId, userId, message, messages, messageIds, initialSSEEvents)
-  })
-
-  // 回复建议（用户选择或自定义输入）→ SSE 流式继续对话
-  app.post('/respond-suggestion', async (req, reply) => {
-    const parsed = respondSuggestionSchema.safeParse(req.body)
-    if (!parsed.success) return reply.status(400).send({ message: parsed.error.issues[0].message })
-
-    const { toolCallId, values } = parsed.data
-    const userId = (req as any).user.id as string
-
-    const found = await findPendingToolMessage(toolCallId, userId)
-    if (!found.success) return reply.status(found.status).send({ message: found.message })
-    const { message, entry, toolCalls, accountBookId } = found.data
-
-    // 用户取消选择
-    if (values === null) {
-      const cancelEntry = toolCalls.find((tc: any) => tc.toolCallId === toolCallId)
-      if (cancelEntry) {
-        cancelEntry.status = 'error'
-        cancelEntry.result = { error: '用户取消了选择' }
-        await prisma.chatMessage.update({
-          where: { id: message.id },
-          data: { toolCalls: JSON.stringify(toolCalls) },
-        }).catch(() => {})
-      }
-      return { success: true, acknowledged: true }
-    }
-
-    // 构建 suggest_options 的 tool result
-    const toolResult = { success: true, values }
-    const initialSSEEvents = [
-      { event: 'tool-result', data: { toolCallId, toolName: entry.toolName, result: toolResult, durationMs: 0, status: 'success' } },
-    ]
-
-    const doneEntry = toolCalls.find((tc: any) => tc.toolCallId === toolCallId)
-    if (doneEntry) {
-      doneEntry.status = 'success'
-      doneEntry.result = toolResult
-      await prisma.chatMessage.update({
-        where: { id: message.id },
-        data: { toolCalls: JSON.stringify(toolCalls) },
-      }).catch(() => {})
-    }
-
-    const { messages, messageIds } = await buildChatMessages(message.sessionId, [{ toolCallId, toolName: entry.toolName, result: toolResult }])
-    await continueWithLLM(reply, message.sessionId, accountBookId, userId, message, messages, messageIds, initialSSEEvents)
-  })
-
-  // 切换账本（SSE 流式继续对话，使用新账本上下文）
-  app.post('/switch-book', async (req, reply) => {
-    const { toolCallId, bookId } = (req.body || {}) as { toolCallId?: string; bookId?: string }
-    if (!toolCallId || !bookId) return reply.status(400).send({ message: '缺少 toolCallId 或 bookId' })
-
-    const userId = (req as any).user.id as string
-
-    const found = await findPendingToolMessage(toolCallId, userId)
-    if (!found.success) return reply.status(found.status).send({ message: found.message })
-    const { message, entry, toolCalls } = found.data
-
-    // 验证新账本权限
-    try { await assertIsMember(bookId, userId) } catch (e: any) {
-      return reply.status(e.statusCode || 403).send({ message: e.message })
-    }
-
-    const book = await prisma.accountBook.findUnique({ where: { id: bookId }, select: { name: true } })
-    const bookName = book?.name || bookId
-
-    // 构建切换结果
-    const toolResult = { success: true, data: { switched: true, bookId, bookName } }
-    const initialSSEEvents = [
-      { event: 'tool-result', data: { toolCallId, toolName: entry.toolName, result: toolResult, durationMs: 0, status: 'success' } },
-    ]
-
-    // 更新 DB 快照中该工具调用的结果
-    const doneEntry = toolCalls.find((tc: any) => tc.toolCallId === toolCallId)
-    if (doneEntry) {
-      doneEntry.status = 'success'
-      doneEntry.result = toolResult
-      await prisma.chatMessage.update({
-        where: { id: message.id },
-        data: { toolCalls: JSON.stringify(toolCalls) },
-      }).catch(() => {})
-    }
-
-    const { messages, messageIds } = await buildChatMessages(message.sessionId, [{ toolCallId, toolName: entry.toolName, result: toolResult }])
-    await continueWithLLM(reply, message.sessionId, bookId, userId, message, messages, messageIds, initialSSEEvents)
+    await continueWithLLM(reply, message.sessionId, continuationBookId || accountBookId, userId, message, messages, messageIds, initialSSEEvents)
   })
 
   // === 供应商配置 CRUD ===
