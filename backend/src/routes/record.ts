@@ -661,6 +661,14 @@ export async function recordRoutes(app: FastifyInstance) {
             if (!data.fromAccountId || !data.toAccountId) {
                 return reply.status(400).send({message: '转账记录需要填写源账户和目标账户'})
             }
+            // 转账账户必须属于当前账本
+            const transferAccounts = await prisma.account.findMany({
+                where: {id: {in: [data.fromAccountId, data.toAccountId]}},
+                select: {id: true, accountBookId: true},
+            })
+            if (transferAccounts.length !== 2 || transferAccounts.some(a => a.accountBookId !== data.accountBookId)) {
+                return reply.status(400).send({message: '转账账户不存在或不属于当前账本'})
+            }
         }
 
         if (data.type === 'EXPENSE') {
@@ -905,6 +913,17 @@ export async function recordRoutes(app: FastifyInstance) {
         delete updateData.attachmentIds
         if (parsed.data.tags) updateData.tags = JSON.stringify(parsed.data.tags)
         if (parsed.data.date) updateData.date = new Date(parsed.data.date)
+
+        // 更新为转账时，校验账户属于当前账本
+        if (updateData.type === 'TRANSFER' && updateData.fromAccountId && updateData.toAccountId) {
+            const transferAccounts = await prisma.account.findMany({
+                where: {id: {in: [updateData.fromAccountId, updateData.toAccountId]}},
+                select: {id: true, accountBookId: true},
+            })
+            if (transferAccounts.length !== 2 || transferAccounts.some(a => a.accountBookId !== existing.accountBookId)) {
+                return reply.status(400).send({message: '转账账户不存在或不属于当前账本'})
+            }
+        }
 
         if (parsed.data.attachmentIds !== undefined) {
             const keptIds = new Set(parsed.data.attachmentIds)

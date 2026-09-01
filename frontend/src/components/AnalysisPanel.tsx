@@ -16,6 +16,7 @@ import {
 import { Spinner } from '@/components/ui/spinner'
 import { recordApi, type RecordItem } from '@/api/record'
 import { accountApi, type AccountItem } from '@/api/account'
+import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
 import { adminApi, type AdminUser } from '@/api/admin'
 import { PieChart, Users, Wallet, X, List, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useChartTheme, type ChartTheme, generateChartColors } from '@/hooks/useChartTheme'
@@ -136,6 +137,7 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
   const [availableTags, setAvailableTags] = useState<string[]>([])
   // 下拉数据
   const [detailAccounts, setDetailAccounts] = useState<AccountItem[]>([])
+  const multiOwnerAccounts = isMultiOwnerAccounts(detailAccounts)
   const [detailUsers, setDetailUsers] = useState<AdminUser[]>([])
 
   useEffect(() => {
@@ -335,7 +337,7 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
                 <SelectContent>
                   <SelectItem value="all">全部账户</SelectItem>
                   {detailAccounts.filter((a) => a.status === 'ACTIVE').map((a) => (
-                    <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                    <SelectItem key={a.id} value={a.id}>{accountLabel(a, multiOwnerAccounts)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

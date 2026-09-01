@@ -5,6 +5,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Spinner } from '@/components/ui/spinner'
 import { recordApi, type RecordSummary } from '@/api/record'
 import { accountApi, type AccountItem } from '@/api/account'
+import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
 import { recurringApi, type RecurringTransaction } from '@/api/recurring'
 import { useBookStore } from '@/stores/book'
 import { useChartTheme, type ChartTheme, generateChartColors } from '@/hooks/useChartTheme'
@@ -336,11 +337,15 @@ export function StatsOverview() {
           dateTo,
         })
         if (dailyHist.length > 0) {
+          const multiOwner = isMultiOwnerAccounts(accounts)
           setBalDates(dailyHist[0].balances.map((b) => b.date))
-          setBalSeries(dailyHist.map((a) => ({
-            name: a.accountName,
-            data: a.balances.map((b) => b.balance),
-          })))
+          setBalSeries(dailyHist.map((a) => {
+            const acct = accounts.find((x) => x.id === a.accountId)
+            return {
+              name: acct ? accountLabel(acct, multiOwner) : a.accountName,
+              data: a.balances.map((b) => b.balance),
+            }
+          }))
         }
       }
 

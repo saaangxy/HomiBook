@@ -68,6 +68,17 @@ export const confirmImportTool: ToolDef = {
 
     const effectiveOwnerId = ownerId || ctx.userId
 
+    // 校验归属人必须是账本成员（防越权指定他人）
+    if (effectiveOwnerId !== ctx.userId) {
+      const [isMember, book] = await Promise.all([
+        prisma.accountBookMember.findFirst({ where: { accountBookId: ctx.accountBookId, userId: effectiveOwnerId } }),
+        prisma.accountBook.findUnique({ where: { id: ctx.accountBookId }, select: { ownerId: true } }),
+      ])
+      if (!isMember && book?.ownerId !== effectiveOwnerId) {
+        return { success: false, error: '归属人不是账本成员', retryable: false }
+      }
+    }
+
     // 查找并解析文件
     const uploadDir = path.resolve('uploads')
     const files = fs.readdirSync(uploadDir)
@@ -116,12 +127,12 @@ export const confirmImportTool: ToolDef = {
     // DB + AI 分类映射合并应用（AI 按唯一键覆盖/补充 DB，统一走评分匹配）
     await applyCategoryMappings(source, parseResult.rows, effectiveCategoryResolutions)
 
-    // 应用 DB 账户映射 + AI 覆盖
-    const { idMap: accountMappings, newAccountCreations } = await applyAccountMappings(source, parseResult.rows, ctx.accountBookId, effectiveAccountResolutions)
+    // 应用 DB 账户映射 + AI 覆盖（只匹配本人/指定归属人的账户）
+    const { idMap: accountMappings, newAccountCreations } = await applyAccountMappings(source, parseResult.rows, ctx.accountBookId, effectiveAccountResolutions, effectiveOwnerId)
 
-    // 匹配账户
+    // 匹配账户（只匹配本人/指定归属人的账户）
     const allAccounts = await prisma.account.findMany({
-      where: { accountBookId: ctx.accountBookId, status: 'ACTIVE' },
+      where: { accountBookId: ctx.accountBookId, status: 'ACTIVE', ownerId: effectiveOwnerId },
       select: { id: true, name: true },
     })
 
@@ -131,7 +142,7 @@ export const confirmImportTool: ToolDef = {
       if (row.toAccountName) names.push(row.toAccountName)
       for (const name of names) {
         if (accountMappings.has(name) || nameToId.has(name)) continue
-        const result = matchAccountByName(name, allAccounts)
+        const result = matchAccountByName(name, allAccounts, effectiveOwnerId)
         if (result.matched) {
           nameToId.set(name, result.id)
         }

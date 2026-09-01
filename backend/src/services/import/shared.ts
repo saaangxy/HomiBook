@@ -100,22 +100,30 @@ export function inferAccount(paymentMethod: string): { type: string; defaultName
 
 // ======================== 账户匹配 ========================
 
-/** 按名称包含匹配已有账户（优先级：精确 → 账户名包含目标名 → 目标名包含账户名） */
-export function matchAccountByName(name: string, allAccounts: { id: string; name: string }[]): AccountMatchResult {
-  if (!name || allAccounts.length === 0) return { matched: false, ambiguous: false }
+/**
+ * 按名称包含匹配已有账户（优先级：精确 → 账户名包含目标名 → 目标名包含账户名）。
+ * 传入 ownerId 时只在本人账户中匹配（多成员账本下避免匹配到他人同名账户）
+ */
+export function matchAccountByName(
+  name: string,
+  allAccounts: { id: string; name: string; ownerId?: string }[],
+  ownerId?: string,
+): AccountMatchResult {
+  const pool = ownerId ? allAccounts.filter(acc => !acc.ownerId || acc.ownerId === ownerId) : allAccounts
+  if (!name || pool.length === 0) return { matched: false, ambiguous: false }
 
   // 1. 精确匹配
-  const exact = allAccounts.filter(acc => acc.name === name)
+  const exact = pool.filter(acc => acc.name === name)
   if (exact.length === 1) return { matched: true, id: exact[0].id, name: exact[0].name }
   if (exact.length > 1) return { matched: false, ambiguous: true, candidates: exact }
 
   // 2. 账户名包含目标名
-  const contains = allAccounts.filter(acc => acc.name.includes(name))
+  const contains = pool.filter(acc => acc.name.includes(name))
   if (contains.length === 1) return { matched: true, id: contains[0].id, name: contains[0].name }
   if (contains.length > 1) return { matched: false, ambiguous: true, candidates: contains }
 
   // 3. 目标名包含账户名
-  const containedBy = allAccounts.filter(acc => name.includes(acc.name))
+  const containedBy = pool.filter(acc => name.includes(acc.name))
   if (containedBy.length === 1) return { matched: true, id: containedBy[0].id, name: containedBy[0].name }
   if (containedBy.length > 1) return { matched: false, ambiguous: true, candidates: containedBy }
 
@@ -133,12 +141,13 @@ export interface AIAccountResolution {
   accountType?: string
 }
 
-/** 加载导入账户映射并按评分匹配。aiResolutions 按 sourceAccountName 覆盖/补充 DB 规则（不写 DB） */
+/** 加载导入账户映射并按评分匹配。aiResolutions 按 sourceAccountName 覆盖/补充 DB 规则（不写 DB）。传入 ownerId 时只在本人账户中匹配 */
 export async function applyAccountMappings(
   source: string,
   rows: ParsedRow[],
   bookId: string,
   aiResolutions?: AIAccountResolution[],
+  ownerId?: string,
 ) {
   const sourceNames = [...new Set(rows.map(r => r.accountName).filter(Boolean))]
   const empty = { idMap: new Map<string, string | null>(), nameRecord: {} as Record<string, string>, newAccountCreations: [] as { sourceAccountName: string; name: string; type: string }[] }
@@ -147,9 +156,9 @@ export async function applyAccountMappings(
   const idMap = new Map<string, string | null>()
   const nameRecord: Record<string, string> = {}
 
-  // 加载所有活跃账户（DB 评分 + AI 覆盖共用）
+  // 加载活跃账户（DB 评分 + AI 覆盖共用；多成员账本下只匹配本人账户）
   const allAccounts = await prisma.account.findMany({
-    where: { accountBookId: bookId, status: 'ACTIVE' },
+    where: { accountBookId: bookId, status: 'ACTIVE', ...(ownerId ? { ownerId } : {}) },
     select: { id: true, name: true },
   })
 

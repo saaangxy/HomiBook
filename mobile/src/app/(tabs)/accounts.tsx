@@ -13,6 +13,7 @@ import { createAccountApi, createAdjustmentApi, deleteAccountApi, fetchAccounts,
 import type { BalanceAdjustment } from '@/services/records';
 import { formatMoney } from '@/lib/format';
 import type { AccountItem, AccountType } from '@/types';
+import { isMultiOwnerAccounts } from '@/lib/account';
 
 const FILTERS = ['全部', '活跃', '已归档'] as const;
 type Filter = (typeof FILTERS)[number];
@@ -100,6 +101,7 @@ export default function AccountsScreen() {
 
   const status = FILTER_STATUS[filter];
   const visible = accounts.filter((a) => (status ? a.status === status : true));
+  const multiOwnerAccounts = isMultiOwnerAccounts(accounts);
 
   const resetForm = () => {
     setName('');
@@ -268,6 +270,7 @@ export default function AccountsScreen() {
                             <Text style={{ fontSize: 10, color: colors.mutedForeground, fontWeight: '600' }}>{TYPE_LABEL[a.type]}</Text>
                           </View>
                           {a.accountNo ? <Text variant="muted" style={{ fontSize: 11 }}>{a.accountNo}</Text> : null}
+                          {multiOwnerAccounts && a.ownerName ? <Text variant="muted" style={{ fontSize: 11 }}>{a.ownerName}</Text> : null}
                           {a.status === 'ARCHIVED' ? <Text variant="muted" style={{ fontSize: 11 }}>已归档</Text> : null}
                         </View>
                       </View>

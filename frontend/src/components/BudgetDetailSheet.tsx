@@ -22,6 +22,7 @@ import type { EChartsOption } from 'echarts'
 import { ChevronLeft, ChevronRight, Filter, X } from 'lucide-react'
 import { recordApi, type RecordItem } from '@/api/record'
 import { accountApi, type AccountItem } from '@/api/account'
+import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
 import type { BudgetItem } from '@/api/budget'
 import { useBudgetFilterParams } from '@/hooks/useBudgetFilterParams'
 import { useChartTheme, type ChartTheme, generateChartColors } from '@/hooks/useChartTheme'
@@ -197,6 +198,7 @@ export function BudgetDetailSheet({ budget, bookId, onClose }: Props) {
   const [filterAmountFrom, setFilterAmountFrom] = useState('')
   const [filterAmountTo, setFilterAmountTo] = useState('')
   const [accounts, setAccounts] = useState<AccountItem[]>([])
+  const multiOwnerAccounts = isMultiOwnerAccounts(accounts)
 
   // 加载账户列表
   useEffect(() => {
@@ -429,7 +431,7 @@ export function BudgetDetailSheet({ budget, bookId, onClose }: Props) {
                     </SelectTrigger>
                     <SelectContent>
                       {accounts.map((a) => (
-                        <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                        <SelectItem key={a.id} value={a.id}>{accountLabel(a, multiOwnerAccounts)}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>

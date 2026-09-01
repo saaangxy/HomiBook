@@ -50,6 +50,7 @@ import { TagCombobox } from '@/components/TagCombobox'
 import { AttachmentViewer } from '@/components/AttachmentViewer'
 import { recordApi, type RecordItem, type RecordType, type RecordSummary } from '@/api/record'
 import { accountApi, type AccountItem } from '@/api/account'
+import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
 import { bookApi, type BookMember } from '@/api/book'
 import { settingsApi, type DictItem } from '@/api/settings'
 import { useBookStore } from '../stores/book'
@@ -96,6 +97,7 @@ interface FilterState {
 }
 
 function filterValueLabel(key: keyof FilterState, value: string[] | string, accounts: AccountItem[], members: BookMember[]): string {
+  const multiOwner = isMultiOwnerAccounts(accounts)
   if (!value || (Array.isArray(value) && value.length === 0)) return ''
   const v = Array.isArray(value) ? value.join(',') : value
   switch (key) {
@@ -106,7 +108,10 @@ function filterValueLabel(key: keyof FilterState, value: string[] | string, acco
     }
     case 'accountIds': {
       const ids = value as string[]
-      const labels = ids.map((id) => accounts.find((a) => a.id === id)?.name || id)
+      const labels = ids.map((id) => {
+        const a = accounts.find((a) => a.id === id)
+        return a ? accountLabel(a, multiOwner) : id
+      })
       return `账户: ${labels.join(', ')}`
     }
     case 'categoryCodes': {
@@ -174,6 +179,7 @@ export function RecordsPage() {
 
   // 账户列表
   const [accounts, setAccounts] = useState<AccountItem[]>([])
+  const multiOwnerAccounts = isMultiOwnerAccounts(accounts)
   // 用户列表
   const [bookMembers, setBookMembers] = useState<BookMember[]>([])
   // 全部分类（用于筛选多选）
@@ -1063,7 +1069,7 @@ export function RecordsPage() {
             <div>
               <Label className="text-xs text-muted-foreground mb-1.5 block">账户</Label>
               <MultiSelect
-                items={accounts.map((a) => ({ value: a.id, label: a.name }))}
+                items={accounts.map((a) => ({ value: a.id, label: accountLabel(a, multiOwnerAccounts) }))}
                 selected={draftFilters.accountIds}
                 onChange={(v) => setDraftFilters((p) => ({ ...p, accountIds: v }))}
                 placeholder="全部账户"
@@ -1274,7 +1280,7 @@ export function RecordsPage() {
                       </SelectTrigger>
                       <SelectContent className="bg-card border-border">
                         {accounts.map((a) => (
-                          <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                          <SelectItem key={a.id} value={a.id}>{accountLabel(a, multiOwnerAccounts)}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -1287,7 +1293,7 @@ export function RecordsPage() {
                       </SelectTrigger>
                       <SelectContent className="bg-card border-border">
                         {accounts.map((a) => (
-                          <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                          <SelectItem key={a.id} value={a.id}>{accountLabel(a, multiOwnerAccounts)}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -1302,7 +1308,7 @@ export function RecordsPage() {
                     </SelectTrigger>
                     <SelectContent className="bg-card border-border">
                       {accounts.map((a) => (
-                        <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                        <SelectItem key={a.id} value={a.id}>{accountLabel(a, multiOwnerAccounts)}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>

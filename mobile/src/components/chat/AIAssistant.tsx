@@ -3,6 +3,7 @@ import { Alert, ActivityIndicator, FlatList, Image, Linking, Platform, Pressable
 import Markdown from 'react-native-markdown-display';
 import { AlertTriangle, Bot, Brain, CheckCircle2, ChevronDown, Copy, ExternalLink, FileSpreadsheet, FileUp, Globe, HelpCircle, ImagePlus, List, Loader2, MessageSquareMore, Plus, RefreshCw, Search, Send, Sparkles, StopCircle, Trash2, Wrench, X, XCircle } from 'lucide-react-native';
 import { useTheme, alpha, haptics } from '@/theme';
+import { accountLabel, isMultiOwnerAccounts } from '@/lib/account';
 import { Text } from '@/components/ui/Text';
 import { FormSheet } from '@/components/chrome/FormSheet';
 import { ImageLightbox } from '@/components/ui/AttachmentViewer';
@@ -797,7 +798,8 @@ function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntry; book
   const records: any[] = data.records ?? [];
   const unrec: any[] = data.unrecognizedRecords ?? [];
   const unmatchedAccounts: any[] = data.unmatchedAccounts ?? [];
-  const accounts: { id: string; name: string; type: string }[] = data.accounts ?? [];
+  const accounts: { id: string; name: string; type: string; ownerId?: string; ownerName?: string }[] = data.accounts ?? [];
+  const multiOwnerAccounts = isMultiOwnerAccounts(accounts);
   const dictItems: ImportDictEntry[] = data.allDictItems ?? [];
   const stats = data.stats;
   const isConfirmed = !!data.confirmed;
@@ -903,12 +905,12 @@ function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntry; book
     if (!picker) return [];
     if (picker.kind === 'acct-existing') {
       const ua = unmatchedAccounts.find((u) => u.csvName === picker.key);
-      return (ua?.candidates?.length ? ua.candidates : accounts).map((a: any) => ({ value: a.id, label: a.name }));
+      return (ua?.candidates?.length ? ua.candidates : accounts).map((a: any) => ({ value: a.id, label: accountLabel(a, multiOwnerAccounts) }));
     }
     if (picker.kind === 'acct-type' || picker.kind === 'unrec-type') {
       return Object.entries(ACCOUNT_TYPE_LABELS).map(([k, v]) => ({ value: k, label: v as string }));
     }
-    if (picker.kind === 'unrec-acct') return accounts.map((a) => ({ value: a.id, label: a.name }));
+    if (picker.kind === 'unrec-acct') return accounts.map((a) => ({ value: a.id, label: accountLabel(a, multiOwnerAccounts) }));
     if (picker.kind === 'unrec-cat') {
       const res = unrecRes[Number(picker.key)];
       const items = res?.type ? dictItems.filter((d) => d.group === IMPORT_TYPE_TO_GROUP[res.type]) : dictItems;
@@ -1058,7 +1060,10 @@ function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntry; book
                     ) : (
                       <Pressable onPress={() => setPicker({ kind: 'acct-existing', key: ua.csvName })} style={selectBtnStyle}>
                         <Text style={{ fontSize: 11, color: (res as any)?.accountId ? colors.foreground : colors.mutedForeground }} numberOfLines={1}>
-                          {accounts.find((a) => a.id === (res as any)?.accountId)?.name ?? ((res as any)?.accountId || '选择已有账户...')}
+                          {(() => {
+                            const a = accounts.find((x) => x.id === (res as any)?.accountId);
+                            return a ? accountLabel(a, multiOwnerAccounts) : ((res as any)?.accountId || '选择已有账户...');
+                          })()}
                         </Text>
                         <ChevronDown size={11} color={colors.mutedForeground} />
                       </Pressable>
@@ -1146,7 +1151,10 @@ function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntry; book
                       <ChevronDown size={10} color={colors.mutedForeground} />
                     </Pressable>
                     <Pressable onPress={() => setPicker({ kind: 'unrec-acct', key: String(r.rowIndex) })} style={selectBtnStyle}>
-                      <Text style={{ fontSize: 10.5, color: res.accountId ? colors.foreground : colors.mutedForeground }} numberOfLines={1}>{accounts.find((a) => a.id === res.accountId)?.name ?? '账户'}</Text>
+                      <Text style={{ fontSize: 10.5, color: res.accountId ? colors.foreground : colors.mutedForeground }} numberOfLines={1}>{(() => {
+                        const a = accounts.find((x) => x.id === res.accountId);
+                        return a ? accountLabel(a, multiOwnerAccounts) : '账户';
+                      })()}</Text>
                       <ChevronDown size={10} color={colors.mutedForeground} />
                     </Pressable>
                     <Pressable onPress={() => setPicker({ kind: 'unrec-cat', key: String(r.rowIndex) })} style={selectBtnStyle}>

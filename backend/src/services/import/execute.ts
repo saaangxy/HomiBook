@@ -21,6 +21,8 @@ export interface AccountCreationInput {
   type: string
   bankName?: string | null
   accountNo?: string | null
+  /** 新建账户归属人（确认导入时可改），缺省用整体 ownerId */
+  ownerId?: string
 }
 
 export interface CategoryMappingInput {
@@ -50,8 +52,11 @@ export async function createAccountsInTx(
   let accountsCreated = 0
 
   for (const acct of creations) {
+    // 新建账户归属人：acct.ownerId 优先（确认导入时改归属人用），缺省用整体 ownerId
+    const acctOwnerId = acct.ownerId || ownerId
+    // 按 {accountBookId, ownerId, name} 查重，避免复用他人同名账户
     const existing = await tx.account.findFirst({
-      where: { accountBookId, name: acct.name },
+      where: { accountBookId, ownerId: acctOwnerId, name: acct.name },
     })
     if (existing) {
       for (const sn of acct.csvName.split(', ')) {
@@ -64,7 +69,7 @@ export async function createAccountsInTx(
     const created = await tx.account.create({
       data: {
         accountBookId,
-        ownerId,
+        ownerId: acctOwnerId,
         name: acct.name,
         type: acct.type,
         bankName: acct.bankName || null,

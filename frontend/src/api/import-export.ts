@@ -141,7 +141,7 @@ export const importExportApi = {
       tags?: string[]
       ownerId?: string
     }[]
-    accountCreations?: { csvName: string; name: string; type: string; bankName?: string; accountNo?: string }[]
+    accountCreations?: { csvName: string; name: string; type: string; bankName?: string; accountNo?: string; ownerId?: string }[]
     newMappings?: { sourceCategory: string; payerContains?: string; descriptionContains?: string; recordType?: string; targetCategoryCode: string }[]
     newAccountMappings?: { sourceAccountName: string; targetAccountName: string; payerContains?: string; descriptionContains?: string }[]
   }): Promise<ImportConfirmResult> =>

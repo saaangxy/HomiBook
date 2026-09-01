@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { markSubmitted, isSubmitted, clearSubmitted } from '@/lib/ai-submit'
 import { ACCOUNT_TYPE_LABELS, type AccountType } from '@/api/account'
+import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
 import { useChatStore } from '@/stores/chat'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -66,7 +67,7 @@ export interface ImportPreviewData {
   unmatchedCategories?: UnmatchedCategory[]
   allDictItems?: DictEntry[]
   accountMappingNames?: Record<string, string>
-  accounts?: { id: string; name: string; type: string }[]
+  accounts?: { id: string; name: string; type: string; ownerId?: string; ownerName?: string }[]
   accountBookId?: string
   mappedCategories?: { sourceCategory: string; sourceLabel: string; targetCode: string; targetLabel: string }[]
   stats?: { totalLines: number; parsedRows: number; skippedRows: number; unrecognizedCount: number; errors: string[] }
@@ -120,6 +121,7 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
   const records = data.records || []
   const unrecognizedRecords = data.unrecognizedRecords || []
   const accounts = data.accounts || []
+  const multiOwnerAccounts = isMultiOwnerAccounts(accounts)
   const allDictItems = data.allDictItems || []
   const isConfirmed = !!data.confirmed
   const submitted = isSubmitted(toolCallId)
@@ -364,6 +366,7 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
                       {res?.action === 'create' ? (
                         <>
                           <Input
+                            aria-label="账号名称"
                             className="h-7 text-xs bg-background flex-1"
                             value={res.name}
                             onChange={(e) => setAccountResolutions(prev => ({ ...prev, [ua.csvName]: { ...res, name: e.target.value } }))}
@@ -393,8 +396,8 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
                               <SelectValue placeholder="选择已有账户..." />
                             </SelectTrigger>
                             <SelectContent>
-                              {(ua.candidates || accounts).map(a => (
-                                <SelectItem key={a.id} value={a.id} className="text-xs">{a.name}</SelectItem>
+                              {(ua.candidates?.length ? ua.candidates : accounts).map(a => (
+                                <SelectItem key={a.id} value={a.id} className="text-xs">{accountLabel(a, multiOwnerAccounts)}</SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
@@ -449,6 +452,7 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
                             <div key={cr.id} className="flex items-center gap-1.5 p-1.5 rounded bg-muted/30">
                               <span className="text-[10px] font-medium min-w-[50px] max-w-[70px] truncate">{cr.sourceCategory}</span>
                               <Input
+                                aria-label="交易方正则"
                                 className="h-6 text-[10px] w-[80px]"
                                 placeholder="交易方正则"
                                 value={cr.payerContains}
@@ -456,6 +460,7 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
                               />
                               <Input
                                 className="h-6 text-[10px] w-[80px]"
+                                aria-label="说明正则"
                                 placeholder="说明正则"
                                 value={cr.descriptionContains}
                                 onChange={(e) => updateCr({ descriptionContains: e.target.value })}

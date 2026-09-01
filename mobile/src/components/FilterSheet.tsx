@@ -7,7 +7,8 @@ import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { DatePicker } from '@/components/ui/DatePicker';
 import { useRecords } from '@/stores/records';
-import type { AccountItem, Category, RecordItem, RecordType } from '@/types';
+import type { RecordItem, RecordType } from '@/types';
+import { accountLabel, isMultiOwnerAccounts } from '@/lib/account';
 
 export interface RecordFilters {
   types: RecordType[];
@@ -82,6 +83,7 @@ export function FilterSheet({ visible, initial, onApply, onClose }: FilterSheetP
   const { colors, palette } = useTheme();
   const insets = useSafeAreaInsets();
   const { accounts, categories } = useRecords();
+  const multiOwnerAccounts = isMultiOwnerAccounts(accounts);
   const [draft, setDraft] = useState<RecordFilters>(initial);
 
   // 打开时同步外部条件为草稿
@@ -164,7 +166,7 @@ export function FilterSheet({ visible, initial, onApply, onClose }: FilterSheetP
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
               {accounts.map((a) => (
                 <Pressable key={a.id} onPress={() => { setDraft((d) => ({ ...d, accountIds: toggle(d.accountIds, a.id) })); haptics.tap(); }} style={chip(draft.accountIds.includes(a.id))}>
-                  <Text style={chipText(draft.accountIds.includes(a.id))}>{a.name}</Text>
+                  <Text style={chipText(draft.accountIds.includes(a.id))}>{accountLabel(a, multiOwnerAccounts)}</Text>
                 </Pressable>
               ))}
             </View>

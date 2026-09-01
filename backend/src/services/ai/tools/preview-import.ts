@@ -91,11 +91,11 @@ export const previewImportTool: ToolDef = {
       return { success: false, error: parseResult.errors[0], retryable: false }
     }
 
-    // ---- 合并 DB 映射规则 + AI 映射规则（内存合并，不写 DB）----
-    const { idMap: accountMappings, nameRecord: accountMappingNames, newAccountCreations } = await applyAccountMappings(source, parseResult.rows, ctx.accountBookId, accountResolutions)
+    // ---- 合并 DB 映射规则 + AI 映射规则（内存合并，不写 DB；只匹配本人账户）----
+    const { idMap: accountMappings, nameRecord: accountMappingNames, newAccountCreations } = await applyAccountMappings(source, parseResult.rows, ctx.accountBookId, accountResolutions, ctx.userId)
 
-    // 匹配账户
-    const { unmatched: unmatchedAccounts, nameMatched, accounts } = await resolveAccountsForTool(ctx.accountBookId, parseResult.rows, accountMappings)
+    // 匹配账户（只匹配本人账户；返回的 accounts 保留全量供前端切换归属人候选）
+    const { unmatched: unmatchedAccounts, nameMatched, accounts } = await resolveAccountsForTool(ctx.accountBookId, parseResult.rows, accountMappings, ctx.userId)
 
     // AI 账户映射规则直接展示，供前端预填充（跳过已在 DB 未匹配列表中的同名项）
     if (accountResolutions?.length) {
@@ -247,8 +247,8 @@ export const previewImportTool: ToolDef = {
   },
 }
 
-/** 账户匹配（与 import-export.ts 中 resolveAccounts 逻辑一致） */
-async function resolveAccountsForTool(bookId: string, rows: ParsedRow[], idMap?: Map<string, string | null>) {
+/** 账户匹配（与 import-export.ts 中 resolveAccounts 逻辑一致）。传入 ownerId 时只匹配本人账户，但返回账本全量 accounts 供前端切换归属人候选 */
+async function resolveAccountsForTool(bookId: string, rows: ParsedRow[], idMap?: Map<string, string | null>, ownerId?: string) {
   const accountNames = new Set(rows.flatMap(r => [r.accountName, r.toAccountName].filter((x): x is string => x != null)))
 
   const mappedCsvNameToId = new Map<string, string>()
@@ -259,16 +259,29 @@ async function resolveAccountsForTool(bookId: string, rows: ParsedRow[], idMap?:
   }
 
   const namesToLookup = [...accountNames].filter(n => !mappedCsvNameToId.has(n))
-  const allAccounts = await prisma.account.findMany({
-    where: { accountBookId: bookId, status: 'ACTIVE' },
+  // 仅匹配本人账户
+  const matchableAccounts = await prisma.account.findMany({
+    where: { accountBookId: bookId, status: 'ACTIVE', ...(ownerId ? { ownerId } : {}) },
     select: { id: true, name: true, type: true },
   })
+  // 返回的 accounts 保留账本全量供前端展示候选（含他人账户，带 ownerId/ownerName 供前端按归属人切换候选）
+  const allAccountsRaw = await prisma.account.findMany({
+    where: { accountBookId: bookId, status: 'ACTIVE' },
+    select: { id: true, name: true, type: true, ownerId: true, owner: { select: { nickname: true, email: true } } },
+  })
+  const allAccounts = allAccountsRaw.map(a => ({
+    id: a.id,
+    name: a.name,
+    type: a.type,
+    ownerId: a.ownerId,
+    ownerName: a.owner.nickname || a.owner.email,
+  }))
 
   const nameToId = new Map<string, string>()
   const nameMatched: Record<string, string> = {}
   const candidatesMap = new Map<string, { id: string; name: string }[]>()
   for (const name of namesToLookup) {
-    const result = matchAccountByName(name, allAccounts)
+    const result = matchAccountByName(name, matchableAccounts, ownerId)
     if (result.matched) {
       nameToId.set(name, result.id)
       nameMatched[name] = result.name

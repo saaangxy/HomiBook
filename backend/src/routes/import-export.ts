@@ -34,7 +34,7 @@ import {
 
 // ======================== 账户匹配 & 分类映射 ========================
 
-async function resolveAccounts(bookId: string, rows: ParsedRow[], idMap?: Map<string, string | null>) {
+async function resolveAccounts(bookId: string, rows: ParsedRow[], idMap?: Map<string, string | null>, ownerId?: string) {
   // 收集所有唯一账户名
   const accountNames = new Set<string>()
   for (const r of rows) {
@@ -50,10 +50,10 @@ async function resolveAccounts(bookId: string, rows: ParsedRow[], idMap?: Map<st
     }
   }
 
-  // 加载账本全部活跃账户
+  // 加载活跃账户（多成员账本下只匹配本人账户）
   const namesToLookup = Array.from(accountNames).filter(n => !mappedCsvNameToId.has(n))
   const allAccounts = await prisma.account.findMany({
-    where: { accountBookId: bookId, status: 'ACTIVE' },
+    where: { accountBookId: bookId, status: 'ACTIVE', ...(ownerId ? { ownerId } : {}) },
     select: { id: true, name: true },
   })
 
@@ -62,7 +62,7 @@ async function resolveAccounts(bookId: string, rows: ParsedRow[], idMap?: Map<st
   const nameMatched: Record<string, string> = {}
   const candidatesMap = new Map<string, { id: string; name: string }[]>()
   for (const name of namesToLookup) {
-    const result = matchAccountByName(name, allAccounts)
+    const result = matchAccountByName(name, allAccounts, ownerId)
     if (result.matched) {
       nameToId.set(name, result.id)
       nameMatched[name] = result.name
@@ -139,6 +139,7 @@ const importConfirmSchema = z.object({
     type: z.string().min(1),
     bankName: z.string().optional(),
     accountNo: z.string().optional(),
+    ownerId: z.string().optional(),
   })).optional(),
   newMappings: z.array(z.object({
     sourceCategory: z.string(),
@@ -317,11 +318,11 @@ export async function importExportRoutes(app: FastifyInstance) {
       return reply.status(400).send({ message: parseResult.errors[0] })
     }
 
-    // 应用账户映射规则
-    const { idMap: accountMappings, nameRecord: accountMappingNames } = await applyAccountMappings(source, parseResult.rows, accountBookId)
+    // 应用账户映射规则（只匹配本人账户）
+    const { idMap: accountMappings, nameRecord: accountMappingNames } = await applyAccountMappings(source, parseResult.rows, accountBookId, undefined, payload.id)
 
-    // 匹配账户（传入映射结果）
-    const { unmatched: unmatchedAccounts, nameMatched: nameMatchedByContains } = await resolveAccounts(accountBookId, parseResult.rows, accountMappings)
+    // 匹配账户（传入映射结果；只匹配本人账户）
+    const { unmatched: unmatchedAccounts, nameMatched: nameMatchedByContains } = await resolveAccounts(accountBookId, parseResult.rows, accountMappings, payload.id)
 
     // 匹配分类
     const { unmatched: unmatchedCategories, allDictItems } = await resolveCategories(source, parseResult.rows)

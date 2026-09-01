@@ -27,6 +27,7 @@ import {
 } from '@/services/records';
 import { fetchRecurring } from '@/services/recurring';
 import { computeRadarMetrics, computeTimeRadar } from '@/lib/financial-health';
+import { accountLabel, isMultiOwnerAccounts } from '@/lib/account';
 import type { BudgetItem, LedgerMember, RadarMetric, RecordItem, RecordSummary } from '@/types';
 
 // ── Tab 定义:对齐网页端 4 视图 ──
@@ -621,6 +622,7 @@ export default function StatsPage() {
     fetchBookMembers(bookId).then(setMembers).catch(() => setMembers([]));
   }, [bookId]);
   const activeAccounts = useMemo(() => accounts.filter((a) => a.status === 'ACTIVE'), [accounts]);
+  const multiOwnerAccounts = isMultiOwnerAccounts(accounts);
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -671,9 +673,13 @@ export default function StatsPage() {
       }
       const dailyHist = await fetchBalanceHistory(bookId, { accountIds: active.slice(0, 5).map((a) => a.id).join(','), granularity: 'daily', dateFrom: dailyFrom, dateTo });
       if (dailyHist.length > 0) {
+        const multiOwner = isMultiOwnerAccounts(accountsRes);
         setBalance({
           dates: dailyHist[0].balances.map((b) => b.date),
-          series: dailyHist.map((a) => ({ name: a.accountName, data: a.balances.map((b) => b.balance) })),
+          series: dailyHist.map((a) => {
+            const acct = accountsRes.find((x) => x.id === a.accountId);
+            return { name: acct ? accountLabel(acct, multiOwner) : a.accountName, data: a.balances.map((b) => b.balance) };
+          }),
         });
       } else {
         setBalance({ dates: [], series: [] });
@@ -992,7 +998,7 @@ export default function StatsPage() {
                         backgroundColor: active ? alpha(colors.primary, 0.12) : colors.card,
                       }}
                     >
-                      <Text style={{ fontSize: 12, color: active ? colors.primary : colors.foreground, fontWeight: active ? '600' : '400' }}>{a.name}</Text>
+                      <Text style={{ fontSize: 12, color: active ? colors.primary : colors.foreground, fontWeight: active ? '600' : '400' }}>{accountLabel(a, multiOwnerAccounts)}</Text>
                     </Pressable>
                   );
                 })}

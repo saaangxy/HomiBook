@@ -47,6 +47,9 @@ function toAccountItem(a: CoreAccount): AccountItem {
     bankName: a.bankName ?? null,
     accountNo: a.accountNo ?? undefined,
     status: a.status,
+    ownerId: a.ownerId ?? undefined,
+    ownerName: a.ownerName ?? undefined,
+    visibility: a.visibility,
   };
 }
 
@@ -283,6 +286,7 @@ export interface BalanceHistoryItem {
 
 export async function fetchBalanceHistory(bookId: string, params: {
   accountIds?: string;
+  ownerId?: string;
   granularity: 'daily' | 'monthly';
   dateFrom: string;
   dateTo: string;

@@ -104,6 +104,7 @@ export async function buildConfirmPreview(
   toolName: string,
   args: any,
   accountBookId: string,
+  userId?: string,
 ): Promise<string> {
   switch (toolName) {
     case 'delete_record':
@@ -133,7 +134,7 @@ export async function buildConfirmPreview(
     case 'save_import_mapping':
       return buildSaveImportMappingPreview(args)
     case 'confirm_import':
-      return buildConfirmImportPreview(args, accountBookId)
+      return buildConfirmImportPreview(args, accountBookId, userId)
     default:
       return buildGenericPreview(toolName, args)
   }
@@ -588,7 +589,7 @@ async function buildSaveImportMappingPreview(args: any): Promise<string> {
   }
 }
 
-async function buildConfirmImportPreview(args: any, accountBookId: string): Promise<string> {
+async function buildConfirmImportPreview(args: any, accountBookId: string, userId?: string): Promise<string> {
   const { fileId, source, accountResolutions, categoryResolutions } = args as {
     fileId: string
     source: 'alipay' | 'wechat' | 'jd'
@@ -639,13 +640,14 @@ async function buildConfirmImportPreview(args: any, accountBookId: string): Prom
     } satisfies ConfirmPreview)
   }
 
-  // 使用统一映射逻辑（与 preview_import / confirm_import 执行阶段一致）
+  // 使用统一映射逻辑（与 preview_import / confirm_import 执行阶段一致；只匹配本人/指定归属人账户）
   await applyCategoryMappings(source, parseResult.rows, categoryResolutions)
 
-  const { idMap: accountMappings, newAccountCreations } = await applyAccountMappings(source, parseResult.rows, accountBookId, accountResolutions)
+  const matchOwnerId = args.ownerId || userId
+  const { idMap: accountMappings, newAccountCreations } = await applyAccountMappings(source, parseResult.rows, accountBookId, accountResolutions, matchOwnerId)
 
   const allAccounts = await prisma.account.findMany({
-    where: { accountBookId, status: 'ACTIVE' },
+    where: { accountBookId, status: 'ACTIVE', ...(matchOwnerId ? { ownerId: matchOwnerId } : {}) },
     select: { id: true, name: true },
   })
 
@@ -653,7 +655,7 @@ async function buildConfirmImportPreview(args: any, accountBookId: string): Prom
   for (const row of parseResult.rows) {
     for (const name of [row.accountName, row.toAccountName].filter(Boolean) as string[]) {
       if (accountMappings.has(name) || nameToId.has(name)) continue
-      const result = matchAccountByName(name, allAccounts)
+      const result = matchAccountByName(name, allAccounts, matchOwnerId)
       if (result.matched) nameToId.set(name, result.id)
     }
   }

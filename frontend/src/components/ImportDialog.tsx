@@ -31,7 +31,9 @@ import { Spinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip'
 import { importExportApi, type UnmatchedAccount, type UnmatchedCategory, type ParsedImportRow, type DictEntry } from '@/api/import-export'
 import { ACCOUNT_TYPE_LABELS, type AccountItem, type AccountType } from '@/api/account'
+import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
 import { bookApi, type BookMember } from '@/api/book'
+import { useAuthStore } from '@/stores/auth'
 import { Upload, FileText, CheckCircle, AlertCircle, ArrowLeft, ArrowRight, ChevronDown } from 'lucide-react'
 import dayjs from 'dayjs'
 
@@ -138,6 +140,43 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
   // 导入归属人（空 = 当前用户）
   const [selectedOwnerId, setSelectedOwnerId] = useState('__self__')
   const [bookMembers, setBookMembers] = useState<BookMember[]>([])
+  const currentUserId = useAuthStore((s) => s.user?.id || '')
+  // 实际归属人 ID（__self__ 表示当前用户）
+  const effectiveOwnerId = selectedOwnerId === '__self__' ? currentUserId : selectedOwnerId
+  // 归属人名下的活跃账户池（确认导入时改归属人后，候选/匹配切换到对应归属人的账户）
+  const ownerPool = accounts.filter((a) => a.status === 'ACTIVE' && (!effectiveOwnerId || a.ownerId === effectiveOwnerId))
+  const multiOwnerAccounts = isMultiOwnerAccounts(accounts)
+
+  /** 按名称在账户池中匹配（优先级：精确 → 账户名包含目标名 → 目标名包含账户名），与后端 matchAccountByName 一致 */
+  const matchAccountInPool = (name: string, pool: AccountItem[]): AccountItem | null => {
+    if (!name || pool.length === 0) return null
+    const exact = pool.filter((a) => a.name === name)
+    if (exact.length >= 1) return exact[0]
+    const contains = pool.filter((a) => a.name.includes(name))
+    if (contains.length >= 1) return contains[0]
+    const containedBy = pool.filter((a) => name.includes(a.name))
+    if (containedBy.length >= 1) return containedBy[0]
+    return null
+  }
+
+  // 切换归属人后：把已选的已有账户/后端预解析的账户重映射到归属人名下同名账户
+  const handleOwnerChange = (ownerId: string) => {
+    setSelectedOwnerId(ownerId)
+    const targetId = ownerId === '__self__' ? currentUserId : ownerId
+    const pool = accounts.filter((a) => a.status === 'ACTIVE' && (!targetId || a.ownerId === targetId))
+    // 重算未匹配项中已选的"已有账户"
+    const next: typeof accountResolutions = {}
+    for (const [key, res] of Object.entries(accountResolutions)) {
+      if (res.action === 'existing' && res.accountId) {
+        const prev = accounts.find((a) => a.id === res.accountId)
+        const rematched = prev ? matchAccountInPool(prev.name, pool) : null
+        next[key] = rematched ? { action: 'existing', accountId: rematched.id } : { action: 'existing', accountId: '' }
+      } else {
+        next[key] = res
+      }
+    }
+    setAccountResolutions(next)
+  }
 
   // 通用CSV列映射
   const [csvHeaders, setCsvHeaders] = useState<string[]>([])
@@ -430,6 +469,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
       type: c.type,
       bankName: c.bankName,
       accountNo: c.accountNo,
+      ownerId: effectiveOwnerId || undefined,
     }))
 
     // 构建分类映射保存列表
@@ -480,6 +520,14 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
     // 构建记录列表
     const records = previewRecords.map(r => {
       let accountId = r.accountId || ''
+      // 改归属人后：后端按本人预解析的账户重映射到归属人名下同名账户
+      if (accountId) {
+        const acc = accounts.find(a => a.id === accountId)
+        if (acc) {
+          const rematched = matchAccountInPool(acc.name, ownerPool)
+          accountId = rematched?.id || accountId
+        }
+      }
       if (!accountId && r.accountName) {
         const res = accountResolutions[r.accountName]
         if (res?.action === 'existing') {
@@ -487,12 +535,19 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
         } else if (res?.action === 'create') {
           accountId = res.name
         } else {
-          const existing = accounts.find(a => a.name === r.accountName)
+          const existing = matchAccountInPool(r.accountName, ownerPool)
           accountId = existing?.id || r.accountName
         }
       }
 
       let toAccountId = r.toAccountId || undefined
+      if (toAccountId) {
+        const acc = accounts.find(a => a.id === toAccountId)
+        if (acc) {
+          const rematched = matchAccountInPool(acc.name, ownerPool)
+          toAccountId = rematched?.id || toAccountId
+        }
+      }
       if (!toAccountId && r.toAccountName) {
         const res = accountResolutions[r.toAccountName]
         if (res?.action === 'existing') {
@@ -500,7 +555,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
         } else if (res?.action === 'create') {
           toAccountId = res.name
         } else {
-          const existing = accounts.find(a => a.name === r.toAccountName!)
+          const existing = matchAccountInPool(r.toAccountName!, ownerPool)
           toAccountId = existing?.id || r.toAccountName!
         }
       }
@@ -1060,8 +1115,8 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                                   <SelectValue placeholder="选择已有账户..." />
                                 </SelectTrigger>
                                 <SelectContent className="bg-card border-border">
-                                  {(ua.candidates || accounts).map(a => (
-                                    <SelectItem key={a.id} value={a.id} className="text-xs">{a.name}</SelectItem>
+                                  {(ua.candidates?.length ? ua.candidates : ownerPool).map(a => (
+                                    <SelectItem key={a.id} value={a.id} className="text-xs">{accountLabel(a, multiOwnerAccounts)}</SelectItem>
                                   ))}
                                 </SelectContent>
                               </Select>
@@ -1291,8 +1346,8 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                               <SelectValue placeholder="选择账户" />
                             </SelectTrigger>
                             <SelectContent className="bg-card border-border max-h-48">
-                              {accounts.map(a => (
-                                <SelectItem key={a.id} value={a.id} className="text-xs">{a.name}</SelectItem>
+                              {ownerPool.map(a => (
+                                <SelectItem key={a.id} value={a.id} className="text-xs">{accountLabel(a, multiOwnerAccounts)}</SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
@@ -1529,7 +1584,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                 {/* 归属人选择 */}
                 <div className="flex items-center gap-3 mb-4">
                   <span className="text-sm font-medium whitespace-nowrap">归属人：</span>
-                  <Select value={selectedOwnerId} onValueChange={setSelectedOwnerId}>
+                  <Select value={selectedOwnerId} onValueChange={handleOwnerChange}>
                     <SelectTrigger className="h-8 text-xs w-48">
                       <SelectValue placeholder="本人（默认）" />
                     </SelectTrigger>

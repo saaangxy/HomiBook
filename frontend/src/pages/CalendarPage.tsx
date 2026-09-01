@@ -39,6 +39,7 @@ import { TransactionCalendar } from '@/components/TransactionCalendar'
 import { AttachmentViewer, type AttachmentItem } from '@/components/AttachmentViewer'
 import { recordApi, type RecordItem, type RecordType } from '@/api/record'
 import { accountApi, type AccountItem } from '@/api/account'
+import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
 import { settingsApi } from '@/api/settings'
 import { holidayApi, type HolidayItem } from '@/api/holiday'
 import { useBookStore } from '../stores/book'
@@ -76,6 +77,7 @@ export function CalendarPage() {
 
   // 账户列表
   const [accounts, setAccounts] = useState<AccountItem[]>([])
+  const multiOwnerAccounts = isMultiOwnerAccounts(accounts)
 
   // 日详情弹窗
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
@@ -607,7 +609,7 @@ export function CalendarPage() {
                     </SelectTrigger>
                     <SelectContent className="bg-card border-border">
                       {visibleAccounts.map((a) => (
-                        <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                        <SelectItem key={a.id} value={a.id}>{accountLabel(a, multiOwnerAccounts)}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -620,7 +622,7 @@ export function CalendarPage() {
                     </SelectTrigger>
                     <SelectContent className="bg-card border-border">
                       {visibleAccounts.map((a) => (
-                        <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                        <SelectItem key={a.id} value={a.id}>{accountLabel(a, multiOwnerAccounts)}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -635,7 +637,7 @@ export function CalendarPage() {
                   </SelectTrigger>
                   <SelectContent className="bg-card border-border">
                     {visibleAccounts.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                      <SelectItem key={a.id} value={a.id}>{accountLabel(a, multiOwnerAccounts)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

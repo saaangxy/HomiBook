@@ -53,6 +53,7 @@ export const createAdjustmentSchema = z.object({
 export const balanceHistorySchema = z.object({
   bookId: z.string().min(1).describe('账本ID'),
   accountIds: z.string().optional().describe('账户ID列表，逗号分隔'),
+  ownerId: z.string().optional().describe('按归属人过滤，不传为全部'),
   granularity: z.enum(['daily', 'monthly']).default('daily').describe('粒度'),
   dateFrom: z.string().describe('开始日期'),
   dateTo: z.string().describe('结束日期'),

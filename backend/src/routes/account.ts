@@ -185,7 +185,7 @@ export async function accountRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.status(400).send({ message: parsed.error.issues[0].message })
     }
-    const { bookId, accountIds, granularity, dateFrom, dateTo } = parsed.data
+    const { bookId, accountIds, ownerId, granularity, dateFrom, dateTo } = parsed.data
     const userId = (req as any).user.id as string
 
     try {
@@ -195,7 +195,7 @@ export async function accountRoutes(app: FastifyInstance) {
     }
 
     // 查询缓存(同账本成员数据一致,按请求键缓存。TTL 到期自愈,无需在各写路径失效)
-    const cacheKey = `balhist:${bookId}:${granularity}:${accountIds ?? 'all'}:${dateFrom}:${dateTo}`
+    const cacheKey = `balhist:${bookId}:${granularity}:${accountIds ?? 'all'}:${ownerId ?? 'any'}:${dateFrom}:${dateTo}`
     const cached = balanceHistoryCache.get(cacheKey)
     if (cached) return cached
 
@@ -208,6 +208,7 @@ export async function accountRoutes(app: FastifyInstance) {
       where: {
         accountBookId: bookId,
         ...(accountFilter ? { id: { in: accountFilter } } : {}),
+        ...(ownerId ? { ownerId } : {}),
       },
       orderBy: { createdAt: 'asc' },
     })

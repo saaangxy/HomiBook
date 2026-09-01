@@ -79,6 +79,10 @@ export interface AccountItem {
   bankName: string | null;
   accountNo?: string;
   status: 'ACTIVE' | 'ARCHIVED';
+  /** 账户归属人 */
+  ownerId?: string;
+  ownerName?: string;
+  visibility?: 'PUBLIC' | 'PRIVATE';
 }
 
 // ── 本地保留:预算(month 可 null;FREE 带标签与统计区间) ──

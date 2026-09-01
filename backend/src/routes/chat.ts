@@ -173,7 +173,7 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
               if (entry) Object.assign(entry, { result, durationMs, status })
               return result
             }
-            const preview = await buildConfirmPreview(tool.name, args, accountBookId)
+            const preview = await buildConfirmPreview(tool.name, args, accountBookId, userId)
             sendSSE('tool-confirm-required', { toolCallId, toolName: tool.name, preview })
             const entry = toolCallEntries.find(e => e.toolCallId === toolCallId)
             if (entry) Object.assign(entry, { status: 'confirming', preview })

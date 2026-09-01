@@ -17,6 +17,7 @@ import { useRecords } from '@/stores/records';
 import { useAuth } from '@/stores/auth';
 import { fetchBookMembers, fetchRecordTags, fetchBudgetTags, uploadRecordAttachment } from '@/services/records';
 import { resolveRemoteUrl } from '@/services/http';
+import { accountLabel, isMultiOwnerAccounts } from '@/lib/account';
 import dayjs from 'dayjs';
 
 type RecordType = 'EXPENSE' | 'INCOME' | 'TRANSFER';
@@ -97,6 +98,7 @@ export function RecordModal() {
 
   const categories = allCategories.filter((c) => (type === 'EXPENSE' ? c.type === 'EXPENSE' : c.type === 'INCOME'));
   const accounts = allAccounts.filter((a) => a.status === 'ACTIVE');
+  const multiOwnerAccounts = isMultiOwnerAccounts(accounts);
   const account = accounts.find((a) => a.id === accountId) ?? accounts[0];
 
   // 打开时:编辑模式预填表单;新建则重置默认
@@ -343,18 +345,18 @@ export function RecordModal() {
                 <>
                   {fieldLabel('转出账户')}
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
-                    {accounts.map((a) => chip(a.id, a.name, accountId === a.id, () => setAccountId(a.id)))}
+                    {accounts.map((a) => chip(a.id, accountLabel(a, multiOwnerAccounts), accountId === a.id, () => setAccountId(a.id)))}
                   </View>
                   {fieldLabel('转入账户')}
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
-                    {accounts.map((a) => chip(a.id, a.name, toId === a.id, () => setToId(a.id)))}
+                    {accounts.map((a) => chip(a.id, accountLabel(a, multiOwnerAccounts), toId === a.id, () => setToId(a.id)))}
                   </View>
                 </>
               ) : (
                 <>
                   {fieldLabel('账户')}
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
-                    {accounts.map((a) => chip(a.id, a.name, accountId === a.id, () => setAccountId(a.id)))}
+                    {accounts.map((a) => chip(a.id, accountLabel(a, multiOwnerAccounts), accountId === a.id, () => setAccountId(a.id)))}
                   </View>
                 </>
               )}

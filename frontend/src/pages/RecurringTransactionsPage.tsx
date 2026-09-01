@@ -28,6 +28,7 @@ import { DictCombobox } from '@/components/DictCombobox'
 import { TagCombobox } from '@/components/TagCombobox'
 import { recurringApi, type RecurringTransaction, type LoanPreview } from '@/api/recurring'
 import { accountApi, type AccountItem } from '@/api/account'
+import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
 import { useBookStore } from '@/stores/book'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { Plus, Pencil, Trash2, Power, PowerOff, FileText } from 'lucide-react'
@@ -54,6 +55,7 @@ export function RecurringTransactionsPage() {
   const isMobile = useIsMobile()
   const [list, setList] = useState<RecurringTransaction[]>([])
   const [accounts, setAccounts] = useState<AccountItem[]>([])
+  const multiOwnerAccounts = isMultiOwnerAccounts(accounts)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -565,7 +567,7 @@ export function RecurringTransactionsPage() {
               <Select value={formAccountId} onValueChange={setFormAccountId}>
                 <SelectTrigger className="bg-background border-border h-9"><SelectValue placeholder="选择账户" /></SelectTrigger>
                 <SelectContent>
-                  {accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                  {accounts.map((a) => <SelectItem key={a.id} value={a.id}>{accountLabel(a, multiOwnerAccounts)}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -577,7 +579,7 @@ export function RecurringTransactionsPage() {
                 <Select value={formToAccountId} onValueChange={setFormToAccountId}>
                   <SelectTrigger className="bg-background border-border h-9"><SelectValue placeholder="选择目标账户" /></SelectTrigger>
                   <SelectContent>
-                    {accounts.filter((a) => a.id !== formAccountId).map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                    {accounts.filter((a) => a.id !== formAccountId).map((a) => <SelectItem key={a.id} value={a.id}>{accountLabel(a, multiOwnerAccounts)}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
