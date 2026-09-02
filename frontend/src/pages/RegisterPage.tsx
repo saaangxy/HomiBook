@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { Book, Mail, Lock, User } from 'lucide-react'
+import { Mail, Lock, User } from 'lucide-react'
 import { authApi } from '../api/auth'
 
 const styles = {
@@ -54,11 +54,8 @@ const styles = {
   logoBg: {
     width: '72px',
     height: '72px',
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
     borderRadius: '20px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    overflow: 'hidden',
     marginBottom: '16px',
     boxShadow: '0 10px 30px -10px rgba(102, 126, 234, 0.5)',
   },
@@ -179,7 +176,7 @@ export function RegisterPage() {
       <div style={styles.card}>
         <div style={styles.logoContainer}>
           <div style={styles.logoBg}>
-            <Book size={36} color="#fff" />
+            <img src="/logo.png" alt="Homibook" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           </div>
           <h1 style={styles.title}>Create Account</h1>
           <p style={styles.subtitle}>Join Homibook to manage your finances</p>

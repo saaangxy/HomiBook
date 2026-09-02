@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Book, Eye, EyeOff, Palette, AlertCircle } from 'lucide-react'
+import { Eye, EyeOff, Palette, AlertCircle } from 'lucide-react'
 import { authApi } from '../api/auth'
 import { settingsApi } from '../api/settings'
 import { useAuthStore } from '../stores/auth'
@@ -64,11 +64,8 @@ const styles = {
   logoContainer: {
     width: '56px',
     height: '56px',
-    backgroundColor: 'hsl(var(--primary))',
     borderRadius: '16px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    overflow: 'hidden',
     boxShadow: '0 8px 32px hsl(var(--primary) / 0.25)',
   },
   headerTitle: {
@@ -532,7 +529,7 @@ export function LoginPage() {
       {/* Header with logo */}
       <div style={styles.header}>
         <div style={styles.logoContainer}>
-          <Book size={28} color="#fff" />
+          <img src="/logo.png" alt="Homibook" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         </div>
         <h2 style={styles.headerTitle}>Homibook</h2>
       </div>

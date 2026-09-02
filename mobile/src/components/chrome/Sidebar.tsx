@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { usePathname, useRouter } from 'expo-router';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming, Easing } from 'react-native-reanimated';
 import {
@@ -87,13 +87,11 @@ export function Sidebar() {
         {/* 内容常驻渲染:关闭瞬间卸载会导致面板变白色空板、动画结束后才消失;
             菜单为静态轻内容,pointerEvents 已在关闭时禁交互,常驻开销可忽略 */}
         <>
-          {/* Logo 头(对齐网页:primary 圆角方块 Book 图标 + Homibook) */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 6, paddingTop: 4, paddingBottom: 18 }}>
-            <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' }}>
-              <Book size={22} color={colors.primaryForeground} />
+          {/* Logo 头(项目 logo 图 + Homibook) */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 6, paddingTop: 4, paddingBottom: 18 }}>
+              <Image source={require('../../../assets/images/logo.png')} style={{ width: 40, height: 40, borderRadius: 12 }} />
+              <Text style={{ fontSize: 20, fontWeight: '800', letterSpacing: -0.5, color: colors.primary }}>Homibook</Text>
             </View>
-            <Text style={{ fontSize: 20, fontWeight: '800', letterSpacing: -0.5, color: colors.primary }}>Homibook</Text>
-          </View>
 
           {/* 单列菜单 */}
           <ScrollView showsVerticalScrollIndicator={false}>

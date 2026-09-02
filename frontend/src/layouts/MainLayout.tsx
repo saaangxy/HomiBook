@@ -135,9 +135,11 @@ export function MainLayout() {
         {/* Logo */}
         <SidebarHeader className="px-5 pt-5 pb-7 group-data-[collapsible=icon]:px-2 group-data-[collapsible=icon]:pt-4 group-data-[collapsible=icon]:pb-4">
           <div className="flex items-center gap-3 group-data-[collapsible=icon]:justify-center">
-            <div className="w-10 h-10 min-w-10 group-data-[collapsible=icon]:w-7 group-data-[collapsible=icon]:h-7 group-data-[collapsible=icon]:min-w-7 rounded-xl bg-primary flex items-center justify-center">
-              <Book size={22} color="#fff" />
-            </div>
+            <img
+              src="/logo.png"
+              alt="Homibook"
+              className="w-10 h-10 min-w-10 group-data-[collapsible=icon]:w-7 group-data-[collapsible=icon]:h-7 group-data-[collapsible=icon]:min-w-7 rounded-xl object-cover shadow-sm"
+            />
             <span className="text-xl font-extrabold text-primary tracking-tight whitespace-nowrap group-data-[collapsible=icon]:hidden">
               Homibook
             </span>
