@@ -1,10 +1,11 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, type ReactNode } from 'react';
 import { useIsFocused } from 'expo-router';
 import {
   RefreshControl, ScrollView, View, Pressable, Dimensions, Platform, ActivityIndicator, FlatList,
   Animated as RNAnimated, Easing as RNEasing,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Animated, { Easing, FadeInDown, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import {
   TrendingUp, TrendingDown, Wallet, PieChart as PieIcon,
@@ -14,7 +15,7 @@ import Svg, {
   Line as SvgLine, Polyline, Rect, Circle, Text as SvgText, G, Path, Polygon,
 } from 'react-native-svg';
 import type { SharedValue } from 'react-native-reanimated';
-import { useTheme, alpha } from '@/theme';
+import { useTheme, alpha, haptics } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { FormSheet } from '@/components/chrome/FormSheet';
 import { DatePicker } from '@/components/ui/DatePicker';
@@ -47,6 +48,79 @@ const CHART_COLORS = ['#6366f1', '#f97316', '#ec4899', '#14b8a6', '#ef4444', '#8
 
 // ── 金额格式化 ──
 const fmtMoney = (v: number) => v >= 10000 ? `${(v / 10000).toFixed(1)}万` : `${Math.round(v)}`;
+
+// ── 图表点按交互:点按/拖动选择最近数据点,参考线 + 具体值浮层 ──
+function ChartInteraction({ n, xFromIdx, idxFromX, renderTip, height, children }: {
+  n: number;
+  /** 数据索引 → x 坐标(参考线/浮层定位) */
+  xFromIdx: (i: number) => number;
+  /** 触摸 x → 最近数据索引 */
+  idxFromX: (x: number) => number;
+  renderTip: (idx: number) => ReactNode;
+  height: number;
+  children: ReactNode;
+}) {
+  const { colors } = useTheme();
+  const [selected, setSelected] = useState<number | null>(null);
+  const clampIdx = (x: number) => Math.max(0, Math.min(n - 1, idxFromX(x)));
+  // 回调标记 runOnJS:内部调用 haptics/setState(RN 侧函数),在 UI worklet 线程同步调用会崩溃;
+  // 拖动选择仅更新 state,无需 worklet 高频驱动
+  const pan = Gesture.Pan()
+    .activeOffsetX([-10, 10])
+    .runOnJS(true)
+    .onUpdate((e) => setSelected(clampIdx(e.x)));
+  const tap = Gesture.Tap()
+    .runOnJS(true)
+    .onStart((e) => {
+      haptics.tap();
+      setSelected((prev) => {
+        const idx = clampIdx(e.x);
+        return prev === idx ? null : idx;
+      });
+    });
+  const px = selected !== null ? xFromIdx(selected) : 0;
+  return (
+    <View style={{ alignItems: 'center' }}>
+      <GestureDetector gesture={Gesture.Simultaneous(pan, tap)}>
+        <View style={{ width: CW, height }}>
+          {children}
+          {selected !== null ? (
+            <>
+              {/* 参考竖线 */}
+              <View
+                pointerEvents="none"
+                style={{ position: 'absolute', left: px - 0.5, top: 4, bottom: 20, width: 1, borderLeftWidth: 1, borderColor: alpha(colors.foreground, 0.35), borderStyle: 'dashed' }}
+              />
+              {/* 数值浮层(左右 clamp 防溢出) */}
+              <View
+                pointerEvents="none"
+                style={{
+                  position: 'absolute', top: 2, left: Math.max(4, Math.min(px - 66, CW - 136)), width: 132,
+                  borderRadius: 8, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+                  paddingHorizontal: 8, paddingVertical: 5, gap: 2,
+                }}
+              >
+                {renderTip(selected)}
+              </View>
+            </>
+          ) : null}
+        </View>
+      </GestureDetector>
+    </View>
+  );
+}
+
+/** 浮层数值行:色点 + 名称 + 值 */
+function TipRow({ color, label, value }: { color: string; label: string; value: string }) {
+  const { colors } = useTheme();
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+      <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: color }} />
+      <Text style={{ fontSize: 9, color: colors.mutedForeground, flex: 1 }}>{label}</Text>
+      <Text style={{ fontSize: 10, fontWeight: '600', color, fontVariant: ['tabular-nums'] }}>{value}</Text>
+    </View>
+  );
+}
 
 // ════════════════════════════════════════
 // 自绘图表组件
@@ -130,28 +204,43 @@ function TripleLineChart({ income, expense, labels, height = CHART_H }: {
   };
 
   return (
-    <Svg width={CW} height={height} style={{ alignSelf: 'center' }}>
-      {[0, 0.5, 1].map((t, i) => {
-        const val = minVal + t * range;
-        return (
-          <G key={i}>
-            <SvgLine x1={padL} y1={y(val)} x2={CW - padR} y2={y(val)} stroke={colors.border} strokeWidth={0.5} strokeDasharray="3,3" />
-            <SvgText x={padL - 4} y={y(val) + 4} fontSize={9} fill={colors.mutedForeground} textAnchor="end">{fmtMoney(val)}</SvgText>
-          </G>
-        );
-      })}
-      {line(income, '#22c55e')}
-      {line(expense, '#ef4444')}
-      {line(net, colors.primary, true)}
-      {labels.map((l, i) => <SvgText key={i} x={x(i)} y={height - 4} fontSize={9} fill={colors.mutedForeground} textAnchor="middle">{l}</SvgText>)}
-      {/* 图例 */}
-      <Circle cx={padL + 8} cy={padT - 6} r={3} fill="#22c55e" />
-      <SvgText x={padL + 14} y={padT - 2} fontSize={9} fill={colors.mutedForeground}>收入</SvgText>
-      <Circle cx={padL + 48} cy={padT - 6} r={3} fill="#ef4444" />
-      <SvgText x={padL + 54} y={padT - 2} fontSize={9} fill={colors.mutedForeground}>支出</SvgText>
-      <SvgLine x1={padL + 88} y1={padT - 6} x2={padL + 96} y2={padT - 6} stroke={colors.primary} strokeWidth={2} strokeDasharray="2,2" />
-      <SvgText x={padL + 100} y={padT - 2} fontSize={9} fill={colors.mutedForeground}>结余</SvgText>
-    </Svg>
+    <ChartInteraction
+      n={n}
+      xFromIdx={(i) => x(i)}
+      idxFromX={(px) => Math.round(((px - padL) / chartW) * (n - 1))}
+      height={height}
+      renderTip={(idx) => (
+        <>
+          <Text style={{ fontSize: 9, color: colors.mutedForeground }}>{labels[idx]}</Text>
+          <TipRow color="#22c55e" label="收入" value={`¥${fmtMoney(income[idx])}`} />
+          <TipRow color="#ef4444" label="支出" value={`¥${fmtMoney(expense[idx])}`} />
+          <TipRow color={colors.primary} label="结余" value={`¥${fmtMoney(net[idx])}`} />
+        </>
+      )}
+    >
+      <Svg width={CW} height={height} style={{ alignSelf: 'center' }}>
+        {[0, 0.5, 1].map((t, i) => {
+          const val = minVal + t * range;
+          return (
+            <G key={i}>
+              <SvgLine x1={padL} y1={y(val)} x2={CW - padR} y2={y(val)} stroke={colors.border} strokeWidth={0.5} strokeDasharray="3,3" />
+              <SvgText x={padL - 4} y={y(val) + 4} fontSize={9} fill={colors.mutedForeground} textAnchor="end">{fmtMoney(val)}</SvgText>
+            </G>
+          );
+        })}
+        {line(income, '#22c55e')}
+        {line(expense, '#ef4444')}
+        {line(net, colors.primary, true)}
+        {labels.map((l, i) => <SvgText key={i} x={x(i)} y={height - 4} fontSize={9} fill={colors.mutedForeground} textAnchor="middle">{l}</SvgText>)}
+        {/* 图例 */}
+        <Circle cx={padL + 8} cy={padT - 6} r={3} fill="#22c55e" />
+        <SvgText x={padL + 14} y={padT - 2} fontSize={9} fill={colors.mutedForeground}>收入</SvgText>
+        <Circle cx={padL + 48} cy={padT - 6} r={3} fill="#ef4444" />
+        <SvgText x={padL + 54} y={padT - 2} fontSize={9} fill={colors.mutedForeground}>支出</SvgText>
+        <SvgLine x1={padL + 88} y1={padT - 6} x2={padL + 96} y2={padT - 6} stroke={colors.primary} strokeWidth={2} strokeDasharray="2,2" />
+        <SvgText x={padL + 100} y={padT - 2} fontSize={9} fill={colors.mutedForeground}>结余</SvgText>
+      </Svg>
+    </ChartInteraction>
   );
 }
 
@@ -185,21 +274,34 @@ function AreaLineChart({ data, labels, color, height = CHART_H }: {
   const points = data.map((v, i) => `${x(i)},${y(v)}`).join(' ');
 
   return (
-    <Svg width={CW} height={height} style={{ alignSelf: 'center' }}>
-      {[0, 0.5, 1].map((t, i) => {
-        const val = minVal + t * range;
-        return (
-          <G key={i}>
-            <SvgLine x1={padL} y1={y(val)} x2={CW - padR} y2={y(val)} stroke={colors.border} strokeWidth={0.5} strokeDasharray="3,3" />
-            <SvgText x={padL - 4} y={y(val) + 4} fontSize={9} fill={colors.mutedForeground} textAnchor="end">{fmtMoney(val)}</SvgText>
-          </G>
-        );
-      })}
-      <Path d={`M${x(0)},${padT + chartH} L${data.slice(0, upto).map((v, i) => `${x(i)},${y(v)}`).join(' L')} L${x(upto - 1)},${padT + chartH} Z`} fill={alpha(color, 0.1 * progress)} />
-      <Polyline points={points} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeDasharray={`${len * progress} ${len + 10}`} />
-      {data.slice(0, upto).map((v, i) => <Circle key={i} cx={x(i)} cy={y(v)} r={3} fill={color} />)}
-      {labels.map((l, i) => <SvgText key={i} x={x(i)} y={height - 4} fontSize={9} fill={colors.mutedForeground} textAnchor="middle">{l}</SvgText>)}
-    </Svg>
+    <ChartInteraction
+      n={n}
+      xFromIdx={(i) => x(i)}
+      idxFromX={(px) => Math.round(((px - padL) / chartW) * (n - 1))}
+      height={height}
+      renderTip={(idx) => (
+        <>
+          <Text style={{ fontSize: 9, color: colors.mutedForeground }}>{labels[idx]}</Text>
+          <TipRow color={color} label="净值" value={`¥${fmtMoney(data[idx])}`} />
+        </>
+      )}
+    >
+      <Svg width={CW} height={height} style={{ alignSelf: 'center' }}>
+        {[0, 0.5, 1].map((t, i) => {
+          const val = minVal + t * range;
+          return (
+            <G key={i}>
+              <SvgLine x1={padL} y1={y(val)} x2={CW - padR} y2={y(val)} stroke={colors.border} strokeWidth={0.5} strokeDasharray="3,3" />
+              <SvgText x={padL - 4} y={y(val) + 4} fontSize={9} fill={colors.mutedForeground} textAnchor="end">{fmtMoney(val)}</SvgText>
+            </G>
+          );
+        })}
+        <Path d={`M${x(0)},${padT + chartH} L${data.slice(0, upto).map((v, i) => `${x(i)},${y(v)}`).join(' L')} L${x(upto - 1)},${padT + chartH} Z`} fill={alpha(color, 0.1 * progress)} />
+        <Polyline points={points} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeDasharray={`${len * progress} ${len + 10}`} />
+        {data.slice(0, upto).map((v, i) => <Circle key={i} cx={x(i)} cy={y(v)} r={3} fill={color} />)}
+        {labels.map((l, i) => <SvgText key={i} x={x(i)} y={height - 4} fontSize={9} fill={colors.mutedForeground} textAnchor="middle">{l}</SvgText>)}
+      </Svg>
+    </ChartInteraction>
   );
 }
 
@@ -233,37 +335,57 @@ function MultiLineChart({ series, labels, height = CHART_H }: {
   const labelStep = Math.max(1, Math.ceil(n / 8));
 
   return (
-    <Svg width={CW} height={height} style={{ alignSelf: 'center' }}>
-      {[0, 0.5, 1].map((t, i) => {
-        const val = minVal + t * range;
-        return (
-          <G key={i}>
-            <SvgLine x1={padL} y1={y(val)} x2={CW - padR} y2={y(val)} stroke={colors.border} strokeWidth={0.5} strokeDasharray="3,3" />
-            <SvgText x={padL - 4} y={y(val) + 4} fontSize={9} fill={colors.mutedForeground} textAnchor="end">{fmtMoney(val)}</SvgText>
+    <ChartInteraction
+      n={n}
+      xFromIdx={(i) => x(i)}
+      idxFromX={(px) => Math.round(((px - padL) / chartW) * (n - 1))}
+      height={height}
+      renderTip={(idx) => (
+        <>
+          <Text style={{ fontSize: 9, color: colors.mutedForeground }}>{labels[idx]}</Text>
+          {series.slice(0, 4).map((s, si) => (
+            <TipRow
+              key={si}
+              color={s.color ?? CHART_COLORS[si % CHART_COLORS.length]}
+              label={s.name}
+              value={`¥${fmtMoney(s.data[idx] ?? 0)}`}
+            />
+          ))}
+        </>
+      )}
+    >
+      <Svg width={CW} height={height} style={{ alignSelf: 'center' }}>
+        {[0, 0.5, 1].map((t, i) => {
+          const val = minVal + t * range;
+          return (
+            <G key={i}>
+              <SvgLine x1={padL} y1={y(val)} x2={CW - padR} y2={y(val)} stroke={colors.border} strokeWidth={0.5} strokeDasharray="3,3" />
+              <SvgText x={padL - 4} y={y(val) + 4} fontSize={9} fill={colors.mutedForeground} textAnchor="end">{fmtMoney(val)}</SvgText>
+            </G>
+          );
+        })}
+        {series.map((s, si) => {
+          const len = lineLen(s.data);
+          return (
+            <Polyline
+              key={si} points={s.data.map((v, i) => `${x(i)},${y(v)}`).join(' ')} fill="none"
+              stroke={s.color ?? CHART_COLORS[si % CHART_COLORS.length]} strokeWidth={1.5} strokeLinejoin="round"
+              strokeDasharray={`${len * progress} ${len + 10}`}
+            />
+          );
+        })}
+        {labels.map((l, i) => i % labelStep === 0
+          ? <SvgText key={i} x={x(i)} y={height - 4} fontSize={9} fill={colors.mutedForeground} textAnchor="middle">{l}</SvgText>
+          : null)}
+        {/* 图例 */}
+        {series.slice(0, 4).map((s, i) => (
+          <G key={`leg${i}`}>
+            <Circle cx={padL + 8 + i * 64} cy={padT - 6} r={3} fill={s.color ?? CHART_COLORS[i % CHART_COLORS.length]} />
+            <SvgText x={padL + 14 + i * 64} y={padT - 2} fontSize={9} fill={colors.mutedForeground}>{s.name.slice(0, 3)}</SvgText>
           </G>
-        );
-      })}
-      {series.map((s, si) => {
-        const len = lineLen(s.data);
-        return (
-          <Polyline
-            key={si} points={s.data.map((v, i) => `${x(i)},${y(v)}`).join(' ')} fill="none"
-            stroke={s.color ?? CHART_COLORS[si % CHART_COLORS.length]} strokeWidth={1.5} strokeLinejoin="round"
-            strokeDasharray={`${len * progress} ${len + 10}`}
-          />
-        );
-      })}
-      {labels.map((l, i) => i % labelStep === 0
-        ? <SvgText key={i} x={x(i)} y={height - 4} fontSize={9} fill={colors.mutedForeground} textAnchor="middle">{l}</SvgText>
-        : null)}
-      {/* 图例 */}
-      {series.slice(0, 4).map((s, i) => (
-        <G key={`leg${i}`}>
-          <Circle cx={padL + 8 + i * 64} cy={padT - 6} r={3} fill={s.color ?? CHART_COLORS[i % CHART_COLORS.length]} />
-          <SvgText x={padL + 14 + i * 64} y={padT - 2} fontSize={9} fill={colors.mutedForeground}>{s.name.slice(0, 3)}</SvgText>
-        </G>
-      ))}
-    </Svg>
+        ))}
+      </Svg>
+    </ChartInteraction>
   );
 }
 
@@ -276,38 +398,55 @@ function DualBarChart({ income, expense, labels, height = CHART_H }: {
   const padL = 44, padR = 8, padT = 20, padB = 24;
   const chartW = CW - padL - padR;
   const chartH = height - padT - padB;
+  if (n === 0) {
+    return <Text style={{ fontSize: 12, color: colors.mutedForeground, textAlign: 'center', paddingVertical: 40 }}>暂无数据</Text>;
+  }
   const maxVal = Math.max(...income, ...expense, 1);
   const gap = chartW / n;
   const barW = gap * 0.32;
 
   return (
-    <Svg width={CW} height={height} style={{ alignSelf: 'center' }}>
-      {[0, 0.5, 1].map((t, i) => {
-        const val = t * maxVal;
-        const yy = padT + chartH - (val / maxVal) * chartH;
-        return (
-          <G key={i}>
-            <SvgLine x1={padL} y1={yy} x2={CW - padR} y2={yy} stroke={colors.border} strokeWidth={0.5} strokeDasharray="3,3" />
-            <SvgText x={padL - 4} y={yy + 4} fontSize={9} fill={colors.mutedForeground} textAnchor="end">{fmtMoney(val)}</SvgText>
-          </G>
-        );
-      })}
-      {income.map((v, i) => {
-        const barH = (v / maxVal) * chartH;
-        const bx = padL + i * gap + gap * 0.1;
-        return <Rect key={`i${i}`} x={bx} y={padT + chartH - barH} width={barW} height={barH} fill="#22c55e" rx={2} />;
-      })}
-      {expense.map((v, i) => {
-        const barH = (v / maxVal) * chartH;
-        const bx = padL + i * gap + gap * 0.1 + barW + 2;
-        return <Rect key={`e${i}`} x={bx} y={padT + chartH - barH} width={barW} height={barH} fill="#ef4444" rx={2} />;
-      })}
-      {labels.map((l, i) => <SvgText key={i} x={padL + i * gap + gap / 2} y={height - 4} fontSize={9} fill={colors.mutedForeground} textAnchor="middle">{l}</SvgText>)}
-      <Rect x={padL + 8} y={padT - 8} width={8} height={8} fill="#22c55e" rx={2} />
-      <SvgText x={padL + 20} y={padT} fontSize={9} fill={colors.mutedForeground}>收入</SvgText>
-      <Rect x={padL + 52} y={padT - 8} width={8} height={8} fill="#ef4444" rx={2} />
-      <SvgText x={padL + 64} y={padT} fontSize={9} fill={colors.mutedForeground}>支出</SvgText>
-    </Svg>
+    <ChartInteraction
+      n={n}
+      xFromIdx={(i) => padL + i * gap + gap / 2}
+      idxFromX={(px) => Math.floor((px - padL) / gap)}
+      height={height}
+      renderTip={(idx) => (
+        <>
+          <Text style={{ fontSize: 9, color: colors.mutedForeground }}>{labels[idx]}</Text>
+          <TipRow color="#22c55e" label="收入" value={`¥${fmtMoney(income[idx] ?? 0)}`} />
+          <TipRow color="#ef4444" label="支出" value={`¥${fmtMoney(expense[idx] ?? 0)}`} />
+        </>
+      )}
+    >
+      <Svg width={CW} height={height} style={{ alignSelf: 'center' }}>
+        {[0, 0.5, 1].map((t, i) => {
+          const val = t * maxVal;
+          const yy = padT + chartH - (val / maxVal) * chartH;
+          return (
+            <G key={i}>
+              <SvgLine x1={padL} y1={yy} x2={CW - padR} y2={yy} stroke={colors.border} strokeWidth={0.5} strokeDasharray="3,3" />
+              <SvgText x={padL - 4} y={yy + 4} fontSize={9} fill={colors.mutedForeground} textAnchor="end">{fmtMoney(val)}</SvgText>
+            </G>
+          );
+        })}
+        {income.map((v, i) => {
+          const barH = (v / maxVal) * chartH;
+          const bx = padL + i * gap + gap * 0.1;
+          return <Rect key={`i${i}`} x={bx} y={padT + chartH - barH} width={barW} height={barH} fill="#22c55e" rx={2} />;
+        })}
+        {expense.map((v, i) => {
+          const barH = (v / maxVal) * chartH;
+          const bx = padL + i * gap + gap * 0.1 + barW + 2;
+          return <Rect key={`e${i}`} x={bx} y={padT + chartH - barH} width={barW} height={barH} fill="#ef4444" rx={2} />;
+        })}
+        {labels.map((l, i) => <SvgText key={i} x={padL + i * gap + gap / 2} y={height - 4} fontSize={9} fill={colors.mutedForeground} textAnchor="middle">{l}</SvgText>)}
+        <Rect x={padL + 8} y={padT - 8} width={8} height={8} fill="#22c55e" rx={2} />
+        <SvgText x={padL + 20} y={padT} fontSize={9} fill={colors.mutedForeground}>收入</SvgText>
+        <Rect x={padL + 52} y={padT - 8} width={8} height={8} fill="#ef4444" rx={2} />
+        <SvgText x={padL + 64} y={padT} fontSize={9} fill={colors.mutedForeground}>支出</SvgText>
+      </Svg>
+    </ChartInteraction>
   );
 }
 
