@@ -1,8 +1,10 @@
+import { Platform } from 'react-native';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
 import { File, UploadType } from 'expo-file-system';
 import { requireNativeModule } from 'expo-modules-core';
 import { secureDelete, secureGet, secureSet } from './storage';
+import { showToast } from '@/components/chrome/Toast';
 
 // HTTP 客户端:baseUrl 注入 + Bearer 凭据(JWT 与 API Key 同通道,后端自动识别)
 // + 10s 超时 + 统一错误解析 + 全局 401 拦截
@@ -208,8 +210,71 @@ export function resolveRemoteUrl(url: string): string {
   return url.startsWith('http') ? url : `${currentBaseUrl}${url.startsWith('/') ? url : `/${url}`}`;
 }
 
-/** 下载附件到本地并通过系统分享面板保存(等价 web 端的「下载」按钮) */
-export async function downloadAndShareAttachment(path: string, fileName: string): Promise<void> {
+/** Android SAF 授权目录(导出与附件保存共用) */
+const EXPORT_DIR_KEY = 'homibook.exportDirUri';
+
+/** SAF 目录 URI 转可读路径(内置存储 provider 解析为「内部存储/xx」,其他展示 tree 段) */
+export function safDirLabel(uri: string): string {
+  const tree = uri.split('/tree/')[1];
+  if (!tree) return uri;
+  const seg = decodeURIComponent(tree.split('/')[0]);
+  if (uri.includes('externalstorage.documents') && seg.startsWith('primary:')) {
+    const path = seg.slice('primary:'.length);
+    return path ? `内部存储/${path}` : '内部存储';
+  }
+  return seg || uri;
+}
+
+/** 按扩展名推断 MIME(SAF 创建文件与分享面板用) */
+export function guessMimeFromName(fileName: string): string {
+  const ext = fileName.slice(fileName.lastIndexOf('.') + 1).toLowerCase();
+  const MAP: Record<string, string> = {
+    jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp',
+    pdf: 'application/pdf',
+    csv: 'text/csv', txt: 'text/plain',
+    xls: 'application/vnd.ms-excel',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    doc: 'application/msword',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    zip: 'application/zip',
+  };
+  return MAP[ext] ?? 'application/octet-stream';
+}
+
+/**
+ * SAF 写入用户授权的目录(首次弹出目录选择器,授权后记住,之后直接写入)。
+ * 授权失效时自动清除记录并重新请求;返回写入的目录 URI,用户取消返回 null。
+ */
+export async function saveFileToSafDirectory(cacheUri: string, fileName: string, mimeType: string): Promise<string | null> {
+  const content = await FileSystem.readAsStringAsync(cacheUri, { encoding: FileSystem.EncodingType.Base64 });
+  let dirUri = await secureGet(EXPORT_DIR_KEY);
+  if (!dirUri) {
+    const perms = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+    if (!perms.granted) return null;
+    dirUri = perms.directoryUri;
+    await secureSet(EXPORT_DIR_KEY, dirUri);
+  }
+  try {
+    const fileUri = await FileSystem.StorageAccessFramework.createFileAsync(dirUri, fileName, mimeType);
+    await FileSystem.writeAsStringAsync(fileUri, content, { encoding: FileSystem.EncodingType.Base64 });
+    return dirUri;
+  } catch {
+    // 授权可能已失效:清除记录重新授权一次
+    await secureDelete(EXPORT_DIR_KEY);
+    const perms = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+    if (!perms.granted) return null;
+    await secureSet(EXPORT_DIR_KEY, perms.directoryUri);
+    const fileUri = await FileSystem.StorageAccessFramework.createFileAsync(perms.directoryUri, fileName, mimeType);
+    await FileSystem.writeAsStringAsync(fileUri, content, { encoding: FileSystem.EncodingType.Base64 });
+    return perms.directoryUri;
+  }
+}
+
+/** 附件下载方式:save=SAF 保存到授权目录(仅 Android);share=系统分享面板 */
+export type DownloadMode = 'save' | 'share';
+
+/** 下载附件:save 直存已授权目录并轻提示路径(取消授权静默);share 调起系统分享面板(与导出 CSV 同逻辑) */
+export async function downloadAttachment(path: string, fileName: string, mode: DownloadMode): Promise<void> {
   const cred = await getCredential();
   if (!cred) throw new Error('请先配置服务器并登录');
   // 后端下载接口(GET /api/records/download?path=&name=),二进制流
@@ -219,7 +284,12 @@ export async function downloadAndShareAttachment(path: string, fileName: string)
     headers: { Authorization: `Bearer ${cred.value}` },
   });
   if (res.status < 200 || res.status >= 300) throw new Error(`下载失败(${res.status})`);
+  if (mode === 'save' && Platform.OS === 'android') {
+    const dirUri = await saveFileToSafDirectory(res.uri, fileName, guessMimeFromName(fileName));
+    if (dirUri) showToast(`已保存到 ${safDirLabel(dirUri)}`);
+    return;
+  }
   const ok = await Sharing.isAvailableAsync();
   if (!ok) throw new Error('当前环境不支持保存文件');
-  await Sharing.shareAsync(res.uri, { mimeType: 'application/octet-stream', dialogTitle: fileName });
+  await Sharing.shareAsync(res.uri, { mimeType: guessMimeFromName(fileName), dialogTitle: fileName });
 }

@@ -3,7 +3,8 @@ import { ActivityIndicator, Alert, Dimensions, Image, Modal, Pressable, ScrollVi
 import { Download, FileText, X } from 'lucide-react-native';
 import { useTheme } from '@/theme';
 import { Text } from '@/components/ui/Text';
-import { downloadAndShareAttachment, resolveRemoteUrl } from '@/services/http';
+import { DownloadModeSheet } from '@/components/chrome/DownloadModeSheet';
+import { downloadAttachment, resolveRemoteUrl, type DownloadMode } from '@/services/http';
 
 // 附件查看(参考 web AttachmentViewer):
 // - 缩略图网格 + 全屏大图预览(左右翻页) + 非图片附件文件名块
@@ -30,6 +31,7 @@ export function ImageLightbox({ images, initialIndex = 0, onClose }: {
   const width = Dimensions.get('window').width;
   const [index, setIndex] = useState(initialIndex);
   const [downloading, setDownloading] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
@@ -39,11 +41,14 @@ export function ImageLightbox({ images, initialIndex = 0, onClose }: {
 
   if (images.length === 0) return null;
 
-  const handleDownload = async () => {
+  const handleDownload = () => setSheetOpen(true);
+
+  const runDownload = async (mode: DownloadMode) => {
+    setSheetOpen(false);
     const src = images[index];
     setDownloading(true);
     try {
-      await downloadAndShareAttachment(src, src.split('/').pop() || `image-${Date.now()}.jpg`);
+      await downloadAttachment(src, src.split('/').pop() || `image-${Date.now()}.jpg`, mode);
     } catch (e: any) {
       Alert.alert('下载失败', e?.message || '未知错误');
     } finally {
@@ -82,6 +87,8 @@ export function ImageLightbox({ images, initialIndex = 0, onClose }: {
           ))}
         </ScrollView>
       </View>
+      {/* 保存方式选择(保存到设备/系统分享) */}
+      <DownloadModeSheet visible={sheetOpen} title="保存图片" onMode={runDownload} onClose={() => setSheetOpen(false)} />
     </Modal>
   );
 }
@@ -95,6 +102,8 @@ export function AttachmentViewer({ visible, attachments, onClose }: {
   const { colors } = useTheme();
   const [previewIdx, setPreviewIdx] = useState<number | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  // 待保存附件(先弹保存方式选择)
+  const [dlTarget, setDlTarget] = useState<AttachmentItem | null>(null);
 
   useEffect(() => {
     if (!visible) setPreviewIdx(null);
@@ -108,10 +117,13 @@ export function AttachmentViewer({ visible, attachments, onClose }: {
   const previewIndexOf = (att: AttachmentItem) =>
     attachments.filter((a) => isImageUrl(a.url)).findIndex((a) => a.id === att.id);
 
-  const handleDownload = async (att: AttachmentItem) => {
+  const runDownload = async (mode: DownloadMode) => {
+    const att = dlTarget;
+    if (!att) return;
+    setDlTarget(null);
     setDownloadingId(att.id);
     try {
-      await downloadAndShareAttachment(att.url, att.originalFilename);
+      await downloadAttachment(att.url, att.originalFilename, mode);
     } catch (e: any) {
       Alert.alert('下载失败', e?.message || '未知错误');
     } finally {
@@ -122,7 +134,7 @@ export function AttachmentViewer({ visible, attachments, onClose }: {
   const dlBtn = (att: AttachmentItem, small?: boolean) => (
     <Pressable
       hitSlop={8}
-      onPress={() => handleDownload(att)}
+      onPress={() => setDlTarget(att)}
       style={{
         position: 'absolute', right: -5, bottom: -5,
         width: small ? 24 : 26, height: small ? 24 : 26, borderRadius: 13,
@@ -159,7 +171,7 @@ export function AttachmentViewer({ visible, attachments, onClose }: {
                   </View>
                 ) : (
                   <View key={att.id}>
-                    <Pressable onPress={() => handleDownload(att)} style={{
+                    <Pressable onPress={() => setDlTarget(att)} style={{
                       width: 132, height: 76, borderRadius: 10, backgroundColor: colors.muted,
                       alignItems: 'center', justifyContent: 'center', gap: 4, paddingHorizontal: 6,
                     }}>
@@ -180,6 +192,8 @@ export function AttachmentViewer({ visible, attachments, onClose }: {
       {previewIdx !== null && imageUrls.length > 0 && (
         <ImageLightbox images={imageUrls} initialIndex={Math.max(previewIdx, 0)} onClose={() => setPreviewIdx(null)} />
       )}
+      {/* 保存方式选择(保存到设备/系统分享) */}
+      <DownloadModeSheet visible={!!dlTarget} title="保存附件" onMode={runDownload} onClose={() => setDlTarget(null)} />
     </>
   );
 }

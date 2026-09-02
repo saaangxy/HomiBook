@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { Alert, ActivityIndicator, FlatList, Image, Linking, Platform, Pressable, ScrollView, Switch, TextInput, View } from 'react-native';
 import Markdown from 'react-native-markdown-display';
-import { AlertTriangle, Bot, Brain, CheckCircle2, ChevronDown, Copy, ExternalLink, FileSpreadsheet, FileUp, Globe, HelpCircle, ImagePlus, List, Loader2, MessageSquareMore, Plus, RefreshCw, Search, Send, Sparkles, StopCircle, Trash2, Wrench, X, XCircle } from 'lucide-react-native';
+import { AlertTriangle, Bot, Brain, CheckCircle2, ChevronDown, Copy, ExternalLink, FileSpreadsheet, FileText, FileUp, Globe, HelpCircle, ImagePlus, List, Loader2, MessageSquareMore, Plus, RefreshCw, Search, Send, Sparkles, StopCircle, Trash2, Wrench, X, XCircle } from 'lucide-react-native';
 import { useTheme, alpha, haptics } from '@/theme';
 import { accountLabel, isMultiOwnerAccounts } from '@/lib/account';
 import { Text } from '@/components/ui/Text';
 import { FormSheet } from '@/components/chrome/FormSheet';
-import { ImageLightbox } from '@/components/ui/AttachmentViewer';
+import { ImageLightbox, isImageUrl } from '@/components/ui/AttachmentViewer';
 import { useChatStore } from '@/stores/chat';
 import { useUIShell } from '@/components/chrome/chrome';
 import { uploadImage, uploadImportFile, loadToolNames, getToolDisplayName } from '@/services/chat';
-import { getBaseUrl } from '@/services/http';
+import { DownloadModeSheet } from '@/components/chrome/DownloadModeSheet';
+import { downloadAttachment, getBaseUrl, type DownloadMode } from '@/services/http';
 import type { Message, MessageBlock, ToolCallEntry } from '@homibook/core';
 import { ACCOUNT_TYPE_LABELS } from '@homibook/core';
 import type { Ledger } from '@/types';
@@ -122,21 +123,38 @@ export function AIAssistant({ onClose }: { onClose?: () => void }) {
     sendText(msg);
   };
 
-  // 选择并上传小票图片
-  const handlePickImage = async () => {
+  // 选择并上传小票图片(仅图片,同 web 端 accept="image/*";流水附件上传才支持全部文件)
+  const handlePickFile = async () => {
     try {
-      const { launchImageLibraryAsync, requestMediaLibraryPermissionsAsync } = await import('expo-image-picker');
-      const perm = await requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) { Alert.alert('需要相册权限'); return; }
-      // mediaTypes 用新 API(字符串数组);MediaTypeOptions 已废弃
-      const result = await launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
+      const DocumentPicker = await import('expo-document-picker');
+      const result = await DocumentPicker.getDocumentAsync({
+        copyToCacheDirectory: true,
+        multiple: false,
+        type: 'image/*',
+      });
       if (result.canceled || !result.assets?.length) return;
       const asset = result.assets[0];
-      const fileName = asset.fileName || 'receipt.jpg';
-      const up = await uploadImage(asset.uri, fileName, asset.mimeType || 'image/jpeg');
-      setPendingImages((p) => [...p, { id: up.id, uri: resolveFileUrl(up.fullUrl || up.url), fullUrl: up.fullUrl || up.url, originalFilename: up.originalFilename || fileName }]);
+      const fileName = asset.name || 'attachment';
+      // 直接上传选择器返回的文件(File.upload 原生 IO 可读;复制到原名文件会触发权限限制)
+      // 注:后端 originalFilename 取 multipart filename(cache 随机 id + 原扩展名),本地回显用选择器原名
+      const up = await uploadImage(asset.uri, fileName, asset.mimeType || 'application/octet-stream');
+      setPendingImages((p) => [...p, { id: up.id, uri: resolveFileUrl(up.fullUrl || up.url), fullUrl: up.fullUrl || up.url, originalFilename: fileName }]);
     } catch (e: any) {
       Alert.alert('上传失败', e?.message || '未知错误');
+    }
+  };
+
+  // 下载非图片附件:先弹保存方式选择(保存到设备/系统分享)
+  const [dlTarget, setDlTarget] = useState<{ path: string; name: string } | null>(null);
+  const handleDownloadAttachment = (url: string, name: string) => setDlTarget({ path: url, name });
+  const runDownload = async (mode: DownloadMode) => {
+    const t = dlTarget;
+    if (!t) return;
+    setDlTarget(null);
+    try {
+      await downloadAttachment(t.path, t.name, mode);
+    } catch (e: any) {
+      Alert.alert('下载失败', e?.message || '未知错误');
     }
   };
 
@@ -262,14 +280,33 @@ export function AIAssistant({ onClose }: { onClose?: () => void }) {
               <View style={{ gap: 6 }}>
                 {item.attachments && item.attachments.length > 0 && (
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end' }}>
-                    {item.attachments.map((a, i) => {
-                      const full = resolveFileUrl(a.url);
-                      return (
-                        <Pressable key={a.id} onPress={() => setLightbox({ images: item.attachments!.map((x) => resolveFileUrl(x.url)), index: i })}>
-                          <Image source={{ uri: full }} style={{ width: 116, height: 116, borderRadius: 8 }} />
-                        </Pressable>
-                      );
-                    })}
+                    {(() => {
+                      const atts = item.attachments!;
+                      const imgAtts = atts.filter((x) => isImageUrl(x.url));
+                      const imgUrls = imgAtts.map((x) => resolveFileUrl(x.url));
+                      return atts.map((a) => {
+                        // 非图片附件:文件名块,点击下载
+                        if (!isImageUrl(a.url)) {
+                          return (
+                            <Pressable
+                              key={a.id}
+                              onPress={() => handleDownloadAttachment(a.url, a.originalFilename)}
+                              style={{ width: 132, minHeight: 76, borderRadius: 8, backgroundColor: alpha(colors.foreground, 0.12), alignItems: 'center', justifyContent: 'center', gap: 4, paddingHorizontal: 6 }}
+                            >
+                              <FileText size={18} color={colors.foreground} />
+                              <Text numberOfLines={1} style={{ fontSize: 10.5, color: colors.foreground, maxWidth: '100%' }}>{a.originalFilename}</Text>
+                            </Pressable>
+                          );
+                        }
+                        // 图片附件:缩略图,点击进全屏预览(仅在图片集合内翻页)
+                        const idx = imgAtts.findIndex((x) => x.id === a.id);
+                        return (
+                          <Pressable key={a.id} onPress={() => setLightbox({ images: imgUrls, index: idx })}>
+                            <Image source={{ uri: resolveFileUrl(a.url) }} style={{ width: 116, height: 116, borderRadius: 8 }} />
+                          </Pressable>
+                        );
+                      });
+                    })()}
                   </View>
                 )}
                 {item.blocks.map((b) => renderBlock(b, true))}
@@ -402,20 +439,30 @@ export function AIAssistant({ onClose }: { onClose?: () => void }) {
       <View style={{ paddingHorizontal: 12, paddingTop: 6, paddingBottom: 8, borderTopWidth: 1, borderTopColor: colors.hairline }}>
         {pendingImages.length > 0 && (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingBottom: 8 }}>
-            {pendingImages.map((img, i) => (
-              <View key={img.id}>
-                <Pressable onPress={() => setLightbox({ images: pendingImages.map((x) => x.uri), index: i })}>
-                  <Image source={{ uri: img.uri }} style={{ width: 54, height: 54, borderRadius: 8 }} />
-                </Pressable>
-                <Pressable
-                  onPress={() => setPendingImages((p) => p.filter((x) => x.id !== img.id))}
-                  hitSlop={6}
-                  style={{ position: 'absolute', top: 0, right: 0, width: 20, height: 20, borderRadius: 8, borderTopRightRadius: 8, borderBottomLeftRadius: 8, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' }}
-                >
-                  <X size={12} color="#fff" />
-                </Pressable>
-              </View>
-            ))}
+            {(() => {
+              const imgUrls = pendingImages.filter((x) => isImageUrl(x.uri)).map((x) => x.uri);
+              return pendingImages.map((img) => (
+                <View key={img.id}>
+                  {isImageUrl(img.uri) ? (
+                    <Pressable onPress={() => setLightbox({ images: imgUrls, index: imgUrls.indexOf(img.uri) })}>
+                      <Image source={{ uri: img.uri }} style={{ width: 54, height: 54, borderRadius: 8 }} />
+                    </Pressable>
+                  ) : (
+                    <View style={{ width: 54, height: 54, borderRadius: 8, backgroundColor: colors.muted, alignItems: 'center', justifyContent: 'center', gap: 2, paddingHorizontal: 3 }}>
+                      <FileText size={16} color={colors.mutedForeground} />
+                      <Text numberOfLines={1} style={{ fontSize: 8, color: colors.mutedForeground, maxWidth: '100%' }}>{img.originalFilename}</Text>
+                    </View>
+                  )}
+                  <Pressable
+                    onPress={() => setPendingImages((p) => p.filter((x) => x.id !== img.id))}
+                    hitSlop={6}
+                    style={{ position: 'absolute', top: 0, right: 0, width: 20, height: 20, borderRadius: 8, borderTopRightRadius: 8, borderBottomLeftRadius: 8, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <X size={12} color="#fff" />
+                  </Pressable>
+                </View>
+              ));
+            })()}
           </View>
         )}
         <View style={{ borderRadius: 20, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.elevated, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 7 }}>
@@ -428,7 +475,7 @@ export function AIAssistant({ onClose }: { onClose?: () => void }) {
             multiline
           />
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
-            <Pressable hitSlop={8} onPress={handlePickImage} style={composerBtn}>
+            <Pressable hitSlop={8} onPress={handlePickFile} style={composerBtn}>
               <ImagePlus size={17} color={colors.mutedForeground} />
             </Pressable>
             <Pressable hitSlop={8} onPress={() => setImportSheetOpen(true)} style={composerBtn}>
@@ -549,6 +596,9 @@ export function AIAssistant({ onClose }: { onClose?: () => void }) {
       {lightbox && (
         <ImageLightbox images={lightbox.images} initialIndex={lightbox.index} onClose={() => setLightbox(null)} />
       )}
+
+      {/* 非图片附件保存方式选择(保存到设备/系统分享) */}
+      <DownloadModeSheet visible={!!dlTarget} title="保存附件" onMode={runDownload} onClose={() => setDlTarget(null)} />
     </View>
   );
 }

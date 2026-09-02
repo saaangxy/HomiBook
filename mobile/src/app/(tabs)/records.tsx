@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Platform, Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { Alert, FlatList, Platform, Pressable, RefreshControl, View } from 'react-native';
 import { useIsFocused } from 'expo-router';
-import { ArrowUpRight, ArrowDownRight, ArrowLeftRight, SlidersHorizontal, X, Copy, Trash2, Pencil, CopyMinus, FileUp, Download, Save, Share2 } from 'lucide-react-native';
+import { ArrowUpRight, ArrowDownRight, ArrowLeftRight, SlidersHorizontal, X, Copy, Trash2, CopyMinus, FileUp, Download, Save, Share2 } from 'lucide-react-native';
 import { useTheme, alpha, haptics } from '@/theme';
 import { useUIShell, usePageRefresh } from '@/components/chrome/chrome';
 import { useRecords } from '@/stores/records';
@@ -16,6 +16,7 @@ import { FadeInView } from '@/components/FadeInView';
 import { FilterSheet, countActiveFilters, emptyFilters, type RecordFilters } from '@/components/FilterSheet';
 import { DedupSheet } from '@/components/DedupSheet';
 import { ImportSheet } from '@/components/import/ImportSheet';
+import { ConfirmSheet } from '@/components/chrome/ConfirmSheet';
 import { FormSheet } from '@/components/chrome/FormSheet';
 import { exportRecordsCsv, type ExportMode } from '@/services/import';
 import { formatMoney } from '@/lib/format';
@@ -136,9 +137,14 @@ export default function RecordsScreen() {
     cloneRecord(r);
     haptics.success();
   };
-  const onDelete = (r: RecordItem) => {
-    deleteRecord(r.id);
+  // 删除需二次确认(自定义弹窗),确认后真正删除
+  const [confirmRecord, setConfirmRecord] = useState<RecordItem | null>(null);
+  const onDelete = (r: RecordItem) => setConfirmRecord(r);
+  const onConfirmDelete = () => {
+    if (!confirmRecord) return;
+    deleteRecord(confirmRecord.id);
     haptics.warn();
+    setConfirmRecord(null);
   };
 
   // 按当前筛选条件导出 CSV(与 web 一致:筛选即导出范围);方式由导出弹层选择
@@ -290,12 +296,33 @@ export default function RecordsScreen() {
           ))}
         </View>
 
-        <ScrollView
-          contentContainerStyle={{ paddingBottom: 40, flexGrow: 1 }}
-          showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}
-        >
-          {dates.length === 0 ? (
+        {/* 列表虚拟化:按日期组分项,只渲染可视区,页面切换/长列表不再全量挂载拖慢首帧 */}
+        <FlatList
+          data={dates}
+          keyExtractor={(d) => d}
+          renderItem={({ item: d, index }) => (
+            <FadeInView index={index}>
+              <Card className="px-5 py-4 mb-4">
+                <Text variant="muted" style={{ fontSize: 11, letterSpacing: 1, marginBottom: 12 }}>{d}</Text>
+                {groups[d].map((r, i) => (
+                  <View key={r.id}>
+                    <SwipeRow
+                      actions={[
+                        { key: 'clone', label: '克隆', color: colors.transfer, icon: Copy, onPress: () => onClone(r) },
+                        { key: 'del', label: '删除', color: colors.expense, icon: Trash2, onPress: () => onDelete(r) },
+                      ]}
+                    >
+                      <Pressable onPress={() => { haptics.tap(); openRecord(r); }}>
+                        <RecordRow record={r} />
+                      </Pressable>
+                    </SwipeRow>
+                    {i < groups[d].length - 1 && <View style={{ height: 14 }} />}
+                  </View>
+                ))}
+              </Card>
+            </FadeInView>
+          )}
+          ListEmptyComponent={
             <EmptyState
               icon="🧾"
               title={activeCount ? '没有符合条件的流水' : '暂无流水'}
@@ -303,33 +330,24 @@ export default function RecordsScreen() {
               actionLabel={activeCount ? undefined : '记一笔'}
               onAction={activeCount ? undefined : () => openRecord()}
             />
-          ) : (
-            dates.map((d, gi) => (
-              <FadeInView key={d} index={gi}>
-                <Card className="px-5 py-4 mb-4">
-                  <Text variant="muted" style={{ fontSize: 11, letterSpacing: 1, marginBottom: 12 }}>{d}</Text>
-                  {groups[d].map((r, i) => (
-                    <View key={r.id}>
-                      <SwipeRow
-                        actions={[
-                          { key: 'edit', label: '编辑', color: colors.transfer, icon: Pencil, onPress: () => openRecord(r) },
-                          { key: 'clone', label: '克隆', color: colors.mutedForeground, icon: Copy, onPress: () => onClone(r) },
-                          { key: 'del', label: '删除', color: colors.expense, icon: Trash2, onPress: () => onDelete(r) },
-                        ]}
-                      >
-                        <Pressable onPress={() => { haptics.tap(); openRecord(r); }}>
-                          <RecordRow record={r} />
-                        </Pressable>
-                      </SwipeRow>
-                      {i < groups[d].length - 1 && <View style={{ height: 14 }} />}
-                    </View>
-                  ))}
-                </Card>
-              </FadeInView>
-            ))
-          )}
-        </ScrollView>
+          }
+          contentContainerStyle={{ paddingBottom: 40, flexGrow: 1 }}
+          showsVerticalScrollIndicator={false}
+          initialNumToRender={6}
+          maxToRenderPerBatch={6}
+          windowSize={7}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}
+        />
       </View>
+
+      {/* 删除二次确认(自定义弹窗,替代系统 Alert) */}
+      <ConfirmSheet
+        visible={!!confirmRecord}
+        title="删除流水"
+        message="确定删除这笔流水吗?删除后不可恢复。"
+        onConfirm={onConfirmDelete}
+        onClose={() => setConfirmRecord(null)}
+      />
 
       <FilterSheet visible={filterOpen} initial={filters} onApply={setFilters} onClose={() => setFilterOpen(false)} />
       {/* 导出方式选择:保存到设备(SAF,仅 Android)/系统分享 */}

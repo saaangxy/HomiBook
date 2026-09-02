@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, View, useWindowDimensions } from 'react-native';
 import { useIsFocused } from 'expo-router';
-import { ChevronLeft, ChevronRight, CalendarCheck } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight, CalendarCheck, Copy, Trash2 } from 'lucide-react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useTheme, haptics, alpha } from '@/theme';
@@ -9,6 +9,8 @@ import { Screen } from '@/components/Screen';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { RecordRow } from '@/components/RecordRow';
+import { SwipeRow } from '@/components/SwipeRow';
+import { ConfirmSheet } from '@/components/chrome/ConfirmSheet';
 import { FormSheet } from '@/components/chrome/FormSheet';
 import { useUIShell, usePageRefresh } from '@/components/chrome/chrome';
 import { fetchCalendar, fetchRecords, type CalendarDay } from '@/services/records';
@@ -35,8 +37,8 @@ export default function CalendarScreen() {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1); // 1-12
   const [selected, setSelected] = useState(now.getDate());
-  // 分类图标(图标来源复用 records store 的分类)
-  const { categories, refresh } = useRecords();
+  // 分类图标(图标来源复用 records store 的分类);克隆/删除当日流水
+  const { categories, refresh, cloneRecord, deleteRecord } = useRecords();
   const { currentLedger, openRecord } = useUIShell();
   const bookId = currentLedger.id;
   const [ymOpen, setYmOpen] = useState(false);
@@ -70,6 +72,21 @@ export default function CalendarScreen() {
     fetchRecords(bookId, { page: 1, pageSize: 100, dateFrom: date, dateTo: date }).then(setDayList);
   }, [bookId, year, month, selected]);
   usePageRefresh(reloadPage);
+
+  // 当日流水左滑操作:克隆立即生效,删除需二次确认(自定义弹窗);完成后重拉当日/月数据
+  const [confirmRecord, setConfirmRecord] = useState<RecordItem | null>(null);
+  const onCloneRecord = (r: RecordItem) => {
+    cloneRecord(r);
+    haptics.success();
+    reloadPage();
+  };
+  const onConfirmDelete = () => {
+    if (!confirmRecord) return;
+    deleteRecord(confirmRecord.id);
+    haptics.warn();
+    setConfirmRecord(null);
+    reloadPage();
+  };
 
   // 节假日/调休数据(按年拉取,同 web 端 /api/holidays)
   const [holidays, setHolidays] = useState<HolidayItem[]>([]);
@@ -324,14 +341,21 @@ export default function CalendarScreen() {
               ) : (
                 dayRecords.map((r, i) => (
                   <View key={r.id}>
-                    <Pressable
-                      onPress={() => {
-                        haptics.tap();
-                        openRecord(r);
-                      }}
+                    <SwipeRow
+                      actions={[
+                        { key: 'clone', label: '克隆', color: colors.transfer, icon: Copy, onPress: () => onCloneRecord(r) },
+                        { key: 'del', label: '删除', color: colors.expense, icon: Trash2, onPress: () => setConfirmRecord(r) },
+                      ]}
                     >
-                      <RecordRow record={r} showDivider={i < dayRecords.length - 1} />
-                    </Pressable>
+                      <Pressable
+                        onPress={() => {
+                          haptics.tap();
+                          openRecord(r);
+                        }}
+                      >
+                        <RecordRow record={r} showDivider={false} />
+                      </Pressable>
+                    </SwipeRow>
                     {i < dayRecords.length - 1 && <View style={{ height: 14 }} />}
                   </View>
                 ))
@@ -378,6 +402,15 @@ export default function CalendarScreen() {
           </View>
         </View>
       </FormSheet>
+
+      {/* 删除二次确认(自定义弹窗,替代系统 Alert) */}
+      <ConfirmSheet
+        visible={!!confirmRecord}
+        title="删除流水"
+        message="确定删除这笔流水吗?删除后不可恢复。"
+        onConfirm={onConfirmDelete}
+        onClose={() => setConfirmRecord(null)}
+      />
     </Screen>
   );
 }

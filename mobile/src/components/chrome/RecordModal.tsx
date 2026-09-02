@@ -137,32 +137,33 @@ export function RecordModal() {
     closeRecord();
   };
 
-  // 选择并上传流水附件(支持多选,单张失败不阻断其余)
+  // 选择并上传流水附件(DocumentPicker 支持所有文件类型,同 web 端无限制;支持多选,单个失败不阻断其余)
   const handlePickAttachments = async () => {
     try {
-      const { launchImageLibraryAsync, requestMediaLibraryPermissionsAsync } = await import('expo-image-picker');
-      const perm = await requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) { Alert.alert('需要相册权限'); return; }
-      const result = await launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7, allowsMultipleSelection: true, selectionLimit: 9 });
+      const DocumentPicker = await import('expo-document-picker');
+      const result = await DocumentPicker.getDocumentAsync({
+        copyToCacheDirectory: true,
+        multiple: true,
+        type: '*/*',
+      });
       if (result.canceled || !result.assets?.length) return;
       setUploadingAtt(true);
-      try {
-        const uploaded: { id: string; url: string; originalFilename: string }[] = [];
-        for (const asset of result.assets) {
-          const fileName = asset.fileName || `receipt-${Date.now()}.jpg`;
-          try {
-            const up = await uploadRecordAttachment(asset.uri, fileName, asset.mimeType || 'image/jpeg');
-            uploaded.push({ id: up.id, url: up.url || up.fullUrl, originalFilename: up.originalFilename || fileName });
-          } catch (e: any) {
-            Alert.alert('上传失败', `${fileName}: ${e?.message || '未知错误'}`);
-          }
+      const uploaded: { id: string; url: string; originalFilename: string }[] = [];
+      for (const asset of result.assets) {
+        const fileName = asset.name || `attachment-${Date.now()}`;
+        try {
+          // 直接上传选择器返回的文件(File.upload 原生 IO 可读;复制到原名文件会触发权限限制)
+          // 注:后端 originalFilename 取 multipart filename(cache 随机 id + 原扩展名),本次回显用选择器原名
+          const up = await uploadRecordAttachment(asset.uri, fileName, asset.mimeType || 'application/octet-stream');
+          uploaded.push({ id: up.id, url: up.url || up.fullUrl, originalFilename: fileName });
+        } catch (e: any) {
+          Alert.alert('上传失败', `${fileName}: ${e?.message || '未知错误'}`);
         }
-        if (uploaded.length > 0) setFormAttachments((prev) => [...prev, ...uploaded]);
-      } finally {
-        setUploadingAtt(false);
       }
+      if (uploaded.length > 0) setFormAttachments((prev) => [...prev, ...uploaded]);
+      setUploadingAtt(false);
     } catch (e: any) {
-      Alert.alert('选择图片失败', e?.message || '未知错误');
+      Alert.alert('选择文件失败', e?.message || '未知错误');
       setUploadingAtt(false);
     }
   };
