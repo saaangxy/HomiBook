@@ -1,10 +1,14 @@
 import '@/global.css';
+// 全局错误兜底(副作用模块):未处理 rejection / 致命异常的分级提示,须在应用代码前加载
+import '@/lib/global-error';
 import { useState } from 'react';
-import { StyleSheet } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 import { Stack } from 'expo-router/stack';
 import { StatusBar } from 'expo-status-bar';
+import { AlertTriangle, RefreshCw } from 'lucide-react-native';
+import { Text } from '@/components/ui/Text';
 import { useFonts } from 'expo-font';
 import { CrimsonText_400Regular, CrimsonText_600SemiBold, CrimsonText_700Bold } from '@expo-google-fonts/crimson-text';
 import { JetBrainsMono_400Regular, JetBrainsMono_500Medium, JetBrainsMono_700Bold } from '@expo-google-fonts/jetbrains-mono';
@@ -87,3 +91,30 @@ export default function RootLayout() {
     </GestureHandlerRootView>
   );
 }
+
+// ── 路由渲染异常兜底(expo-router 内置机制):页面崩溃时展示重试/重载,替代白屏 ──
+export function ErrorBoundary({ error, retry }: { error: Error; retry: () => void }) {
+  return (
+    <View style={[StyleSheet.absoluteFill, styles.errorBg, { paddingTop: 120 }]}>
+      <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: '#fee2e2', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+        <AlertTriangle size={30} color="#ef4444" />
+      </View>
+      {/* eslint-disable-next-line react/no-unescaped-entities */}
+      <Text style={{ fontSize: 17, fontWeight: '700', color: '#1f2937' }}>页面出现异常</Text>
+      <Text numberOfLines={4} style={{ fontSize: 12, color: '#6b7280', textAlign: 'center', marginTop: 6, lineHeight: 18, paddingHorizontal: 8 }}>
+        {error?.message || '未知错误'}
+      </Text>
+      <Pressable
+        onPress={retry}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 22, paddingHorizontal: 22, height: 44, borderRadius: 12, backgroundColor: '#1f2937' }}
+      >
+        <RefreshCw size={15} color="#fff" />
+        <Text style={{ fontSize: 14, fontWeight: '600', color: '#fff' }}>重试</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  errorBg: { backgroundColor: '#f9fafb', alignItems: 'center' },
+});

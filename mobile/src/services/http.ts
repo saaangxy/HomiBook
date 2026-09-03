@@ -5,6 +5,7 @@ import { File, UploadType } from 'expo-file-system';
 import { requireNativeModule } from 'expo-modules-core';
 import { secureDelete, secureGet, secureSet } from './storage';
 import { showToast } from '@/components/chrome/Toast';
+import { notifyErrorOnce } from '@/lib/global-error';
 
 // HTTP 客户端:baseUrl 注入 + Bearer 凭据(JWT 与 API Key 同通道,后端自动识别)
 // + 10s 超时 + 统一错误解析 + 全局 401 拦截
@@ -130,7 +131,12 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: R
     return (await res.json()) as T;
   } catch (e) {
     if (e instanceof ApiError) throw e;
-    if (e instanceof Error && e.name === 'AbortError') throw new ApiError(0, '连接超时,请检查服务器地址');
+    if (e instanceof Error && e.name === 'AbortError') {
+      // 网络类失败即时轻提示(3s 节流);错误仍向上抛,由调用方处理 loading 状态
+      notifyErrorOnce('网络异常,请检查网络后重试');
+      throw new ApiError(0, '连接超时,请检查服务器地址');
+    }
+    notifyErrorOnce('网络异常,请检查网络后重试');
     throw new ApiError(0, '无法连接服务器,请检查网络与地址');
   } finally {
     clearTimeout(timer);

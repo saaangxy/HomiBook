@@ -255,7 +255,7 @@ function AreaLineChart({ data, labels, color, height = CHART_H }: {
   if (n < 2 || labels.length !== n) {
     return <Text style={{ fontSize: 12, color: colors.mutedForeground, textAlign: 'center', paddingVertical: 40 }}>暂无数据</Text>;
   }
-  const padL = 44, padR = 8, padT = 16, padB = 24;
+  const padL = 44, padR = 8, padT = 16, padB = 44;
   const chartW = CW - padL - padR;
   const chartH = height - padT - padB;
   const maxVal = Math.max(...data, 1);
@@ -272,6 +272,8 @@ function AreaLineChart({ data, labels, color, height = CHART_H }: {
   const len = lineLen();
   const upto = Math.max(2, Math.ceil(n * progress));
   const points = data.map((v, i) => `${x(i)},${y(v)}`).join(' ');
+  // x 轴标签倾斜 45°,可容纳更多节点(约为水平排布的 2 倍)
+  const labelStep = Math.max(1, Math.ceil(n / 16));
 
   return (
     <ChartInteraction
@@ -299,7 +301,16 @@ function AreaLineChart({ data, labels, color, height = CHART_H }: {
         <Path d={`M${x(0)},${padT + chartH} L${data.slice(0, upto).map((v, i) => `${x(i)},${y(v)}`).join(' L')} L${x(upto - 1)},${padT + chartH} Z`} fill={alpha(color, 0.1 * progress)} />
         <Polyline points={points} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeDasharray={`${len * progress} ${len + 10}`} />
         {data.slice(0, upto).map((v, i) => <Circle key={i} cx={x(i)} cy={y(v)} r={3} fill={color} />)}
-        {labels.map((l, i) => <SvgText key={i} x={x(i)} y={height - 4} fontSize={9} fill={colors.mutedForeground} textAnchor="middle">{l}</SvgText>)}
+        {labels.map((l, i) => i % labelStep === 0
+          ? (
+            <SvgText
+              key={i} x={x(i)} y={height - 8} fontSize={9} fill={colors.mutedForeground}
+              textAnchor="end" transform={`rotate(-45, ${x(i)}, ${height - 8})`}
+            >
+              {l}
+            </SvgText>
+          )
+          : null)}
       </Svg>
     </ChartInteraction>
   );
