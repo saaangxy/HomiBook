@@ -15,7 +15,7 @@ import Svg, {
   Line as SvgLine, Polyline, Rect, Circle, Text as SvgText, G, Path, Polygon,
 } from 'react-native-svg';
 import type { SharedValue } from 'react-native-reanimated';
-import { useTheme, alpha, haptics } from '@/theme';
+import { useTheme, alpha, haptics, useChartColors } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { FormSheet } from '@/components/chrome/FormSheet';
 import { DatePicker } from '@/components/ui/DatePicker';
@@ -44,7 +44,6 @@ const SCREEN_W = Dimensions.get('window').width;
 // 外层 ScrollView padding 16×2 = 32; 卡片 padding 14×2 = 28; 总扣减 60
 const CW = SCREEN_W - 60;
 const CHART_H = 200;
-const CHART_COLORS = ['#6366f1', '#f97316', '#ec4899', '#14b8a6', '#ef4444', '#8b5cf6', '#22c55e', '#06b6d4', '#f59e0b', '#3b82f6'];
 
 // ── 金额格式化 ──
 const fmtMoney = (v: number) => v >= 10000 ? `${(v / 10000).toFixed(1)}万` : `${Math.round(v)}`;
@@ -166,6 +165,7 @@ function TripleLineChart({ income, expense, labels, height = CHART_H }: {
   income: number[]; expense: number[]; labels: string[]; height?: number;
 }) {
   const { colors } = useTheme();
+  const cc = useChartColors();
   // 进场/数据切换:实线用 dasharray 从起点画出,结余虚线逐点延伸
   const progress = useJsProgress(`${income.join(',')}|${expense.join(',')}`);
   const n = labels.length;
@@ -212,8 +212,8 @@ function TripleLineChart({ income, expense, labels, height = CHART_H }: {
       renderTip={(idx) => (
         <>
           <Text style={{ fontSize: 9, color: colors.mutedForeground }}>{labels[idx]}</Text>
-          <TipRow color="#22c55e" label="收入" value={`¥${fmtMoney(income[idx])}`} />
-          <TipRow color="#ef4444" label="支出" value={`¥${fmtMoney(expense[idx])}`} />
+          <TipRow color={cc.income} label="收入" value={`¥${fmtMoney(income[idx])}`} />
+          <TipRow color={cc.expense} label="支出" value={`¥${fmtMoney(expense[idx])}`} />
           <TipRow color={colors.primary} label="结余" value={`¥${fmtMoney(net[idx])}`} />
         </>
       )}
@@ -228,14 +228,14 @@ function TripleLineChart({ income, expense, labels, height = CHART_H }: {
             </G>
           );
         })}
-        {line(income, '#22c55e')}
-        {line(expense, '#ef4444')}
+        {line(income, cc.income)}
+        {line(expense, cc.expense)}
         {line(net, colors.primary, true)}
         {labels.map((l, i) => <SvgText key={i} x={x(i)} y={height - 4} fontSize={9} fill={colors.mutedForeground} textAnchor="middle">{l}</SvgText>)}
         {/* 图例 */}
-        <Circle cx={padL + 8} cy={padT - 6} r={3} fill="#22c55e" />
+        <Circle cx={padL + 8} cy={padT - 6} r={3} fill={cc.income} />
         <SvgText x={padL + 14} y={padT - 2} fontSize={9} fill={colors.mutedForeground}>收入</SvgText>
-        <Circle cx={padL + 48} cy={padT - 6} r={3} fill="#ef4444" />
+        <Circle cx={padL + 48} cy={padT - 6} r={3} fill={cc.expense} />
         <SvgText x={padL + 54} y={padT - 2} fontSize={9} fill={colors.mutedForeground}>支出</SvgText>
         <SvgLine x1={padL + 88} y1={padT - 6} x2={padL + 96} y2={padT - 6} stroke={colors.primary} strokeWidth={2} strokeDasharray="2,2" />
         <SvgText x={padL + 100} y={padT - 2} fontSize={9} fill={colors.mutedForeground}>结余</SvgText>
@@ -322,6 +322,7 @@ function MultiLineChart({ series, labels, height = CHART_H }: {
   series: { name: string; data: number[]; color?: string }[]; labels: string[]; height?: number;
 }) {
   const { colors } = useTheme();
+  const cc = useChartColors();
   // 进场/数据切换:线条 dasharray 从起点画出
   const progress = useJsProgress(series.map((s) => s.data.join(',')).join('|'));
   const n = labels.length;
@@ -358,7 +359,7 @@ function MultiLineChart({ series, labels, height = CHART_H }: {
           {series.slice(0, 4).map((s, si) => (
             <TipRow
               key={si}
-              color={s.color ?? CHART_COLORS[si % CHART_COLORS.length]}
+              color={s.color ?? cc.COLORS[si % cc.COLORS.length]}
               label={s.name}
               value={`¥${fmtMoney(s.data[idx] ?? 0)}`}
             />
@@ -381,7 +382,7 @@ function MultiLineChart({ series, labels, height = CHART_H }: {
           return (
             <Polyline
               key={si} points={s.data.map((v, i) => `${x(i)},${y(v)}`).join(' ')} fill="none"
-              stroke={s.color ?? CHART_COLORS[si % CHART_COLORS.length]} strokeWidth={1.5} strokeLinejoin="round"
+              stroke={s.color ?? cc.COLORS[si % cc.COLORS.length]} strokeWidth={1.5} strokeLinejoin="round"
               strokeDasharray={`${len * progress} ${len + 10}`}
             />
           );
@@ -392,7 +393,7 @@ function MultiLineChart({ series, labels, height = CHART_H }: {
         {/* 图例 */}
         {series.slice(0, 4).map((s, i) => (
           <G key={`leg${i}`}>
-            <Circle cx={padL + 8 + i * 64} cy={padT - 6} r={3} fill={s.color ?? CHART_COLORS[i % CHART_COLORS.length]} />
+            <Circle cx={padL + 8 + i * 64} cy={padT - 6} r={3} fill={s.color ?? cc.COLORS[i % cc.COLORS.length]} />
             <SvgText x={padL + 14 + i * 64} y={padT - 2} fontSize={9} fill={colors.mutedForeground}>{s.name.slice(0, 3)}</SvgText>
           </G>
         ))}
@@ -406,6 +407,7 @@ function DualBarChart({ income, expense, labels, height = CHART_H }: {
   income: number[]; expense: number[]; labels: string[]; height?: number;
 }) {
   const { colors } = useTheme();
+  const cc = useChartColors();
   const n = labels.length;
   const padL = 44, padR = 8, padT = 20, padB = 24;
   const chartW = CW - padL - padR;
@@ -426,8 +428,8 @@ function DualBarChart({ income, expense, labels, height = CHART_H }: {
       renderTip={(idx) => (
         <>
           <Text style={{ fontSize: 9, color: colors.mutedForeground }}>{labels[idx]}</Text>
-          <TipRow color="#22c55e" label="收入" value={`¥${fmtMoney(income[idx] ?? 0)}`} />
-          <TipRow color="#ef4444" label="支出" value={`¥${fmtMoney(expense[idx] ?? 0)}`} />
+          <TipRow color={cc.income} label="收入" value={`¥${fmtMoney(income[idx] ?? 0)}`} />
+          <TipRow color={cc.expense} label="支出" value={`¥${fmtMoney(expense[idx] ?? 0)}`} />
         </>
       )}
     >
@@ -445,17 +447,17 @@ function DualBarChart({ income, expense, labels, height = CHART_H }: {
         {income.map((v, i) => {
           const barH = (v / maxVal) * chartH;
           const bx = padL + i * gap + gap * 0.1;
-          return <Rect key={`i${i}`} x={bx} y={padT + chartH - barH} width={barW} height={barH} fill="#22c55e" rx={2} />;
+          return <Rect key={`i${i}`} x={bx} y={padT + chartH - barH} width={barW} height={barH} fill={cc.income} rx={2} />;
         })}
         {expense.map((v, i) => {
           const barH = (v / maxVal) * chartH;
           const bx = padL + i * gap + gap * 0.1 + barW + 2;
-          return <Rect key={`e${i}`} x={bx} y={padT + chartH - barH} width={barW} height={barH} fill="#ef4444" rx={2} />;
+          return <Rect key={`e${i}`} x={bx} y={padT + chartH - barH} width={barW} height={barH} fill={cc.expense} rx={2} />;
         })}
         {labels.map((l, i) => <SvgText key={i} x={padL + i * gap + gap / 2} y={height - 4} fontSize={9} fill={colors.mutedForeground} textAnchor="middle">{l}</SvgText>)}
-        <Rect x={padL + 8} y={padT - 8} width={8} height={8} fill="#22c55e" rx={2} />
+        <Rect x={padL + 8} y={padT - 8} width={8} height={8} fill={cc.income} rx={2} />
         <SvgText x={padL + 20} y={padT} fontSize={9} fill={colors.mutedForeground}>收入</SvgText>
-        <Rect x={padL + 52} y={padT - 8} width={8} height={8} fill="#ef4444" rx={2} />
+        <Rect x={padL + 52} y={padT - 8} width={8} height={8} fill={cc.expense} rx={2} />
         <SvgText x={padL + 64} y={padT} fontSize={9} fill={colors.mutedForeground}>支出</SvgText>
       </Svg>
     </ChartInteraction>
@@ -469,6 +471,7 @@ function StackedBarChart({ periods, categories, selectedIndex, onSelect, height 
   onSelect?: (periodIdx: number, catIdx: number) => void;
 }) {
   const { colors } = useTheme();
+  const cc = useChartColors();
   // 隐藏分类集合(点击图例切换,对齐 web ECharts legend 行为);分类集合变化时重置
   const [hidden, setHidden] = useState<Set<number>>(new Set());
   const catKey = categories.map((c) => c.name).join('|');
@@ -527,7 +530,7 @@ function StackedBarChart({ periods, categories, selectedIndex, onSelect, height 
                     key={c.i}
                     p={progress}
                     x={bx} width={barW} baseY={baseY} y={yTop} barH={barH}
-                    fill={CHART_COLORS[c.i % CHART_COLORS.length]}
+                    fill={cc.COLORS[c.i % cc.COLORS.length]}
                     fillOpacity={selectedIndex && !isSelected ? 0.45 : 1}
                     stroke={isSelected ? colors.foreground : 'none'}
                     strokeWidth={isSelected ? 1.5 : 0}
@@ -548,9 +551,9 @@ function StackedBarChart({ periods, categories, selectedIndex, onSelect, height 
             <Pressable
               key={i}
               onPress={() => toggleHidden(i)}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 3, paddingVertical: 2, paddingHorizontal: 4, borderRadius: 6, opacity: isHidden ? 0.35 : 1, backgroundColor: !isHidden && selectedIndex?.catIdx === i ? alpha(CHART_COLORS[i % CHART_COLORS.length], 0.12) : 'transparent' }}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 3, paddingVertical: 2, paddingHorizontal: 4, borderRadius: 6, opacity: isHidden ? 0.35 : 1, backgroundColor: !isHidden && selectedIndex?.catIdx === i ? alpha(cc.COLORS[i % cc.COLORS.length], 0.12) : 'transparent' }}
             >
-              <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }} />
+              <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: cc.COLORS[i % cc.COLORS.length] }} />
               <Text style={{ fontSize: 10, color: colors.mutedForeground }}>{c.name}</Text>
             </Pressable>
           );
@@ -566,6 +569,7 @@ function DonutSlices({ visible, size, selectedIndex, onSelect }: {
   selectedIndex?: number | null;
   onSelect?: (index: number) => void;
 }) {
+  const cc = useChartColors();
   const { colors } = useTheme();
   const cx = size / 2;
   const cy = size / 2;
@@ -586,7 +590,7 @@ function DonutSlices({ visible, size, selectedIndex, onSelect }: {
     const drawEnd = Math.min(endAngle, -Math.PI / 2 + sweep);
     if (drawEnd <= startAngle) return null;
     const frac = (drawEnd - startAngle) / (Math.PI * 2);
-    const color = d.color ?? CHART_COLORS[d.i % CHART_COLORS.length];
+    const color = d.color ?? cc.COLORS[d.i % cc.COLORS.length];
     const isSelected = selectedIndex === d.i;
     let d2: string;
     if (frac >= 0.9999) {
@@ -630,6 +634,7 @@ function DonutChart({ data, size = 180, selectedIndex, onSelect }: {
   onSelect?: (index: number) => void;
 }) {
   const { colors } = useTheme();
+  const cc = useChartColors();
   // 隐藏项集合(点击图例切换,对齐 web ECharts legend 行为);数据源变化时重置
   const [hidden, setHidden] = useState<Set<number>>(new Set());
   const dataKey = data.map((d) => d.name).join('|');
@@ -653,9 +658,9 @@ function DonutChart({ data, size = 180, selectedIndex, onSelect }: {
             <Pressable
               key={i}
               onPress={() => toggleHidden(i)}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 3, paddingVertical: 2, paddingHorizontal: 4, borderRadius: 6, opacity: isHidden ? 0.35 : 1, backgroundColor: !isHidden && selectedIndex === i ? alpha(CHART_COLORS[i % CHART_COLORS.length], 0.12) : 'transparent' }}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 3, paddingVertical: 2, paddingHorizontal: 4, borderRadius: 6, opacity: isHidden ? 0.35 : 1, backgroundColor: !isHidden && selectedIndex === i ? alpha(cc.COLORS[i % cc.COLORS.length], 0.12) : 'transparent' }}
             >
-              <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: d.color ?? CHART_COLORS[i % CHART_COLORS.length] }} />
+              <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: d.color ?? cc.COLORS[i % cc.COLORS.length] }} />
               <Text style={{ fontSize: 10, color: colors.mutedForeground }}>{d.name}</Text>
               <Text style={{ fontSize: 10, fontWeight: '600', color: colors.foreground }}>{isHidden ? '-' : `${Math.round(d.value / total * 100)}%`}</Text>
             </Pressable>
@@ -759,6 +764,7 @@ function SelectionBlock({ label, amount, color, onCancel, onDetail }: {
 // ════════════════════════════════════════
 export default function StatsPage() {
   const { colors } = useTheme();
+  const cc = useChartColors();
   const { summary, refresh, accounts } = useRecords();
   // 刷新时机:切到本页时(isFocused)重拉各视图数据
   const isFocused = useIsFocused();
@@ -1049,12 +1055,12 @@ export default function StatsPage() {
   const renderOverview = () => (
     <View style={{ gap: 16 }}>
       <View style={{ flexDirection: 'row', gap: 8 }}>
-        <SummaryCard icon={TrendingUp} label="总收入" value={summary.income} color="#22c55e" />
-        <SummaryCard icon={TrendingDown} label="总支出" value={summary.expense} color="#ef4444" />
+        <SummaryCard icon={TrendingUp} label="总收入" value={summary.income} color={cc.income} />
+        <SummaryCard icon={TrendingDown} label="总支出" value={summary.expense} color={cc.expense} />
       </View>
       <View style={{ flexDirection: 'row', gap: 8 }}>
-        <SummaryCard icon={Activity} label="净收入" value={summary.netIncome} color={summary.netIncome >= 0 ? '#22c55e' : '#ef4444'} />
-        <SummaryCard icon={Wallet} label="转账总额" value={summary.transfer} color="#3b82f6" />
+        <SummaryCard icon={Activity} label="净收入" value={summary.netIncome} color={summary.netIncome >= 0 ? cc.income : cc.expense} />
+        <SummaryCard icon={Wallet} label="转账总额" value={summary.transfer} color={cc.transfer} />
       </View>
 
       <ChartCard title="月度收支趋势">
@@ -1212,12 +1218,12 @@ export default function StatsPage() {
         <>
           {/* 汇总卡片(时间段) */}
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            <SummaryCard icon={TrendingUp} label="总收入" value={(rangeSummary ?? summary).income} color="#22c55e" />
-            <SummaryCard icon={TrendingDown} label="总支出" value={(rangeSummary ?? summary).expense} color="#ef4444" />
+            <SummaryCard icon={TrendingUp} label="总收入" value={(rangeSummary ?? summary).income} color={cc.income} />
+            <SummaryCard icon={TrendingDown} label="总支出" value={(rangeSummary ?? summary).expense} color={cc.expense} />
           </View>
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            <SummaryCard icon={Activity} label="净收入" value={(rangeSummary ?? summary).netIncome} color={(rangeSummary ?? summary).netIncome >= 0 ? '#22c55e' : '#ef4444'} />
-            <SummaryCard icon={Wallet} label="转账总额" value={(rangeSummary ?? summary).transfer} color="#3b82f6" />
+            <SummaryCard icon={Activity} label="净收入" value={(rangeSummary ?? summary).netIncome} color={(rangeSummary ?? summary).netIncome >= 0 ? cc.income : cc.expense} />
+            <SummaryCard icon={Wallet} label="转账总额" value={(rangeSummary ?? summary).transfer} color={cc.transfer} />
           </View>
 
           {timeLoading ? (
@@ -1248,9 +1254,9 @@ export default function StatsPage() {
             {/* 类型切换 */}
             <View style={{ flexDirection: 'row', gap: 6, marginBottom: 8 }}>
               {([
-                { key: 'EXPENSE', label: '支出', color: '#ef4444' },
-                { key: 'INCOME', label: '收入', color: '#22c55e' },
-                { key: 'TRANSFER', label: '转账', color: '#3b82f6' },
+                { key: 'EXPENSE', label: '支出', color: cc.expense },
+                { key: 'INCOME', label: '收入', color: cc.income },
+                { key: 'TRANSFER', label: '转账', color: cc.transfer },
               ] as const).map(t => (
                 <Pressable key={t.key} onPress={() => { setAnalysisType(t.key); setPieSelected(null); }} style={{
                   flex: 1, paddingVertical: 7, alignItems: 'center', borderRadius: 8,
@@ -1293,7 +1299,7 @@ export default function StatsPage() {
                     <SelectionBlock
                       label={sel.label}
                       amount={sel.amount}
-                      color={CHART_COLORS[(selIdx >= 0 ? selIdx : 0) % CHART_COLORS.length]}
+                      color={cc.COLORS[(selIdx >= 0 ? selIdx : 0) % cc.COLORS.length]}
                       onCancel={() => setPieSelected(null)}
                       onDetail={() => openPieDetail({ groupBy, item: sel })}
                     />
@@ -1320,7 +1326,7 @@ export default function StatsPage() {
               <SelectionBlock
                 label={`${stacked.periods[barSelected.periodIdx]} · ${stacked.categories[barSelected.catIdx].name}`}
                 amount={stacked.categories[barSelected.catIdx].data[barSelected.periodIdx] ?? 0}
-                color={CHART_COLORS[barSelected.catIdx % CHART_COLORS.length]}
+                color={cc.COLORS[barSelected.catIdx % cc.COLORS.length]}
                 onCancel={() => setBarSelected(null)}
                 onDetail={() => openBarDetail(barSelected)}
               />

@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { Linking, Pressable, View } from 'react-native';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
-import { ChevronRight, CircleUserRound, Brain, ExternalLink, LogOut, Palette, Server, ServerCog, Smartphone, User } from 'lucide-react-native';
-import { useTheme, alpha } from '@/theme';
+import { Brain, ChevronDown, ChevronRight, CircleUserRound, ExternalLink, LogOut, Palette, Server, ServerCog, Smartphone, User } from 'lucide-react-native';
+import { useTheme, alpha, haptics } from '@/theme';
 import { useAuth } from '@/stores/auth';
 import { Screen } from '@/components/Screen';
 import { Card } from '@/components/ui/Card';
@@ -64,6 +64,8 @@ export default function SettingsScreen() {
   const isAdmin = user?.role === 'ADMIN';
   const themeName = themeId === 'system' ? '跟随系统' : palette.name;
   const aboutRows = useAboutRows();
+  // AI 记忆默认折叠收起,点头部展开(展开时才挂载并拉取记忆列表)
+  const [memoryOpen, setMemoryOpen] = useState(false);
 
   return (
     <Screen scroll>
@@ -71,9 +73,9 @@ export default function SettingsScreen() {
       <View key={resolvedId} className="px-5 pt-4">
         <Text style={{ fontSize: 20, fontWeight: '700', marginBottom: 16 }}>设置</Text>
 
-        {/* 用户 */}
+        {/* 用户(点击进入个人信息:昵称/密码修改) */}
         <FadeInView>
-          <Card className="px-5 py-4 mb-4" style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+          <Card className="px-5 py-4 mb-4" style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }} onPress={() => { haptics.tap(); router.push('/profile'); }}>
             <View style={{ width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: alpha(colors.primary, 0.12) }}>
               <CircleUserRound size={28} color={colors.primary} />
             </View>
@@ -105,11 +107,17 @@ export default function SettingsScreen() {
           </Card>
         </FadeInView>
 
-        {/* ══ AI 记忆(所有用户可见,对齐 web 设置页) ══ */}
+        {/* ══ AI 记忆(所有用户可见,对齐 web 设置页;默认折叠) ══ */}
         <GroupTitle title="AI 记忆" />
         <FadeInView index={2}>
           <Card className="px-5 py-4 mb-2">
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+            <Pressable
+              onPress={() => {
+                setMemoryOpen((v) => !v);
+                haptics.tap();
+              }}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}
+            >
               <View style={{ width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: alpha(colors.primary, 0.12) }}>
                 <Brain size={16} color={colors.primary} />
               </View>
@@ -117,8 +125,10 @@ export default function SettingsScreen() {
                 <Text style={{ fontSize: 15, fontWeight: '500' }}>我的 AI 记忆</Text>
                 <Text variant="muted" style={{ fontSize: 11.5, marginTop: 1 }}>AI 自动记录的消费习惯与记账偏好</Text>
               </View>
-            </View>
-            <UserMemorySettings />
+              {memoryOpen ? <ChevronDown size={16} color={colors.mutedForeground} /> : <ChevronRight size={16} color={colors.mutedForeground} />}
+            </Pressable>
+            {/* 展开时才挂载,记忆列表随展开懒加载 */}
+            {memoryOpen && <View style={{ marginTop: 12 }}><UserMemorySettings /></View>}
           </Card>
         </FadeInView>
 

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { Check, CheckCircle2, ChevronDown, FileText } from 'lucide-react-native';
-import { useTheme, alpha, haptics } from '@/theme';
+import { useTheme, alpha, haptics, semanticTypeColor } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { FormSheet } from '@/components/chrome/FormSheet';
 import { ChipSelect } from '@/components/ui/ChipSelect';
@@ -33,7 +33,7 @@ import {
   type ImportSource,
 } from '@homibook/core';
 
-const TYPE_COLOR: Record<string, string> = { EXPENSE: '#ef4444', INCOME: '#22c55e', TRANSFER: '#3b82f6' };
+// 类型语义色随主题(semanticTypeColor);映射未命中等警示色保持固定琥珀
 const TYPE_TO_GROUP: Record<string, string> = {
   EXPENSE: 'transaction_category_expense',
   INCOME: 'transaction_category_income',
@@ -954,7 +954,7 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes }: ImportSheet
                     const key = `${uc.sourceCategory}::${uc.types[0] ?? 'EXPENSE'}`;
                     const cr = categoryRes[key];
                     const typeLabel = IMPORT_TYPE_LABELS[uc.types[0] as keyof typeof IMPORT_TYPE_LABELS] ?? uc.types[0] ?? '支出';
-                    const typeColor = TYPE_COLOR[uc.types[0] ?? ''] ?? colors.mutedForeground;
+                    const typeColor = semanticTypeColor(colors, uc.types[0], colors.mutedForeground);
                     return (
                       <View key={key} style={{ padding: 10, borderRadius: 12, backgroundColor: colors.muted, marginBottom: 8 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>
@@ -1315,7 +1315,7 @@ function RecordPreviewRow({ r }: { r: ParsedImportRow }) {
   const { colors } = useTheme();
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 7, borderTopWidth: 1, borderTopColor: colors.hairline }}>
-      <Text style={{ fontSize: 11, color: TYPE_COLOR[r.type], width: 28 }}>
+      <Text style={{ fontSize: 11, color: semanticTypeColor(colors, r.type), width: 28 }}>
         {IMPORT_TYPE_LABELS[r.type as keyof typeof IMPORT_TYPE_LABELS] ?? r.type}
       </Text>
       <View style={{ flex: 1 }}>
@@ -1330,7 +1330,7 @@ function RecordPreviewRow({ r }: { r: ParsedImportRow }) {
           {r.remark ? ` · ${r.remark}` : ''}
         </Text>
       </View>
-      <Text style={{ fontSize: 12, fontWeight: '600', fontVariant: ['tabular-nums'], color: TYPE_COLOR[r.type] }}>
+      <Text style={{ fontSize: 12, fontWeight: '600', fontVariant: ['tabular-nums'], color: semanticTypeColor(colors, r.type) }}>
         {r.type === 'EXPENSE' ? '-' : r.type === 'INCOME' ? '+' : ''}{r.amount.toFixed(2)}
       </Text>
     </View>

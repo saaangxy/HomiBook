@@ -20,6 +20,7 @@ import { motion } from './motion';
 export { motion, haptics } from './motion';
 export { spacing, pagePadding, typography, cardShadow, sheetShadow, alpha } from './tokens';
 export { ThemeBackdrop, SidebarDecor } from './decor';
+export { useChartColors, semanticTypeColor } from './chart';
 
 const STORAGE_KEY = 'homibook.theme';
 

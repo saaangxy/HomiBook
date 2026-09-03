@@ -456,8 +456,8 @@ export default function RecurringScreen() {
             <>
               {fieldLabel('启用状态')}
               {seg([
-                { key: 'on', label: '启用', hintColor: '#22c55e' },
-                { key: 'off', label: '停用', hintColor: '#6b7280' },
+                { key: 'on', label: '启用', hintColor: colors.income },
+                { key: 'off', label: '停用', hintColor: colors.mutedForeground },
               ], active ? 'on' : 'off', (k) => setActive(k === 'on'))}
             </>
           )}

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, View } from 'react-native';
 import { Check, CopyMinus } from 'lucide-react-native';
-import { useTheme, alpha, haptics } from '@/theme';
+import { useTheme, alpha, haptics, semanticTypeColor } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { FormSheet } from '@/components/chrome/FormSheet';
 import { ChipSelect } from '@/components/ui/ChipSelect';
@@ -20,10 +20,9 @@ import {
   batchDeleteRecordsApi,
   type DuplicateGroup,
 } from '@/services/records';
-import type { RecordItem, RecordType } from '@/types';
+import type { RecordItem } from '@/types';
 
 const TYPE_LABEL = DEDUP_TYPE_LABELS;
-const TYPE_COLOR: Record<RecordType, string> = { EXPENSE: '#ef4444', INCOME: '#22c55e', TRANSFER: '#3b82f6' };
 
 /** 格式化 ISO 日期为 YYYY-MM-DD HH:mm:ss */
 function fmtDate(iso: string): string {
@@ -312,8 +311,8 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
                                 <Text style={{ fontSize: 9, color: colors.income, fontWeight: '700' }}>保留</Text>
                               </View>
                             ) : null}
-                            <Text style={{ fontSize: 13, fontWeight: '700', color: TYPE_COLOR[r.type] }}>{TYPE_LABEL[r.type]}</Text>
-                            <Text style={{ fontSize: 14, fontWeight: '700', fontVariant: ['tabular-nums'], color: TYPE_COLOR[r.type] }}>
+                            <Text style={{ fontSize: 13, fontWeight: '700', color: semanticTypeColor(colors, r.type) }}>{TYPE_LABEL[r.type]}</Text>
+                            <Text style={{ fontSize: 14, fontWeight: '700', fontVariant: ['tabular-nums'], color: semanticTypeColor(colors, r.type) }}>
                               {r.type === 'EXPENSE' ? '-' : r.type === 'INCOME' ? '+' : ''}{r.amount.toFixed(2)}
                             </Text>
                             <Text variant="muted" style={{ fontSize: 10, marginLeft: 'auto' }}>{fmtDate(r.date)}</Text>

@@ -141,6 +141,16 @@ export async function apiUpdateTheme(theme: string): Promise<UserInfo> {
   return http.patch<UserInfo>('/api/auth/me', { theme });
 }
 
+/** 更新昵称(与网页端 PATCH /api/auth/me 同接口) */
+export async function apiUpdateNickname(nickname: string): Promise<UserInfo> {
+  return http.patch<UserInfo>('/api/auth/me', { nickname });
+}
+
+/** 修改密码(需验证当前密码,与网页端 PATCH /api/auth/me/password 同接口) */
+export async function apiChangePassword(currentPassword: string, newPassword: string): Promise<void> {
+  await http.patch<{ success: boolean }>('/api/auth/me/password', { currentPassword, newPassword });
+}
+
 export async function apiLogout(): Promise<void> {
   await clearCredential();
 }

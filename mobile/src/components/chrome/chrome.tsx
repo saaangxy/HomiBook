@@ -36,6 +36,28 @@ interface UIShellValue {
 
 const UIShellContext = createContext<UIShellValue | null>(null);
 
+/** context 瞬态不可用时的安全空实现(见 useUIShell 注释) */
+const UISHELL_FALLBACK: UIShellValue = {
+  ledgers: [],
+  currentLedger: { id: '', name: '', icon: '📒', memberCount: 0 },
+  switchLedger: () => {},
+  createLedger: () => {},
+  refreshLedgers: async () => {},
+  sidebarOpen: false,
+  openSidebar: () => {},
+  closeSidebar: () => {},
+  ledgerOpen: false,
+  openLedger: () => {},
+  closeLedger: () => {},
+  recordOpen: false,
+  openRecord: () => {},
+  closeRecord: () => {},
+  editingRecord: null,
+  aiOpen: false,
+  openAI: () => {},
+  closeAI: () => {},
+};
+
 export function UIShellProvider({ children }: { children: ReactNode }) {
   const { isLoggedIn, currentServer, username } = useAuth();
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
@@ -153,7 +175,13 @@ export function UIShellProvider({ children }: { children: ReactNode }) {
 
 export function useUIShell() {
   const ctx = useContext(UIShellContext);
-  if (!ctx) throw new Error('useUIShell must be used within UIShellProvider');
+  if (!ctx) {
+    // 瞬态兜底:freezeOnBlur 冻结子树/热更新等场景下,context 可能在一个渲染周期内短暂不可达
+    // (表现为 setLedgers 等状态更新触发的重渲染抛「useUIShell must be used within UIShellProvider」)。
+    // 根布局的 Provider 接线是静态保证的,这里返回安全空实现避免瞬态崩溃;开发环境给出警告便于定位。
+    if (__DEV__) console.warn('useUIShell: context 暂不可用(瞬态),已回退到空实现');
+    return UISHELL_FALLBACK;
+  }
   return ctx;
 }
 

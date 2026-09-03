@@ -41,9 +41,11 @@ export function Card({ children, className = '', style, onPress, variant = 'defa
   };
 
   if (onPress) {
+    // 注意:样式与 className 必须落在内层 View(而非 AnimatedPressable)上,
+    // 否则 flexDirection 等布局样式不作用于子内容,导致按压卡与普通卡布局不一致
     return (
-      <AnimatedPressable onPress={onPress} style={[base, style]}>
-        <View className={className}>{children}</View>
+      <AnimatedPressable onPress={onPress}>
+        <View style={[base, style]} className={className}>{children}</View>
       </AnimatedPressable>
     );
   }

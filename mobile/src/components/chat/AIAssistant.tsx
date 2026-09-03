@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Alert, ActivityIndicator, FlatList, Image, Linking, Platform, Pressable, ScrollView, Switch, TextInput, View } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 import { AlertTriangle, Bot, Brain, CheckCircle2, ChevronDown, Copy, ExternalLink, FileSpreadsheet, FileText, FileUp, Globe, HelpCircle, ImagePlus, List, Loader2, MessageSquareMore, Plus, RefreshCw, Search, Send, Sparkles, StopCircle, Trash2, Wrench, X, XCircle } from 'lucide-react-native';
-import { useTheme, alpha, haptics } from '@/theme';
+import { useTheme, alpha, haptics, semanticTypeColor } from '@/theme';
 import { accountLabel, isMultiOwnerAccounts } from '@/lib/account';
 import { Text } from '@/components/ui/Text';
 import { FormSheet } from '@/components/chrome/FormSheet';
@@ -811,7 +811,6 @@ function ImportFileCard({ fileName, source }: { fileName: string; source: string
 // ── 导入预览交互卡(复刻 web ImportPreviewInteractive,UI 适配移动端) ──
 
 const IMPORT_TYPE_LABELS: Record<string, string> = { INCOME: '收入', EXPENSE: '支出', TRANSFER: '转账', UNKNOWN: '未知' };
-const IMPORT_TYPE_COLORS: Record<string, string> = { INCOME: '#22c55e', EXPENSE: '#ef4444', TRANSFER: '#3b82f6' };
 const IMPORT_TYPE_TO_GROUP: Record<string, string> = {
   EXPENSE: 'transaction_category_expense',
   INCOME: 'transaction_category_income',
@@ -1136,8 +1135,8 @@ function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntry; book
             [...new Map(categoryRes.map((cr) => [cr.type, categoryRes.filter((e) => e.type === cr.type)])).entries()].map(([type, items]) => (
               <View key={type} style={{ gap: 6 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <View style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, backgroundColor: alpha(IMPORT_TYPE_COLORS[type] ?? colors.primary, 0.12) }}>
-                    <Text style={{ fontSize: 10, color: IMPORT_TYPE_COLORS[type] ?? colors.primary }}>{IMPORT_TYPE_LABELS[type] ?? type}</Text>
+                  <View style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, backgroundColor: alpha(semanticTypeColor(colors, type, colors.primary), 0.12) }}>
+                    <Text style={{ fontSize: 10, color: semanticTypeColor(colors, type, colors.primary) }}>{IMPORT_TYPE_LABELS[type] ?? type}</Text>
                   </View>
                   <Text style={{ fontSize: 10, color: colors.mutedForeground }}>{items.length} 项</Text>
                 </View>

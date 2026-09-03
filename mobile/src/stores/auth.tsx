@@ -23,6 +23,8 @@ interface AuthStore {
   updateServer: (id: string, name: string, baseUrl: string, cred?: ServerCredential) => Promise<void>;
   removeServer: (id: string) => Promise<void>;
   refreshServers: () => Promise<void>;
+  /** 更新昵称(个人信息页;服务端成功后同步本地 user) */
+  updateNickname: (nickname: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthStore | null>(null);
@@ -185,6 +187,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await refreshServers();
   }, [refreshServers]);
 
+  // 更新昵称:服务端成功后同步本地 user(设置页顶栏/用户卡即时一致)
+  const updateNickname = useCallback(async (nickname: string) => {
+    const me = await authService.apiUpdateNickname(nickname);
+    setUser((prev) => (prev ? { ...prev, nickname: me.nickname } : prev));
+  }, []);
+
   // 注意:useMemo 必须在条件 return 之前调用(不能跳过 hooks)
   const value = useMemo(
     () => ({
@@ -203,8 +211,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       updateServer,
       removeServer,
       refreshServers,
+      updateNickname,
     }),
-    [isLoggedIn, user, currentServer, servers, login, loginWithApiKey, logout, switchServer, quickLogin, addServer, updateServer, removeServer, refreshServers],
+    [isLoggedIn, user, currentServer, servers, login, loginWithApiKey, logout, switchServer, quickLogin, addServer, updateServer, removeServer, refreshServers, updateNickname],
   );
 
   if (!ready) return null;

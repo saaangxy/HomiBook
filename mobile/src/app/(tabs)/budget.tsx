@@ -388,9 +388,9 @@ export default function BudgetPage() {
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <View style={{
             paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6,
-            backgroundColor: b.type === 'FIXED' ? alpha(colors.primary, 0.12) : alpha('#22c55e', 0.12),
+            backgroundColor: b.type === 'FIXED' ? alpha(colors.primary, 0.12) : alpha(colors.income, 0.12),
           }}>
-            <Text style={{ fontSize: 11, fontWeight: '600', color: b.type === 'FIXED' ? colors.primary : '#22c55e' }}>
+            <Text style={{ fontSize: 11, fontWeight: '600', color: b.type === 'FIXED' ? colors.primary : colors.income }}>
               {b.type === 'FIXED' ? '固定' : '自由'}
             </Text>
           </View>
