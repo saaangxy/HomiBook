@@ -1,7 +1,7 @@
 import { View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Check, ChevronLeft, MonitorSmartphone } from 'lucide-react-native';
-import { useTheme, haptics, palettes, paletteOrder, type Palette } from '@/theme';
+import { useTheme, haptics, paletteOrder, getPalette, type Palette } from '@/theme';
 import { Screen } from '@/components/Screen';
 import { Text } from '@/components/ui/Text';
 import { FadeInView } from '@/components/FadeInView';
@@ -133,7 +133,7 @@ export default function ThemeScreen() {
         {/* 主题网格 */}
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 14 }}>
           {paletteOrder.map((id, i) => (
-            <ThemeCard key={id} palette={palettes[id]} index={i + 1} />
+            <ThemeCard key={id} palette={getPalette(id)} index={i + 1} />
           ))}
         </View>
 

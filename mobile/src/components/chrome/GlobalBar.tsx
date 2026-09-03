@@ -7,7 +7,7 @@ import { useUIShell } from './chrome';
 // 顶栏:☰ 菜单(开侧边栏) + 当前账本名(开账本弹窗)
 // 顶部加 insets.top,避免内容延伸到状态栏后(覆盖通知栏)
 export function GlobalBar() {
-  const { colors } = useTheme();
+  const { sidebar } = useTheme();
   const insets = useSafeAreaInsets();
   const { currentLedger, openSidebar, openLedger } = useUIShell();
 
@@ -20,21 +20,22 @@ export function GlobalBar() {
         height: 56 + insets.top,
         paddingHorizontal: 12,
         gap: 10,
-        backgroundColor: colors.card,
+        backgroundColor: sidebar.background,
         borderBottomWidth: 1,
-        borderBottomColor: colors.border,
+        borderBottomColor: sidebar.border,
       }}
     >
       <Pressable
         onPress={openSidebar}
-        style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.muted }}
+        style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: sidebar.accent }}
       >
-        <Text style={{ fontSize: 17, color: colors.foreground, lineHeight: 20 }}>☰</Text>
+        <Text style={{ fontSize: 17, color: sidebar.accentForeground, lineHeight: 20 }}>☰</Text>
       </Pressable>
 
       <Pressable onPress={openLedger} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flex: 1 }}>
-        <Text style={{ fontSize: 16, fontWeight: '600' }}>{currentLedger.name}</Text>
-        <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>▾</Text>
+        {/* 显式着色:Text 默认色为内容区 foreground,深色 chrome 面板上不可读 */}
+        <Text style={{ fontSize: 16, fontWeight: '600', color: sidebar.foreground }}>{currentLedger.name}</Text>
+        <Text style={{ color: sidebar.accentForeground, fontSize: 11 }}>▾</Text>
       </Pressable>
     </View>
   );

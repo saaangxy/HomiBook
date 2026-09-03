@@ -4,7 +4,7 @@ import dayjs from 'dayjs';
 import { Picker } from '@react-native-picker/picker';
 import Animated, { Easing, FadeIn, FadeInDown } from 'react-native-reanimated';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react-native';
-import { useTheme, alpha } from '@/theme';
+import { useTheme, alpha, motion } from '@/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '@/components/ui/Text';
 
@@ -96,7 +96,7 @@ export function DatePicker({ value, onChange }: DatePickerProps) {
             <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={() => setOpen(false)} />
           </Animated.View>
           <Animated.View
-            entering={FadeInDown.duration(260).easing(Easing.out(Easing.cubic))}
+            entering={FadeInDown.duration(motion.duration.base).easing(motion.easing)}
             style={{ backgroundColor: colors.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingTop: 10, paddingBottom: Math.max(insets.bottom + 14, 24) }}
           >
             <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: colors.muted, alignSelf: 'center', marginBottom: 12 }} />

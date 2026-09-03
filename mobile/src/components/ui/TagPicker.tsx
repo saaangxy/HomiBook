@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
-import Animated, { Easing, FadeIn, FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { Plus, X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTheme, sheetShadow, haptics, alpha } from '@/theme';
+import { useTheme, sheetShadow, haptics, alpha, motion } from '@/theme';
 import { Text } from '@/components/ui/Text';
 
 interface TagPickerProps {
@@ -64,7 +64,7 @@ export function TagPicker({ value, onChange, suggestions, placeholder = '选择�
             <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={() => setOpen(false)} />
           </Animated.View>
           <Animated.View
-            entering={FadeInDown.duration(260).easing(Easing.out(Easing.cubic))}
+            entering={FadeInDown.duration(motion.duration.base).easing(motion.easing)}
             style={[
               sheetShadow(palette),
               {

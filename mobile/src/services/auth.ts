@@ -136,6 +136,11 @@ export async function apiMe(): Promise<UserInfo> {
   return http.get<UserInfo>('/api/auth/me');
 }
 
+/** 上传主题偏好到账号(与网页端共享 user.theme;失败由调用方静默处理) */
+export async function apiUpdateTheme(theme: string): Promise<UserInfo> {
+  return http.patch<UserInfo>('/api/auth/me', { theme });
+}
+
 export async function apiLogout(): Promise<void> {
   await clearCredential();
 }

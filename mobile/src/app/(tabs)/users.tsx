@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Pressable, RefreshControl, ScrollView, TextInput, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { Plus, Trash2, KeyRound, UserCheck, Power, PowerOff } from 'lucide-react-native';
 import { useTheme, alpha } from '@/theme';
 import { useAuth } from '@/stores/auth';
@@ -14,9 +15,12 @@ import type { AdminUser, UserRole } from '@/types';
 const ROLE_LABEL: Record<UserRole, string> = { ADMIN: '管理员', USER: '成员' };
 
 // 用户管理:用户卡片(操作按钮直接置于列表卡,对齐账本管理) + 创建 + 改密弹层
+// 权限对齐 web:菜单入口仅 admin 可见,页面级亦有守卫(非 admin 深链进入显示无权访问)
 export default function UsersScreen() {
   const { colors } = useTheme();
-  const { username } = useAuth();
+  const { username, user } = useAuth();
+  const router = useRouter();
+  const isAdmin = user?.role === 'ADMIN';
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
   const [pwdTarget, setPwdTarget] = useState<AdminUser | null>(null); // 改密弹层
@@ -32,19 +36,21 @@ export default function UsersScreen() {
   const [newPwd, setNewPwd] = useState('');
 
   useEffect(() => {
+    if (!isAdmin) return;
     fetchUsers().then(setUsers);
-  }, []);
+  }, [isAdmin]);
 
   const [refreshing, setRefreshing] = useState(false);
   // 下拉刷新:重拉用户列表
   const onRefresh = useCallback(async () => {
+    if (!isAdmin) return;
     setRefreshing(true);
     try {
       await fetchUsers().then(setUsers);
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [isAdmin]);
 
   const resetCreate = () => {
     setNUsername('');
@@ -118,6 +124,21 @@ export default function UsersScreen() {
     fontSize: 15,
   };
   const labelStyle = { fontSize: 12, color: colors.mutedForeground, marginBottom: 6, marginTop: 12 };
+
+  // 页面级权限守卫(所有 hooks 之后,对齐 server-settings 页的兜底):非管理员深链进入显示无权访问
+  if (!isAdmin) {
+    return (
+      <Screen>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+          <Text style={{ fontSize: 15, fontWeight: '600' }}>无权访问</Text>
+          <Text variant="muted" style={{ fontSize: 12.5 }}>该页面仅管理员可见</Text>
+          <Pressable onPress={() => router.back()} style={{ marginTop: 12, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 999, backgroundColor: colors.muted }}>
+            <Text style={{ fontSize: 13 }}>返回</Text>
+          </Pressable>
+        </View>
+      </Screen>
+    );
+  }
 
   return (
     <Screen>

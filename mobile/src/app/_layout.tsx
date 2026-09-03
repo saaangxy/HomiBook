@@ -16,7 +16,7 @@ import { CormorantGaramond_400Regular, CormorantGaramond_500Medium, CormorantGar
 import { Fredoka_400Regular, Fredoka_500Medium, Fredoka_600SemiBold } from '@expo-google-fonts/fredoka';
 import { BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue';
 import { DMSans_400Regular, DMSans_500Medium, DMSans_700Bold } from '@expo-google-fonts/dm-sans';
-import { ThemeProvider, useTheme } from '@/theme';
+import { ThemeProvider, useTheme, getActivePalette, alpha } from '@/theme';
 import { AuthProvider, useAuth } from '@/stores/auth';
 import { RecordsProvider } from '@/stores/records';
 import { UIShellProvider } from '@/components/chrome/chrome';
@@ -93,28 +93,26 @@ export default function RootLayout() {
 }
 
 // ── 路由渲染异常兜底(expo-router 内置机制):页面崩溃时展示重试/重载,替代白屏 ──
+// 不在 ThemeProvider 子树内(路由级渲染),色值经 getActivePalette 快照读取
 export function ErrorBoundary({ error, retry }: { error: Error; retry: () => void }) {
+  const c = getActivePalette().colors;
   return (
-    <View style={[StyleSheet.absoluteFill, styles.errorBg, { paddingTop: 120 }]}>
-      <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: '#fee2e2', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
-        <AlertTriangle size={30} color="#ef4444" />
+    <View style={[StyleSheet.absoluteFill, { backgroundColor: c.background, alignItems: 'center', paddingTop: 120 }]}>
+      <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: alpha(c.destructive, 0.12), alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+        <AlertTriangle size={30} color={c.destructive} />
       </View>
       {/* eslint-disable-next-line react/no-unescaped-entities */}
-      <Text style={{ fontSize: 17, fontWeight: '700', color: '#1f2937' }}>页面出现异常</Text>
-      <Text numberOfLines={4} style={{ fontSize: 12, color: '#6b7280', textAlign: 'center', marginTop: 6, lineHeight: 18, paddingHorizontal: 8 }}>
+      <Text style={{ fontSize: 17, fontWeight: '700', color: c.foreground }}>页面出现异常</Text>
+      <Text numberOfLines={4} style={{ fontSize: 12, color: c.mutedForeground, textAlign: 'center', marginTop: 6, lineHeight: 18, paddingHorizontal: 8 }}>
         {error?.message || '未知错误'}
       </Text>
       <Pressable
         onPress={retry}
-        style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 22, paddingHorizontal: 22, height: 44, borderRadius: 12, backgroundColor: '#1f2937' }}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 22, paddingHorizontal: 22, height: 44, borderRadius: 12, backgroundColor: c.foreground }}
       >
-        <RefreshCw size={15} color="#fff" />
-        <Text style={{ fontSize: 14, fontWeight: '600', color: '#fff' }}>重试</Text>
+        <RefreshCw size={15} color={c.background} />
+        <Text style={{ fontSize: 14, fontWeight: '600', color: c.background }}>重试</Text>
       </Pressable>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  errorBg: { backgroundColor: '#f9fafb', alignItems: 'center' },
-});

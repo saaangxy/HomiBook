@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import * as authService from '@/services/auth';
 import type { ServerCredential } from '@/services/auth';
 import { clearCredential, getCredential, isCredentialExpired, setUnauthorizedHandler } from '@/services/http';
@@ -36,12 +36,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
 
   // 账号主题同步到本机(与网页端共享 user.theme)
+  // lastServerSyncRef:记录最近一次「服务器 → 本机」下行的值,防止上行 effect 把下行误判为本机切换而回传
+  const lastServerSyncRef = useRef<string | null>(null);
   const syncTheme = useCallback(
     (theme: string) => {
-      if ((theme === 'system' || theme in palettes) && theme !== themeId) setThemeId(theme as ThemeId);
+      if ((theme === 'system' || theme in palettes) && theme !== themeId) {
+        lastServerSyncRef.current = theme;
+        setThemeId(theme as ThemeId);
+      }
     },
     [themeId, setThemeId],
   );
+
+  // 本机主题上行:登录态且与账号不一致时上传到服务器(与网页端共享;失败静默,不影响本地)
+  useEffect(() => {
+    if (!isLoggedIn || !user) return;
+    if (themeId === user.theme) return; // 已与服务器一致
+    if (lastServerSyncRef.current === themeId) return; // 本次变化源自服务器下行,防环
+    lastServerSyncRef.current = themeId;
+    authService.apiUpdateTheme(themeId).then((updated) => {
+      setUser((prev) => (prev ? { ...prev, theme: updated.theme } : prev));
+    }).catch(() => {});
+  }, [themeId, isLoggedIn, user]);
 
   const refreshServers = useCallback(async () => {
     const [list, cur] = await Promise.all([authService.fetchServers(), authService.getCurrentServer()]);

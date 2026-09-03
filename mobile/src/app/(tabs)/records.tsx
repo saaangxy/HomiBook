@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, FlatList, Platform, Pressable, RefreshControl, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, Platform, Pressable, RefreshControl, View } from 'react-native';
 import { useIsFocused } from 'expo-router';
 import { ArrowUpRight, ArrowDownRight, ArrowLeftRight, SlidersHorizontal, X, Copy, Trash2, CopyMinus, FileUp, Download, Save, Share2 } from 'lucide-react-native';
 import { useTheme, alpha, haptics } from '@/theme';
 import { useUIShell, usePageRefresh } from '@/components/chrome/chrome';
 import { useRecords } from '@/stores/records';
-import { fetchRecords } from '@/services/records';
+import { fetchRecordsPaged } from '@/services/records';
 import { Screen } from '@/components/Screen';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
@@ -19,20 +19,26 @@ import { ImportSheet } from '@/components/import/ImportSheet';
 import { ConfirmSheet } from '@/components/chrome/ConfirmSheet';
 import { FormSheet } from '@/components/chrome/FormSheet';
 import { exportRecordsCsv, type ExportMode } from '@/services/import';
-import { formatMoney } from '@/lib/format';
+import { formatMoneyShort } from '@/lib/format';
 import type { RecordItem, RecordType } from '@/types';
 
 const TYPE_LABEL: Record<RecordType, string> = { EXPENSE: '支出', INCOME: '收入', TRANSFER: '转账' };
+/** 列表分页大小:一次只加载 20 条,滚动到底自动加载下一页 */
+const PAGE_SIZE = 20;
 
-// 流水管理:4 汇总卡 + 高级筛选抽屉(FilterSheet) + 活跃条件胶囊 + 左滑编辑/克隆/删除 + 下拉刷新
-// 数据全部消费 useRecords() 唯一数据源 —— 记一笔/编辑/删除后全局即时一致
+/** 判断第一页内容是否变化(静默刷新时避免无谓替换打断滚动位置) */
+function samePage(a: RecordItem[], b: RecordItem[]): boolean {
+  return a.length === b.length && a.every((x, i) => x.id === b[i].id);
+}
+
+// 流水管理:单行汇总条 + 高级筛选抽屉(FilterSheet) + 活跃条件胶囊 + 左滑克隆/删除 + 下拉刷新
+// 列表走后端分页(20 条/页);记一笔/编辑保存后由 RecordModal 触发静默重拉第一页
 export default function RecordsScreen() {
   const { colors } = useTheme();
-  const { openRecord } = useUIShell();
-  const { currentLedger } = useUIShell();
+  const { openRecord, currentLedger } = useUIShell();
   const bookId = currentLedger.id;
-  const { records, summary, accounts, categories, refresh, cloneRecord, deleteRecord } = useRecords();
-  // 刷新时机:切到本页时(isFocused)重拉筛选结果
+  const { summary, accounts, categories, refresh, cloneRecord, deleteRecord } = useRecords();
+  // 刷新时机:切到本页时(isFocused)检查筛选签名 —— 条件变化才重新加载,同条件回切走静默刷新(无感知延迟)
   const isFocused = useIsFocused();
   const [filters, setFilters] = useState<RecordFilters>(emptyFilters);
   const [filterOpen, setFilterOpen] = useState(false);
@@ -41,85 +47,87 @@ export default function RecordsScreen() {
   const [exportSheetOpen, setExportSheetOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  // 后端筛选结果(独立请求,不受 store 前 100 条限制)
-  const [list, setList] = useState<RecordItem[]>([]);
 
-  const catLabelMap = useMemo(() => Object.fromEntries(categories.map((x) => [x.code, x.label])), [categories]);
+  // ---- 后端分页列表 ----
+  const [items, setItems] = useState<RecordItem[]>([]);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [loading, setLoading] = useState(true);           // 首屏/筛选切换(阻塞列表)
+  const [loadingMore, setLoadingMore] = useState(false);  // 触底加载下一页(列表底部转圈)
 
-  // 有筛选时按后端条件请求;无筛选时用 store 全量(下拉刷新更新)
-  const hasActiveFilter = countActiveFilters(filters) > 0;
+  // 后端查询条件(多选账户/分类后端仅支持单值,取唯一值传后端,其余客户端补过滤)
+  const query = useMemo(() => {
+    const singleAccount = filters.accountIds.length === 1 ? filters.accountIds[0] : undefined;
+    const singleCategory = filters.categoryCodes.length === 1 ? filters.categoryCodes[0] : undefined;
+    return {
+      types: filters.types,
+      dateFrom: filters.dateFrom || undefined,
+      dateTo: filters.dateTo || undefined,
+      amountFrom: filters.minAmount ? Number(filters.minAmount) : undefined,
+      amountTo: filters.maxAmount ? Number(filters.maxAmount) : undefined,
+      remark: filters.keyword.trim() || undefined,
+      accountId: singleAccount,
+      categoryCode: singleCategory,
+    };
+  }, [filters]);
+
+  const filterKey = useMemo(() => JSON.stringify([bookId, query]), [bookId, query]);
+  const loadedKeyRef = useRef('');
+
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!bookId) return;
+    if (!opts?.silent) setLoading(true);
+    try {
+      const r = await fetchRecordsPaged(bookId, { page: 1, pageSize: PAGE_SIZE, ...query });
+      // 静默刷新时内容未变则不动列表,保住滚动位置
+      setItems((prev) => (opts?.silent && samePage(prev, r.records) ? prev : r.records));
+      setPage(1);
+      setTotalPages(Math.max(1, Math.ceil(r.total / PAGE_SIZE)));
+      loadedKeyRef.current = filterKey;
+    } finally {
+      if (!opts?.silent) setLoading(false);
+    }
+  }, [bookId, query, filterKey]);
+
   useEffect(() => {
     if (!isFocused || !bookId) return;
-    if (!hasActiveFilter) {
-      setList([]);
-      return;
-    }
-    let cancel = false;
-    const singleAccount = filters.accountIds.length === 1 ? filters.accountIds[0] : undefined;
-    const singleCategory = filters.categoryCodes.length === 1 ? filters.categoryCodes[0] : undefined;
-    fetchRecords(bookId, {
-      pageSize: 100,
-      types: filters.types,
-      dateFrom: filters.dateFrom || undefined,
-      dateTo: filters.dateTo || undefined,
-      amountFrom: filters.minAmount ? Number(filters.minAmount) : undefined,
-      amountTo: filters.maxAmount ? Number(filters.maxAmount) : undefined,
-      remark: filters.keyword.trim() || undefined,
-      accountId: singleAccount,
-      categoryCode: singleCategory,
-    }).then((r) => { if (!cancel) setList(r); });
-    return () => { cancel = true; };
-  }, [isFocused, bookId, hasActiveFilter, filters.types, filters.accountIds, filters.categoryCodes, filters.dateFrom, filters.dateTo, filters.minAmount, filters.maxAmount, filters.keyword]);
+    // 筛选/账本变化 → 带全屏 loading 重新加载;同条件回切页面 → 静默刷新第一页(导入/跨页变更也能及时同步)
+    if (loadedKeyRef.current !== filterKey) load();
+    else load({ silent: true });
+  }, [isFocused, bookId, filterKey, load]);
 
-  // 记一笔/编辑保存后由 RecordModal 直接调用:重拉筛选结果(无筛选时列表来自 store,已自动更新)
+  const loadMore = useCallback(() => {
+    if (!bookId || loading || loadingMore || page >= totalPages) return;
+    setLoadingMore(true);
+    fetchRecordsPaged(bookId, { page: page + 1, pageSize: PAGE_SIZE, ...query })
+      .then((r) => {
+        setItems((prev) => [...prev, ...r.records]);
+        setPage((p) => p + 1);
+        setTotalPages(Math.max(1, Math.ceil(r.total / PAGE_SIZE)));
+      })
+      .finally(() => setLoadingMore(false));
+  }, [bookId, loading, loadingMore, page, totalPages, query]);
+
+  // 记一笔/编辑保存后由 RecordModal 直接触发:静默重拉第一页
   const reloadPage = useCallback(() => {
-    if (!bookId || !hasActiveFilter) return;
-    const singleAccount = filters.accountIds.length === 1 ? filters.accountIds[0] : undefined;
-    const singleCategory = filters.categoryCodes.length === 1 ? filters.categoryCodes[0] : undefined;
-    fetchRecords(bookId, {
-      pageSize: 100,
-      types: filters.types,
-      dateFrom: filters.dateFrom || undefined,
-      dateTo: filters.dateTo || undefined,
-      amountFrom: filters.minAmount ? Number(filters.minAmount) : undefined,
-      amountTo: filters.maxAmount ? Number(filters.maxAmount) : undefined,
-      remark: filters.keyword.trim() || undefined,
-      accountId: singleAccount,
-      categoryCode: singleCategory,
-    }).then(setList);
-  }, [bookId, hasActiveFilter, filters.types, filters.accountIds, filters.categoryCodes, filters.dateFrom, filters.dateTo, filters.minAmount, filters.maxAmount, filters.keyword]);
+    load({ silent: true });
+  }, [load]);
   usePageRefresh(reloadPage);
 
   const onRefresh = async () => {
     setRefreshing(true);
     try {
       await refresh();
-      // 有筛选时同步重拉后端筛选结果
-      if (bookId && hasActiveFilter) {
-        const singleAccount = filters.accountIds.length === 1 ? filters.accountIds[0] : undefined;
-        const singleCategory = filters.categoryCodes.length === 1 ? filters.categoryCodes[0] : undefined;
-        await fetchRecords(bookId, {
-          pageSize: 100,
-          types: filters.types,
-          dateFrom: filters.dateFrom || undefined,
-          dateTo: filters.dateTo || undefined,
-          amountFrom: filters.minAmount ? Number(filters.minAmount) : undefined,
-          amountTo: filters.maxAmount ? Number(filters.maxAmount) : undefined,
-          remark: filters.keyword.trim() || undefined,
-          accountId: singleAccount,
-          categoryCode: singleCategory,
-        }).then(setList);
-      }
+      if (bookId) await load({ silent: true });
     } finally {
       setRefreshing(false);
     }
   };
 
-  // 数据源:有筛选 → 后端结果;无筛选 → store 全量
-  const source = hasActiveFilter ? list : records;
-  // 多选账户/分类(后端仅支持单值)在客户端补过滤 + 按日分组(useMemo 避免每次渲染重算)
-  const { filtered, groups, dates } = useMemo(() => {
-    const f = source.filter((r) => {
+  // 多选账户/分类(超过一个时后端不支持)在客户端补过滤 + 按日分组(useMemo 避免每次渲染重算)
+  // 注:多选条件下触底加载的页也可能被客户端过滤,极端情况页内条数会偏少,属既有取舍
+  const { groups, dates } = useMemo(() => {
+    const f = items.filter((r) => {
       if (filters.accountIds.length > 1 && !filters.accountIds.includes(r.accountId)) return false;
       if (filters.categoryCodes.length > 1 && !filters.categoryCodes.includes(r.categoryCode ?? '')) return false;
       return true;
@@ -129,12 +137,15 @@ export default function RecordsScreen() {
       (acc[day] ??= []).push(r);
       return acc;
     }, {});
-    return { filtered: f, groups: g, dates: Object.keys(g).sort((a, b) => (a < b ? 1 : -1)) };
-  }, [source, filters]);
+    return { groups: g, dates: Object.keys(g).sort((a, b) => (a < b ? 1 : -1)) };
+  }, [items, filters]);
   const activeCount = countActiveFilters(filters);
+  const hasActiveFilter = activeCount > 0;
+
+  const catLabelMap = useMemo(() => Object.fromEntries(categories.map((x) => [x.code, x.label])), [categories]);
 
   const onClone = (r: RecordItem) => {
-    cloneRecord(r);
+    cloneRecord(r).then(() => load({ silent: true }));
     haptics.success();
   };
   // 删除需二次确认(自定义弹窗),确认后真正删除
@@ -143,6 +154,8 @@ export default function RecordsScreen() {
   const onConfirmDelete = () => {
     if (!confirmRecord) return;
     deleteRecord(confirmRecord.id);
+    // 本地即时移除(store 刷新由 deleteRecord 内部完成),无需整页重拉
+    setItems((prev) => prev.filter((x) => x.id !== confirmRecord.id));
     haptics.warn();
     setConfirmRecord(null);
   };
@@ -214,22 +227,25 @@ export default function RecordsScreen() {
         {/* 标题栏 */}
         <Text style={{ fontSize: 20, fontWeight: '700', marginBottom: 14 }}>流水管理</Text>
 
-        {/* 汇总卡片 2x2 */}
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 10, marginBottom: 16 }}>
-          {summaryCards.map(({ label, value, icon: Icon, color }, i) => (
-            <FadeInView key={label} index={i} style={{ width: '48%' }}>
-              <View style={{ padding: 14, borderRadius: 18, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}>
-                <View style={{ width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: alpha(color, 0.12) }}>
-                  <Icon size={17} color={color} />
+        {/* 汇总条:四项整合为一行,减少纵向空间占用 */}
+        <FadeInView>
+          <View style={{ flexDirection: 'row', backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 16, marginBottom: 16, overflow: 'hidden' }}>
+            {summaryCards.map(({ label, value, icon: Icon, color }, i) => (
+              <View
+                key={label}
+                style={{ flex: 1, alignItems: 'center', paddingVertical: 12, paddingHorizontal: 4, gap: 5, borderLeftWidth: i > 0 ? 1 : 0, borderLeftColor: colors.hairline }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Icon size={12} color={color} />
+                  <Text variant="muted" style={{ fontSize: 10.5 }}>{label}</Text>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text variant="muted" style={{ fontSize: 11 }}>{label}</Text>
-                  <Text style={{ fontSize: 16, fontWeight: '700', color, fontVariant: ['tabular-nums'], marginTop: 1 }} numberOfLines={1}>{formatMoney(value)}</Text>
-                </View>
+                <Text style={{ fontSize: 14, fontWeight: '700', color, fontVariant: ['tabular-nums'] }} numberOfLines={1} adjustsFontSizeToFit>
+                  {formatMoneyShort(value)}
+                </Text>
               </View>
-            </FadeInView>
-          ))}
-        </View>
+            ))}
+          </View>
+        </FadeInView>
 
         {/* 筛选入口 + 活跃条件胶囊 */}
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingBottom: 12, alignItems: 'center' }}>
@@ -297,47 +313,64 @@ export default function RecordsScreen() {
         </View>
 
         {/* 列表虚拟化:按日期组分项,只渲染可视区,页面切换/长列表不再全量挂载拖慢首帧 */}
-        <FlatList
-          data={dates}
-          keyExtractor={(d) => d}
-          renderItem={({ item: d, index }) => (
-            <FadeInView index={index}>
-              <Card className="px-5 py-4 mb-4">
-                <Text variant="muted" style={{ fontSize: 11, letterSpacing: 1, marginBottom: 12 }}>{d}</Text>
-                {groups[d].map((r, i) => (
-                  <View key={r.id}>
-                    <SwipeRow
-                      actions={[
-                        { key: 'clone', label: '克隆', color: colors.transfer, icon: Copy, onPress: () => onClone(r) },
-                        { key: 'del', label: '删除', color: colors.expense, icon: Trash2, onPress: () => onDelete(r) },
-                      ]}
-                    >
-                      <Pressable onPress={() => { haptics.tap(); openRecord(r); }}>
-                        <RecordRow record={r} />
-                      </Pressable>
-                    </SwipeRow>
-                    {i < groups[d].length - 1 && <View style={{ height: 14 }} />}
-                  </View>
-                ))}
-              </Card>
-            </FadeInView>
-          )}
-          ListEmptyComponent={
-            <EmptyState
-              icon="🧾"
-              title={activeCount ? '没有符合条件的流水' : '暂无流水'}
-              description={activeCount ? '试试调整筛选条件' : '记下第一笔,开始管理家庭财务'}
-              actionLabel={activeCount ? undefined : '记一笔'}
-              onAction={activeCount ? undefined : () => openRecord()}
-            />
-          }
-          contentContainerStyle={{ paddingBottom: 40, flexGrow: 1 }}
-          showsVerticalScrollIndicator={false}
-          initialNumToRender={6}
-          maxToRenderPerBatch={6}
-          windowSize={7}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}
-        />
+        {loading ? (
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        ) : (
+          <FlatList
+            data={dates}
+            keyExtractor={(d) => d}
+            renderItem={({ item: d, index }) => (
+              <FadeInView index={index}>
+                <Card className="px-5 py-4 mb-4">
+                  <Text variant="muted" style={{ fontSize: 11, letterSpacing: 1, marginBottom: 12 }}>{d}</Text>
+                  {groups[d].map((r, i) => (
+                    <View key={r.id}>
+                      <SwipeRow
+                        actions={[
+                          { key: 'clone', label: '克隆', color: colors.transfer, icon: Copy, onPress: () => onClone(r) },
+                          { key: 'del', label: '删除', color: colors.expense, icon: Trash2, onPress: () => onDelete(r) },
+                        ]}
+                      >
+                        <Pressable onPress={() => { haptics.tap(); openRecord(r); }}>
+                          <RecordRow record={r} />
+                        </Pressable>
+                      </SwipeRow>
+                      {i < groups[d].length - 1 && <View style={{ height: 14 }} />}
+                    </View>
+                  ))}
+                </Card>
+              </FadeInView>
+            )}
+            ListEmptyComponent={
+              <EmptyState
+                icon="🧾"
+                title={hasActiveFilter ? '没有符合条件的流水' : '暂无流水'}
+                description={hasActiveFilter ? '试试调整筛选条件' : '记下第一笔,开始管理家庭财务'}
+                actionLabel={hasActiveFilter ? undefined : '记一笔'}
+                onAction={hasActiveFilter ? undefined : () => openRecord()}
+              />
+            }
+            ListFooterComponent={
+              loadingMore ? (
+                <View style={{ paddingVertical: 16, alignItems: 'center' }}>
+                  <ActivityIndicator size="small" color={colors.primary} />
+                </View>
+              ) : items.length > 0 && page >= totalPages ? (
+                <Text variant="muted" style={{ fontSize: 11, textAlign: 'center', paddingVertical: 14 }}>已加载全部</Text>
+              ) : null
+            }
+            onEndReached={loadMore}
+            onEndReachedThreshold={0.4}
+            contentContainerStyle={{ paddingBottom: 40, flexGrow: 1 }}
+            showsVerticalScrollIndicator={false}
+            initialNumToRender={6}
+            maxToRenderPerBatch={6}
+            windowSize={7}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}
+          />
+        )}
       </View>
 
       {/* 删除二次确认(自定义弹窗,替代系统 Alert) */}

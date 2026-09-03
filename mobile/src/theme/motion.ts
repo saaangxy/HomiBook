@@ -17,6 +17,8 @@ export const motion = {
   },
   /** 列表 stagger 参数:每项延迟与上限 */
   stagger: { delay: 40, maxItems: 8, offsetY: 12 },
+  /** 侧边栏开合(纯线性 ease,已验证手感,集中管理) */
+  sidebar: { duration: 280, easing: Easing.out(Easing.ease) },
 } as const;
 
 /** 触觉反馈统一封装 */

@@ -36,6 +36,12 @@ function applyMultiSelect(where: Record<string, unknown>, field: string, value: 
   else if (ids.length > 1) where[field] = { in: ids }
 }
 
+/** 解析日期过滤值:兼容 'YYYY-MM-DD'(当日 23:59:59.999Z 止)与带时间的完整 ISO(原样解析);非法值返回 null 跳过 */
+function parseDateFilter(raw: string, endOfDay: boolean): Date | null {
+  const date = endOfDay && /^\d{4}-\d{2}-\d{2}$/.test(raw) ? new Date(`${raw}T23:59:59.999Z`) : new Date(raw)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
 export function buildRecordWhere(bookId: string, filter: RecordFilter) {
   const where: Record<string, unknown> = { accountBookId: bookId }
 
@@ -46,8 +52,16 @@ export function buildRecordWhere(bookId: string, filter: RecordFilter) {
 
   if (filter.dateFrom || filter.dateTo) {
     where.date = {} as Record<string, unknown>
-    if (filter.dateFrom) (where.date as Record<string, unknown>).gte = new Date(filter.dateFrom)
-    if (filter.dateTo) (where.date as Record<string, unknown>).lte = new Date(filter.dateTo + 'T23:59:59.999Z')
+    if (filter.dateFrom) {
+      const from = parseDateFilter(filter.dateFrom, false)
+      if (from) (where.date as Record<string, unknown>).gte = from
+    }
+    if (filter.dateTo) {
+      // 带时间的值(如移动端 DatePicker 的 'YYYY-MM-DDTHH:mm:ss')原样解析,不再拼接当日止后缀
+      const to = parseDateFilter(filter.dateTo, true)
+      if (to) (where.date as Record<string, unknown>).lte = to
+    }
+    if (Object.keys(where.date as Record<string, unknown>).length === 0) delete where.date
   }
 
   if (filter.payer) where.payer = { contains: filter.payer }

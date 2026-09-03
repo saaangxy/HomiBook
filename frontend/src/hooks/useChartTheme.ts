@@ -16,11 +16,11 @@ const THEME_COLORS: Record<string, string[]> = {
     '#5c8a7a', '#e0b878', '#8b5e4b', '#4a7c8c', '#b84a3c',
   ],
   telegram: [
-    '#3a7a3a', '#5cb85c', '#d94a3a', '#c4a44a', '#1a8a3a',
+    '#3b9b3b', '#5cb85c', '#d94a3a', '#c4a44a', '#1a8a3a',
     '#6b8b5a', '#e0c878', '#4a8a4a', '#f0d060', '#8b7355',
   ],
   botanical: [
-    '#4a5a3a', '#8b5e6b', '#6b7a4a', '#b88595', '#2e3a22',
+    '#3d664e', '#b46478', '#6b7a4a', '#c98a9a', '#2e3a22',
     '#9c8b6e', '#5a7a4a', '#c4b89a', '#7a6a4a', '#5a6a3a',
   ],
   candy: [

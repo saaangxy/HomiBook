@@ -255,7 +255,8 @@ function AreaLineChart({ data, labels, color, height = CHART_H }: {
   if (n < 2 || labels.length !== n) {
     return <Text style={{ fontSize: 12, color: colors.mutedForeground, textAlign: 'center', paddingVertical: 40 }}>暂无数据</Text>;
   }
-  const padL = 44, padR = 8, padT = 16, padB = 44;
+  // padB 需容纳 -45° 倾斜标签的纵向延伸(最长日期约 54px·sin45° ≈ 38px + 锚点下移 12px)
+  const padL = 44, padR = 8, padT = 16, padB = 60;
   const chartW = CW - padL - padR;
   const chartH = height - padT - padB;
   const maxVal = Math.max(...data, 1);
@@ -304,8 +305,8 @@ function AreaLineChart({ data, labels, color, height = CHART_H }: {
         {labels.map((l, i) => i % labelStep === 0
           ? (
             <SvgText
-              key={i} x={x(i)} y={height - 8} fontSize={9} fill={colors.mutedForeground}
-              textAnchor="end" transform={`rotate(-45, ${x(i)}, ${height - 8})`}
+              key={i} x={x(i)} y={height - padB + 12} fontSize={9} fill={colors.mutedForeground}
+              textAnchor="end" transform={`rotate(-45, ${x(i)}, ${height - padB + 12})`}
             >
               {l}
             </SvgText>
@@ -1061,7 +1062,8 @@ export default function StatsPage() {
       </ChartCard>
 
       <ChartCard title="资产净值趋势">
-        <AreaLineChart data={netWorth.values} labels={netWorthLabels} color={colors.primary} />
+        {/* 加高画布:倾斜 x 轴标签需要更大的底部留白 */}
+        <AreaLineChart data={netWorth.values} labels={netWorthLabels} color={colors.primary} height={224} />
       </ChartCard>
 
       <ChartCard title="账户余额变化(近60天)">

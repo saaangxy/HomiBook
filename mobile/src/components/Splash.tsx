@@ -15,9 +15,8 @@ interface SplashProps {
   onDone: () => void;
 }
 
-// 开屏 logo 展示:居中 logo 占位 + 品牌字,带淡入淡出
-// logo 图:assets/images/logo-placeholder.png(空白占位,后续替换为正式 logo)
-const LOGO = require('@/assets/images/logo-placeholder.png');
+// 开屏 logo 展示:居中 logo(金绿)+ 品牌字,带淡入淡出
+const LOGO = require('../../assets/images/logo.png');
 // 总时长:显示 700ms 后淡出 320ms
 const HOLD_MS = 700;
 

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
-import Animated, { Easing, FadeIn, FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTheme, alpha, haptics, sheetShadow } from '@/theme';
+import { useTheme, alpha, haptics, sheetShadow, motion } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { DatePicker } from '@/components/ui/DatePicker';
@@ -128,7 +128,7 @@ export function FilterSheet({ visible, initial, onApply, onClose }: FilterSheetP
           <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={onClose} />
         </Animated.View>
         <Animated.View
-          entering={FadeInDown.duration(260).easing(Easing.out(Easing.cubic))}
+          entering={FadeInDown.duration(motion.duration.base).easing(motion.easing)}
           style={[
             sheetShadow(palette),
             {

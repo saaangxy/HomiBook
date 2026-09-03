@@ -2,7 +2,7 @@ import { type ReactNode } from 'react';
 import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAvoidingView, Platform, RefreshControl, ScrollView } from 'react-native';
-import { useTheme } from '@/theme';
+import { useTheme, ThemeBackdrop } from '@/theme';
 
 interface ScreenProps {
   children: ReactNode;
@@ -18,7 +18,7 @@ interface ScreenProps {
 
 // 主题背景 + 安全区 + 可选滚动/键盘避让 + 可选下拉刷新
 export function Screen({ children, scroll = false, keyboard = false, refreshing, onRefresh }: ScreenProps) {
-  const { colors } = useTheme();
+  const { colors, palette } = useTheme();
   const insets = useSafeAreaInsets();
   const refreshControl =
     scroll && onRefresh ? (
@@ -27,6 +27,8 @@ export function Screen({ children, scroll = false, keyboard = false, refreshing,
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
+      {/* 主题背景纹理(静态装饰,内容之下) */}
+      <ThemeBackdrop palette={palette} />
       {keyboard ? (
         <KeyboardAvoidingView
           style={{ flex: 1 }}

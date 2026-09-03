@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ActivityIndicator, Alert, Dimensions, Image, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
-import Animated, { Easing, FadeIn, SlideInDown } from 'react-native-reanimated';
+import Animated, { FadeIn, SlideInDown } from 'react-native-reanimated';
 import { ImagePlus, X } from 'lucide-react-native';
-import { useTheme, haptics } from '@/theme';
+import { useTheme, haptics, motion } from '@/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
@@ -274,7 +274,7 @@ export function RecordModal() {
         </Animated.View>
 
         <Animated.View
-          entering={SlideInDown.duration(260).easing(Easing.out(Easing.cubic))}
+          entering={SlideInDown.duration(motion.duration.base).easing(motion.easing)}
           style={{ backgroundColor: colors.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingTop: 14, paddingBottom: Math.max(insets.bottom, 18), height: sheetH, overflow: 'hidden' }}
         >
           {/* 弹窗内容容器:占满固定高度,表单滚动、保存按钮常驻底部 */}

@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react';
 import { Linking, Pressable, View } from 'react-native';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
-import { ChevronRight, CircleUserRound, ExternalLink, LogOut, Palette, Server, ServerCog, Smartphone, User } from 'lucide-react-native';
+import { ChevronRight, CircleUserRound, Brain, ExternalLink, LogOut, Palette, Server, ServerCog, Smartphone, User } from 'lucide-react-native';
 import { useTheme, alpha } from '@/theme';
 import { useAuth } from '@/stores/auth';
 import { Screen } from '@/components/Screen';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { FadeInView } from '@/components/FadeInView';
+import { UserMemorySettings } from '@/components/ai/UserMemorySettings';
 import { fetchAppVersion } from '@/services/settings';
 
 // 设置分区标题(App / 服务器)
@@ -57,7 +58,7 @@ function useAboutRows() {
 
 // 设置页(App 本身;服务端管理拆分至 server-settings 页面)
 export default function SettingsScreen() {
-  const { colors, themeId, palette } = useTheme();
+  const { colors, themeId, palette, resolvedId } = useTheme();
   const { user, nickname, username, currentServer, logout } = useAuth();
   const router = useRouter();
   const isAdmin = user?.role === 'ADMIN';
@@ -66,7 +67,8 @@ export default function SettingsScreen() {
 
   return (
     <Screen scroll>
-      <View className="px-5 pt-4">
+      {/* key 绑定解析主题:主题切换时整页重挂载,确保卡片样式必然跟随(规避冻结后样式残留) */}
+      <View key={resolvedId} className="px-5 pt-4">
         <Text style={{ fontSize: 20, fontWeight: '700', marginBottom: 16 }}>设置</Text>
 
         {/* 用户 */}
@@ -103,11 +105,28 @@ export default function SettingsScreen() {
           </Card>
         </FadeInView>
 
+        {/* ══ AI 记忆(所有用户可见,对齐 web 设置页) ══ */}
+        <GroupTitle title="AI 记忆" />
+        <FadeInView index={2}>
+          <Card className="px-5 py-4 mb-2">
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+              <View style={{ width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: alpha(colors.primary, 0.12) }}>
+                <Brain size={16} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 15, fontWeight: '500' }}>我的 AI 记忆</Text>
+                <Text variant="muted" style={{ fontSize: 11.5, marginTop: 1 }}>AI 自动记录的消费习惯与记账偏好</Text>
+              </View>
+            </View>
+            <UserMemorySettings />
+          </Card>
+        </FadeInView>
+
         {/* ══ 服务器(仅管理员:入口跳转独立管理页) ══ */}
         {isAdmin && (
           <>
             <GroupTitle title="服务器" />
-            <FadeInView index={2}>
+            <FadeInView index={3}>
               <Card className="px-0 py-2 mb-2 overflow-hidden">
                 <Row
                   icon={<ServerCog size={16} color={colors.primary} />}
@@ -123,7 +142,7 @@ export default function SettingsScreen() {
 
         {/* ══ 关于 ══ */}
         <GroupTitle title="关于" />
-        <FadeInView index={3}>
+        <FadeInView index={4}>
           <Card className="px-0 py-2 overflow-hidden">
             {aboutRows.map((row, i) => (
               <Row key={row.label} icon={row.icon} label={row.label} right={row.right} onPress={row.onPress} last={i === aboutRows.length - 1} />
@@ -132,7 +151,7 @@ export default function SettingsScreen() {
         </FadeInView>
 
         {/* 退出 */}
-        <FadeInView index={4}>
+        <FadeInView index={5}>
           <Pressable
             onPress={async () => {
               await logout();

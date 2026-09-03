@@ -381,10 +381,10 @@
   background-color: hsl(var(--background));
   background-image:
     /* 地板瓷砖线 */
-    linear-gradient(90deg, hsl(84 5% 18% / 0.5) 1px, transparent 1px),
-    linear-gradient(0deg, hsl(84 5% 18% / 0.5) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(120 10% 16% / 0.5) 1px, transparent 1px),
+    linear-gradient(0deg, hsl(120 10% 16% / 0.5) 1px, transparent 1px),
     /* 中心大张打印纸发光 */
-    radial-gradient(ellipse at 50% 50%, hsl(120 35% 35% / 0.04) 0%, transparent 70%),
+    radial-gradient(ellipse at 50% 50%, hsl(120 45% 42% / 0.05) 0%, transparent 70%),
     /* 噪点纹理 */
     url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
   background-size: 40px 40px, 40px 40px, 100% 100%, 256px 256px;
@@ -393,7 +393,7 @@
 
 /* ===== 主内容区：大张打印纸 ===== */
 [data-theme="telegram"] main {
-  background-color: hsl(42 22% 92%);
+  background-color: hsl(42 25% 93%);
   background-image:
     /* 打印纸横线 */
     repeating-linear-gradient(
@@ -410,13 +410,13 @@
   border-right: 2px solid hsl(120 10% 75% / 0.3);
   box-shadow:
     0 0 60px hsl(120 35% 15% / 0.15),
-    0 0 120px hsl(120 20% 8% / 0.06);
+    0 0 120px hsl(120 15% 6% / 0.08);
 }
 
 
 /* ===== Header：打印纸页眉 ===== */
 [data-theme="telegram"] header {
-  background-color: hsl(42 22% 92%) !important;
+  background-color: hsl(42 25% 93%) !important;
   background-image:
     repeating-linear-gradient(
       0deg,
@@ -442,8 +442,8 @@
       90deg,
       transparent,
       transparent 3px,
-      hsl(42 22% 92%) 3px,
-      hsl(42 22% 92%) 6px
+      hsl(42 25% 93%) 3px,
+      hsl(42 25% 93%) 6px
     );
   /* 锯齿撕边 */
   clip-path: polygon(
@@ -468,11 +468,11 @@
       0deg,
       transparent,
       transparent 2px,
-      hsl(120 20% 12% / 0.3) 2px,
-      hsl(120 20% 12% / 0.3) 4px
+      hsl(120 16% 9% / 0.32) 2px,
+      hsl(120 16% 9% / 0.32) 4px
     ),
     /* 屏幕荧光 */
-    radial-gradient(ellipse at 50% 40%, hsl(120 35% 25% / 0.08) 0%, transparent 60%),
+    radial-gradient(ellipse at 50% 40%, hsl(120 45% 30% / 0.10) 0%, transparent 60%),
     /* 金属外壳纹理 */
     url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='metal'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.2' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23metal)' opacity='0.04'/%3E%3C/svg%3E");
   border-right: 1px solid hsl(120 15% 15%) !important;
@@ -483,6 +483,8 @@
 
 [data-theme="telegram"] [data-sidebar="sidebar"] * {
   color: hsl(var(--sidebar-foreground)) !important;
+  /* CRT 荧光字符辉光 */
+  text-shadow: 0 0 6px hsl(120 45% 55% / 0.3);
 }
 
 /* 侧边栏顶部：绿色显示器图标 + 脉冲状态灯 */
@@ -508,7 +510,7 @@
 [data-theme="telegram"] [data-sidebar="sidebar"] a[class*="flex"]::before {
   content: '>';
   margin-right: 6px;
-  color: hsl(120 50% 45%);
+  color: hsl(120 55% 50%);
   font-weight: 700;
 }
 
@@ -516,8 +518,8 @@
 [data-theme="telegram"] .card:not([role="dialog"]),
 [data-theme="telegram"] [class*="rounded-xl"][class*="border"]:not([role="dialog"]) {
   border-radius: 0 !important;
-  border: 1.5px solid hsl(120 10% 72% / 0.6) !important;
-  background-color: hsl(42 22% 94%) !important;
+  border: 1.5px solid hsl(120 10% 72% / 0.7) !important;
+  background-color: hsl(42 25% 95%) !important;
   background-image:
     /* 票据横线 */
     repeating-linear-gradient(
@@ -528,7 +530,7 @@
       hsl(120 10% 80% / 0.2) 28px
     );
   box-shadow:
-    2px 2px 0 hsl(120 10% 60% / 0.15),
+    3px 3px 0 hsl(120 10% 60% / 0.18),
     0 4px 12px hsl(120 10% 10% / 0.08) !important;
   color: hsl(120 9% 14%) !important;
 }
@@ -562,8 +564,8 @@
 [data-theme="telegram"] button:not([role="menuitem"]):not([role="checkbox"]):not([role="radio"]):not([class*="ghost"]):not([data-toggle-btn]) {
   border-radius: 0 !important;
   border: 2px solid hsl(120 10% 60%) !important;
-  background: hsl(84 5% 20%) !important;
-  color: hsl(120 30% 72%) !important;
+  background: hsl(120 8% 16%) !important;
+  color: hsl(120 45% 78%) !important;
   transition: all 0.15s steps(2);
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -571,22 +573,22 @@
 }
 
 [data-theme="telegram"] button:not([role="menuitem"]):not([role="checkbox"]):not([role="radio"]):not([class*="ghost"]):not([data-toggle-btn]):hover {
-  background: hsl(120 35% 20%) !important;
-  border-color: hsl(120 35% 45%) !important;
+  background: hsl(120 28% 16%) !important;
+  border-color: hsl(120 45% 48%) !important;
   color: hsl(120 75% 85%) !important;
-  box-shadow: 0 0 12px hsl(120 35% 35% / 0.3);
+  box-shadow: 0 0 12px hsl(120 45% 42% / 0.35);
 }
 
 /* Primary 按钮：绿屏强调 */
 [data-theme="telegram"] button[class*="primary"]:not([role="menuitem"]),
 [data-theme="telegram"] [class*="bg-primary"] button {
   background: hsl(120 30% 18%) !important;
-  border-color: hsl(120 35% 40%) !important;
+  border-color: hsl(120 45% 42%) !important;
   color: hsl(120 75% 85%) !important;
 }
 
 [data-theme="telegram"] button[class*="destructive"] {
-  border-color: hsl(6 68% 48%) !important;
+  border-color: hsl(6 70% 50%) !important;
   color: hsl(6 70% 75%) !important;
 }
 
@@ -617,23 +619,23 @@
 [data-theme="telegram"] input:focus:not([type="checkbox"]):not([type="radio"]),
 [data-theme="telegram"] textarea:focus,
 [data-theme="telegram"] select:focus {
-  border-bottom-color: hsl(120 35% 40%) !important;
+  border-bottom-color: hsl(120 45% 42%) !important;
   outline: none !important;
-  box-shadow: 0 2px 8px hsl(120 35% 35% / 0.15);
+  box-shadow: 0 2px 8px hsl(120 45% 42% / 0.18);
 }
 
 /* 侧边栏中的输入框 */
 [data-theme="telegram"] [data-sidebar="sidebar"] input,
 [data-theme="telegram"] [data-sidebar="sidebar"] textarea {
-  border-bottom-color: hsl(120 20% 25%) !important;
-  color: hsl(120 35% 55%) !important;
+  border-bottom-color: hsl(120 25% 28%) !important;
+  color: hsl(120 42% 62%) !important;
 }
 
 /* ===== 复选/单选：方括号标记 [✓] ===== */
 [data-theme="telegram"] [role="checkbox"][data-state="checked"]::before {
   content: '[✓]';
   font-family: "JetBrains Mono", monospace;
-  color: hsl(120 35% 42%);
+  color: hsl(120 45% 45%);
 }
 
 /* ===== Badge：日期戳/标签风格 ===== */
@@ -658,22 +660,22 @@
 
 /* ===== 选中文字：绿屏反色 ===== */
 [data-theme="telegram"] ::selection {
-  background: hsl(120 35% 35% / 0.25);
+  background: hsl(120 45% 42% / 0.3);
   color: hsl(120 9% 14%);
 }
 
 /* ===== 滚动条：绿屏CRT风格 ===== */
 [data-theme="telegram"] ::-webkit-scrollbar-thumb {
-  background: hsl(120 20% 25%);
+  background: hsl(120 25% 28%);
   border-radius: 0;
 }
 
 [data-theme="telegram"] ::-webkit-scrollbar-thumb:hover {
-  background: hsl(120 30% 35%);
+  background: hsl(120 40% 38%);
 }
 
 [data-theme="telegram"] * {
-  scrollbar-color: hsl(120 20% 25%) transparent;
+  scrollbar-color: hsl(120 25% 28%) transparent;
 }
 
 /* ===== 下拉菜单/弹出层：打印纸票据 ===== */
@@ -683,7 +685,7 @@
 [data-theme="telegram"] [role="listbox"] {
   border-radius: 0 !important;
   border: 2px solid hsl(120 15% 45%) !important;
-  background-color: hsl(42 22% 93%) !important;
+  background-color: hsl(42 25% 93%) !important;
   background-image:
     repeating-linear-gradient(
       0deg,
@@ -729,7 +731,7 @@
 }
 
 [data-theme="telegram"] [role="tab"][data-state="active"] {
-  border-bottom-color: hsl(120 35% 35%) !important;
+  border-bottom-color: hsl(120 45% 42%) !important;
 }
 
 /* ===== 提示框：终端绿屏Tooltip ===== */
@@ -737,11 +739,11 @@
 [data-theme="telegram"] [data-slot="tooltip-content"] {
   border-radius: 0 !important;
   border: 1px solid hsl(120 35% 30%) !important;
-  background: hsl(120 10% 8%) !important;
-  color: hsl(120 35% 55%) !important;
+  background: hsl(120 12% 7%) !important;
+  color: hsl(120 42% 62%) !important;
   font-family: "JetBrains Mono", monospace;
   font-size: 12px;
-  box-shadow: 0 0 16px hsl(120 35% 15% / 0.5);
+  box-shadow: 0 0 16px hsl(120 40% 12% / 0.5);
 }
 
 /* ===== 登录页：暗室中的打印纸 ===== */
@@ -756,7 +758,7 @@
 [data-theme="telegram"] .login-card {
   border-radius: 0 !important;
   border: 2px solid hsl(120 15% 45%) !important;
-  background-color: hsl(42 22% 93%) !important;
+  background-color: hsl(42 25% 93%) !important;
   background-image:
     repeating-linear-gradient(
       0deg,
@@ -780,23 +782,23 @@
 
 /* 登录页覆盖层：终端绿屏 */
 [data-theme="telegram"] .login-overlay {
-  background-color: hsl(120 10% 6%) !important;
+  background-color: hsl(120 12% 5%) !important;
   background-image:
     repeating-linear-gradient(
       0deg,
       transparent,
       transparent 2px,
-      hsl(120 20% 10% / 0.4) 2px,
-      hsl(120 20% 10% / 0.4) 4px
+      hsl(120 16% 8% / 0.4) 2px,
+      hsl(120 16% 8% / 0.4) 4px
     ),
-    radial-gradient(ellipse at 50% 45%, hsl(120 35% 15% / 0.08) 0%, transparent 60%);
+    radial-gradient(ellipse at 50% 45%, hsl(120 45% 20% / 0.10) 0%, transparent 60%);
 }
 
 [data-theme="telegram"] .login-overlay-container::after {
   content: '';
   position: absolute;
   inset: 12px;
-  border: 1px dashed hsl(120 30% 25% / 0.3);
+  border: 1px dashed hsl(120 35% 28% / 0.35);
   pointer-events: none;
   z-index: 101;
 }
@@ -810,16 +812,16 @@
 [data-theme="telegram"] .login-overlay-panel button {
   font-family: "JetBrains Mono", monospace !important;
   border-radius: 0 !important;
-  border: 2px solid hsl(120 30% 25%) !important;
-  background: hsl(120 10% 12%) !important;
-  color: hsl(120 35% 55%) !important;
+  border: 2px solid hsl(120 35% 28%) !important;
+  background: hsl(120 10% 10%) !important;
+  color: hsl(120 42% 62%) !important;
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
 
 [data-theme="telegram"] .login-overlay-panel button:hover {
-  border-color: hsl(120 35% 40%) !important;
-  box-shadow: 0 0 16px hsl(120 35% 25% / 0.4);
+  border-color: hsl(120 45% 42%) !important;
+  box-shadow: 0 0 16px hsl(120 45% 30% / 0.4);
 }
 
 /* ---- 植物记账簿·种子纸：老木桌 + 种子纸信封 + 橄榄绿 + 干花标本 ---- */
@@ -835,7 +837,7 @@
   font-family: "Cormorant Garamond", "Noto Serif SC", "STSong", serif;
   font-weight: 600;
   font-style: italic;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.6px;
 }
 
 /* ===== 老木桌背景 + 木纹 + 柔光 + 噪点 ===== */
@@ -851,9 +853,9 @@
       hsl(38 19% 60% / 0.05) 7px
     ),
     /* 干花柔光 */
-    radial-gradient(ellipse at 25% 30%, hsl(345 19% 46% / 0.06) 0%, transparent 55%),
+    radial-gradient(ellipse at 25% 30%, hsl(345 35% 55% / 0.07) 0%, transparent 55%),
     /* 橄榄绿柔光 */
-    radial-gradient(ellipse at 70% 65%, hsl(90 22% 29% / 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 70% 65%, hsl(95 25% 32% / 0.06) 0%, transparent 50%),
     /* 老旧纸张噪点 */
     url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='btable'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23btable)' opacity='0.04'/%3E%3C/svg%3E");
   background-attachment: fixed;
@@ -866,7 +868,7 @@
   top: 8%;
   right: 8%;
   font-size: 60px;
-  color: hsl(345 19% 46%);
+  color: hsl(345 35% 55%);
   opacity: 0.1;
   pointer-events: none;
   z-index: 0;
@@ -879,7 +881,7 @@
   bottom: 10%;
   left: 6%;
   font-size: 50px;
-  color: hsl(90 22% 29%);
+  color: hsl(95 25% 32%);
   opacity: 0.09;
   pointer-events: none;
   z-index: 0;
@@ -895,17 +897,17 @@
 
 /* ===== 主内容区：种子纸页 ===== */
 [data-theme="botanical"] main {
-  background-color: hsl(44 48% 94%);
+  background-color: hsl(45 55% 97%);
   background-image:
     /* 种子颗粒 */
-    radial-gradient(circle at 15% 30%, hsl(345 19% 46% / 0.06) 0.6px, transparent 0.6px),
-    radial-gradient(circle at 28% 55%, hsl(90 22% 29% / 0.05) 0.7px, transparent 0.7px),
+    radial-gradient(circle at 15% 30%, hsl(345 35% 55% / 0.07) 0.6px, transparent 0.6px),
+    radial-gradient(circle at 28% 55%, hsl(95 25% 32% / 0.05) 0.7px, transparent 0.7px),
     radial-gradient(circle at 45% 22%, hsl(38 19% 52% / 0.06) 0.5px, transparent 0.5px),
-    radial-gradient(circle at 62% 48%, hsl(345 19% 46% / 0.04) 0.8px, transparent 0.8px),
-    radial-gradient(circle at 78% 32%, hsl(90 22% 29% / 0.05) 0.6px, transparent 0.6px),
+    radial-gradient(circle at 62% 48%, hsl(345 35% 55% / 0.05) 0.8px, transparent 0.8px),
+    radial-gradient(circle at 78% 32%, hsl(95 25% 32% / 0.05) 0.6px, transparent 0.6px),
     radial-gradient(circle at 85% 65%, hsl(38 19% 52% / 0.05) 0.5px, transparent 0.5px),
-    radial-gradient(circle at 22% 72%, hsl(345 19% 46% / 0.04) 0.7px, transparent 0.7px),
-    radial-gradient(circle at 55% 78%, hsl(90 22% 29% / 0.03) 0.6px, transparent 0.6px),
+    radial-gradient(circle at 22% 72%, hsl(345 35% 55% / 0.05) 0.7px, transparent 0.7px),
+    radial-gradient(circle at 55% 78%, hsl(95 25% 32% / 0.03) 0.6px, transparent 0.6px),
     /* 纸张纤维 */
     repeating-linear-gradient(
       0deg,
@@ -916,23 +918,23 @@
     ),
     /* 纸面噪点 */
     url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='seedpp'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23seedpp)' opacity='0.03'/%3E%3C/svg%3E");
-  color: hsl(36 29% 13%);
-  border-left: 1px solid hsl(38 18% 72% / 0.25);
-  border-right: 1px solid hsl(38 18% 72% / 0.25);
+  color: hsl(90 15% 18%);
+  border-left: 1px solid hsl(40 20% 76% / 0.3);
+  border-right: 1px solid hsl(40 20% 76% / 0.3);
   box-shadow:
-    inset 4px 0 12px hsl(36 20% 15% / 0.03),
-    inset -4px 0 12px hsl(36 20% 15% / 0.03);
+    inset 4px 0 12px hsl(90 15% 18% / 0.03),
+    inset -4px 0 12px hsl(90 15% 18% / 0.03);
 }
 
 /* ===== Header：标本册页眉 + 麻绳捆扎 ===== */
 [data-theme="botanical"] header {
-  background-color: hsl(44 48% 95%) !important;
+  background-color: hsl(45 55% 97%) !important;
   background-image:
     radial-gradient(circle at 8% 50%, hsl(38 19% 55% / 0.06) 0.5px, transparent 0.5px),
     radial-gradient(circle at 92% 50%, hsl(38 19% 55% / 0.05) 0.7px, transparent 0.7px);
   border-bottom: 2px dashed hsl(38 19% 65% / 0.35) !important;
-  color: hsl(36 29% 13%) !important;
-  box-shadow: 0 2px 8px hsl(36 20% 15% / 0.03);
+  color: hsl(90 15% 18%) !important;
+  box-shadow: 0 2px 8px hsl(90 15% 18% / 0.03);
 }
 
 /* 页眉麻绳装饰 */
@@ -963,15 +965,15 @@
       0deg,
       transparent,
       transparent 3px,
-      hsl(90 20% 22% / 0.12) 3px,
-      hsl(90 20% 22% / 0.12) 5px
+      hsl(95 20% 26% / 0.12) 3px,
+      hsl(95 20% 26% / 0.12) 5px
     ),
     /* 微弱纹理 */
     url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='kfiber'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23kfiber)' opacity='0.05'/%3E%3C/svg%3E");
-  border-right: 1.5px solid hsl(90 20% 20%) !important;
+  border-right: 1.5px solid hsl(95 16% 20%) !important;
   box-shadow:
-    inset -1px 0 0 hsl(90 22% 28% / 0.15),
-    3px 0 16px hsl(90 20% 10% / 0.25) !important;
+    inset -1px 0 0 hsl(95 22% 32% / 0.15),
+    3px 0 16px hsl(95 18% 10% / 0.25) !important;
   /* 信封舌片底部三角缺口 */
   clip-path: polygon(0% 0%, 100% 0%, 100% 95%, 50% 100%, 0% 95%);
   padding-bottom: 20px;
@@ -1020,19 +1022,19 @@
   font-size: 6px;
   margin-left: auto;
   opacity: 0.5;
-  color: hsl(345 19% 46%);
+  color: hsl(345 35% 55%);
 }
 
 /* ===== 卡片：种子纸信封内页 + 标本标签 ===== */
 [data-theme="botanical"] .card:not([role="dialog"]),
 [data-theme="botanical"] [class*="rounded-xl"][class*="border"]:not([role="dialog"]) {
-  border: 1.5px solid hsl(38 18% 68% / 0.4) !important;
+  border: 1.5px solid hsl(40 20% 76% / 0.45) !important;
   border-radius: 2px !important;
-  background-color: hsl(44 48% 95%) !important;
+  background-color: hsl(45 55% 97%) !important;
   background-image:
     /* 种子颗粒 */
-    radial-gradient(circle at 15% 20%, hsl(345 19% 46% / 0.05) 0.5px, transparent 0.5px),
-    radial-gradient(circle at 80% 45%, hsl(90 22% 29% / 0.04) 0.7px, transparent 0.7px),
+    radial-gradient(circle at 15% 20%, hsl(345 35% 55% / 0.06) 0.5px, transparent 0.5px),
+    radial-gradient(circle at 80% 45%, hsl(95 25% 32% / 0.04) 0.7px, transparent 0.7px),
     radial-gradient(circle at 35% 80%, hsl(38 19% 52% / 0.05) 0.4px, transparent 0.4px),
     /* 纸张纤维 */
     repeating-linear-gradient(
@@ -1043,9 +1045,9 @@
       hsl(38 19% 65% / 0.03) 13px
     );
   box-shadow:
-    3px 3px 0 hsl(36 25% 20% / 0.06),
-    0 6px 16px hsl(36 25% 15% / 0.06) !important;
-  color: hsl(36 29% 13%) !important;
+    3px 3px 0 hsl(90 15% 18% / 0.08),
+    0 6px 16px hsl(90 15% 18% / 0.07) !important;
+  color: hsl(90 15% 18%) !important;
 }
 
 /* 卡片装订孔 */
@@ -1072,40 +1074,40 @@
 [data-theme="botanical"] [role="alertdialog"],
 [data-theme="botanical"] [role="menu"],
 [data-theme="botanical"] [role="listbox"] {
-  border: 1.5px solid hsl(38 18% 65% / 0.4) !important;
+  border: 1.5px solid hsl(40 20% 76% / 0.45) !important;
   border-radius: 2px !important;
-  background-color: hsl(44 48% 95%) !important;
+  background-color: hsl(45 55% 97%) !important;
   background-image:
-    radial-gradient(circle at 20% 30%, hsl(345 19% 46% / 0.04) 0.5px, transparent 0.5px),
-    radial-gradient(circle at 75% 65%, hsl(90 22% 29% / 0.03) 0.6px, transparent 0.6px);
+    radial-gradient(circle at 20% 30%, hsl(345 35% 55% / 0.05) 0.5px, transparent 0.5px),
+    radial-gradient(circle at 75% 65%, hsl(95 25% 32% / 0.03) 0.6px, transparent 0.6px);
   box-shadow:
-    3px 3px 0 hsl(36 25% 20% / 0.05),
-    0 12px 32px hsl(36 25% 15% / 0.12) !important;
-  color: hsl(36 29% 13%) !important;
+    3px 3px 0 hsl(90 15% 18% / 0.07),
+    0 12px 32px hsl(90 15% 18% / 0.12) !important;
+  color: hsl(90 15% 18%) !important;
 }
 
 /* ===== 按钮：橄榄绿 3D 偏移阴影（参照按钮风格） ===== */
 [data-theme="botanical"] button:not([role="menuitem"]):not([role="checkbox"]):not([role="radio"]):not([class*="ghost"]):not([data-toggle-btn]) {
   border-radius: 2px !important;
   border: none !important;
-  background: hsl(90 22% 29%) !important;
-  color: hsl(44 48% 94%) !important;
+  background: hsl(95 25% 32%) !important;
+  color: hsl(45 55% 97%) !important;
   font-family: "Cormorant Garamond", "Noto Serif SC", serif !important;
   font-style: italic;
   font-weight: 600;
   letter-spacing: 1.5px;
-  box-shadow: 3px 3px 0 hsl(90 26% 18% / 0.3) !important;
+  box-shadow: 3px 3px 0 hsl(95 22% 22% / 0.3) !important;
   transition: all 0.2s ease;
 }
 
 [data-theme="botanical"] button:not([role="menuitem"]):not([role="checkbox"]):not([role="radio"]):not([class*="ghost"]):not([data-toggle-btn]):hover {
-  background: hsl(90 26% 18%) !important;
-  box-shadow: 5px 5px 0 hsl(90 26% 14% / 0.35) !important;
+  background: hsl(95 22% 24%) !important;
+  box-shadow: 5px 5px 0 hsl(95 22% 22% / 0.35) !important;
   transform: translate(-1px, -1px);
 }
 
 [data-theme="botanical"] button:not([role="menuitem"]):not([role="checkbox"]):not([role="radio"]):not([class*="ghost"]):not([data-toggle-btn]):active {
-  box-shadow: 1px 1px 0 hsl(90 26% 18% / 0.3) !important;
+  box-shadow: 1px 1px 0 hsl(95 22% 22% / 0.3) !important;
   transform: translate(2px, 2px);
   transition: all 0.05s ease;
 }
@@ -1113,16 +1115,16 @@
 /* Primary 按钮 */
 [data-theme="botanical"] button[class*="primary"]:not([role="menuitem"]),
 [data-theme="botanical"] [class*="bg-primary"] button {
-  background: hsl(90 22% 29%) !important;
-  box-shadow: 3px 3px 0 hsl(90 26% 18% / 0.3) !important;
-  color: hsl(44 48% 94%) !important;
+  background: hsl(95 25% 32%) !important;
+  box-shadow: 3px 3px 0 hsl(95 22% 22% / 0.3) !important;
+  color: hsl(45 55% 97%) !important;
 }
 
 /* Ghost 按钮 */
 [data-theme="botanical"] button[class*="ghost"] {
   background: transparent !important;
   box-shadow: none !important;
-  color: hsl(345 19% 46%) !important;
+  color: hsl(345 35% 55%) !important;
   font-style: italic;
   border-bottom: 1px dashed transparent !important;
   border-radius: 0 !important;
@@ -1132,7 +1134,7 @@
 [data-theme="botanical"] button[class*="ghost"]:hover {
   background: transparent !important;
   box-shadow: none !important;
-  border-bottom-color: hsl(345 19% 46%) !important;
+  border-bottom-color: hsl(345 35% 55%) !important;
   transform: none !important;
 }
 
@@ -1141,29 +1143,29 @@
 [data-theme="botanical"] textarea,
 [data-theme="botanical"] select {
   border-radius: 2px !important;
-  border: 1.5px solid hsl(38 18% 72% / 0.3) !important;
+  border: 1.5px solid hsl(40 20% 76% / 0.35) !important;
   background: hsl(40 86% 97%) !important;
   font-family: "Noto Serif SC", "STSong", serif !important;
-  color: hsl(36 29% 13%) !important;
+  color: hsl(90 15% 18%) !important;
   padding-left: 10px !important;
-  box-shadow: inset 0 1px 3px hsl(36 25% 15% / 0.04);
+  box-shadow: inset 0 1px 3px hsl(90 15% 18% / 0.04);
   transition: all 0.25s ease;
 }
 
 [data-theme="botanical"] input:focus:not([type="checkbox"]):not([type="radio"]),
 [data-theme="botanical"] textarea:focus,
 [data-theme="botanical"] select:focus {
-  border-color: hsl(90 22% 29%) !important;
+  border-color: hsl(95 25% 32%) !important;
   outline: none !important;
-  box-shadow: inset 0 1px 3px hsl(36 25% 15% / 0.04), 0 0 0 5px hsl(90 22% 29% / 0.1);
+  box-shadow: inset 0 1px 3px hsl(90 15% 18% / 0.04), 0 0 0 5px hsl(95 25% 32% / 0.1);
 }
 
 /* 侧边栏中的输入 */
 [data-theme="botanical"] [data-sidebar="sidebar"] input,
 [data-theme="botanical"] [data-sidebar="sidebar"] textarea {
-  border-color: hsl(90 16% 28% / 0.3) !important;
-  background: hsl(90 22% 18%) !important;
-  color: hsl(44 48% 90%) !important;
+  border-color: hsl(95 16% 30% / 0.3) !important;
+  background: hsl(95 22% 20%) !important;
+  color: hsl(45 50% 92%) !important;
 }
 
 /* ===== Badge：标本标签 ===== */
@@ -1171,7 +1173,7 @@
   border-radius: 2px !important;
   border: 1px solid hsl(38 19% 65% / 0.3) !important;
   background: hsl(40 86% 97% / 0.5) !important;
-  color: hsl(90 22% 29%) !important;
+  color: hsl(95 25% 32%) !important;
   font-family: "Cormorant Garamond", "Noto Serif SC", serif;
   font-style: italic;
   font-size: 11px;
@@ -1187,8 +1189,8 @@
 
 /* ===== 选中文字：橄榄绿 ===== */
 [data-theme="botanical"] ::selection {
-  background: hsl(90 22% 29% / 0.2);
-  color: hsl(36 29% 13%);
+  background: hsl(95 25% 32% / 0.2);
+  color: hsl(90 15% 18%);
 }
 
 /* ===== 滚动条：橄榄绿 ===== */
@@ -1197,7 +1199,7 @@
   border-radius: 2px;
 }
 [data-theme="botanical"] ::-webkit-scrollbar-thumb:hover {
-  background: hsl(90 18% 38%);
+  background: hsl(95 22% 40%);
 }
 [data-theme="botanical"] * {
   scrollbar-color: hsl(38 19% 60%) transparent;
@@ -1209,7 +1211,7 @@
   font-family: "Cormorant Garamond", "Noto Serif SC", serif;
   font-style: italic;
   font-weight: 600;
-  color: hsl(36 29% 13%);
+  color: hsl(90 15% 18%);
 }
 
 [data-theme="botanical"] td {
@@ -1218,8 +1220,8 @@
 
 /* ===== 标签页 ===== */
 [data-theme="botanical"] [role="tab"][data-state="active"] {
-  border-bottom: 2px solid hsl(90 22% 29%) !important;
-  color: hsl(90 22% 29%);
+  border-bottom: 2px solid hsl(95 25% 32%) !important;
+  color: hsl(95 25% 32%);
   font-family: "Cormorant Garamond", "Noto Serif SC", serif;
   font-style: italic;
 }
@@ -1254,31 +1256,31 @@
 /* ===== 卡片悬停：种子纸浮起 ===== */
 [data-theme="botanical"] .card:not([role="dialog"]):hover {
   box-shadow:
-    3px 6px 0 hsl(36 25% 20% / 0.06),
-    0 10px 24px hsl(36 25% 15% / 0.1) !important;
+    3px 6px 0 hsl(90 15% 18% / 0.08),
+    0 10px 24px hsl(90 15% 18% / 0.1) !important;
   transition: box-shadow 0.3s ease;
 }
 
 /* ===== 登录页：老木桌 + 种子纸信封 ===== */
 [data-theme="botanical"] .login-bg-orb {
-  background-color: hsl(345 19% 46% / 0.05) !important;
+  background-color: hsl(345 35% 55% / 0.06) !important;
 }
 
 [data-theme="botanical"] .login-bg-accent {
-  background: radial-gradient(ellipse, hsl(90 22% 29% / 0.04) 0%, transparent 70%) !important;
+  background: radial-gradient(ellipse, hsl(95 25% 32% / 0.04) 0%, transparent 70%) !important;
 }
 
 [data-theme="botanical"] .login-card {
-  border: 1.5px solid hsl(38 18% 68% / 0.4) !important;
+  border: 1.5px solid hsl(40 20% 76% / 0.45) !important;
   border-radius: 2px !important;
-  background-color: hsl(44 48% 95%) !important;
+  background-color: hsl(45 55% 97%) !important;
   background-image:
-    radial-gradient(circle at 15% 30%, hsl(345 19% 46% / 0.04) 0.5px, transparent 0.5px),
-    radial-gradient(circle at 80% 60%, hsl(90 22% 29% / 0.03) 0.7px, transparent 0.7px);
+    radial-gradient(circle at 15% 30%, hsl(345 35% 55% / 0.05) 0.5px, transparent 0.5px),
+    radial-gradient(circle at 80% 60%, hsl(95 25% 32% / 0.03) 0.7px, transparent 0.7px);
   box-shadow:
-    4px 4px 0 hsl(36 25% 20% / 0.06),
-    0 20px 50px hsl(36 25% 15% / 0.1) !important;
-  color: hsl(36 29% 13%) !important;
+    4px 4px 0 hsl(90 15% 18% / 0.08),
+    0 20px 50px hsl(90 15% 18% / 0.1) !important;
+  color: hsl(90 15% 18%) !important;
 }
 
 [data-theme="botanical"] .login-card h1,
@@ -1289,15 +1291,15 @@
 }
 
 [data-theme="botanical"] .login-overlay {
-  background-color: hsl(90 26% 18%) !important;
+  background-color: hsl(95 22% 24%) !important;
   background-image:
     /* 纤维纹理 */
     repeating-linear-gradient(
       0deg,
       transparent,
       transparent 3px,
-      hsl(90 20% 22% / 0.12) 3px,
-      hsl(90 20% 22% / 0.12) 5px
+      hsl(95 20% 26% / 0.12) 3px,
+      hsl(95 20% 26% / 0.12) 5px
     ),
     /* 噪点 */
     url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='lover'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23lover)' opacity='0.05'/%3E%3C/svg%3E");
@@ -1325,14 +1327,14 @@
   letter-spacing: 1.5px;
   border-radius: 2px !important;
   border: none !important;
-  background: hsl(90 22% 29%) !important;
-  color: hsl(44 48% 94%) !important;
-  box-shadow: 3px 3px 0 hsl(90 26% 18% / 0.3) !important;
+  background: hsl(95 25% 32%) !important;
+  color: hsl(45 55% 97%) !important;
+  box-shadow: 3px 3px 0 hsl(95 22% 22% / 0.3) !important;
 }
 
 [data-theme="botanical"] .login-overlay-panel button:hover {
-  background: hsl(90 26% 18%) !important;
-  box-shadow: 5px 5px 0 hsl(90 26% 14% / 0.4) !important;
+  background: hsl(95 22% 24%) !important;
+  box-shadow: 5px 5px 0 hsl(95 20% 16% / 0.4) !important;
   transform: translate(-1px, -1px);
 }
 

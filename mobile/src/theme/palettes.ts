@@ -53,8 +53,42 @@ export interface ThemeFonts {
 /** 卡片质感策略 */
 export interface ThemeCardStyle {
   borderWidth: number;
-  /** soft=柔和投影 tinted=彩色投影 none=无阴影(配合实线边框) */
-  shadow: 'soft' | 'tinted' | 'none';
+  /** soft=柔和投影 tinted=彩色投影 none=无阴影(配合实线边框) hard=硬偏移影(方角复古主题) */
+  shadow: 'soft' | 'tinted' | 'none' | 'hard';
+}
+
+/** 侧边栏专属色组(对齐 web 端 --sidebar-* 变量,让特色主题的 chrome 与内容区拉开层次) */
+export interface ThemeSidebarColors {
+  background: string;        // web --sidebar-background
+  foreground: string;        // web --sidebar-foreground
+  primary: string;           // 激活项/Logo → web --sidebar-primary
+  primaryForeground: string; // web --sidebar-primary-foreground
+  accent: string;            // 用户卡/次级面 → web --sidebar-accent
+  accentForeground: string;  // web --sidebar-accent-foreground
+  border: string;            // web --sidebar-border
+}
+
+/** 记一笔 FAB 主题样式(按主题差异化按钮形态) */
+export interface ThemeFab {
+  /** 是否叠加品牌渐变(false 用纯 primary 底色) */
+  gradient: boolean;
+  borderWidth: number;
+  /** 边框色;null = 底栏色(sidebar.background),形成嵌入底栏的开口 */
+  borderColor: string | null;
+  /** glow=品牌色光晕投影 hard=硬偏移影 */
+  shadow: 'glow' | 'hard';
+  /** 主题专属图片(如糖果铺的糖果罐);设置后优先于渐变/纯色渲染,且不再叠加 Plus 图标 */
+  image?: number;
+  /** 图片模式下的按钮底色(浅色图片需要衬托时用);缺省透明 */
+  backgroundColor?: string;
+}
+
+/** 主题装饰声明(数据层,渲染见 decor.tsx) */
+export interface ThemeDecor {
+  /** 页面背景纹理类型 */
+  backdrop: 'none' | 'ledger' | 'scanlines' | 'fiber' | 'grid';
+  /** 抽屉遮罩 rgb 三元组(如 '0,0,0') */
+  scrim: string;
 }
 
 export interface Palette {
@@ -66,6 +100,12 @@ export interface Palette {
   radius: ThemeRadius;
   fonts: ThemeFonts;
   cardStyle: ThemeCardStyle;
+  /** 侧边栏专属色组;未声明的主题由 getPalette 派生回退值(与卡片同面) */
+  sidebar?: ThemeSidebarColors;
+  /** 记一笔 FAB 样式;未声明的主题由 getPalette 派生回退值(渐变 pill) */
+  fab?: ThemeFab;
+  /** 装饰声明 */
+  decor: ThemeDecor;
 }
 
 const hsl = (h: number, s: number, l: number) => `hsl(${h}, ${s}%, ${l}%)`;
@@ -103,6 +143,7 @@ const light: Palette = {
   radius: { card: 20, input: 14, button: 999, sheet: 24 },
   fonts: {},
   cardStyle: { borderWidth: 1, shadow: 'soft' },
+  decor: { backdrop: 'none', scrim: '0,0,0' },
 };
 
 // ==================== 深色(系统默认) ====================
@@ -138,6 +179,7 @@ const dark: Palette = {
   radius: { card: 20, input: 14, button: 999, sheet: 24 },
   fonts: {},
   cardStyle: { borderWidth: 1, shadow: 'soft' },
+  decor: { backdrop: 'none', scrim: '0,0,0' },
 };
 
 // ==================== 手工杂货铺 ====================
@@ -179,93 +221,132 @@ const craft: Palette = {
     numeric: 'CrimsonText_600SemiBold',
   },
   cardStyle: { borderWidth: 1.5, shadow: 'soft' },
+  // 蓝墨水布面侧边栏(对齐 web craft --sidebar-*),与牛皮纸内容区拉开层次
+  sidebar: {
+    background: hsl(212, 25, 26),
+    foreground: hsl(42, 28, 90),
+    primary: hsl(15, 55, 48),
+    primaryForeground: hsl(42, 35, 96),
+    accent: hsl(212, 20, 30),
+    accentForeground: hsl(42, 28, 90),
+    border: hsl(212, 18, 20),
+  },
+  // 赭石渐变 + 米白票据描边
+  fab: { gradient: true, borderWidth: 2, borderColor: hsl(42, 35, 96), shadow: 'glow' },
+  decor: { backdrop: 'ledger', scrim: '0,0,0' },
 };
 
 // ==================== 旧式电报机 ====================
-// 绿屏显示器 + 等宽字;移动端 card 用深面板(网页端浅纸卡在此不可读),
-// 近无圆角 + 发光边框模拟 CRT;金额等宽是主题本色
+// CRT 绿屏终端:色相归一到 120,底色更深、荧光更亮,层次拉开(侧边栏比内容区再深一档);
+// 方角 + 硬偏移影 + 扫描线纹理;金额等宽是主题本色
 const telegram: Palette = {
   id: 'telegram',
   name: '旧式电报机',
-  description: '绿屏显示器、点阵打印纸、等宽字体',
+  description: 'CRT 绿屏终端、荧光字符、点阵打印纸',
   mode: 'dark',
   colors: {
-    background: hsl(84, 5, 14),
-    card: hsl(84, 5, 18),
-    elevated: hsl(84, 5, 22),
-    foreground: hsl(120, 30, 72),
-    muted: hsl(84, 5, 18),
-    mutedForeground: hsl(120, 18, 50),
-    border: hsl(120, 10, 30),
-    hairline: hsl(120, 10, 22),
-    primary: hsl(120, 35, 35),
-    primaryForeground: hsl(120, 30, 90),
-    secondary: hsl(84, 5, 22),
-    secondaryForeground: hsl(120, 30, 72),
-    accent: hsl(6, 68, 54),
+    background: hsl(120, 12, 8),
+    card: hsl(120, 10, 14),
+    elevated: hsl(120, 10, 18),
+    foreground: hsl(120, 45, 78),
+    muted: hsl(120, 8, 14),
+    mutedForeground: hsl(120, 25, 58),
+    border: hsl(120, 15, 32),
+    hairline: hsl(120, 12, 22),
+    primary: hsl(120, 45, 42),
+    primaryForeground: hsl(120, 45, 92),
+    secondary: hsl(120, 8, 16),
+    secondaryForeground: hsl(120, 45, 78),
+    accent: hsl(6, 70, 56),
     accentForeground: hsl(0, 0, 95),
-    destructive: hsl(6, 68, 48),
-    ring: hsl(120, 35, 35),
-    income: hsl(120, 40, 50),
-    expense: hsl(6, 68, 54),
-    transfer: hsl(190, 60, 50),
+    destructive: hsl(6, 70, 50),
+    ring: hsl(120, 45, 45),
+    income: hsl(120, 55, 55),
+    expense: hsl(6, 70, 56),
+    transfer: hsl(190, 65, 55),
     white: '#ffffff',
-    chart: [hsl(120, 40, 50), hsl(120, 35, 35), hsl(190, 60, 50), hsl(60, 50, 50), hsl(6, 68, 54), hsl(120, 18, 50)],
-    gradient: [hsl(120, 40, 40), hsl(120, 35, 35), hsl(120, 32, 27)],
+    chart: [hsl(120, 55, 55), hsl(120, 45, 42), hsl(190, 65, 55), hsl(60, 55, 55), hsl(6, 70, 56), hsl(120, 25, 50)],
+    gradient: [hsl(120, 45, 36), hsl(120, 42, 28), hsl(120, 38, 20)],
   },
-  radius: { card: 8, input: 6, button: 8, sheet: 12 },
+  radius: { card: 4, input: 2, button: 2, sheet: 8 },
   fonts: {
     regular: 'JetBrainsMono_400Regular',
     medium: 'JetBrainsMono_500Medium',
     bold: 'JetBrainsMono_700Bold',
     numeric: 'JetBrainsMono_400Regular',
   },
-  cardStyle: { borderWidth: 1, shadow: 'none' },
+  cardStyle: { borderWidth: 1.5, shadow: 'hard' },
+  sidebar: {
+    background: hsl(120, 14, 6),
+    foreground: hsl(120, 42, 62),
+    primary: hsl(120, 45, 48),
+    primaryForeground: hsl(120, 45, 92),
+    accent: hsl(120, 14, 12),
+    accentForeground: hsl(120, 42, 62),
+    border: hsl(120, 14, 16),
+  },
+  // CRT 荧光按键:纯色底 + 荧光绿描边 + 硬偏移影
+  fab: { gradient: false, borderWidth: 2, borderColor: hsl(120, 45, 60), shadow: 'hard' },
+  decor: { backdrop: 'scanlines', scrim: '0,0,0' },
 };
 
 // ==================== 植物记账簿 ====================
-// 种子纸 + 橄榄绿 + 衬线;大圆角 + 柔和扩散阴影
+// 明亮奶油纸 + 橄榄绿墨色 + 干花粉点缀;方直信封感(圆角收敛) + 硬偏移影;
+// 深橄榄侧边栏比内容区深一档,清新不暗沉
 const botanical: Palette = {
   id: 'botanical',
   name: '植物记账簿',
-  description: '种子纸信封、橄榄绿、干花标本',
+  description: '奶油纸信封、橄榄绿、干花标本',
   mode: 'light',
   colors: {
-    background: hsl(42, 25, 86),
-    card: hsl(44, 48, 94),
-    elevated: hsl(42, 17, 80),
-    foreground: hsl(36, 29, 13),
-    muted: hsl(42, 12, 78),
-    mutedForeground: hsl(37, 17, 54),
-    border: hsl(38, 18, 68),
-    hairline: hsl(42, 17, 80),
-    primary: hsl(90, 22, 29),
-    primaryForeground: hsl(44, 48, 95),
-    secondary: hsl(42, 17, 80),
-    secondaryForeground: hsl(36, 29, 13),
-    accent: hsl(345, 19, 46),
-    accentForeground: hsl(44, 48, 95),
-    destructive: hsl(0, 43, 48),
-    ring: hsl(90, 22, 29),
-    income: hsl(100, 30, 34),
-    expense: hsl(0, 43, 48),
-    transfer: hsl(210, 25, 40),
+    background: hsl(45, 40, 92),
+    card: hsl(45, 55, 97),
+    elevated: hsl(45, 30, 88),
+    foreground: hsl(90, 15, 18),
+    muted: hsl(45, 25, 88),
+    mutedForeground: hsl(90, 10, 42),
+    border: hsl(40, 20, 76),
+    hairline: hsl(45, 25, 88),
+    primary: hsl(95, 25, 32),
+    primaryForeground: hsl(45, 55, 96),
+    secondary: hsl(45, 30, 88),
+    secondaryForeground: hsl(90, 15, 18),
+    accent: hsl(345, 35, 55),
+    accentForeground: hsl(45, 55, 96),
+    destructive: hsl(0, 45, 50),
+    ring: hsl(95, 25, 32),
+    income: hsl(110, 32, 38),
+    expense: hsl(0, 45, 50),
+    transfer: hsl(200, 30, 45),
     white: '#ffffff',
-    chart: [hsl(90, 22, 29), hsl(100, 30, 34), hsl(345, 19, 46), hsl(42, 40, 45), hsl(210, 25, 40), hsl(37, 17, 54)],
-    gradient: [hsl(90, 26, 36), hsl(90, 22, 29), hsl(90, 20, 22)],
+    chart: [hsl(95, 25, 32), hsl(110, 32, 38), hsl(345, 35, 55), hsl(42, 40, 45), hsl(200, 30, 45), hsl(90, 10, 42)],
+    gradient: [hsl(95, 28, 40), hsl(95, 25, 32), hsl(95, 22, 24)],
   },
-  radius: { card: 24, input: 16, button: 999, sheet: 28 },
+  radius: { card: 8, input: 8, button: 8, sheet: 16 },
   fonts: {
     regular: 'CormorantGaramond_400Regular',
     medium: 'CormorantGaramond_500Medium',
     bold: 'CormorantGaramond_600SemiBold',
     numeric: 'CormorantGaramond_500Medium',
   },
-  cardStyle: { borderWidth: 1, shadow: 'soft' },
+  cardStyle: { borderWidth: 1, shadow: 'hard' },
+  sidebar: {
+    background: hsl(95, 22, 22),
+    foreground: hsl(45, 50, 92),
+    primary: hsl(95, 28, 45),
+    primaryForeground: hsl(45, 55, 96),
+    accent: hsl(95, 18, 28),
+    accentForeground: hsl(45, 50, 92),
+    border: hsl(95, 16, 30),
+  },
+  // 橄榄渐变 + 奶油描边 + 墨色硬偏移影(方角由 radius.button 驱动)
+  fab: { gradient: true, borderWidth: 1.5, borderColor: hsl(45, 55, 96), shadow: 'hard' },
+  decor: { backdrop: 'fiber', scrim: '0,0,0' },
 };
 
 // ==================== 糖果铺 ====================
 // 奶油底 + 草莓粉 + 圆体;大圆角 + 淡彩阴影
+// FAB 使用糖果罐图片(logo/糖果罐.png → assets/images/fab-candy.png)
 const candy: Palette = {
   id: 'candy',
   name: '糖果铺',
@@ -303,6 +384,9 @@ const candy: Palette = {
     numeric: 'Fredoka_500Medium',
   },
   cardStyle: { borderWidth: 1, shadow: 'tinted' },
+  // 糖果罐图片按钮:白底圆 + 草莓粉描边衬托浅色罐身(渲染时隐藏 Plus 图标)
+  fab: { gradient: false, borderWidth: 3, borderColor: hsl(0, 77, 74), shadow: 'glow', image: require('../../assets/images/fab-candy.png'), backgroundColor: hsl(0, 0, 100) },
+  decor: { backdrop: 'none', scrim: '0,0,0' },
 };
 
 // ==================== 原色构成(蒙德里安) ====================
@@ -345,6 +429,19 @@ const mondrian: Palette = {
     numeric: 'DMSans_700Bold',
   },
   cardStyle: { borderWidth: 2, shadow: 'none' },
+  // 纯白面板 + 黑线(对齐 web mondrian --sidebar-*),面板右缘 3px 黑边由 border 承担
+  sidebar: {
+    background: hsl(0, 0, 100),
+    foreground: hsl(0, 0, 10),
+    primary: hsl(355, 78, 56),
+    primaryForeground: hsl(0, 0, 100),
+    accent: hsl(0, 0, 92),
+    accentForeground: hsl(0, 0, 10),
+    border: hsl(0, 0, 10),
+  },
+  // 蒙德里安原色块:纯红 + 粗黑描边 + 黑硬偏移影,零渐变
+  fab: { gradient: false, borderWidth: 3, borderColor: hsl(0, 0, 10), shadow: 'hard' },
+  decor: { backdrop: 'grid', scrim: '0,0,0' },
 };
 
 export const palettes: Record<PaletteId, Palette> = {
@@ -357,5 +454,20 @@ export const paletteOrder: PaletteId[] = ['light', 'dark', 'craft', 'telegram', 
 export const defaultThemeId: ThemeId = 'system';
 
 export function getPalette(id: PaletteId): Palette {
-  return palettes[id] ?? palettes.light;
+  const p = palettes[id] ?? palettes.light;
+  if (p.sidebar && p.fab) return p;
+  // 未声明的主题(light/dark/candy):侧边栏与卡片同面、FAB 渐变 pill,派生回退值保持原视觉
+  return {
+    ...p,
+    sidebar: p.sidebar ?? {
+      background: p.colors.card,
+      foreground: p.colors.foreground,
+      primary: p.colors.primary,
+      primaryForeground: p.colors.primaryForeground,
+      accent: p.colors.muted,
+      accentForeground: p.colors.foreground,
+      border: p.colors.border,
+    },
+    fab: p.fab ?? { gradient: true, borderWidth: 4, borderColor: null, shadow: 'glow' },
+  };
 }

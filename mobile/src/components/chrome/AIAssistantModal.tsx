@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Dimensions, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, View } from 'react-native';
-import Animated, { Easing, FadeIn, SlideInDown } from 'react-native-reanimated';
-import { useTheme } from '@/theme';
+import Animated, { FadeIn, SlideInDown } from 'react-native-reanimated';
+import { useTheme, motion } from '@/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AIAssistant } from '@/components/chat/AIAssistant';
 import { useUIShell } from './chrome';
@@ -34,7 +34,7 @@ export function AIAssistantModal() {
         </Animated.View>
 
         <Animated.View
-          entering={SlideInDown.duration(260).easing(Easing.out(Easing.cubic))}
+          entering={SlideInDown.duration(motion.duration.base).easing(motion.easing)}
           style={{ backgroundColor: colors.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, height: sheetH, overflow: 'hidden' }}
         >
           {/* 把手 */}

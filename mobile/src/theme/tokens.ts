@@ -30,7 +30,7 @@ export const typography = {
   calendarMoney: { fontSize: 8.5 },
 } as const;
 
-/** 阴影随主题策略生成(mondrian/telegram 返回空) */
+/** 阴影随主题策略生成(mondrian/telegram 硬偏移影,Android 由边框承担轮廓) */
 export function cardShadow(palette: Palette): ViewStyle {
   if (palette.cardStyle.shadow === 'none') return {};
   if (palette.cardStyle.shadow === 'tinted') {
@@ -40,6 +40,16 @@ export function cardShadow(palette: Palette): ViewStyle {
       shadowRadius: 14,
       shadowOffset: { width: 0, height: 6 },
       elevation: 3,
+    };
+  }
+  // hard:复古主题的方角硬偏移影(对齐 web 3px 3px 0),无模糊
+  if (palette.cardStyle.shadow === 'hard') {
+    return {
+      shadowColor: palette.colors.foreground,
+      shadowOpacity: 0.18,
+      shadowRadius: 0,
+      shadowOffset: { width: 3, height: 3 },
+      elevation: 0,
     };
   }
   // soft:浅色淡影 / 深色加大透明度

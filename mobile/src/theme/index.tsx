@@ -1,5 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { StyleSheet, View } from 'react-native';
+import Animated, { useSharedValue, withTiming } from 'react-native-reanimated';
 import { useColorScheme } from 'react-native';
 import {
   defaultThemeId,
@@ -10,13 +12,22 @@ import {
   type ThemeColors,
   type ThemeFonts,
   type ThemeId,
+  type ThemeSidebarColors,
 } from './palettes';
 
-export { palettes, paletteOrder, type Palette, type PaletteId, type ThemeColors, type ThemeId } from './palettes';
+export { palettes, paletteOrder, getPalette, type Palette, type PaletteId, type ThemeColors, type ThemeId, type ThemeSidebarColors, type ThemeDecor } from './palettes';
+import { motion } from './motion';
 export { motion, haptics } from './motion';
 export { spacing, pagePadding, typography, cardShadow, sheetShadow, alpha } from './tokens';
+export { ThemeBackdrop, SidebarDecor } from './decor';
 
 const STORAGE_KEY = 'homibook.theme';
+
+/** 当前解析主题快照(渲染时写入):供无法使用 Context 的场景读取,如根 ErrorBoundary */
+let activePaletteSnapshot: Palette = getPalette('light');
+export function getActivePalette(): Palette {
+  return activePaletteSnapshot;
+}
 
 interface ThemeContextValue {
   /** 用户选择的主题(含 'system') */
@@ -26,6 +37,8 @@ interface ThemeContextValue {
   palette: Palette;
   /** 兼容字段:等价 palette.colors */
   colors: ThemeColors;
+  /** 侧边栏专属色组(chrome 面板/顶栏/底栏用,特色主题与内容区拉开层次) */
+  sidebar: ThemeSidebarColors;
   fonts: ThemeFonts;
   isDark: boolean;
   setThemeId: (id: ThemeId) => void;
@@ -39,6 +52,7 @@ const ThemeContext = createContext<ThemeContextValue>({
   resolvedId: 'light',
   palette: getPalette('light'),
   colors: getPalette('light').colors,
+  sidebar: getPalette('light').sidebar!,
   fonts: {},
   isDark: false,
   setThemeId: () => {},
@@ -60,6 +74,21 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const resolvedId: PaletteId =
     themeId === 'system' ? (systemScheme === 'dark' ? 'dark' : 'light') : themeId;
   const palette = getPalette(resolvedId);
+  // 写入模块级快照(无 Context 场景兜底)
+  activePaletteSnapshot = palette;
+
+  // 切换幕布:解析主题变化时(含 setThemeId/跟随系统/登录下行)用新底色幕布盖住瞬变再快速淡出,
+  // 视觉为「沉入新底色 → 浮现新界面」;useLayoutEffect 先于首帧着色,避免露出切换瞬间的闪变
+  const mountedRef = useRef(false);
+  const curtainOpacity = useSharedValue(0);
+  useLayoutEffect(() => {
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      return;
+    }
+    curtainOpacity.value = 1;
+    curtainOpacity.value = withTiming(0, { duration: 280, easing: motion.easing });
+  }, [resolvedId, curtainOpacity]);
 
   const value = useMemo<ThemeContextValue>(
     () => ({
@@ -67,6 +96,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       resolvedId,
       palette,
       colors: palette.colors,
+      sidebar: palette.sidebar!,
       fonts: palette.fonts,
       isDark: palette.mode === 'dark',
       setThemeId: (id) => {
@@ -87,7 +117,18 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     [themeId, resolvedId, palette],
   );
 
-  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
+  return (
+    <ThemeContext.Provider value={value}>
+      {/* flex:1 容器 + 后置幕布兄弟节点:天然覆盖在导航/侧边栏/Toast 之上(RN Modal 除外) */}
+      <View style={{ flex: 1 }}>
+        {children}
+        <Animated.View
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, { backgroundColor: palette.colors.background, opacity: curtainOpacity }]}
+        />
+      </View>
+    </ThemeContext.Provider>
+  );
 }
 
 export function useTheme() {
