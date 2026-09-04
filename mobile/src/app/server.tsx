@@ -1,10 +1,16 @@
-import { useState } from 'react';
-import { Alert, Modal, Pressable, TextInput, View, ScrollView, ActivityIndicator } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Alert, Keyboard, Modal, Platform, Pressable, TextInput, View, ScrollView, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { X, Plus, Check, Trash2, Pencil, Copy, Server as ServerIcon, User, LogIn } from 'lucide-react-native';
+import * as FileSystem from 'expo-file-system/legacy';
+import { File } from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import { X, Plus, Check, Trash2, Pencil, Copy, Server as ServerIcon, User, LogIn, Upload, Download } from 'lucide-react-native';
 import { useTheme, alpha, haptics } from '@/theme';
 import { useAuth } from '@/stores/auth';
+import { importServers } from '@/services/auth';
+import { saveFileToSafDirectory, safDirLabel } from '@/services/http';
+import { showToast } from '@/components/chrome/Toast';
 import { Screen } from '@/components/Screen';
 import { Text } from '@/components/ui/Text';
 import { FadeInView } from '@/components/FadeInView';
@@ -15,7 +21,7 @@ type EditState = { id: string; name: string; baseUrl: string; account: string; p
 export default function ServerScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const { servers, currentServer, addServer, updateServer, removeServer, quickLogin } = useAuth();
+  const { servers, currentServer, addServer, updateServer, removeServer, quickLogin, refreshServers } = useAuth();
   const [name, setName] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [account, setAccount] = useState('');
@@ -26,6 +32,26 @@ export default function ServerScreen() {
   const [loggingIn, setLoggingIn] = useState<string | null>(null); // 正在登录的服务器ID
   const [deleting, setDeleting] = useState<Server | null>(null); // 待删除确认
   const [formError, setFormError] = useState(''); // 表单内联错误提示
+  const [exportConfirming, setExportConfirming] = useState(false); // 导出敏感信息确认弹窗
+  const [importing, setImporting] = useState(false); // 导入进行中
+
+  // 键盘高度监听:动态撑高滚动区底部,保证键盘不遮挡输入框(同 profile 页 JS 方案,
+  // Screen 的 KeyboardAvoidingView 在 Android 无行为,Expo Go 下窗口也不 resize)
+  const [kbHeight, setKbHeight] = useState(0);
+  const scrollRef = useRef<ScrollView>(null);
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', (e) => setKbHeight(e.endCoordinates.height));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKbHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
+
+  // 聚焦输入框时把它滚动到键盘上方(留 150 作为 label/边距余量)
+  const scrollInputIntoView = (e: any) => {
+    const node = e.nativeEvent?.target ?? e.target;
+    if (typeof node === 'number') {
+      scrollRef.current?.getScrollResponder()?.scrollResponderScrollNativeHandleToKeyboard(node, 150, true);
+    }
+  };
 
   // 名称、地址必填,且(账号+密码)或 API Key 至少填一种
   const validate = (n: string, u: string, acct: string, pwd: string, key: string): string => {
@@ -90,6 +116,68 @@ export default function ServerScreen() {
     haptics.success();
   };
 
+  // 导出服务器配置为 JSON 文件(Android 走 SAF 保存,iOS 走系统分享)
+  const handleExport = async () => {
+    setExportConfirming(false);
+    try {
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const now = new Date();
+      const fileName = `homibook-servers-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.json`;
+      // 导出格式:kind 标识数据类型,导入时校验;list 为完整服务器配置(含凭据)
+      const payload = JSON.stringify(
+        { app: 'homibook', kind: 'servers', version: 1, exportedAt: now.toISOString(), list: servers },
+        null,
+        2,
+      );
+      const cacheUri = `${FileSystem.cacheDirectory}${fileName}`;
+      await FileSystem.writeAsStringAsync(cacheUri, payload, { encoding: FileSystem.EncodingType.UTF8 });
+      if (Platform.OS === 'android') {
+        const dirUri = await saveFileToSafDirectory(cacheUri, fileName, 'application/json');
+        if (dirUri) showToast(`已导出到 ${safDirLabel(dirUri)}`);
+        return;
+      }
+      const ok = await Sharing.isAvailableAsync();
+      if (!ok) throw new Error('当前环境不支持保存文件');
+      await Sharing.shareAsync(cacheUri, { mimeType: 'application/json', dialogTitle: fileName });
+    } catch (e: any) {
+      Alert.alert('导出失败', e?.message || '未知错误');
+    }
+  };
+
+  // 导入服务器配置:选 JSON 文件 → 解析校验 → 去重合并
+  const handleImport = async () => {
+    if (importing) return;
+    setImporting(true);
+    try {
+      // 新 API 系统文件选择器:返回的 File 实例读取走原生 SAF 通道,
+      // 规避 expo-document-picker 缓存副本在 legacy/expo-go 下 "isn't readable" 的白名单限制
+      let picked: File | null = null;
+      try {
+        const pick = await File.pickFileAsync({ multipleFiles: false, mimeTypes: ['application/json', 'text/plain'] });
+        picked = pick.canceled ? null : pick.result;
+      } catch {
+        return; // 部分版本把用户取消以异常抛出,静默退出
+      }
+      if (!picked) return;
+      let items: unknown;
+      try {
+        const content = await picked.text();
+        items = JSON.parse(content)?.list;
+      } catch (err: any) {
+        throw new Error(`文件解析失败(${err?.message ?? '未知错误'}),请选择本 App 导出的服务器配置 JSON 文件`);
+      }
+      if (!Array.isArray(items)) throw new Error('文件格式不正确,缺少服务器列表');
+      const { added, skipped } = await importServers(items as never[]);
+      await refreshServers();
+      haptics.success();
+      showToast(skipped > 0 ? `导入 ${added} 个,跳过 ${skipped} 个(重复或格式无效)` : `成功导入 ${added} 个服务器配置`);
+    } catch (e: any) {
+      Alert.alert('导入失败', e?.message || '未知错误');
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const handleServerTap = async (s: Server) => {
     if (loggingIn) return;
     haptics.tap();
@@ -136,6 +224,7 @@ export default function ServerScreen() {
           <TextInput
             value={n}
             onChangeText={(v) => { setFormError(''); isEdit ? setEditing({ ...editing!, name: v }) : setName(v); }}
+            onFocus={scrollInputIntoView}
             placeholder="如 演示站"
             placeholderTextColor={colors.mutedForeground}
             style={inputStyle}
@@ -146,6 +235,7 @@ export default function ServerScreen() {
           <TextInput
             value={u}
             onChangeText={(v) => { setFormError(''); isEdit ? setEditing({ ...editing!, baseUrl: v }) : setBaseUrl(v); }}
+            onFocus={scrollInputIntoView}
             placeholder="https://..."
             placeholderTextColor={colors.mutedForeground}
             autoCapitalize="none"
@@ -158,6 +248,7 @@ export default function ServerScreen() {
           <TextInput
             value={a}
             onChangeText={(v) => { setFormError(''); isEdit ? setEditing({ ...editing!, account: v }) : setAccount(v); }}
+            onFocus={scrollInputIntoView}
             placeholder="登录账号或邮箱"
             placeholderTextColor={colors.mutedForeground}
             autoCapitalize="none"
@@ -169,6 +260,7 @@ export default function ServerScreen() {
           <TextInput
             value={p}
             onChangeText={(v) => { setFormError(''); isEdit ? setEditing({ ...editing!, password: v }) : setPassword(v); }}
+            onFocus={scrollInputIntoView}
             placeholder="登录密码,填了即可一键登录"
             placeholderTextColor={colors.mutedForeground}
             secureTextEntry
@@ -181,6 +273,7 @@ export default function ServerScreen() {
           <TextInput
             value={k}
             onChangeText={(v) => { setFormError(''); isEdit ? setEditing({ ...editing!, apiKey: v }) : setApiKey(v); }}
+            onFocus={scrollInputIntoView}
             placeholder="homibook_... 优先于密码登录"
             placeholderTextColor={colors.mutedForeground}
             autoCapitalize="none"
@@ -224,7 +317,11 @@ export default function ServerScreen() {
           <View style={{ width: 22 }} />
         </View>
 
-        <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40, gap: 12 }} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 + kbHeight, gap: 12 }}
+          keyboardShouldPersistTaps="handled"
+        >
           {servers.length === 0 && !adding && (
             <View style={{ alignItems: 'center', paddingVertical: 40 }}>
               <ServerIcon size={40} color={colors.mutedForeground} />
@@ -336,6 +433,32 @@ export default function ServerScreen() {
               <Text variant="muted" style={{ fontSize: 14 }}>添加服务器</Text>
             </Pressable>
           )}
+
+          {/* 配置迁移:导入/导出 */}
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+            <Pressable
+              onPress={handleImport}
+              disabled={importing}
+              style={{
+                flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                paddingVertical: 11, borderRadius: 12, backgroundColor: colors.muted, opacity: importing ? 0.6 : 1,
+              }}
+            >
+              {importing ? <ActivityIndicator size="small" color={colors.foreground} /> : <Upload size={15} color={colors.foreground} />}
+              <Text style={{ fontSize: 13, color: colors.foreground }}>{importing ? '导入中…' : '导入配置'}</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setExportConfirming(true)}
+              disabled={servers.length === 0}
+              style={{
+                flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                paddingVertical: 11, borderRadius: 12, backgroundColor: colors.muted, opacity: servers.length === 0 ? 0.5 : 1,
+              }}
+            >
+              <Download size={15} color={colors.foreground} />
+              <Text style={{ fontSize: 13, color: colors.foreground }}>导出配置</Text>
+            </Pressable>
+          </View>
         </ScrollView>
       </View>
 
@@ -358,6 +481,36 @@ export default function ServerScreen() {
               </Pressable>
               <Pressable onPress={confirmDelete} style={{ flex: 1, backgroundColor: colors.expense, borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}>
                 <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>删除</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 导出确认弹窗:提示文件包含敏感信息 */}
+      <Modal
+        visible={exportConfirming}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setExportConfirming(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <View style={{ width: '100%', backgroundColor: colors.card, borderRadius: 16, padding: 18 }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', marginBottom: 6 }}>导出服务器配置</Text>
+            <Text variant="muted" style={{ fontSize: 13, marginBottom: 10 }}>
+              将导出 {servers.length} 个服务器配置。
+            </Text>
+            <View style={{ padding: 10, borderRadius: 8, backgroundColor: alpha('#f59e0b', 0.12), marginBottom: 18 }}>
+              <Text style={{ fontSize: 12, color: '#f59e0b' }}>
+                ⚠ 导出文件包含账号、密码与 API Key 等敏感信息,将以明文保存。请妥善保管,不要分享给不可信的人。
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <Pressable onPress={() => setExportConfirming(false)} style={{ flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}>
+                <Text style={{ fontSize: 14 }}>取消</Text>
+              </Pressable>
+              <Pressable onPress={handleExport} style={{ flex: 1, backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}>
+                <Text style={{ color: colors.primaryForeground, fontSize: 14, fontWeight: '600' }}>导出</Text>
               </Pressable>
             </View>
           </View>

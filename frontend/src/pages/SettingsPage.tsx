@@ -994,133 +994,6 @@ export function SettingsPage() {
           </AccordionContent>
         </AccordionItem>
 
-        {/* API Key 管理 */}
-        <AccordionItem value="apikeys" className="border rounded-xl px-5">
-          <AccordionTrigger className="text-base font-semibold hover:no-underline">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-                <Key size={16} className="text-primary-foreground" />
-              </div>
-              API Key 管理
-            </div>
-          </AccordionTrigger>
-          <AccordionContent className="pt-2 pb-5">
-            {/* 创建成功后展示密钥 */}
-            {createdKey && (
-              <div className="mb-4 p-4 rounded-lg border border-yellow-300 bg-yellow-50 dark:bg-yellow-950/20 space-y-3">
-                <div className="flex items-center gap-2">
-                  <EyeOff size={16} className="text-yellow-600" />
-                  <span className="text-sm font-semibold text-yellow-700 dark:text-yellow-400">
-                    密钥已生成，请立即复制！关闭后将无法再次查看。
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 bg-muted px-3 py-2 rounded text-xs font-mono break-all select-all">
-                    {createdKey.key}
-                  </code>
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    className="h-9 w-9 shrink-0"
-                    onClick={() => {
-                      navigator.clipboard.writeText(createdKey.key)
-                      setKeyCopied(true)
-                      setTimeout(() => setKeyCopied(false), 2000)
-                    }}
-                  >
-                    {keyCopied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
-                  </Button>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => { setCreatedKey(null); setKeyCopied(false) }}
-                >
-                  我已复制，关闭提示
-                </Button>
-              </div>
-            )}
-
-            {apiKeysError && (
-              <Alert variant="destructive" className="mb-4">
-                <AlertDescription>{apiKeysError}</AlertDescription>
-              </Alert>
-            )}
-
-            {/* 操作栏 */}
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm text-muted-foreground">
-                共 {apiKeys.length} 个 API Key
-              </span>
-              <Button
-                size="sm"
-                onClick={() => { resetApiKeyForm(); setCreateApiKeyOpen(true); setApiKeysError('') }}
-                className="bg-primary hover:bg-primary/90 text-primary-foreground h-8 text-xs"
-              >
-                <Plus size={14} /> 创建 API Key
-              </Button>
-            </div>
-
-            {/* 表格 */}
-            {apiKeysLoading ? (
-              <Spinner className="py-8" />
-            ) : apiKeys.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-center gap-2 border rounded-lg border-dashed">
-                <Key size={28} className="opacity-25" />
-                <p className="text-sm text-muted-foreground">暂无 API Key</p>
-              </div>
-            ) : (
-              <div className="border rounded-lg overflow-hidden">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted/50 hover:bg-muted/50">
-                      <TableHead className="text-xs">名称</TableHead>
-                      <TableHead className="text-xs">密钥前缀</TableHead>
-                      <TableHead className="text-xs">归属用户</TableHead>
-                      <TableHead className="text-xs">创建时间</TableHead>
-                      <TableHead className="text-xs">最后使用</TableHead>
-                      <TableHead className="text-xs w-16 text-right">操作</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {apiKeys.map((key) => (
-                      <TableRow key={key.id} className="hover:bg-accent/50">
-                        <TableCell className="text-sm py-2.5 font-medium">
-                          {key.name}
-                        </TableCell>
-                        <TableCell className="text-xs font-mono text-muted-foreground py-2.5">
-                          {key.prefix}...
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground py-2.5">
-                          {key.userName}
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground py-2.5">
-                          {new Date(key.createdAt).toLocaleDateString('zh-CN')}
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground py-2.5">
-                          {key.lastUsedAt
-                            ? new Date(key.lastUsedAt).toLocaleString('zh-CN')
-                            : '从未使用'}
-                        </TableCell>
-                        <TableCell className="text-right py-2.5">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-muted-foreground hover:text-[#ef4444]"
-                            onClick={() => setDeleteApiKeyTarget(key)}
-                          >
-                            <Trash2 size={13} />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </AccordionContent>
-        </AccordionItem>
-
         {/* 导入分类映射 */}
         <AccordionItem value="import-mappings" className="border rounded-xl px-5">
           <AccordionTrigger className="text-base font-semibold hover:no-underline">
@@ -1340,6 +1213,133 @@ export function SettingsPage() {
           </AccordionContent>
         </AccordionItem>
         </>)}
+        {/* API Key 管理 */}
+        <AccordionItem value="apikeys" className="border rounded-xl px-5">
+          <AccordionTrigger className="text-base font-semibold hover:no-underline">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+                <Key size={16} className="text-primary-foreground" />
+              </div>
+              API Key 管理
+            </div>
+          </AccordionTrigger>
+          <AccordionContent className="pt-2 pb-5">
+            {/* 创建成功后展示密钥 */}
+            {createdKey && (
+              <div className="mb-4 p-4 rounded-lg border border-yellow-300 bg-yellow-50 dark:bg-yellow-950/20 space-y-3">
+                <div className="flex items-center gap-2">
+                  <EyeOff size={16} className="text-yellow-600" />
+                  <span className="text-sm font-semibold text-yellow-700 dark:text-yellow-400">
+                    密钥已生成，请立即复制！关闭后将无法再次查看。
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 bg-muted px-3 py-2 rounded text-xs font-mono break-all select-all">
+                    {createdKey.key}
+                  </code>
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    className="h-9 w-9 shrink-0"
+                    onClick={() => {
+                      navigator.clipboard.writeText(createdKey.key)
+                      setKeyCopied(true)
+                      setTimeout(() => setKeyCopied(false), 2000)
+                    }}
+                  >
+                    {keyCopied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
+                  </Button>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => { setCreatedKey(null); setKeyCopied(false) }}
+                >
+                  我已复制，关闭提示
+                </Button>
+              </div>
+            )}
+
+            {apiKeysError && (
+              <Alert variant="destructive" className="mb-4">
+                <AlertDescription>{apiKeysError}</AlertDescription>
+              </Alert>
+            )}
+
+            {/* 操作栏 */}
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm text-muted-foreground">
+                共 {apiKeys.length} 个 API Key
+              </span>
+              <Button
+                size="sm"
+                onClick={() => { resetApiKeyForm(); setCreateApiKeyOpen(true); setApiKeysError('') }}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground h-8 text-xs"
+              >
+                <Plus size={14} /> 创建 API Key
+              </Button>
+            </div>
+
+            {/* 表格 */}
+            {apiKeysLoading ? (
+              <Spinner className="py-8" />
+            ) : apiKeys.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center gap-2 border rounded-lg border-dashed">
+                <Key size={28} className="opacity-25" />
+                <p className="text-sm text-muted-foreground">暂无 API Key</p>
+              </div>
+            ) : (
+              <div className="border rounded-lg overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/50 hover:bg-muted/50">
+                      <TableHead className="text-xs">名称</TableHead>
+                      <TableHead className="text-xs">密钥前缀</TableHead>
+                      <TableHead className="text-xs">归属用户</TableHead>
+                      <TableHead className="text-xs">创建时间</TableHead>
+                      <TableHead className="text-xs">最后使用</TableHead>
+                      <TableHead className="text-xs w-16 text-right">操作</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {apiKeys.map((key) => (
+                      <TableRow key={key.id} className="hover:bg-accent/50">
+                        <TableCell className="text-sm py-2.5 font-medium">
+                          {key.name}
+                        </TableCell>
+                        <TableCell className="text-xs font-mono text-muted-foreground py-2.5">
+                          {key.prefix}...
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground py-2.5">
+                          {key.userName}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground py-2.5">
+                          {new Date(key.createdAt).toLocaleDateString('zh-CN')}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground py-2.5">
+                          {key.lastUsedAt
+                            ? new Date(key.lastUsedAt).toLocaleString('zh-CN')
+                            : '从未使用'}
+                        </TableCell>
+                        <TableCell className="text-right py-2.5">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-[#ef4444]"
+                            onClick={() => setDeleteApiKeyTarget(key)}
+                          >
+                            <Trash2 size={13} />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </AccordionContent>
+        </AccordionItem>
+
         {/* 关于 */}
         <AccordionItem value="about" className="border rounded-xl px-5">
           <AccordionTrigger className="hover:no-underline">

@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, { useSharedValue, withTiming } from 'react-native-reanimated';
 import { useColorScheme } from 'react-native';
@@ -9,10 +9,7 @@ import {
   palettes,
   type Palette,
   type PaletteId,
-  type ThemeColors,
-  type ThemeFonts,
   type ThemeId,
-  type ThemeSidebarColors,
 } from './palettes';
 
 export { palettes, paletteOrder, getPalette, type Palette, type PaletteId, type ThemeColors, type ThemeId, type ThemeSidebarColors, type ThemeDecor } from './palettes';
@@ -21,6 +18,8 @@ export { motion, haptics } from './motion';
 export { spacing, pagePadding, typography, cardShadow, sheetShadow, alpha } from './tokens';
 export { ThemeBackdrop, SidebarDecor } from './decor';
 export { useChartColors, semanticTypeColor } from './chart';
+export { useTheme, type ThemeContextValue } from './context';
+import { ThemeContext, type ThemeContextValue } from './context';
 
 const STORAGE_KEY = 'homibook.theme';
 
@@ -29,37 +28,6 @@ let activePaletteSnapshot: Palette = getPalette('light');
 export function getActivePalette(): Palette {
   return activePaletteSnapshot;
 }
-
-interface ThemeContextValue {
-  /** 用户选择的主题(含 'system') */
-  themeId: ThemeId;
-  /** 解析后的实际调色板 id(system 已解析) */
-  resolvedId: PaletteId;
-  palette: Palette;
-  /** 兼容字段:等价 palette.colors */
-  colors: ThemeColors;
-  /** 侧边栏专属色组(chrome 面板/顶栏/底栏用,特色主题与内容区拉开层次) */
-  sidebar: ThemeSidebarColors;
-  fonts: ThemeFonts;
-  isDark: boolean;
-  setThemeId: (id: ThemeId) => void;
-  /** 兼容旧接口:映射为 light/dark */
-  setDark: (dark: boolean) => void;
-  toggleTheme: () => void;
-}
-
-const ThemeContext = createContext<ThemeContextValue>({
-  themeId: defaultThemeId,
-  resolvedId: 'light',
-  palette: getPalette('light'),
-  colors: getPalette('light').colors,
-  sidebar: getPalette('light').sidebar!,
-  fonts: {},
-  isDark: false,
-  setThemeId: () => {},
-  setDark: () => {},
-  toggleTheme: () => {},
-});
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const systemScheme = useColorScheme();
@@ -130,8 +98,4 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       </View>
     </ThemeContext.Provider>
   );
-}
-
-export function useTheme() {
-  return useContext(ThemeContext);
 }

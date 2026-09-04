@@ -2,18 +2,26 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { randomBytes, createHash } from 'crypto'
 import { prisma } from '../app.js'
-import { authenticate, requireAdmin } from '../middleware/auth.js'
+import { authenticate } from '../middleware/auth.js'
 import { createApiKeySchema } from '../schemas/apikey.js'
 import { zSchema } from '../lib/schema-helpers.js'
 
 export async function apiKeyRoutes(app: FastifyInstance) {
   app.addHook('onRequest', authenticate)
-  app.addHook('onRequest', requireAdmin)
 
-  // 列表
+  // 是否管理员(查库实判,不信任 JWT 里的旧角色)
+  async function isAdmin(userId: string): Promise<boolean> {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true, status: true },
+    })
+    return !!user && user.status === 'ACTIVE' && user.role === 'ADMIN'
+  }
+
+  // 列表:管理员看全部,普通用户仅自己的
   app.get('/', {
     schema: {
-      description: '获取所有 API Key 列表',
+      description: '获取 API Key 列表(管理员返回全部,普通用户仅返回自己的)',
       tags: ['API Key'],
     },
     config: {
@@ -36,8 +44,10 @@ export async function apiKeyRoutes(app: FastifyInstance) {
         },
       },
     },
-  }, async () => {
+  }, async (req) => {
+    const userId = (req as any).user.id
     const keys = await prisma.apiKey.findMany({
+      where: (await isAdmin(userId)) ? undefined : { userId },
       include: {
         user: { select: { id: true, email: true, nickname: true } },
       },
@@ -88,19 +98,24 @@ export async function apiKeyRoutes(app: FastifyInstance) {
     })
   })
 
-  // 删除
+  // 删除:仅本人或管理员
   app.delete('/:id', {
     schema: {
-      description: '删除指定 API Key',
+      description: '删除指定 API Key(仅本人或管理员)',
       tags: ['API Key'],
       params: zSchema(z.object({ id: z.string() })),
     },
   }, async (req, reply) => {
     const { id } = req.params as { id: string }
+    const userId = (req as any).user.id
 
     const existing = await prisma.apiKey.findUnique({ where: { id } })
     if (!existing) {
       return reply.status(404).send({ message: 'API Key 不存在' })
+    }
+
+    if (existing.userId !== userId && !(await isAdmin(userId))) {
+      return reply.status(403).send({ message: '只能删除自己的 API Key' })
     }
 
     await prisma.apiKey.delete({ where: { id } })

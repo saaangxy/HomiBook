@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react';
 import { Linking, Pressable, View } from 'react-native';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
-import { Brain, ChevronDown, ChevronRight, CircleUserRound, ExternalLink, LogOut, Palette, Server, ServerCog, Smartphone, User } from 'lucide-react-native';
+import { Brain, ChevronDown, ChevronRight, CircleUserRound, ExternalLink, Key, LogOut, Palette, Server, ServerCog, Smartphone, User } from 'lucide-react-native';
 import { useTheme, alpha, haptics } from '@/theme';
 import { useAuth } from '@/stores/auth';
 import { Screen } from '@/components/Screen';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { FadeInView } from '@/components/FadeInView';
+import { ApiKeyManager } from '@/components/settings/Managers';
 import { UserMemorySettings } from '@/components/ai/UserMemorySettings';
 import { fetchAppVersion } from '@/services/settings';
 
@@ -66,6 +67,8 @@ export default function SettingsScreen() {
   const aboutRows = useAboutRows();
   // AI 记忆默认折叠收起,点头部展开(展开时才挂载并拉取记忆列表)
   const [memoryOpen, setMemoryOpen] = useState(false);
+  // API Key 同样默认折叠,展开时才拉取列表
+  const [apiKeysOpen, setApiKeysOpen] = useState(false);
 
   return (
     <Screen scroll>
@@ -132,11 +135,35 @@ export default function SettingsScreen() {
           </Card>
         </FadeInView>
 
+        {/* ══ API Key(所有用户可见;默认折叠,展开时才挂载拉取) ══ */}
+        <GroupTitle title="API Key" />
+        <FadeInView index={3}>
+          <Card className="px-5 py-4 mb-2">
+            <Pressable
+              onPress={() => {
+                setApiKeysOpen((v) => !v);
+                haptics.tap();
+              }}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}
+            >
+              <View style={{ width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: alpha(colors.primary, 0.12) }}>
+                <Key size={16} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 15, fontWeight: '500' }}>API Key 管理</Text>
+                <Text variant="muted" style={{ fontSize: 11.5, marginTop: 1 }}>创建用于接口调用的访问密钥</Text>
+              </View>
+              {apiKeysOpen ? <ChevronDown size={16} color={colors.mutedForeground} /> : <ChevronRight size={16} color={colors.mutedForeground} />}
+            </Pressable>
+            {apiKeysOpen && <View style={{ marginTop: 12 }}><ApiKeyManager /></View>}
+          </Card>
+        </FadeInView>
+
         {/* ══ 服务器(仅管理员:入口跳转独立管理页) ══ */}
         {isAdmin && (
           <>
             <GroupTitle title="服务器" />
-            <FadeInView index={3}>
+            <FadeInView index={4}>
               <Card className="px-0 py-2 mb-2 overflow-hidden">
                 <Row
                   icon={<ServerCog size={16} color={colors.primary} />}
@@ -152,7 +179,7 @@ export default function SettingsScreen() {
 
         {/* ══ 关于 ══ */}
         <GroupTitle title="关于" />
-        <FadeInView index={4}>
+        <FadeInView index={5}>
           <Card className="px-0 py-2 overflow-hidden">
             {aboutRows.map((row, i) => (
               <Row key={row.label} icon={row.icon} label={row.label} right={row.right} onPress={row.onPress} last={i === aboutRows.length - 1} />
@@ -161,7 +188,7 @@ export default function SettingsScreen() {
         </FadeInView>
 
         {/* 退出 */}
-        <FadeInView index={5}>
+        <FadeInView index={6}>
           <Pressable
             onPress={async () => {
               await logout();

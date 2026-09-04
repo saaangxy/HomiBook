@@ -109,6 +109,39 @@ export async function switchServer(id: string): Promise<void> {
   await writeServers({ ...d, currentId: id });
 }
 
+/** 导入项(与 Server 一致但不含 id,导入时重新生成) */
+export interface ServerImportInput {
+  name: string;
+  baseUrl: string;
+  account?: string;
+  password?: string;
+  apiKey?: string;
+}
+
+/** 批量导入服务器配置:名称+地址重复或格式非法的项跳过;返回导入/跳过数量 */
+export async function importServers(items: ServerImportInput[]): Promise<{ added: number; skipped: number }> {
+  const d = await readServers();
+  const list = [...d.list];
+  let added = 0;
+  for (const it of items) {
+    const name = String(it?.name ?? '').trim();
+    const baseUrl = String(it?.baseUrl ?? '').trim().replace(/\/+$/, '');
+    if (!name || !/^https?:\/\/\S+/.test(baseUrl)) continue;
+    if (list.some((s) => s.name === name && s.baseUrl === baseUrl)) continue;
+    list.push({
+      id: `s${Date.now()}-${added}`,
+      name,
+      baseUrl,
+      account: it.account || undefined,
+      password: it.password || undefined,
+      apiKey: it.apiKey || undefined,
+    });
+    added++;
+  }
+  if (added > 0) await writeServers({ ...d, list });
+  return { added, skipped: items.length - added };
+}
+
 // ==================== 会话 ====================
 
 /** 密码登录:成功保存 JWT 凭据 */

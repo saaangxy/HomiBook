@@ -1,5 +1,5 @@
 import type { ThemeColors } from './palettes';
-import { useTheme } from './index';
+import { useTheme } from './context';
 
 // 图表主题色 hook(对齐 web 端 useChartTheme):
 // 语义色(收入/支出/转账/主色)与分类色板随主题切换,替换页面里硬编码的十六进制色。
