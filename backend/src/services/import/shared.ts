@@ -1,4 +1,5 @@
 import { prisma } from '../../app.js'
+import { matchAccountInPoolDetailed } from '@homibook/core'
 
 // ======================== 工具函数 ========================
 
@@ -102,32 +103,15 @@ export function inferAccount(paymentMethod: string): { type: string; defaultName
 
 /**
  * 按名称包含匹配已有账户（优先级：精确 → 账户名包含目标名 → 目标名包含账户名）。
- * 传入 ownerId 时只在本人账户中匹配（多成员账本下避免匹配到他人同名账户）
+ * 传入 ownerId 时只在本人账户中匹配（多成员账本下避免匹配到他人同名账户）。
+ * 算法单一来源在 @homibook/core（多用户修复版语义),此处仅保持既有导入路径。
  */
 export function matchAccountByName(
   name: string,
   allAccounts: { id: string; name: string; ownerId?: string }[],
   ownerId?: string,
 ): AccountMatchResult {
-  const pool = ownerId ? allAccounts.filter(acc => !acc.ownerId || acc.ownerId === ownerId) : allAccounts
-  if (!name || pool.length === 0) return { matched: false, ambiguous: false }
-
-  // 1. 精确匹配
-  const exact = pool.filter(acc => acc.name === name)
-  if (exact.length === 1) return { matched: true, id: exact[0].id, name: exact[0].name }
-  if (exact.length > 1) return { matched: false, ambiguous: true, candidates: exact }
-
-  // 2. 账户名包含目标名
-  const contains = pool.filter(acc => acc.name.includes(name))
-  if (contains.length === 1) return { matched: true, id: contains[0].id, name: contains[0].name }
-  if (contains.length > 1) return { matched: false, ambiguous: true, candidates: contains }
-
-  // 3. 目标名包含账户名
-  const containedBy = pool.filter(acc => name.includes(acc.name))
-  if (containedBy.length === 1) return { matched: true, id: containedBy[0].id, name: containedBy[0].name }
-  if (containedBy.length > 1) return { matched: false, ambiguous: true, candidates: containedBy }
-
-  return { matched: false, ambiguous: false }
+  return matchAccountInPoolDetailed(name, allAccounts, ownerId)
 }
 
 // ======================== 账户映射 ========================

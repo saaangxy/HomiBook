@@ -4,5 +4,11 @@
   "main": "index.js",
   "repository": "https://github.com/saaangxy/HomiBook.git",
   "author": "saaangxy",
-  "license": "MIT"
+  "license": "MIT",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build:core": "npm run build -w @homibook/core"
+  }
 }

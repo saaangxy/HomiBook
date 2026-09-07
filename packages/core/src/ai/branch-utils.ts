@@ -1,5 +1,5 @@
 /** AI 对话分支管理 —— 纯 TS,三端共享。 */
-import type { Message } from '../types';
+import type { Message } from '../types/index.js';
 
 export function buildActivePath(allMessages: Message[], branchSelections: Record<string, string>): Message[] {
   const path: Message[] = [];

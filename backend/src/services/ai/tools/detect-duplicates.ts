@@ -1,5 +1,6 @@
 import { prisma } from '../../../app.js'
 import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
+import { buildDuplicateKey } from '@homibook/core'
 import type { ToolDef, ToolContext } from './types.js'
 
 interface DetectDuplicatesArgs {
@@ -50,20 +51,8 @@ export const detectDuplicatesTool: ToolDef = {
       const groups = new Map<string, typeof records>()
 
       for (const r of records) {
-        const parts: string[] = []
-
-        if (matchFields.date === 'exact') {
-          parts.push(r.date.toISOString())
-        } else if (matchFields.date === 'date') {
-          parts.push(r.date.toISOString().slice(0, 10))
-        }
-
-        if (matchFields.type) parts.push(r.type)
-        if (matchFields.accountId) parts.push(r.accountId)
-        if (matchFields.payer) parts.push(r.payer || '__empty__')
-        if (matchFields.amount) parts.push(r.amount.toFixed(2))
-
-        const key = parts.join('||')
+        // AI 参数协议不含 ownerId → 显式关闭,分组行为与迁移前一致,同时与 core 契约对齐
+        const key = buildDuplicateKey(r, { ...matchFields, ownerId: false })
         if (!groups.has(key)) groups.set(key, [])
         groups.get(key)!.push(r)
       }

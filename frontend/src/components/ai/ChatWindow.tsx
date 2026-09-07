@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useChatStore } from '@/stores/chat'
+import { useChatStore, useSessionView } from '@/stores/chat'
 import { useBookStore } from '@/stores/book'
 import { fetchSessions, fetchMessages, createSession, updateSession, deleteSession as deleteSessionApi } from '@/api/chat'
 import { loadToolNames } from '@/lib/tool-names'
@@ -15,7 +15,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Send, StopCircle, Upload, Image as ImageIcon, X, Globe, Menu, Plus } from 'lucide-react'
-import { parseContentIntoBlocks } from '@homibook/core'
+import { parseContentIntoBlocks, buildImportMessage } from '@homibook/core'
 import { type MessageBlock } from '@/stores/chat'
 import { useIsMobile } from '@/hooks/use-mobile'
 import {
@@ -29,10 +29,12 @@ export function ChatWindow() {
   const [sessionOpen, setSessionOpen] = useState(false)
 
   const {
-    sessions, currentSessionId, messages, allMessages, error,
-    setSessions, setCurrentSession, setMessages, sendMessage, retryMessage, selectBranch, stopStreaming,
-    saveCurrentToCache, restoreFromCache,
+    sessions, currentSessionId, error,
+    setSessions, setCurrentSession, sendMessage, retryMessage, selectBranch, stopStreaming,
+    setSessionData, clearSessionData, hasCachedSession,
   } = useChatStore()
+  // 当前会话消息视图(活跃路径按分支选择派生,单一数据源在 sessionCache)
+  const { messages, allMessages } = useSessionView()
 
   const isCurrentStreaming = useChatStore((s) =>
     s.sessionCache[s.currentSessionId ?? '']?.isStreaming ?? false
@@ -92,12 +94,10 @@ export function ChatWindow() {
   }
 
   const handleSelectSession = async (id: string) => {
-    // 保存当前会话状态到缓存（包括可能正在进行的流式内容）
-    saveCurrentToCache()
     setCurrentSession(id)
 
     // 优先从缓存恢复（保留后台流式进度）
-    if (restoreFromCache(id)) return
+    if (hasCachedSession(id)) return
 
     try {
       const msgs = await fetchMessages(id)
@@ -115,7 +115,7 @@ export function ChatWindow() {
           ...(m.attachments?.length ? { attachments: m.attachments } : {}),
         }
       })
-      setMessages(parsed.length > 0 ? parsed : [greetingMsg])
+      setSessionData(id, parsed.length > 0 ? parsed : [greetingMsg])
     } catch {
       // ignore
     }
@@ -134,13 +134,12 @@ export function ChatWindow() {
   }
 
   const handleCreateSession = async () => {
-    saveCurrentToCache()
     try {
       const res = await createSession({ accountBookId: currentBookId || undefined })
       const list = await fetchSessions()
       setSessions(list)
       setCurrentSession(res.session.id)
-      setMessages([greetingMsg])
+      setSessionData(res.session.id, [greetingMsg])
     } catch {
       // ignore
     }
@@ -152,7 +151,7 @@ export function ChatWindow() {
       setSessions(sessions.filter((s) => s.id !== id))
       if (currentSessionId === id) {
         setCurrentSession(null)
-        setMessages([])
+        clearSessionData(id)
       }
     } catch {
       // ignore
@@ -276,10 +275,8 @@ export function ChatWindow() {
     setImporting(true)
     try {
       const res = await importExportApi.uploadTempFile(file)
-      const sourceLabel: Record<string, string> = { alipay: '支付宝', wechat: '微信', jd: '京东' }
       const src = pendingSourceRef.current
-      const msg = `请导入${sourceLabel[src] || src}账单文件\nfileId: ${res.fileId}\nsource: ${src}\n文件名: ${res.filename}`
-      handleSend(msg)
+      handleSend(buildImportMessage({ fileId: res.fileId, source: src, fileName: res.filename }))
     } catch {
       // ignore
     }

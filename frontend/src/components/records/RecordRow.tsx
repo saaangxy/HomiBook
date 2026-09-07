@@ -1,4 +1,5 @@
 import { Badge } from '@/components/ui/badge'
+import { RECORD_TYPE_LABELS, RECORD_TYPE_BADGE_CLASS, RECORD_TYPE_TEXT_CLASS } from '@/lib/record-type'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -25,16 +26,9 @@ import type { BookMember } from '@/api/book'
 import { cn } from '@/lib/utils'
 import { formatMoney } from '@homibook/core'
 
-const TYPE_COLORS: Record<RecordType, string> = {
-  INCOME: 'text-[#22c55e] bg-[#22c55e]/10',
-  EXPENSE: 'text-[#ef4444] bg-[#ef4444]/10',
-  TRANSFER: 'text-[#3b82f6] bg-[#3b82f6]/10',
-}
-const TYPE_LABELS: Record<RecordType, string> = {
-  INCOME: '收入',
-  EXPENSE: '支出',
-  TRANSFER: '转账',
-}
+// 收支类型标签与语义色(单一来源 @/lib/record-type ← core)
+const TYPE_COLORS = RECORD_TYPE_BADGE_CLASS
+const TYPE_LABELS = RECORD_TYPE_LABELS
 
 function getCategoryGroup(type: RecordType) {
   if (type === 'INCOME') return 'transaction_category_income'
@@ -144,9 +138,9 @@ export function RecordRow(props: RecordRowProps) {
     ) : (
       record.type === 'TRANSFER' && record.fromAccount ? (
         <span>
-          <span className="text-[#ef4444]">{record.fromAccount.name}</span>
+          <span className={RECORD_TYPE_TEXT_CLASS.EXPENSE}>{record.fromAccount.name}</span>
           {' → '}
-          <span className="text-[#22c55e]">{record.toAccount?.name}</span>
+          <span className={RECORD_TYPE_TEXT_CLASS.INCOME}>{record.toAccount?.name}</span>
         </span>
       ) : (
         <span>{record.account.name}</span>
@@ -208,7 +202,7 @@ export function RecordRow(props: RecordRowProps) {
     )
 
   const renderAmount = () => {
-    const color = record.type === 'INCOME' ? 'text-[#22c55e]' : record.type === 'EXPENSE' ? 'text-[#ef4444]' : 'text-[#3b82f6]'
+    const color = RECORD_TYPE_TEXT_CLASS[record.type]
     return editMode ? (
       <Input aria-label="金额" type="number" step="0.01" value={getEditValue('amount')}
         onChange={(e) => change('amount', e.target.value)}

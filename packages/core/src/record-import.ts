@@ -3,18 +3,21 @@
  * 来源定义 / 列映射字段与自动检测 / 账户池内匹配 / 待创建账户合并。
  * 与 backend services/import/shared.ts 的 matchAccountByName 语义保持一致。
  */
-import type { RecordType } from './types';
+import type { RecordType } from './types/index.js';
 
 // ── 来源定义 ──
 
 export type ImportSource = 'alipay' | 'wechat' | 'jd' | 'csv';
 
-/** 收支类型标签(导入/导出界面共用) */
-export const IMPORT_TYPE_LABELS: Record<RecordType, string> = {
+/** 收支类型标签(导入/导出界面共用;全站统一的权威标签,web/mobile 各处勿再本地定义) */
+export const RECORD_TYPE_LABELS: Record<RecordType, string> = {
   INCOME: '收入',
   EXPENSE: '支出',
   TRANSFER: '转账',
 };
+
+/** 去重界面标签(与 RECORD_TYPE_LABELS 同源) */
+export const IMPORT_TYPE_LABELS: Record<RecordType, string> = RECORD_TYPE_LABELS;
 
 export interface ImportSourceDef {
   key: ImportSource;
@@ -30,6 +33,11 @@ export const IMPORT_SOURCE_DEFS: ImportSourceDef[] = [
   { key: 'jd', label: '京东', description: '支持京东交易流水导出CSV', accept: ['csv'] },
   { key: 'csv', label: '其他CSV', description: '任意CSV文件,需手动配置列映射', accept: ['csv'] },
 ];
+
+/** 来源 key → 展示标签(账单来源在消息/卡片中共用;键放宽为 string 便于动态来源名兜底) */
+export const IMPORT_SOURCE_LABELS: Record<string, string> = Object.fromEntries(
+  IMPORT_SOURCE_DEFS.map((d) => [d.key, d.label]),
+);
 
 // ── 列映射字段定义 ──
 
@@ -108,7 +116,7 @@ export function autoDetectTypeMapping(values: string[]): Partial<Record<string, 
   return mapping;
 }
 
-// ── 账户池内匹配(与 backend matchAccountByName 一致) ──
+// ── 账户池内匹配(对齐 backend matchAccountByName 多用户修复版语义) ──
 
 export interface PoolAccount {
   id: string;
@@ -116,20 +124,113 @@ export interface PoolAccount {
   ownerId?: string;
 }
 
+export type AccountPoolMatchResult =
+  | { matched: true; id: string; name: string }
+  | { matched: false; ambiguous: true; candidates: PoolAccount[] }
+  | { matched: false; ambiguous: false };
+
 /**
- * 按名称在账户池中匹配(优先级:精确 → 账户名包含目标名 → 目标名包含账户名)。
- * 传入 ownerId 时只在该归属人的账户中匹配(多成员账本下避免误匹配他人同名账户)。
+ * 按名称在账户池中匹配(完整协议;优先级:精确 → 账户名包含目标名 → 目标名包含账户名)。
+ * 命中多个时返回 ambiguous + candidates 交由上层决议。
+ * 传入 ownerId 时只在本人账户(及未设归属人的账户)中匹配(多成员账本下避免误匹配他人同名账户)。
  */
-export function matchAccountInPool(name: string, pool: PoolAccount[], ownerId?: string): PoolAccount | null {
-  const candidates = ownerId ? pool.filter((a) => a.ownerId === ownerId) : pool;
-  if (!name || candidates.length === 0) return null;
+export function matchAccountInPoolDetailed(name: string, pool: PoolAccount[], ownerId?: string): AccountPoolMatchResult {
+  const candidates = ownerId ? pool.filter((a) => !a.ownerId || a.ownerId === ownerId) : pool;
+  if (!name || candidates.length === 0) return { matched: false, ambiguous: false };
+
   const exact = candidates.filter((a) => a.name === name);
-  if (exact.length >= 1) return exact[0];
+  if (exact.length === 1) return { matched: true, id: exact[0].id, name: exact[0].name };
+  if (exact.length > 1) return { matched: false, ambiguous: true, candidates: exact };
+
   const contains = candidates.filter((a) => a.name.includes(name));
-  if (contains.length >= 1) return contains[0];
+  if (contains.length === 1) return { matched: true, id: contains[0].id, name: contains[0].name };
+  if (contains.length > 1) return { matched: false, ambiguous: true, candidates: contains };
+
   const containedBy = candidates.filter((a) => name.includes(a.name));
-  if (containedBy.length >= 1) return containedBy[0];
-  return null;
+  if (containedBy.length === 1) return { matched: true, id: containedBy[0].id, name: containedBy[0].name };
+  if (containedBy.length > 1) return { matched: false, ambiguous: true, candidates: containedBy };
+
+  return { matched: false, ambiguous: false };
+}
+
+/** 简化版:直接取首个命中(不做歧义决议),供导入向导直接取 id */
+export function matchAccountInPool(name: string, pool: PoolAccount[], ownerId?: string): PoolAccount | null {
+  const r = matchAccountInPoolDetailed(name, pool, ownerId);
+  return r.matched ? pool.find((a) => a.id === r.id) ?? null : null;
+}
+
+// ── 账户决议(手动导入向导 / AI 导入卡共用) ──
+
+/** 账户解析:映射已有账户 或 新建(名称+类型) */
+export type AccountResolution =
+  | { action: 'existing'; accountId: string }
+  | { action: 'create'; name: string; type: string };
+
+/** AI 预填的账户决议(preview 结果的 aiResolution / AI 参数中的 accountResolutions) */
+export interface AIAccountResolution {
+  action: string;
+  sourceAccountName?: string;
+  targetAccountId?: string;
+  targetAccountName?: string;
+  accountType?: string;
+}
+
+export interface UnmatchedAccountInput {
+  csvName: string;
+  suggestedName: string;
+  suggestedType: string;
+  candidates?: { id: string }[];
+  aiResolution?: AIAccountResolution;
+}
+
+/** 收支类型 → 分类字典组 code */
+export const TYPE_TO_GROUP: Record<string, string> = {
+  EXPENSE: 'transaction_category_expense',
+  INCOME: 'transaction_category_income',
+  TRANSFER: 'transaction_category_transfer',
+};
+
+/**
+ * 账户决议默认值初始化(四处导入 UI 共用策略):
+ * AI 决议(既有→映射 / 新建→名称+类型) → 候选首位 → 新建建议;aiArgsResolutions 最后覆盖。
+ */
+export function initAccountResolutions(
+  unmatchedAccounts: UnmatchedAccountInput[],
+  aiArgsResolutions?: AIAccountResolution[],
+): Record<string, AccountResolution> {
+  const res: Record<string, AccountResolution> = {};
+  for (const ua of unmatchedAccounts) {
+    const ar = ua.aiResolution;
+    if (ar?.action === 'existing' && ar.targetAccountId) {
+      res[ua.csvName] = { action: 'existing', accountId: ar.targetAccountId };
+    } else if (ar?.action === 'create' && ar.targetAccountName && ar.accountType) {
+      res[ua.csvName] = { action: 'create', name: ar.targetAccountName, type: ar.accountType };
+    } else if (ua.candidates?.length) {
+      res[ua.csvName] = { action: 'existing', accountId: ua.candidates[0].id };
+    } else {
+      res[ua.csvName] = { action: 'create', name: ua.suggestedName, type: ua.suggestedType || 'OTHER' };
+    }
+  }
+  // AI 参数中的账户映射回显(覆盖默认值)
+  for (const ar of aiArgsResolutions ?? []) {
+    if (ar.action === 'existing' && ar.targetAccountId) {
+      res[ar.sourceAccountName ?? ''] = { action: 'existing', accountId: ar.targetAccountId };
+    } else if (ar.action === 'create' && ar.targetAccountName && ar.accountType) {
+      res[ar.sourceAccountName ?? ''] = { action: 'create', name: ar.targetAccountName, type: ar.accountType };
+    }
+  }
+  return res;
+}
+
+/** 未匹配账户中仍缺决议的数量(existing 缺 accountId / create 缺 name) */
+export function unresolvedAccountCount(
+  unmatchedAccounts: { csvName: string }[],
+  resolutions: Record<string, AccountResolution>,
+): number {
+  return unmatchedAccounts.filter((ua) => {
+    const res = resolutions[ua.csvName];
+    return res && (res.action === 'existing' ? !res.accountId : !res.name);
+  }).length;
 }
 
 // ── 待创建账户合并 ──

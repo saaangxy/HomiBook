@@ -1,4 +1,5 @@
 import { api } from './http'
+import { consumeSSEStream } from '@homibook/core'
 import type { ChatSSEEvent } from '@homibook/core'
 
 const BASE = '/api/chat'
@@ -178,10 +179,9 @@ export function confirmActionStream(
 
       const contentType = response.headers.get('Content-Type') || ''
       if (contentType.includes('text/event-stream')) {
-        parseSSEStream(response, onEvent, onDone, controller.signal)
-      } else {
-        onDone()
+        await consumeSSEStream(response, (frame) => onEvent(sseToChatEvent(frame)), controller.signal)
       }
+      onDone()
     })
     .catch((err) => {
       if (err.name !== 'AbortError') {
@@ -241,56 +241,9 @@ export async function updateSearchEngine(engine: string) {
   return api.post<{ success: boolean; engine: string }>(`${BASE}/search-engine`, { engine })
 }
 
-// 共享 SSE 流解析
-async function parseSSEStream(
-  response: Response,
-  onEvent: (event: SSEEvent) => void,
-  onDone: () => void,
-  signal?: AbortSignal,
-) {
-  const reader = response.body?.getReader()
-  if (!reader) {
-    onEvent({ type: 'error', message: '无法读取响应流' })
-    onDone()
-    return
-  }
-
-  const decoder = new TextDecoder()
-  let buffer = ''
-
-  try {
-    while (true) {
-      if (signal?.aborted) break
-      const { done, value } = await reader.read()
-      if (done) break
-
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
-
-      let eventType = ''
-      for (const line of lines) {
-        if (line.startsWith('event: ')) {
-          eventType = line.slice(7).trim()
-        } else if (line.startsWith('data: ')) {
-          const data = line.slice(6)
-          try {
-            const parsed = JSON.parse(data)
-            onEvent({ type: eventType as SSEEvent['type'], ...parsed })
-          } catch (e) {
-            console.error('[SSE] JSON parse failed for event:', eventType, 'error:', e, 'dataLen:', data.length, 'dataPreview:', data.slice(0, 200))
-          }
-          eventType = ''
-        }
-      }
-    }
-  } catch (err: any) {
-    if (err.name !== 'AbortError') {
-      onEvent({ type: 'error', message: err.message || '网络错误' })
-    }
-  }
-
-  onDone()
+// SSE 事件帧 → 聊天事件(core consumeSSEStream 负责分帧/多行 data/[DONE],与 mobile 同源)
+function sseToChatEvent(frame: { event: string; data: unknown }): SSEEvent {
+  return { type: frame.event as SSEEvent['type'], ...(frame.data as object) } as SSEEvent
 }
 
 // SSE 流式发送消息
@@ -318,7 +271,8 @@ export function sendMessageStream(
         onDone()
         return
       }
-      await parseSSEStream(response, onEvent, onDone, controller.signal)
+      await consumeSSEStream(response, (frame) => onEvent(sseToChatEvent(frame)), controller.signal)
+      onDone()
     })
     .catch((err) => {
       if (err.name !== 'AbortError') {

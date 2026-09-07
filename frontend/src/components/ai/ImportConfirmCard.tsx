@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { CheckCircle2, Loader2 } from 'lucide-react'
+import { RECORD_TYPE_LABELS as TYPE_LABELS, RECORD_TYPE_TEXT_CLASS as TYPE_COLORS } from '@/lib/record-type'
 
 // ---- 类型 ----
 
@@ -111,8 +112,6 @@ export function ImportConfirmCard({ data, toolCallId }: Props) {
     useChatStore.getState().confirmAndContinue(data.accountBookId, toolCallId, false)
   }
 
-  const TYPE_LABELS: Record<string, string> = { INCOME: '收入', EXPENSE: '支出', TRANSFER: '转账' }
-  const TYPE_COLORS: Record<string, string> = { INCOME: 'text-green-600', EXPENSE: 'text-red-600', TRANSFER: 'text-blue-600' }
   const SOURCE_LABELS: Record<string, string> = { alipay: '支付宝', wechat: '微信', jd: '京东' }
 
   return (

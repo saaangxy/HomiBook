@@ -3,6 +3,8 @@ import { cn } from '@/lib/utils'
 import { markSubmitted, isSubmitted, clearSubmitted } from '@/lib/ai-submit'
 import { ACCOUNT_TYPE_LABELS, type AccountType } from '@/api/account'
 import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
+import { initAccountResolutions, RECORD_TYPE_LABELS, TYPE_TO_GROUP as coreTypeToGroup, type AccountResolution } from '@homibook/core'
+import { RECORD_TYPE_TEXT_CLASS } from '@/lib/record-type'
 import { useChatStore } from '@/stores/chat'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -75,13 +77,10 @@ export interface ImportPreviewData {
 
 // ---- 常量 ----
 
-const TYPE_LABELS: Record<string, string> = { INCOME: '收入', EXPENSE: '支出', TRANSFER: '转账', UNKNOWN: '未知' }
-const TYPE_COLORS: Record<string, string> = { INCOME: 'text-[#22c55e]', EXPENSE: 'text-[#ef4444]', TRANSFER: 'text-[#3b82f6]' }
-const TYPE_TO_GROUP: Record<string, string> = {
-  EXPENSE: 'transaction_category_expense',
-  INCOME: 'transaction_category_income',
-  TRANSFER: 'transaction_category_transfer',
-}
+const TYPE_LABELS: Record<string, string> = { ...RECORD_TYPE_LABELS, UNKNOWN: '未知' }
+const TYPE_COLORS = RECORD_TYPE_TEXT_CLASS
+// 收支类型 → 字典组映射统一来自 @homibook/core
+const TYPE_TO_GROUP = coreTypeToGroup
 const GROUP_HEADING: Record<string, string> = {
   transaction_category_expense: '支出分类',
   transaction_category_income: '收入分类',
@@ -129,10 +128,7 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
   // ---- 状态 ----
   const [tab, setTab] = useState<'records' | 'unmatchedAccounts' | 'unmatchedCategories' | 'unrecognized'>('records')
 
-  // 账户解析
-  type AccountResolution =
-    | { action: 'create'; name: string; type: string }
-    | { action: 'existing'; accountId: string }
+  // 账户解析(类型来自 @homibook/core)
   const [accountResolutions, setAccountResolutions] = useState<Record<string, AccountResolution>>({})
 
   // 分类解析 - 数组结构，复制/删除/更新全部操作此字段
@@ -159,33 +155,8 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
   useEffect(() => {
     if (initialized.current) return
     initialized.current = true
-    // 账户解析
-    const acctRes: Record<string, AccountResolution> = {}
-    for (const ua of data.unmatchedAccounts || []) {
-      if (ua.aiResolution) {
-        const ar = ua.aiResolution
-        if (ar.action === 'existing' && ar.targetAccountId) {
-          acctRes[ua.csvName] = { action: 'existing', accountId: ar.targetAccountId }
-        } else if (ar.action === 'create' && ar.targetAccountName && ar.accountType) {
-          acctRes[ua.csvName] = { action: 'create', name: ar.targetAccountName, type: ar.accountType }
-        }
-      } else if (ua.candidates?.length) {
-        acctRes[ua.csvName] = { action: 'existing', accountId: ua.candidates[0].id }
-      } else {
-        acctRes[ua.csvName] = { action: 'create', name: ua.suggestedName, type: ua.suggestedType }
-      }
-    }
-    // AI 提供的账户映射回显（覆盖默认值）
-    if (aiArgs?.accountResolutions) {
-      for (const ar of aiArgs.accountResolutions) {
-        if (ar.action === 'existing' && ar.targetAccountId) {
-          acctRes[ar.sourceAccountName] = { action: 'existing', accountId: ar.targetAccountId }
-        } else if (ar.action === 'create' && ar.targetAccountName && ar.accountType) {
-          acctRes[ar.sourceAccountName] = { action: 'create', name: ar.targetAccountName, type: ar.accountType }
-        }
-      }
-    }
-    setAccountResolutions(acctRes)
+    // 账户解析(统一策略见 core initAccountResolutions)
+    setAccountResolutions(initAccountResolutions(data.unmatchedAccounts || [], aiArgs?.accountResolutions))
 
     // 分类解析 - 直接从后端映射规则构建数组
     setCategoryResolutions(

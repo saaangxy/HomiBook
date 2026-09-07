@@ -138,8 +138,6 @@ export function parseAlipayCSV(buffer: Buffer): { rows: ParsedRow[]; errors: str
         } else {
           recordType = 'UNKNOWN'
         }
-      } else if (direction === '不计收入') {
-        recordType = 'INCOME'
       } else {
         recordType = 'EXPENSE'
       }

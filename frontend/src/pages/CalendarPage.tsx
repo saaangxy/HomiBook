@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { RECORD_TYPE_LABELS as TYPE_LABELS, RECORD_TYPE_TEXT_CLASS, RECORD_TYPE_BG_CLASS } from '@/lib/record-type'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -46,12 +47,6 @@ import { holidayApi, type HolidayItem } from '@/api/holiday'
 import { useBookStore } from '../stores/book'
 import { useAuthStore } from '../stores/auth'
 import { Plus, ArrowUpRight, ArrowDownRight, ArrowLeftRight, Pencil, Trash2, TrendingUp, TrendingDown, ReceiptText, Paperclip } from 'lucide-react'
-
-const TYPE_LABELS: Record<RecordType, string> = {
-  INCOME: '收入',
-  EXPENSE: '支出',
-  TRANSFER: '转账',
-}
 
 export function CalendarPage() {
   const currentBookId = useBookStore((s) => s.currentBookId)
@@ -315,34 +310,34 @@ export function CalendarPage() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4 shrink-0">
         <Card className="border border-border">
           <CardContent className="p-3 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-[#22c55e]/10 flex items-center justify-center shrink-0">
-              <ArrowUpRight size={16} className="text-[#22c55e]" />
+            <div className={`w-8 h-8 rounded-lg ${RECORD_TYPE_BG_CLASS.INCOME} flex items-center justify-center shrink-0`}>
+              <ArrowUpRight size={16} className={RECORD_TYPE_TEXT_CLASS.INCOME} />
             </div>
             <div>
               <p className="text-xs text-muted-foreground">收入</p>
-              <p className="text-base font-bold text-[#22c55e]">{formatMoney(summary.income)}</p>
+              <p className={`text-base font-bold ${RECORD_TYPE_TEXT_CLASS.INCOME}`}>{formatMoney(summary.income)}</p>
             </div>
           </CardContent>
         </Card>
         <Card className="border border-border">
           <CardContent className="p-3 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-[#ef4444]/10 flex items-center justify-center shrink-0">
-              <ArrowDownRight size={16} className="text-[#ef4444]" />
+            <div className={`w-8 h-8 rounded-lg ${RECORD_TYPE_BG_CLASS.EXPENSE} flex items-center justify-center shrink-0`}>
+              <ArrowDownRight size={16} className={RECORD_TYPE_TEXT_CLASS.EXPENSE} />
             </div>
             <div>
               <p className="text-xs text-muted-foreground">支出</p>
-              <p className="text-base font-bold text-[#ef4444]">{formatMoney(summary.expense)}</p>
+              <p className={`text-base font-bold ${RECORD_TYPE_TEXT_CLASS.EXPENSE}`}>{formatMoney(summary.expense)}</p>
             </div>
           </CardContent>
         </Card>
         <Card className="border border-border">
           <CardContent className="p-3 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-[#22c55e]/10 flex items-center justify-center shrink-0">
-              <span className="text-base font-bold text-[#22c55e]">¥</span>
+            <div className={`w-8 h-8 rounded-lg ${RECORD_TYPE_BG_CLASS.INCOME} flex items-center justify-center shrink-0`}>
+              <span className={`text-base font-bold ${RECORD_TYPE_TEXT_CLASS.INCOME}`}>¥</span>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">盈余</p>
-              <p className={`text-base font-bold ${summary.income - summary.expense >= 0 ? 'text-[#22c55e]' : 'text-[#ef4444]'}`}>
+              <p className={`text-base font-bold ${summary.income - summary.expense >= 0 ? RECORD_TYPE_TEXT_CLASS.INCOME : RECORD_TYPE_TEXT_CLASS.EXPENSE}`}>
                 {formatMoney(summary.income - summary.expense)}
               </p>
             </div>
@@ -350,12 +345,12 @@ export function CalendarPage() {
         </Card>
         <Card className="border border-border">
           <CardContent className="p-3 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-[#3b82f6]/10 flex items-center justify-center shrink-0">
-              <ArrowLeftRight size={16} className="text-[#3b82f6]" />
+            <div className={`w-8 h-8 rounded-lg ${RECORD_TYPE_BG_CLASS.TRANSFER} flex items-center justify-center shrink-0`}>
+              <ArrowLeftRight size={16} className={RECORD_TYPE_TEXT_CLASS.TRANSFER} />
             </div>
             <div>
               <p className="text-xs text-muted-foreground">转账</p>
-              <p className="text-base font-bold text-[#3b82f6]">{formatMoney(summary.transfer)}</p>
+              <p className={`text-base font-bold ${RECORD_TYPE_TEXT_CLASS.TRANSFER}`}>{formatMoney(summary.transfer)}</p>
             </div>
           </CardContent>
         </Card>
@@ -485,7 +480,7 @@ export function CalendarPage() {
                         {r.payer || r.categoryCode || '未分类'}
                       </span>
                       <span className={`text-sm font-semibold shrink-0 ml-3 tabular-nums ${
-                        r.type === 'INCOME' ? 'text-[#22c55e]' : r.type === 'EXPENSE' ? 'text-[#ef4444]' : 'text-[#3b82f6]'
+                        RECORD_TYPE_TEXT_CLASS[r.type]
                       }`}>
                         {r.type === 'INCOME' ? '+' : r.type === 'EXPENSE' ? '-' : ''}{formatMoney(r.amount)}
                       </span>
@@ -493,7 +488,7 @@ export function CalendarPage() {
 
                     {/* 第二行：类型 | 分类 | 账户 */}
                     <div className="flex items-center gap-1.5 mt-1 text-xs text-muted-foreground">
-                      <span className={r.type === 'INCOME' ? 'text-[#22c55e]' : r.type === 'EXPENSE' ? 'text-[#ef4444]' : 'text-[#3b82f6]'}>
+                      <span className={RECORD_TYPE_TEXT_CLASS[r.type]}>
                         {TYPE_LABELS[r.type]}
                       </span>
                       <span>|</span>
@@ -572,7 +567,7 @@ export function CalendarPage() {
                   { type: 'TRANSFER' as RecordType, label: '转账', icon: ArrowLeftRight },
                 ]).map(({ type, label, icon: Icon }) => (
                   <TabsTrigger key={type} value={type} className="flex-1 text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg h-8 gap-1.5">
-                    <Icon size={14} className={type === 'INCOME' ? 'text-[#22c55e]' : type === 'EXPENSE' ? 'text-[#ef4444]' : 'text-[#3b82f6]'} />
+                    <Icon size={14} className={RECORD_TYPE_TEXT_CLASS[type]} />
                     {label}
                   </TabsTrigger>
                 ))}

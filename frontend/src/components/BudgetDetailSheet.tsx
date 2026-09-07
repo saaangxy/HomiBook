@@ -20,6 +20,7 @@ import {
 import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
 import { ChevronLeft, ChevronRight, Filter, X } from 'lucide-react'
+import { RECORD_TYPE_HEX as TYPE_COLORS, RECORD_TYPE_TEXT_CLASS } from '@/lib/record-type'
 import { recordApi, type RecordItem } from '@/api/record'
 import { accountApi, type AccountItem } from '@/api/account'
 import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
@@ -32,12 +33,6 @@ import { DatePicker } from '@/components/ui/date-picker'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-
-const TYPE_COLORS: Record<string, string> = {
-  INCOME: '#22c55e',
-  EXPENSE: '#ef4444',
-  TRANSFER: '#3b82f6',
-}
 
 function UsageBadge({ percent }: { percent: number }) {
   let color = 'text-[#22c55e] bg-[#22c55e]/10'
@@ -567,11 +562,11 @@ export function BudgetDetailSheet({ budget, bookId, onClose }: Props) {
                   <div className="grid grid-cols-3 gap-2">
                     <div className="rounded-md border p-3 text-center">
                       <div className="text-xs text-muted-foreground mb-1">总支出</div>
-                      <div className="text-sm font-bold text-[#ef4444]">{formatMoney(actual)}</div>
+                      <div className={`text-sm font-bold ${RECORD_TYPE_TEXT_CLASS.EXPENSE}`}>{formatMoney(actual)}</div>
                     </div>
                     <div className="rounded-md border p-3 text-center">
                       <div className="text-xs text-muted-foreground mb-1">剩余预算</div>
-                      <div className={`text-sm font-bold ${remaining < 0 ? 'text-[#ef4444]' : 'text-[#22c55e]'}`}>
+                      <div className={`text-sm font-bold ${remaining < 0 ? RECORD_TYPE_TEXT_CLASS.EXPENSE : RECORD_TYPE_TEXT_CLASS.INCOME}`}>
                         {formatMoney(remaining)}
                       </div>
                     </div>

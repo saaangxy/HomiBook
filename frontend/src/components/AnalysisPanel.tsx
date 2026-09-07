@@ -20,12 +20,13 @@ import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
 import { adminApi, type AdminUser } from '@/api/admin'
 import { PieChart, Users, Wallet, X, List, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useChartTheme, type ChartTheme, generateChartColors } from '@/hooks/useChartTheme'
+import { RECORD_TYPE_HEX } from '@/lib/record-type'
 import { formatMoney } from '@homibook/core'
 
 const ANALYSIS_TYPES = [
-  { value: 'EXPENSE', label: '支出分析', color: '#ef4444' },
-  { value: 'INCOME', label: '收入分析', color: '#22c55e' },
-  { value: 'TRANSFER', label: '转账分析', color: '#3b82f6' },
+  { value: 'EXPENSE', label: '支出分析', color: RECORD_TYPE_HEX.EXPENSE },
+  { value: 'INCOME', label: '收入分析', color: RECORD_TYPE_HEX.INCOME },
+  { value: 'TRANSFER', label: '转账分析', color: RECORD_TYPE_HEX.TRANSFER },
 ] as const
 
 const GROUP_LABELS: Record<string, string> = {
@@ -398,7 +399,7 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
                       <TableCell className="text-xs whitespace-nowrap py-2">{r.ownerName}</TableCell>
                       <TableCell className="text-xs whitespace-nowrap py-2">{r.payer || '-'}</TableCell>
                       <TableCell className="text-xs py-2 max-w-[150px] truncate">{r.remark || '-'}</TableCell>
-                      <TableCell className="text-xs whitespace-nowrap py-2 text-right font-bold" style={{ color: r.type === 'INCOME' ? '#22c55e' : r.type === 'EXPENSE' ? '#ef4444' : '#3b82f6' }}>
+                      <TableCell className="text-xs whitespace-nowrap py-2 text-right font-bold" style={{ color: RECORD_TYPE_HEX[r.type] }}>
                         {formatMoney(r.amount)}
                       </TableCell>
                     </TableRow>

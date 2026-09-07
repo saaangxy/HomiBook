@@ -2,7 +2,7 @@
  * 流水去重 —— 纯 TS,三端共享(backend detect-duplicates / web DedupDialog / mobile DedupSheet)。
  * 分组 key 的字段顺序(日期 → 类型 → 账户 → 交易方 → 金额 → 归属人)与解析必须一致。
  */
-import type { RecordType } from './types';
+import type { RecordType } from './types/index.js';
 
 export type DedupDatePrecision = 'exact' | 'date' | null;
 
@@ -34,6 +34,7 @@ export const DEDUP_TOGGLE_FIELDS: { key: Exclude<keyof DedupMatchFields, 'date'>
   { key: 'ownerId', label: '归属人' },
 ];
 
+/** 去重界面标签(与 record-import 的 RECORD_TYPE_LABELS 同源) */
 export const DEDUP_TYPE_LABELS: Record<RecordType, string> = {
   INCOME: '收入',
   EXPENSE: '支出',

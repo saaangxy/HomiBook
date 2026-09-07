@@ -1,19 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
+import { RECORD_TYPE_LABELS as TYPE_LABELS, RECORD_TYPE_TEXT_CLASS } from '@/lib/record-type'
+import { RecordFormDialog } from '@/components/records/RecordFormDialog'
+import { BatchEditDialog } from '@/components/records/BatchEditDialog'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import {
-  Dialog,
-  DialogTrigger,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,13 +34,8 @@ import {
 } from '@/components/ui/table'
 import {Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger} from '@/components/ui/sheet'
 import { DatePicker } from '@/components/ui/date-picker'
-import { DateTimePicker } from '@/components/ui/datetime-picker'
 import { MultiSelect } from '@/components/ui/multi-select'
-import dayjs from 'dayjs'
 import { Spinner } from '@/components/ui/spinner'
-import { Textarea } from '@/components/ui/textarea'
-import { DictCombobox } from '@/components/DictCombobox'
-import { TagCombobox } from '@/components/TagCombobox'
 import { AttachmentViewer } from '@/components/AttachmentViewer'
 import { recordApi, type RecordItem, type RecordType, type RecordSummary } from '@/api/record'
 import { accountApi, type AccountItem } from '@/api/account'
@@ -72,12 +61,6 @@ import {
   Pencil, Filter, X, ChevronLeft, ChevronRight,
   Upload, Download, Save, CopyMinus,
 } from 'lucide-react'
-
-const TYPE_LABELS: Record<RecordType, string> = {
-  INCOME: '收入',
-  EXPENSE: '支出',
-  TRANSFER: '转账',
-}
 
 interface FilterState {
   types: string[]         // 多选类型 INCOME/EXPENSE/TRANSFER
@@ -192,45 +175,16 @@ export function RecordsPage() {
   // 去重弹窗
   const [dedupOpen, setDedupOpen] = useState(false)
 
-  // 弹窗状态
-  const [createOpen, setCreateOpen] = useState(false)
+  // 记一笔/编辑弹窗(表单状态在 RecordFormDialog 内)
+  const [formOpen, setFormOpen] = useState(false)
   const [editRecord, setEditRecord] = useState<RecordItem | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<RecordItem | null>(null)
+  // 表格行附件查看
+  const [viewingAttachments, setViewingAttachments] = useState<{ id: string; url: string; originalFilename: string }[] | null>(null)
 
-  // 批量更新弹窗
+  // 批量更新弹窗(表单状态在 BatchEditDialog 内)
   const [batchOpen, setBatchOpen] = useState(false)
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false)
-  const [batchDate, setBatchDate] = useState('')
-  const [batchType, setBatchType] = useState('')
-  const [batchAccountId, setBatchAccountId] = useState('')
-  const [batchFromAccountId, setBatchFromAccountId] = useState('')
-  const [batchToAccountId, setBatchToAccountId] = useState('')
-  const [batchCategory, setBatchCategory] = useState('')
-  const [batchTags, setBatchTags] = useState<string[]>([])
-  const [batchPayer, setBatchPayer] = useState('')
-  const [batchOwnerId, setBatchOwnerId] = useState('')
-  const [batchAmount, setBatchAmount] = useState('')
-  const [batchRemark, setBatchRemark] = useState('')
-  const [batchError, setBatchError] = useState('')
-
-  // 表单状态
-  const [formType, setFormType] = useState<RecordType>('EXPENSE')
-  const [formAmount, setFormAmount] = useState('')
-  const [formDate, setFormDate] = useState('')
-  const [formAccountId, setFormAccountId] = useState('')
-  const [formFromAccountId, setFormFromAccountId] = useState('')
-  const [formToAccountId, setFormToAccountId] = useState('')
-  const [formCategoryCode, setFormCategoryCode] = useState('')
-  const [formPayer, setFormPayer] = useState('')
-  const [formRemark, setFormRemark] = useState('')
-  const [formTags, setFormTags] = useState<string[]>([])
-  const [formOwnerId, setFormOwnerId] = useState('__self__')
-  const [formAttachments, setFormAttachments] = useState<{ id: string; url: string; fullUrl: string; originalFilename: string }[]>([])
-  const [uploadingAttachment, setUploadingAttachment] = useState(false)
-  const [previewImage, setPreviewImage] = useState<string | null>(null)
-  const [viewingAttachments, setViewingAttachments] = useState<{ id: string; url: string; originalFilename: string }[] | null>(null)
-  const [formError, setFormError] = useState('')
-  const [submitting, setSubmitting] = useState(false)
 
   // 自由编辑模式
   const [editMode, setEditMode] = useState(false)
@@ -364,106 +318,15 @@ export function RecordsPage() {
   }).length
 
   const openCreate = () => {
-    setFormType('EXPENSE')
-    setFormAmount('')
-    setFormDate(dayjs().format('YYYY-MM-DDTHH:mm:ss'))
-    setFormAccountId('')
-    setFormFromAccountId('')
-    setFormToAccountId('')
-    setFormCategoryCode('')
-    setFormPayer('')
-    setFormRemark('')
-    setFormOwnerId('__self__')
-    setFormAttachments([])
-    setFormTags([])
-    setFormError('')
-    setSubmitting(false)
-    setCreateOpen(true)
+    setEditRecord(null)
+    setFormOpen(true)
   }
 
   const openEdit = (record: RecordItem) => {
-    setFormType(record.type)
-    setFormAmount(record.amount.toString())
-    setFormDate(dayjs(record.date).format('YYYY-MM-DDTHH:mm:ss'))
-    setFormAccountId(record.accountId)
-    setFormFromAccountId(record.fromAccountId || '')
-    setFormToAccountId(record.toAccountId || '')
-    setFormCategoryCode(record.categoryCode || '')
-    setFormPayer(record.payer || '')
-    setFormRemark(record.remark || '')
-    setFormTags(record.tags || [])
-    setFormOwnerId(record.ownerId || '__self__')
-    // 附件数据已包含 id + url + originalFilename，补 fullUrl
-    const origin = window.location.origin
-    setFormAttachments(record.attachments.map((a) => {
-      const fullUrl = a.url.startsWith('http') ? a.url : `${origin}${a.url}`
-      return { id: a.id, url: a.url, fullUrl, originalFilename: a.originalFilename }
-    }))
-    setFormError('')
-    setSubmitting(false)
     setEditRecord(record)
+    setFormOpen(true)
   }
 
-  const handleCreate = async () => {
-    if (!formAmount || parseFloat(formAmount) <= 0) { setFormError('请输入有效金额'); return }
-    if (formType === 'TRANSFER') {
-      if (!formFromAccountId) { setFormError('请选择转出账户'); return }
-      if (!formToAccountId) { setFormError('请选择转入账户'); return }
-      if (formFromAccountId === formToAccountId) { setFormError('转出和转入账户不能相同'); return }
-    } else {
-      if (!formAccountId) { setFormError('请选择账户'); return }
-    }
-    if (!currentBookId) return
-    setSubmitting(true)
-    try {
-      await recordApi.create({
-        accountBookId: currentBookId,
-        type: formType,
-        amount: parseFloat(formAmount),
-        date: new Date(formDate).toISOString(),
-        accountId: formType === 'TRANSFER' ? formFromAccountId : formAccountId,
-        fromAccountId: formType === 'TRANSFER' ? formFromAccountId : undefined,
-        toAccountId: formType === 'TRANSFER' ? formToAccountId : undefined,
-        categoryCode: formCategoryCode || undefined,
-        payer: formPayer || undefined,
-        remark: formRemark || undefined,
-        tags: formTags.length > 0 ? formTags : undefined,
-        ownerId: formOwnerId === '__self__' ? undefined : (formOwnerId || undefined),
-        attachmentIds: formAttachments.map((a) => a.id),
-      })
-      setCreateOpen(false)
-      loadSummary()
-      loadAccounts()
-    } catch (e: any) { setFormError(e.message) }
-    finally { setSubmitting(false) }
-  }
-
-  const handleUpdate = async () => {
-    if (!editRecord) return
-    if (!formAmount || parseFloat(formAmount) <= 0) { setFormError('请输入有效金额'); return }
-    setSubmitting(true)
-    try {
-      await recordApi.update(editRecord.id, {
-        type: formType,
-        amount: parseFloat(formAmount),
-        date: new Date(formDate).toISOString(),
-        accountId: formType === 'TRANSFER' ? formFromAccountId : formAccountId,
-        fromAccountId: formType === 'TRANSFER' ? formFromAccountId : undefined,
-        toAccountId: formType === 'TRANSFER' ? formToAccountId : undefined,
-        categoryCode: formCategoryCode || undefined,
-        payer: formPayer || undefined,
-        remark: formRemark || undefined,
-        tags: formTags.length > 0 ? formTags : undefined,
-        ownerId: formOwnerId === '__self__' ? undefined : (formOwnerId || undefined),
-        attachmentIds: formAttachments.map((a) => a.id),
-      })
-      setEditRecord(null)
-      loadRecords()
-      loadSummary()
-      loadAccounts()
-    } catch (e: any) { setFormError(e.message) }
-    finally { setSubmitting(false) }
-  }
 
   const handleDelete = async () => {
     if (!deleteTarget) return
@@ -488,104 +351,6 @@ export function RecordsPage() {
     } catch (e: any) { setError(e.message) }
   }
 
-  const handleDownload = async (url: string, originalFilename: string) => {
-    try {
-      const relativePath = url.includes('/api/uploads/')
-        ? `/api/uploads/${url.split('/api/uploads/').pop()}`
-        : url
-      const downloadUrl = `/api/records/download?path=${encodeURIComponent(relativePath)}&name=${encodeURIComponent(originalFilename)}`
-
-      const token = (() => {
-        try {
-          const raw = localStorage.getItem('auth-storage')
-          if (!raw) return null
-          return JSON.parse(raw)?.state?.token || null
-        } catch { return null }
-      })()
-      const headers: Record<string, string> = {}
-      if (token) headers['Authorization'] = `Bearer ${token}`
-
-      const res = await fetch(downloadUrl, { headers })
-      if (!res.ok) throw new Error('下载失败')
-      const blob = await res.blob()
-      const blobUrl = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = blobUrl
-      a.download = originalFilename
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(blobUrl)
-    } catch (err: any) {
-      setError(err.message || '下载失败')
-    }
-  }
-
-  const handleClone = async (record: RecordItem) => {
-    try {
-      await recordApi.clone(record.id)
-      loadRecords()
-      loadSummary()
-      loadAccounts()
-    } catch (e: any) { setError(e.message) }
-  }
-
-  const handleBatchUpdate = async () => {
-    if (selectedIds.size === 0) return
-
-    const data: any = {}
-    if (batchDate) data.date = new Date(batchDate).toISOString()
-    if (batchType) data.type = batchType
-    if (batchType === 'TRANSFER' || (!batchType && records.filter(r => selectedIds.has(r.id)).every(r => r.type === 'TRANSFER'))) {
-      if (batchFromAccountId) {
-        data.accountId = batchFromAccountId
-        data.fromAccountId = batchFromAccountId
-      }
-      if (batchToAccountId) data.toAccountId = batchToAccountId
-    } else if (batchAccountId) {
-      data.accountId = batchAccountId
-    }
-    if (batchCategory) data.categoryCode = batchCategory === '__clear__' ? null : batchCategory
-    if (batchTags.length > 0) data.tags = batchTags
-    if (batchPayer) data.payer = batchPayer === '__clear__' ? null : batchPayer
-    if (batchOwnerId) data.ownerId = batchOwnerId === '__self__' ? null : batchOwnerId
-    if (batchAmount) {
-      const amt = parseFloat(batchAmount)
-      if (isNaN(amt) || amt <= 0) { setBatchError('金额必须大于0'); return }
-      data.amount = amt
-    }
-    if (batchRemark) data.remark = batchRemark === '__clear__' ? null : batchRemark
-
-    if (Object.keys(data).length === 0) { setBatchError('请至少填写一个字段'); return }
-
-    setSubmitting(true)
-    setBatchError('')
-    try {
-      await recordApi.batchUpdate(Array.from(selectedIds), data)
-      setBatchOpen(false)
-      resetBatchForm()
-      setSelectedIds(new Set())
-      loadRecords()
-      loadSummary()
-      loadAccounts()
-    } catch (e: any) { setBatchError(e.message) }
-    finally { setSubmitting(false) }
-  }
-
-  const resetBatchForm = () => {
-    setBatchDate('')
-    setBatchType('')
-    setBatchAccountId('')
-    setBatchFromAccountId('')
-    setBatchToAccountId('')
-    setBatchCategory('')
-    setBatchTags([])
-    setBatchPayer('')
-    setBatchOwnerId('')
-    setBatchAmount('')
-    setBatchRemark('')
-    setBatchError('')
-  }
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -610,10 +375,13 @@ export function RecordsPage() {
     })
   }
 
-  const getCategoryGroup = (type: RecordType) => {
-    if (type === 'INCOME') return 'transaction_category_income'
-    if (type === 'EXPENSE') return 'transaction_category_expense'
-    return 'transaction_category_transfer'
+  const handleClone = async (record: RecordItem) => {
+    try {
+      await recordApi.clone(record.id)
+      loadRecords()
+      loadSummary()
+      loadAccounts()
+    } catch (e: any) { setError(e.message) }
   }
 
   // 编辑模式辅助函数
@@ -709,10 +477,10 @@ export function RecordsPage() {
       {/* 汇总卡片 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         {([
-          { label: '总收入', value: summary.income, icon: ArrowUpRight, color: 'text-[#22c55e]' },
-          { label: '总支出', value: summary.expense, icon: ArrowDownRight, color: 'text-[#ef4444]' },
-          { label: '转账总额', value: summary.transfer, icon: ArrowLeftRight, color: 'text-[#3b82f6]' },
-          { label: '净收入', value: summary.netIncome, icon: summary.netIncome >= 0 ? ArrowUpRight : ArrowDownRight, color: summary.netIncome >= 0 ? 'text-[#22c55e]' : 'text-[#ef4444]' },
+          { label: '总收入', value: summary.income, icon: ArrowUpRight, color: RECORD_TYPE_TEXT_CLASS.INCOME },
+          { label: '总支出', value: summary.expense, icon: ArrowDownRight, color: RECORD_TYPE_TEXT_CLASS.EXPENSE },
+          { label: '转账总额', value: summary.transfer, icon: ArrowLeftRight, color: RECORD_TYPE_TEXT_CLASS.TRANSFER },
+          { label: '净收入', value: summary.netIncome, icon: summary.netIncome >= 0 ? ArrowUpRight : ArrowDownRight, color: summary.netIncome >= 0 ? RECORD_TYPE_TEXT_CLASS.INCOME : RECORD_TYPE_TEXT_CLASS.EXPENSE },
         ] as const).map(({ label, value, icon: Icon, color }) => (
           <Card key={label} className="rounded-xl">
             <CardContent className="p-4 flex items-center gap-3">
@@ -1224,249 +992,16 @@ export function RecordsPage() {
       </Sheet>
 
       {/* 创建/编辑弹窗 */}
-      <Dialog open={createOpen || !!editRecord} onOpenChange={() => { setCreateOpen(false); setEditRecord(null) }}>
-        <DialogTrigger />
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{editRecord ? '编辑流水' : '记一笔'}</DialogTitle>
-          </DialogHeader>
-          <div className="flex flex-col gap-3 max-h-[70vh] overflow-y-auto">
-            {formError && <Alert variant="destructive"><AlertDescription>{formError}</AlertDescription></Alert>}
-
-            <div className="flex gap-3">
-              <div className="flex-1">
-                <Label className="text-xs text-muted-foreground mb-1 block">类型</Label>
-                <Tabs value={formType} onValueChange={(v) => setFormType(v as RecordType)}>
-                  <TabsList className="h-9 w-full grid grid-cols-3 p-0.5 gap-0.5 bg-muted rounded-lg">
-                    {(['EXPENSE', 'INCOME', 'TRANSFER'] as RecordType[]).map((t) => (
-                      <TabsTrigger
-                        key={t}
-                        value={t}
-                        className={`text-xs rounded-md h-8 data-[state=active]:bg-background data-[state=active]:shadow-sm ${
-                          t === 'EXPENSE' ? 'text-[#ef4444]' : t === 'INCOME' ? 'text-[#22c55e]' : 'text-[#3b82f6]'
-                        }`}
-                      >
-                        {TYPE_LABELS[t]}
-                      </TabsTrigger>
-                    ))}
-                  </TabsList>
-                </Tabs>
-              </div>
-              <div className="flex-1">
-                <Label className="text-xs text-muted-foreground mb-1 block">金额</Label>
-                <Input
-                  aria-label="金额"
-                  type="number"
-                  placeholder="0.00"
-                  value={formAmount}
-                  onChange={(e) => { setFormAmount(e.target.value); setFormError('') }}
-                  className="bg-background border-border"
-                  autoFocus
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              {formType === 'TRANSFER' ? (
-                <>
-                  <div className="flex-1">
-                    <Label className="text-xs text-muted-foreground mb-1 block">转出账户</Label>
-                    <Select value={formFromAccountId} onValueChange={setFormFromAccountId}>
-                      <SelectTrigger className="bg-background border-border">
-                        <SelectValue placeholder="选择转出账户" />
-                      </SelectTrigger>
-                      <SelectContent className="bg-card border-border">
-                        {accounts.map((a) => (
-                          <SelectItem key={a.id} value={a.id}>{accountLabel(a, multiOwnerAccounts)}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex-1">
-                    <Label className="text-xs text-muted-foreground mb-1 block">转入账户</Label>
-                    <Select value={formToAccountId} onValueChange={setFormToAccountId}>
-                      <SelectTrigger className="bg-background border-border">
-                        <SelectValue placeholder="选择转入账户" />
-                      </SelectTrigger>
-                      <SelectContent className="bg-card border-border">
-                        {accounts.map((a) => (
-                          <SelectItem key={a.id} value={a.id}>{accountLabel(a, multiOwnerAccounts)}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </>
-              ) : (
-                <div className="flex-1">
-                  <Label className="text-xs text-muted-foreground mb-1 block">账户</Label>
-                  <Select value={formAccountId} onValueChange={(v) => { setFormAccountId(v); setFormError('') }}>
-                    <SelectTrigger className="bg-background border-border">
-                      <SelectValue placeholder="选择账户" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-card border-border">
-                      {accounts.map((a) => (
-                        <SelectItem key={a.id} value={a.id}>{accountLabel(a, multiOwnerAccounts)}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-              <div className="flex-1">
-                <Label className="text-xs text-muted-foreground mb-1 block">日期</Label>
-                <DateTimePicker
-                  value={formDate}
-                  onChange={setFormDate}
-                />
-              </div>
-            </div>
-
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1 block">分类</Label>
-              <DictCombobox
-                group={getCategoryGroup(formType)}
-                value={formCategoryCode}
-                onChange={setFormCategoryCode}
-                placeholder="选择分类（可选）"
-              />
-            </div>
-
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1 block">交易方</Label>
-              <Input
-                aria-label="交易方"
-                placeholder="商家、对方账户名等（可选）"
-                value={formPayer}
-                onChange={(e) => setFormPayer(e.target.value)}
-                className="bg-background border-border"
-              />
-            </div>
-
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1 block">标签</Label>
-              <TagCombobox
-                value={formTags}
-                onChange={setFormTags}
-                bookId={currentBookId || ''}
-                placeholder="选择或输入标签..."
-              />
-            </div>
-
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1 block">归属人</Label>
-              <Select value={formOwnerId} onValueChange={setFormOwnerId}>
-                <SelectTrigger className="h-9 text-sm w-full">
-                  <SelectValue placeholder="本人（默认）" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__self__" className="text-sm">本人（默认）</SelectItem>
-                  {bookMembers.map(m => (
-                    <SelectItem key={m.userId} value={m.userId} className="text-sm">
-                      {m.user.nickname || m.user.email || m.userId}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1 block">备注</Label>
-              <Textarea
-                placeholder="备注信息（可选）"
-                value={formRemark}
-                onChange={(e) => setFormRemark(e.target.value)}
-                className="bg-background border-border min-h-[80px]"
-                rows={3}
-              />
-            </div>
-
-            {/* 附件上传 */}
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1 block">附件</Label>
-              <div className="flex flex-col gap-2">
-                {formAttachments.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {formAttachments.map((att, idx) => {
-                      const isImage = /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(att.url)
-                      return (
-                        <div key={idx} className="relative group">
-                          {isImage ? (
-                            <button
-                              className="w-16 h-16 rounded-md border overflow-hidden"
-                              onClick={() => setPreviewImage(att.fullUrl)}
-                            >
-                              <img
-                                src={att.fullUrl}
-                                alt="附件"
-                                className="w-full h-full object-cover"
-                              />
-                            </button>
-                          ) : (
-                            <div className="w-16 h-16 rounded-md border bg-muted flex items-center justify-center">
-                              <span className="text-xs text-muted-foreground truncate px-1">{att.originalFilename}</span>
-                            </div>
-                          )}
-                          <button
-                            className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[#ef4444] text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                            onClick={() => setFormAttachments((prev) => prev.filter((_, i) => i !== idx))}
-                          >
-                            <X size={10} />
-                          </button>
-                          <button
-                            className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-[#3b82f6] text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                            onClick={(e) => { e.stopPropagation(); handleDownload(att.url, att.originalFilename) }}
-                          >
-                            <Download size={10} />
-                          </button>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-                <label className="flex items-center gap-2 px-3 py-2 border border-dashed border-border rounded-md cursor-pointer hover:bg-accent text-sm text-muted-foreground">
-                  <Upload size={14} />
-                  <span>{uploadingAttachment ? '上传中...' : '添加附件'}</span>
-                  <input
-                    type="file"
-                    multiple
-                    className="hidden"
-                    disabled={uploadingAttachment}
-                    onChange={async (e) => {
-                      const files = Array.from(e.target.files || [])
-                      if (!files.length) return
-                      setUploadingAttachment(true)
-                      try {
-                        const results = await Promise.all(files.map((f) => recordApi.uploadAttachment(f)))
-                        setFormAttachments((prev) => [...prev, ...results.map((r) => ({
-                          id: r.id,
-                          url: r.url,
-                          fullUrl: r.fullUrl,
-                          originalFilename: r.originalFilename,
-                        }))])
-                      } catch (err: any) {
-                        setFormError(err.message || '上传失败')
-                      } finally {
-                        setUploadingAttachment(false)
-                        e.target.value = ''
-                      }
-                    }}
-                  />
-                </label>
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setCreateOpen(false); setEditRecord(null) }}>取消</Button>
-            <Button
-              className="bg-primary hover:bg-primary/90 text-primary-foreground"
-              onClick={editRecord ? handleUpdate : handleCreate}
-              disabled={submitting}
-            >
-              {submitting ? '保存中...' : editRecord ? '保存' : '创建'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
+      <RecordFormDialog
+        open={formOpen}
+        editRecord={editRecord}
+        currentBookId={currentBookId || ''}
+        accounts={accounts}
+        multiOwnerAccounts={multiOwnerAccounts}
+        bookMembers={bookMembers}
+        onClose={() => { setFormOpen(false); setEditRecord(null) }}
+        onSaved={(refreshRecords) => { if (refreshRecords) loadRecords(); loadSummary(); loadAccounts() }}
+      />
       {/* 删除确认 */}
       <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
         <AlertDialogContent>
@@ -1503,192 +1038,17 @@ export function RecordsPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* 图片预览弹窗 */}
-      {previewImage && (
-        <Dialog open={!!previewImage} onOpenChange={() => setPreviewImage(null)}>
-          <DialogTrigger />
-          <DialogContent className="max-w-3xl p-0 bg-transparent border-0">
-            <div className="relative">
-              <img
-                src={previewImage}
-                alt="预览"
-                className="max-h-[80vh] max-w-full rounded-lg"
-              />
-              <div className="absolute top-2 right-2 flex gap-2">
-                <button
-                  onClick={() => {
-                    const att = formAttachments.find((a) => a.fullUrl === previewImage)
-                    handleDownload(previewImage, att?.originalFilename || '图片.png')
-                  }}
-                  className="w-8 h-8 rounded-full bg-black/50 flex items-center justify-center text-white hover:bg-black/70"
-                >
-                  <Download size={14} />
-                </button>
-                <button
-                  onClick={() => setPreviewImage(null)}
-                  className="w-8 h-8 rounded-full bg-black/50 flex items-center justify-center text-white hover:bg-black/70"
-                >
-                  <X size={14} />
-                </button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
-
       {/* 批量更新弹窗 */}
-      <Dialog open={batchOpen} onOpenChange={(open) => { if (!open) { setBatchOpen(false); resetBatchForm() } }}>
-        <DialogTrigger />
-        <DialogContent className="max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>批量更新 {selectedIds.size} 条记录</DialogTitle>
-          </DialogHeader>
-          <div className="flex flex-col gap-3">
-            {/* 日期 */}
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1 block">日期</Label>
-              <DatePicker value={batchDate} onChange={setBatchDate} placeholder="留空则不更新日期" />
-            </div>
-
-            {/* 类型 */}
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1 block">类型</Label>
-              <Select value={batchType} onValueChange={(v) => { setBatchType(v); setBatchAccountId(''); setBatchFromAccountId(''); setBatchToAccountId(''); setBatchCategory('') }}>
-                <SelectTrigger className="bg-background border-border h-9"><SelectValue placeholder="留空则不更新类型" /></SelectTrigger>
-                <SelectContent>
-                  {(['INCOME', 'EXPENSE', 'TRANSFER'] as RecordType[]).map((t) => (
-                    <SelectItem key={t} value={t}>{TYPE_LABELS[t]}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* 账户 */}
-            {batchType === 'TRANSFER' ? (
-              <div className="flex items-center gap-2">
-                <div className="flex-1">
-                  <Label className="text-xs text-muted-foreground mb-1 block">转出账户</Label>
-                  <Select value={batchFromAccountId} onValueChange={setBatchFromAccountId} disabled={!batchType}>
-                    <SelectTrigger className="bg-background border-border h-9"><SelectValue placeholder="留空则不更新" /></SelectTrigger>
-                    <SelectContent>
-                      {accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <span className="text-muted-foreground mt-5">→</span>
-                <div className="flex-1">
-                  <Label className="text-xs text-muted-foreground mb-1 block">转入账户</Label>
-                  <Select value={batchToAccountId} onValueChange={setBatchToAccountId} disabled={!batchType}>
-                    <SelectTrigger className="bg-background border-border h-9"><SelectValue placeholder="留空则不更新" /></SelectTrigger>
-                    <SelectContent>
-                      {accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            ) : (
-              <div>
-                <Label className="text-xs text-muted-foreground mb-1 block">账户</Label>
-                <Select value={batchAccountId} onValueChange={setBatchAccountId} disabled={!batchType}>
-                  <SelectTrigger className="bg-background border-border h-9"><SelectValue placeholder={batchType ? '留空则不更新账户' : '请先选择类型'} /></SelectTrigger>
-                  <SelectContent>
-                    {accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            {/* 分类 */}
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1 block">分类</Label>
-              <DictCombobox
-                group={getCategoryGroup((batchType || 'EXPENSE') as RecordType)}
-                value={batchCategory}
-                onChange={setBatchCategory}
-                placeholder={batchType ? '留空则不更新分类' : '请先选择类型'}
-                disabled={!batchType}
-              />
-            </div>
-
-            {/* 标签 */}
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1 block">标签</Label>
-              <TagCombobox
-                value={batchTags}
-                onChange={setBatchTags}
-                bookId={currentBookId || ''}
-                placeholder="留空则不更新标签"
-              />
-            </div>
-
-            {/* 归属人 */}
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1 block">归属人</Label>
-              <Select value={batchOwnerId} onValueChange={setBatchOwnerId}>
-                <SelectTrigger className="h-9 text-sm w-full">
-                  <SelectValue placeholder="留空则不更新归属人" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__self__" className="text-sm">本人（默认）</SelectItem>
-                  {bookMembers.map(m => (
-                    <SelectItem key={m.userId} value={m.userId} className="text-sm">
-                      {m.user.nickname || m.user.email || m.userId}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* 交易方 */}
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1 block">交易方</Label>
-              <Input
-                aria-label="交易方"
-                placeholder="留空则不更新交易方"
-                value={batchPayer}
-                onChange={(e) => setBatchPayer(e.target.value)}
-                className="bg-background border-border h-9"
-              />
-            </div>
-
-            {/* 金额 */}
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1 block">金额</Label>
-              <Input
-                aria-label="金额"
-                type="number"
-                placeholder="留空则不更新金额"
-                value={batchAmount}
-                onChange={(e) => setBatchAmount(e.target.value)}
-                className="bg-background border-border h-9"
-                min="0"
-                step="0.01"
-              />
-            </div>
-
-            {/* 备注 */}
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1 block">备注</Label>
-              <Textarea
-                aria-label="备注"
-                placeholder="留空则不更新备注"
-                value={batchRemark}
-                onChange={(e) => setBatchRemark(e.target.value)}
-                className="bg-background border-border min-h-[60px]"
-                rows={2}
-              />
-            </div>
-
-            {batchError && <p className="text-sm text-[#ef4444]">{batchError}</p>}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setBatchOpen(false); resetBatchForm() }}>取消</Button>
-            <Button className="bg-primary hover:bg-primary/90 text-primary-foreground" onClick={handleBatchUpdate} disabled={submitting}>
-              {submitting ? '更新中...' : '确认更新'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <BatchEditDialog
+        open={batchOpen}
+        selectedIds={Array.from(selectedIds)}
+        records={records}
+        currentBookId={currentBookId || ''}
+        accounts={accounts}
+        bookMembers={bookMembers}
+        onClose={() => setBatchOpen(false)}
+        onDone={() => { setSelectedIds(new Set()); loadRecords(); loadSummary(); loadAccounts() }}
+      />
 
       {/* 附件查看 */}
       <AttachmentViewer

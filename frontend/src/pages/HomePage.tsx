@@ -11,6 +11,7 @@ import { accountApi } from '../api/account'
 import { budgetApi, type BudgetItem } from '../api/budget'
 import { ChatWindow } from '../components/ai/ChatWindow'
 import { fetchAIConfig } from '../api/chat'
+import { RECORD_TYPE_BADGE_CLASS } from '@/lib/record-type'
 
 export function HomePage() {
   const { currentBookId, books } = useBookStore()
@@ -69,7 +70,7 @@ export function HomePage() {
   const statCards = [
     { icon: Wallet, iconColor: 'text-[#3b82f6] bg-[#3b82f6]/10', label: '活跃账户', display: String(accountCount), prefix: '' },
     { icon: ArrowUpCircle, iconColor: 'bg-primary text-primary-foreground', label: '本月收入', display: summary ? summary.income.toLocaleString() : '0', prefix: '¥' },
-    { icon: ArrowDownCircle, iconColor: 'text-[#ef4444] bg-[#ef4444]/10', label: '本月支出', display: summary ? summary.expense.toLocaleString() : '0', prefix: '¥' },
+    { icon: ArrowDownCircle, iconColor: RECORD_TYPE_BADGE_CLASS.EXPENSE, label: '本月支出', display: summary ? summary.expense.toLocaleString() : '0', prefix: '¥' },
     { icon: netIcon, iconColor: netColor, label: '本月结余', display: summary ? summary.netIncome.toLocaleString() : '0', prefix: '¥' },
   ]
 

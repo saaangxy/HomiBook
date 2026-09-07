@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createRecord, deleteRecordApi, fetchAccounts, fetchCategories, fetchRecords, updateRecordApi, type RecordCreatePayload } from '@/services/records';
-import { useUIShell } from '@/components/chrome/chrome';
+import { useLedgerStore } from '@/stores/ledger';
 import type { AccountItem, Category, RecordItem, RecordSummary } from '@/types';
 
 interface RecordsValue {
@@ -44,7 +44,7 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   // 以当前账本为数据维度;无账本(未登录/未加载)时不请求
-  const { currentLedger } = useUIShell();
+  const { currentLedger } = useLedgerStore();
   const bookId = currentLedger.id;
 
   const refresh = useCallback(async () => {

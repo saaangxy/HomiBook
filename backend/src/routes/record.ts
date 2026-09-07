@@ -13,6 +13,7 @@ import {
 } from '../schemas/record.js'
 import {z} from 'zod'
 import {zSchema} from '../lib/schema-helpers.js'
+import {buildDuplicateKey} from '@homibook/core'
 import path from 'path'
 import fs from 'fs'
 import {randomUUID} from 'crypto'
@@ -802,17 +803,8 @@ export async function recordRoutes(app: FastifyInstance) {
         const groups = new Map<string, typeof records>()
 
         for (const r of records) {
-            // 分组 key:字段顺序与 core dedup.ts 的 buildDuplicateKey/parseDuplicateGroupKey 保持一致
-            // (日期 → 类型 → 账户 → 交易方 → 金额 → 归属人,按 matchFields 顺序 join '||')
-            const parts: string[] = []
-            if (matchFields.date === 'exact') parts.push(r.date.toISOString())
-            else if (matchFields.date === 'date') parts.push(r.date.toISOString().slice(0, 10))
-            if (matchFields.type) parts.push(r.type)
-            if (matchFields.accountId) parts.push(r.accountId)
-            if (matchFields.payer) parts.push(r.payer || '__empty__')
-            if (matchFields.amount) parts.push(r.amount.toFixed(2))
-            if (matchFields.ownerId) parts.push(r.ownerId)
-            const key = parts.join('||')
+            // 分组 key 由 core 统一契约构造(日期 → 类型 → 账户 → 交易方 → 金额 → 归属人)
+            const key = buildDuplicateKey(r, matchFields)
             if (!groups.has(key)) groups.set(key, [])
             groups.get(key)!.push(r)
         }

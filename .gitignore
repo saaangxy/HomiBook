@@ -16,3 +16,5 @@
 /.codebuddy/
 /.trae/
 /logo/
+/node_modules/
+/packages/core/dist/

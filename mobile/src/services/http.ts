@@ -211,9 +211,24 @@ export async function uploadFileNative<T>(
   return data as T;
 }
 
-/** 相对附件路径转完整 URL(相对时拼 baseUrl,绝对原样返回) */
+/** 附件/图片地址转可直接加载的 URL:相对路径拼 baseUrl;绝对地址若 host 与当前服务器
+ *  不一致(如 RN 请求无 Origin 头时后端回退 localhost)则校准到配置的服务器 */
 export function resolveRemoteUrl(url: string): string {
-  return url.startsWith('http') ? url : `${currentBaseUrl}${url.startsWith('/') ? url : `/${url}`}`;
+  if (!url) return url;
+  if (!url.startsWith('http')) return `${currentBaseUrl}${url.startsWith('/') ? url : `/${url}`}`;
+  const base = currentBaseUrl;
+  if (!base) return url;
+  try {
+    const bu = new URL(base);
+    const au = new URL(url);
+    if (au.origin !== bu.origin) {
+      au.protocol = bu.protocol;
+      au.host = bu.host;
+    }
+    return au.toString();
+  } catch {
+    return url;
+  }
 }
 
 /** Android SAF 授权目录(导出与附件保存共用) */

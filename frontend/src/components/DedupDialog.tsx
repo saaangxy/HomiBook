@@ -31,10 +31,10 @@ import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
 import {
   DEFAULT_DEDUP_MATCH_FIELDS,
   DEDUP_TOGGLE_FIELDS,
-  DEDUP_TYPE_LABELS,
   parseDuplicateGroupKey,
   type DedupMatchFields,
 } from '@homibook/core'
+import { RECORD_TYPE_LABELS, RECORD_TYPE_TEXT_CLASS } from '@/lib/record-type'
 import { CopyMinus, Check } from 'lucide-react'
 import dayjs from 'dayjs'
 
@@ -51,12 +51,8 @@ interface DuplicateGroup {
   records: RecordItem[]
 }
 
-const TYPE_LABELS = DEDUP_TYPE_LABELS
-const TYPE_COLORS: Record<string, string> = {
-  INCOME: 'text-[#22c55e]',
-  EXPENSE: 'text-[#ef4444]',
-  TRANSFER: 'text-[#3b82f6]',
-}
+const TYPE_LABELS = RECORD_TYPE_LABELS
+const TYPE_COLORS = RECORD_TYPE_TEXT_CLASS
 
 function parseGroupKey(key: string, fields: DedupMatchFields, accountDisplay: Map<string, string>, ownerNames: Map<string, string>): string[] {
   return parseDuplicateGroupKey(key, fields, {

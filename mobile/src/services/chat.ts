@@ -1,9 +1,9 @@
 import { consumeSSEStream, type ChatSSEEvent } from '@homibook/core';
-import { getBaseUrl, getCredential, uploadFileNative } from './http';
+import { http, getBaseUrl, getCredential, uploadFileNative } from './http';
 
-// AI 聊天数据访问层 —— 完整复刻 web 端 frontend/src/api/chat.ts
-// 流式接口:sendMessageStream / confirmActionStream / respondSuggestionStream / switchBookStream
-// 普通接口:sessions / messages / ai-config / providers / tools / memories / provider-configs 等
+// AI 聊天数据访问层:会话/消息 CRUD、SSE 流式请求、消息附件上传、工具显示名称缓存。
+// 普通 JSON 请求统一走 http(超时 + 401 拦截 + ApiError);SSE 流式因需渐进读取保留独立 fetch。
+// 账单文件上传/解析/预览/确认统一在 services/import.ts(同端点勿在此重复实现)。
 
 export interface ChatSession {
   id: string;
@@ -44,56 +44,33 @@ export interface BookOption {
 
 const BASE = '/api/chat';
 
-// ── fetch 基础 ──
-async function authHeaders(extra?: Record<string, string>): Promise<Record<string, string>> {
-  const cred = await getCredential();
-  return {
-    'Content-Type': 'application/json',
-    ...(cred ? { Authorization: `Bearer ${cred.value}` } : {}),
-    ...extra,
-  };
-}
-
-// ── GET ──
+// ── 会话/消息 CRUD ──
 export async function fetchSessions(): Promise<ChatSession[]> {
-  const res = await httpJson<{ sessions: ChatSession[] }>('GET', `${BASE}/sessions`);
+  const res = await http.get<{ sessions: ChatSession[] }>(`${BASE}/sessions`);
   return res.sessions;
 }
 
 export async function fetchMessages(sessionId: string): Promise<ChatMessage[]> {
-  const res = await httpJson<{ messages: ChatMessage[] }>('GET', `${BASE}/sessions/${sessionId}/messages`);
+  const res = await http.get<{ messages: ChatMessage[] }>(`${BASE}/sessions/${sessionId}/messages`);
   return res.messages;
 }
 
 export async function createSession(data?: { title?: string; modelProvider?: string; modelName?: string; accountBookId?: string }): Promise<ChatSession> {
-  const res = await httpJson<{ session: ChatSession }>('POST', `${BASE}/sessions`, data || {});
+  const res = await http.post<{ session: ChatSession }>(`${BASE}/sessions`, data || {});
   return res.session;
 }
 
 export async function updateSession(id: string, data: { title?: string; modelProvider?: string; modelName?: string; status?: string }): Promise<void> {
-  await httpJson('PATCH', `${BASE}/sessions/${id}`, data);
+  await http.patch(`${BASE}/sessions/${id}`, data);
 }
 
 export async function generateSessionTitle(sessionId: string): Promise<string> {
-  const res = await httpJson<{ title: string }>('POST', `${BASE}/sessions/${sessionId}/generate-title`, {});
+  const res = await http.post<{ title: string }>(`${BASE}/sessions/${sessionId}/generate-title`, {});
   return res.title;
 }
 
 export async function deleteSession(id: string): Promise<void> {
-  await httpJson('DELETE', `${BASE}/sessions/${id}`);
-}
-
-// ── 通用 JSON 请求 ──
-async function httpJson<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
-  const baseUrl = getBaseUrl();
-  const headers = await authHeaders();
-  const res = await fetch(`${baseUrl}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ message: `HTTP ${res.status}` }));
-    throw new Error(err.message || `HTTP ${res.status}`);
-  }
-  if (res.status === 204) return undefined as T;
-  return res.json();
+  await http.delete(`${BASE}/sessions/${id}`);
 }
 
 // ── SSE 流式请求(共用) ──
@@ -193,23 +170,6 @@ export async function uploadImage(uri: string, fileName: string, mimeType: strin
   return uploadFileNative<UploadResult>(`${baseUrl}/api/records/upload`, uri, mimeType);
 }
 
-// ── 账单导入(对接 /api/records/import/*) ──
-// 上传临时文件供 preview_import 工具使用;后端返回 { fileId, filename, size }
-export async function uploadImportFile(uri: string, fileName: string): Promise<{ fileId: string; filename: string; size: number }> {
-  const baseUrl = getBaseUrl();
-  if (!baseUrl) throw new Error('请先配置服务器并登录');
-  // 按扩展名推断类型(表格类账单常为 csv/xlsx)
-  const lower = fileName.toLowerCase();
-  const mime = lower.endsWith('.xlsx')
-    ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    : lower.endsWith('.xls') ? 'application/vnd.ms-excel' : 'text/csv';
-  return uploadFileNative(`${baseUrl}/api/records/import/upload`, uri, mime);
-}
-
-export async function analyzeImportCsv(bookId: string, params: { filePath?: string; fileName?: string; mappings?: Record<string, string>; currency?: string }): Promise<unknown> {
-  return httpJson('POST', `/api/records/import/csv/analyze`, { accountBookId: bookId, ...params });
-}
-
 // ── 工具显示名称(web tool-names 同款:接口缓存 + 静态表兜底) ──
 const STATIC_TOOL_NAMES: Record<string, string> = {
   create_record: '记一笔',
@@ -243,7 +203,7 @@ let toolNamesLoading: Promise<void> | null = null;
 export function loadToolNames(): Promise<void> {
   if (toolNamesCache) return Promise.resolve();
   if (toolNamesLoading) return toolNamesLoading;
-  toolNamesLoading = httpJson<{ groups?: { tools?: { name: string; displayName: string }[] }[] }>('GET', `${BASE}/tools`)
+  toolNamesLoading = http.get<{ groups?: { tools?: { name: string; displayName: string }[] }[] }>(`${BASE}/tools`)
     .then((res) => {
       const cache: Record<string, string> = {};
       for (const g of res.groups ?? []) {
@@ -258,12 +218,4 @@ export function loadToolNames(): Promise<void> {
 /** 同步获取工具显示名称:接口缓存 → 静态表 → 原始名 */
 export function getToolDisplayName(toolName: string): string {
   return toolNamesCache?.[toolName] ?? STATIC_TOOL_NAMES[toolName] ?? toolName;
-}
-
-export async function previewImport(bookId: string, params: Record<string, unknown>): Promise<unknown> {
-  return httpJson('POST', `/api/records/import/preview`, { accountBookId: bookId, ...params });
-}
-
-export async function confirmImport(bookId: string, params: Record<string, unknown>): Promise<unknown> {
-  return httpJson('POST', `/api/records/import`, { accountBookId: bookId, ...params });
 }

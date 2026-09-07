@@ -35,12 +35,7 @@ import { useIsMobile } from '@/hooks/use-mobile'
 import { Plus, Pencil, Trash2, Power, PowerOff, FileText } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-const TYPE_LABELS: Record<string, string> = { INCOME: '收入', EXPENSE: '支出', TRANSFER: '转账' }
-const TYPE_COLORS: Record<string, string> = {
-  INCOME: 'text-[#22c55e] bg-[#22c55e]/10',
-  EXPENSE: 'text-[#ef4444] bg-[#ef4444]/10',
-  TRANSFER: 'text-[#3b82f6] bg-[#3b82f6]/10',
-}
+import { RECORD_TYPE_LABELS as TYPE_LABELS, RECORD_TYPE_BADGE_CLASS as TYPE_COLORS, RECORD_TYPE_TEXT_CLASS } from '@/lib/record-type'
 const RECURRING_TYPE_LABELS: Record<string, string> = { PERIODIC: '周期', LOAN: '贷款' }
 const METHOD_LABELS: Record<string, string> = {
   EQUAL_INSTALLMENT: '等额本息',
@@ -336,7 +331,7 @@ export function RecurringTransactionsPage() {
                     <Badge className={`text-[10px] ${TYPE_COLORS[rt.type]}`}>{TYPE_LABELS[rt.type]}</Badge>
                     <span className="text-[10px] text-muted-foreground">{RECURRING_TYPE_LABELS[rt.recurringType]}</span>
                     <span className="ml-auto text-sm font-bold tabular-nums">
-                      {rt.active ? <span className={rt.type === 'INCOME' ? 'text-[#22c55e]' : rt.type === 'TRANSFER' ? 'text-[#3b82f6]' : 'text-[#ef4444]'}>{formatMoney(rt.amount)}</span> : <span className="text-muted-foreground">{formatMoney(rt.amount)}</span>}
+                      {rt.active ? <span className={RECORD_TYPE_TEXT_CLASS[rt.type]}>{formatMoney(rt.amount)}</span> : <span className="text-muted-foreground">{formatMoney(rt.amount)}</span>}
                     </span>
                   </div>
                   <div className="text-xs text-muted-foreground mb-1.5">
@@ -402,7 +397,7 @@ export function RecurringTransactionsPage() {
                   </TableCell>
                   <TableCell className="text-xs">{rt.categoryCode || '-'}</TableCell>
                   <TableCell className="text-xs text-right font-mono">
-                    {rt.active ? <span className={rt.type === 'INCOME' ? 'text-[#22c55e]' : rt.type === 'TRANSFER' ? 'text-[#3b82f6]' : 'text-[#ef4444]'}>{formatMoney(rt.amount)}</span> : <span className="text-muted-foreground">{formatMoney(rt.amount)}</span>}
+                    {rt.active ? <span className={RECORD_TYPE_TEXT_CLASS[rt.type]}>{formatMoney(rt.amount)}</span> : <span className="text-muted-foreground">{formatMoney(rt.amount)}</span>}
                   </TableCell>
                   <TableCell className="text-xs">
                     {rt.type === 'TRANSFER' ? `${rt.account?.name || '-'} → ${rt.toAccount?.name || '-'}` : (rt.account?.name || '-')}

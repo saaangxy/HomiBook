@@ -31,7 +31,8 @@ import { Spinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip'
 import { importExportApi, type UnmatchedAccount, type UnmatchedCategory, type ParsedImportRow, type DictEntry } from '@/api/import-export'
 import { ACCOUNT_TYPE_LABELS, type AccountItem, type AccountType } from '@/api/account'
-import { IMPORT_COLUMN_FIELDS, autoDetectColumns, detectTypeValues, autoDetectTypeMapping } from '@homibook/core'
+import { IMPORT_COLUMN_FIELDS, autoDetectColumns, detectTypeValues, autoDetectTypeMapping, initAccountResolutions, matchAccountInPool, type AccountResolution } from '@homibook/core'
+import { RECORD_TYPE_LABELS as TYPE_LABELS, RECORD_TYPE_TEXT_CLASS as TYPE_COLORS, RECORD_TYPE_CONTAINER_CLASS } from '@/lib/record-type'
 import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
 import { bookApi, type BookMember } from '@/api/book'
 import { useAuthStore } from '@/stores/auth'
@@ -56,23 +57,8 @@ const SOURCE_LABELS: Record<string, string> = {
   csv: '其他CSV',
 }
 
-const TYPE_LABELS: Record<string, string> = {
-  INCOME: '收入',
-  EXPENSE: '支出',
-  TRANSFER: '转账',
-}
 
-const TYPE_COLORS: Record<string, string> = {
-  INCOME: 'text-[#22c55e]',
-  EXPENSE: 'text-[#ef4444]',
-  TRANSFER: 'text-[#3b82f6]',
-}
-
-const TYPE_BG: Record<string, string> = {
-  INCOME: 'bg-[#22c55e]/10 border-[#22c55e]/30',
-  EXPENSE: 'bg-[#ef4444]/10 border-[#ef4444]/30',
-  TRANSFER: 'bg-[#3b82f6]/10 border-[#3b82f6]/30',
-}
+const TYPE_BG: Record<string, string> = RECORD_TYPE_CONTAINER_CLASS
 
 // 记录类型 → 字典分组映射
 const TYPE_TO_GROUP: Record<string, string> = {
@@ -114,8 +100,8 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
   const [stats, setStats] = useState<{ totalRows: number; parsedRows: number; skippedRows: number; errors: string[] } | null>(null)
   const [accountMappings, setAccountMappings] = useState<Record<string, string>>({})
 
-  // 用户的选择
-  const [accountResolutions, setAccountResolutions] = useState<Record<string, { action: 'create'; name: string; type: string } | { action: 'existing'; accountId: string }>>({})
+  // 用户的选择(账户解析类型与初始化统一来自 @homibook/core)
+  const [accountResolutions, setAccountResolutions] = useState<Record<string, AccountResolution>>({})
   const [categoryResolutions, setCategoryResolutions] = useState<Record<string, { targetCode: string; save: boolean; payerContains: string; descriptionContains: string }>>({})
   const [showAllRecords, setShowAllRecords] = useState(false)
   const [filterCategory, setFilterCategory] = useState('')
@@ -147,18 +133,6 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
   // 归属人名下的活跃账户池（确认导入时改归属人后，候选/匹配切换到对应归属人的账户）
   const ownerPool = accounts.filter((a) => a.status === 'ACTIVE' && (!effectiveOwnerId || a.ownerId === effectiveOwnerId))
   const multiOwnerAccounts = isMultiOwnerAccounts(accounts)
-
-  /** 按名称在账户池中匹配（优先级：精确 → 账户名包含目标名 → 目标名包含账户名），与后端 matchAccountByName 一致 */
-  const matchAccountInPool = (name: string, pool: AccountItem[]): AccountItem | null => {
-    if (!name || pool.length === 0) return null
-    const exact = pool.filter((a) => a.name === name)
-    if (exact.length >= 1) return exact[0]
-    const contains = pool.filter((a) => a.name.includes(name))
-    if (contains.length >= 1) return contains[0]
-    const containedBy = pool.filter((a) => name.includes(a.name))
-    if (containedBy.length >= 1) return containedBy[0]
-    return null
-  }
 
   // 切换归属人后：把已选的已有账户/后端预解析的账户重映射到归属人名下同名账户
   const handleOwnerChange = (ownerId: string) => {
@@ -285,16 +259,8 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
       setUnrecognizedRecords(result.unrecognizedRecords)
       setAccountMappings(result.accountMappings || {})
 
-      // 初始化账户选择
-      const acctRes: typeof accountResolutions = {}
-      for (const ua of result.unmatchedAccounts) {
-        if (ua.candidates?.length) {
-          acctRes[ua.csvName] = { action: 'existing', accountId: ua.candidates[0].id }
-        } else {
-          acctRes[ua.csvName] = { action: 'create', name: ua.suggestedName, type: ua.suggestedType }
-        }
-      }
-      setAccountResolutions(acctRes)
+      // 初始化账户选择(统一策略见 core initAccountResolutions)
+      setAccountResolutions(initAccountResolutions(result.unmatchedAccounts))
 
       // 初始化分类映射
       const initCategoryResolutions: Record<string, { targetCode: string; save: boolean; payerContains: string; descriptionContains: string }> = {}
@@ -349,16 +315,8 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
       setStats(result.stats)
       setAccountMappings(result.accountMappings || {})
 
-      // 初始化账户选择
-      const acctRes: typeof accountResolutions = {}
-      for (const ua of result.unmatchedAccounts) {
-        if (ua.candidates?.length) {
-          acctRes[ua.csvName] = { action: 'existing', accountId: ua.candidates[0].id }
-        } else {
-          acctRes[ua.csvName] = { action: 'create', name: ua.suggestedName, type: ua.suggestedType }
-        }
-      }
-      setAccountResolutions(acctRes)
+      // 初始化账户选择(统一策略见 core initAccountResolutions)
+      setAccountResolutions(initAccountResolutions(result.unmatchedAccounts))
 
       // 初始化分类映射（按 sourceCategory::type 复合键，不同类型独立映射）
       const catRes: typeof categoryResolutions = {}
@@ -881,9 +839,9 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                             <SelectValue placeholder="选择" />
                           </SelectTrigger>
                           <SelectContent className="bg-card border-border">
-                            <SelectItem value="EXPENSE" className="text-xs text-[#ef4444]">支出</SelectItem>
-                            <SelectItem value="INCOME" className="text-xs text-[#22c55e]">收入</SelectItem>
-                            <SelectItem value="TRANSFER" className="text-xs text-[#3b82f6]">转账</SelectItem>
+                            <SelectItem value="EXPENSE" className={`text-xs ${TYPE_COLORS.EXPENSE}`}>支出</SelectItem>
+                            <SelectItem value="INCOME" className={`text-xs ${TYPE_COLORS.INCOME}`}>收入</SelectItem>
+                            <SelectItem value="TRANSFER" className={`text-xs ${TYPE_COLORS.TRANSFER}`}>转账</SelectItem>
                           </SelectContent>
                         </Select>
                         {!typeMapping[csvVal] && (
@@ -1547,18 +1505,18 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                   <div className="grid grid-cols-3 gap-3 mb-3">
                     <div className="border rounded-lg p-3 text-center">
                       <p className="text-xs text-muted-foreground">收入</p>
-                      <p className="text-sm font-semibold text-[#22c55e]">{incomeCount} 条</p>
-                      <p className="text-xs text-[#22c55e]">¥{incomeSum.toFixed(2)}</p>
+                      <p className={`text-sm font-semibold ${TYPE_COLORS.INCOME}`}>{incomeCount} 条</p>
+                      <p className={`text-xs ${TYPE_COLORS.INCOME}`}>¥{incomeSum.toFixed(2)}</p>
                     </div>
                     <div className="border rounded-lg p-3 text-center">
                       <p className="text-xs text-muted-foreground">支出</p>
-                      <p className="text-sm font-semibold text-[#ef4444]">{expenseCount} 条</p>
-                      <p className="text-xs text-[#ef4444]">¥{expenseSum.toFixed(2)}</p>
+                      <p className={`text-sm font-semibold ${TYPE_COLORS.EXPENSE}`}>{expenseCount} 条</p>
+                      <p className={`text-xs ${TYPE_COLORS.EXPENSE}`}>¥{expenseSum.toFixed(2)}</p>
                     </div>
                     <div className="border rounded-lg p-3 text-center">
                       <p className="text-xs text-muted-foreground">转账</p>
-                      <p className="text-sm font-semibold text-[#3b82f6]">{transferCount} 条</p>
-                      <p className="text-xs text-[#3b82f6]">¥{transferSum.toFixed(2)}</p>
+                      <p className={`text-sm font-semibold ${TYPE_COLORS.TRANSFER}`}>{transferCount} 条</p>
+                      <p className={`text-xs ${TYPE_COLORS.TRANSFER}`}>¥{transferSum.toFixed(2)}</p>
                     </div>
                   </div>
 

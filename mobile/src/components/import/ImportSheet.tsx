@@ -23,22 +23,21 @@ import {
   IMPORT_COLUMN_FIELDS,
   IMPORT_SOURCE_DEFS,
   IMPORT_TYPE_LABELS,
+  TYPE_TO_GROUP,
   autoDetectColumns,
   autoDetectTypeMapping,
   detectTypeValues,
+  initAccountResolutions,
   isColumnMappingValid,
   matchAccountInPool,
   mergeAccountCreations,
+  type AccountResolution,
   type ImportColumnField,
   type ImportSource,
 } from '@homibook/core';
 
 // 类型语义色随主题(semanticTypeColor);映射未命中等警示色保持固定琥珀
-const TYPE_TO_GROUP: Record<string, string> = {
-  EXPENSE: 'transaction_category_expense',
-  INCOME: 'transaction_category_income',
-  TRANSFER: 'transaction_category_transfer',
-};
+// 收支类型 → 字典组映射(TYPE_TO_GROUP)统一来自 @homibook/core
 const GROUP_LABELS: Record<string, string> = {
   transaction_category_expense: '支出分类',
   transaction_category_income: '收入分类',
@@ -47,7 +46,7 @@ const GROUP_LABELS: Record<string, string> = {
 
 type Step = 'source' | 'upload' | 'columnMapping' | 'preview' | 'confirm' | 'result';
 
-type AccountResolution = { action: 'create'; name: string; type: string } | { action: 'existing'; accountId: string };
+// 账户解析类型与默认值初始化统一来自 @homibook/core(与 AI 导入卡共用策略)
 
 interface CategoryResolution {
   targetCode: string;
@@ -322,16 +321,8 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes }: ImportSheet
     setPrevFilterCategory('');
     setPrevFilterAccount('');
     setShowAllRecords(false);
-    // 初始化账户解析:有候选默认选第一个,无候选默认新建(web 同策略)
-    const acctRes: Record<string, AccountResolution> = {};
-    for (const ua of result.unmatchedAccounts) {
-      if (ua.candidates?.length) {
-        acctRes[ua.csvName] = { action: 'existing', accountId: ua.candidates[0].id };
-      } else {
-        acctRes[ua.csvName] = { action: 'create', name: ua.suggestedName, type: ua.suggestedType || 'OTHER' };
-      }
-    }
-    setAccountRes(acctRes);
+    // 初始化账户解析:有候选默认选第一个,无候选默认新建(统一策略见 core initAccountResolutions)
+    setAccountRes(initAccountResolutions(result.unmatchedAccounts));
     // 初始化分类解析
     const catRes: Record<string, CategoryResolution> = {};
     for (const uc of result.unmatchedCategories) {

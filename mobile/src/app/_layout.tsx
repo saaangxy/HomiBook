@@ -18,6 +18,7 @@ import { BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue';
 import { DMSans_400Regular, DMSans_500Medium, DMSans_700Bold } from '@expo-google-fonts/dm-sans';
 import { ThemeProvider, useTheme, getActivePalette, alpha } from '@/theme';
 import { AuthProvider, useAuth } from '@/stores/auth';
+import { LedgerProvider } from '@/stores/ledger';
 import { RecordsProvider } from '@/stores/records';
 import { UIShellProvider } from '@/components/chrome/chrome';
 import { Sidebar } from '@/components/chrome/Sidebar';
@@ -73,7 +74,8 @@ export default function RootLayout() {
       <SafeAreaProvider initialMetrics={initialWindowMetrics}>
         <ThemeProvider>
           <AuthProvider>
-            <UIShellProvider>
+            <LedgerProvider>
+              <UIShellProvider>
               <RecordsProvider>
                 <RootNavigator />
                 {/* 全局覆盖层(置于 RecordsProvider 内,可同时访问 UIShell 与 Records) */}
@@ -84,7 +86,8 @@ export default function RootLayout() {
                 <ToastHost />
                 {showSplash && <Splash onDone={() => setShowSplash(false)} />}
               </RecordsProvider>
-            </UIShellProvider>
+              </UIShellProvider>
+            </LedgerProvider>
           </AuthProvider>
         </ThemeProvider>
       </SafeAreaProvider>

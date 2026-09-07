@@ -6,8 +6,8 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "dev": "npm run build --prefix ../packages/core && tsx watch src/index.ts",
+    "build": "npm run build --prefix ../packages/core && tsc",
     "start": "node dist/index.js",
     "prebuild": "node prisma/generate-all.mjs",
     "db:generate": "node prisma/generate-all.mjs",
@@ -24,6 +24,7 @@
     "@fastify/multipart": "^6.0.0",
     "@fastify/static": "^7.0.4",
     "@fastify/swagger": "^8.15.0",
+    "@homibook/core": "*",
     "@prisma/adapter-better-sqlite3": "^7.9.1",
     "@prisma/adapter-mariadb": "^7.9.1",
     "@prisma/adapter-pg": "^7.9.1",

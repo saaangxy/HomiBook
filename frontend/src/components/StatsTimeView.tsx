@@ -31,6 +31,7 @@ import { AnalysisPanel } from './AnalysisPanel'
 import { BarChart3, Search, X, List, ChevronLeft, ChevronRight, HelpCircle } from 'lucide-react'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { useChartTheme, type ChartTheme, generateChartColors } from '@/hooks/useChartTheme'
+import { RECORD_TYPE_HEX, RECORD_TYPE_TEXT_CLASS } from '@/lib/record-type'
 import dayjs from 'dayjs'
 
 function buildStackedBar(periods: string[], categories: { name: string; data: number[] }[], t: ChartTheme): { option: EChartsOption; chartHeight: number } {
@@ -540,10 +541,10 @@ export function StatsTimeView({ bookId, mode }: Props) {
               <div className="lg:col-span-2">
                 <div className="grid grid-cols-2 gap-3 h-full">
                   {([
-                    { label: '总收入', value: summary.income, color: 'text-[#22c55e]' },
-                    { label: '总支出', value: summary.expense, color: 'text-[#ef4444]' },
-                    { label: '净收入', value: summary.netIncome, color: summary.netIncome >= 0 ? 'text-[#22c55e]' : 'text-[#ef4444]' },
-                    { label: '转账总额', value: summary.transfer, color: 'text-[#3b82f6]' },
+                    { label: '总收入', value: summary.income, color: RECORD_TYPE_TEXT_CLASS.INCOME },
+                    { label: '总支出', value: summary.expense, color: RECORD_TYPE_TEXT_CLASS.EXPENSE },
+                    { label: '净收入', value: summary.netIncome, color: summary.netIncome >= 0 ? RECORD_TYPE_TEXT_CLASS.INCOME : RECORD_TYPE_TEXT_CLASS.EXPENSE },
+                    { label: '转账总额', value: summary.transfer, color: RECORD_TYPE_TEXT_CLASS.TRANSFER },
                   ] as const).map(({ label, value, color }) => (
                     <Card key={label} className="rounded-xl flex items-center justify-center">
                       <CardContent className="p-3 text-center">
@@ -741,7 +742,7 @@ export function StatsTimeView({ bookId, mode }: Props) {
                       <TableCell className="text-xs whitespace-nowrap py-2">{r.ownerName}</TableCell>
                       <TableCell className="text-xs whitespace-nowrap py-2">{r.payer || '-'}</TableCell>
                       <TableCell className="text-xs py-2 max-w-[150px] truncate">{r.remark || '-'}</TableCell>
-                      <TableCell className="text-xs whitespace-nowrap py-2 text-right font-bold" style={{ color: r.type === 'INCOME' ? '#22c55e' : r.type === 'EXPENSE' ? '#ef4444' : '#3b82f6' }}>
+                      <TableCell className="text-xs whitespace-nowrap py-2 text-right font-bold" style={{ color: RECORD_TYPE_HEX[r.type] }}>
                         {formatMoney(r.amount)}
                       </TableCell>
                     </TableRow>

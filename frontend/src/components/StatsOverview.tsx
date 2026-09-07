@@ -9,6 +9,7 @@ import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
 import { recurringApi, type RecurringTransaction } from '@/api/recurring'
 import { useBookStore } from '@/stores/book'
 import { useChartTheme, type ChartTheme, generateChartColors } from '@/hooks/useChartTheme'
+import { RECORD_TYPE_HEX, RECORD_TYPE_TEXT_CLASS } from '@/lib/record-type'
 import { TrendingUp, BarChart3, Wallet, Target, HelpCircle } from 'lucide-react'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import dayjs from 'dayjs'
@@ -51,7 +52,7 @@ function buildTrendLineOption(months: string[], incomes: number[], expenses: num
     grid: { top: 40, right: 20, bottom: 40, left: 60 },
     xAxis: { type: 'category' as const, data: months, axisLabel: { color: t.mutedForeground, rotate: 45, fontSize: 11 }, axisLine: { lineStyle: { color: t.border } } },
     yAxis: { type: 'value' as const, axisLabel: { color: t.mutedForeground, formatter: (v: number) => v >= 10000 ? `${(v / 10000).toFixed(1)}万` : String(v) }, splitLine: { lineStyle: { color: t.border } } },
-    color: ['#22c55e', '#ef4444', t.primary],
+    color: [RECORD_TYPE_HEX.INCOME, RECORD_TYPE_HEX.EXPENSE, t.primary],
     series: [
       { name: '收入', type: 'line', data: incomes, smooth: true, symbol: 'none' as const },
       { name: '支出', type: 'line', data: expenses, smooth: true, symbol: 'none' as const },
@@ -377,10 +378,10 @@ export function StatsOverview() {
       {/* 汇总卡片 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         {([
-          { label: '总收入', value: summary.income, color: 'text-[#22c55e]' },
-          { label: '总支出', value: summary.expense, color: 'text-[#ef4444]' },
-          { label: '净收入', value: summary.netIncome, color: summary.netIncome >= 0 ? 'text-[#22c55e]' : 'text-[#ef4444]' },
-          { label: '转账总额', value: summary.transfer, color: 'text-[#3b82f6]' },
+          { label: '总收入', value: summary.income, color: RECORD_TYPE_TEXT_CLASS.INCOME },
+          { label: '总支出', value: summary.expense, color: RECORD_TYPE_TEXT_CLASS.EXPENSE },
+          { label: '净收入', value: summary.netIncome, color: summary.netIncome >= 0 ? RECORD_TYPE_TEXT_CLASS.INCOME : RECORD_TYPE_TEXT_CLASS.EXPENSE },
+          { label: '转账总额', value: summary.transfer, color: RECORD_TYPE_TEXT_CLASS.TRANSFER },
         ] as const).map(({ label, value, color }) => (
           <Card key={label} className="rounded-xl">
             <CardContent className="p-4 text-center">

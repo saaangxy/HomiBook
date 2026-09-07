@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { create } from 'zustand'
 import {
   buildActivePath,
@@ -24,8 +25,11 @@ export interface ChatSession {
   updatedAt: string
 }
 
-interface SessionCache {
-  messages: Message[]
+/**
+ * 单会话持久态(权威):allMessages 为全部消息,活跃路径按 branchSelections 派生。
+ * 当前会话视图由 useSessionView / getSessionView 派生,不设顶层副本 —— 切换会话无需保存/恢复。
+ */
+interface SessionData {
   allMessages: Message[]
   branchSelections: Record<string, string>
   isStreaming: boolean
@@ -35,17 +39,20 @@ interface SessionCache {
 interface ChatState {
   sessions: ChatSession[]
   currentSessionId: string | null
-  messages: Message[]
-  allMessages: Message[]
-  branchSelections: Record<string, string>
+  sessionCache: Record<string, SessionData>
   error: string | null
   abortControllers: Record<string, AbortController>
-  sessionCache: Record<string, SessionCache>
 
   setSessions: (sessions: ChatSession[]) => void
   setCurrentSession: (sessionId: string | null) => void
-  setMessages: (messages: Message[]) => void
   setError: (error: string | null) => void
+
+  /** 兼容接口:写入会话全量消息(自动重建分支选择),取代原 setMessages */
+  setSessionData: (sessionId: string, allMessages: Message[]) => void
+  /** 兼容接口:清空指定会话数据 */
+  clearSessionData: (sessionId: string) => void
+  /** 兼容查询:会话是否有本地缓存(有则切换时不必重新拉取) */
+  hasCachedSession: (sessionId: string) => boolean
 
   sendMessage: (accountBookId: string, message: string, parentMessageId?: string, replaceAssistantDbId?: string, attachmentIds?: string[], attachments?: { id: string; url: string; originalFilename: string }[], enableWebSearch?: boolean) => void
   confirmAndContinue: (accountBookId: string, toolCallId: string, approved: boolean, data?: Record<string, unknown>) => void
@@ -55,15 +62,66 @@ interface ChatState {
   selectBranch: (parentMessageId: string, childMessageId: string) => void
   stopStreaming: (sessionId?: string) => void
 
-  addMessage: (msg: Message) => void
   updateStreamMessage: (sessionId: string, messageId: string, updater: (msg: Message) => Message) => void
-  saveCurrentToCache: () => void
-  restoreFromCache: (sessionId: string) => boolean
 }
 
 let msgIdCounter = 0
 function nextId() {
   return `msg-${Date.now()}-${++msgIdCounter}`
+}
+
+const EMPTY_SESSION: SessionData = { allMessages: [], branchSelections: {}, isStreaming: false, streamingMessageId: null }
+
+type SetState = (partial: Partial<ChatState> | ((s: ChatState) => Partial<ChatState>)) => void
+type GetState = () => ChatState
+
+// ---- 共享:当前会话视图与统一写入口 ----
+
+/** 当前会话视图(活跃路径 + 全量 + 分支选择),store 内部逻辑共用 */
+function viewOf(data: SessionData) {
+  return {
+    messages: buildActivePath(data.allMessages, data.branchSelections),
+    allMessages: data.allMessages,
+    branchSelections: data.branchSelections,
+  }
+}
+
+/** 统一写入口:不可变更新指定会话的数据切片 */
+function patchSession(set: SetState, sid: string, fn: (d: SessionData) => Partial<SessionData>) {
+  set((s) => {
+    const current = s.sessionCache[sid] ?? EMPTY_SESSION
+    return { sessionCache: { ...s.sessionCache, [sid]: { ...current, ...fn(current) } } }
+  })
+}
+
+/** 清理会话的流式状态并移除中止控制器(流结束/出错/手动停止共用) */
+function clearStreaming(set: SetState, sid: string) {
+  set((s) => {
+    const newAbortControllers = { ...s.abortControllers }
+    delete newAbortControllers[sid]
+    const newCache = { ...s.sessionCache }
+    if (newCache[sid]) newCache[sid] = { ...newCache[sid], isStreaming: false, streamingMessageId: null }
+    return { sessionCache: newCache, abortControllers: newAbortControllers }
+  })
+}
+
+/** 把临时消息追加进会话(可选:登记分支选择 parentId → childId)并进入流式状态 */
+function appendStreamingMessages(
+  set: SetState,
+  sid: string,
+  msgs: Message[],
+  streamingMessageId: string,
+  select?: { parentId: string; childId: string },
+) {
+  patchSession(set, sid, (d) => {
+    const allMessages = [...d.allMessages, ...msgs]
+    let branchSelections = d.branchSelections
+    if (select) {
+      branchSelections = { ...branchSelections, [select.parentId]: select.childId }
+    }
+    return { allMessages, branchSelections, isStreaming: true, streamingMessageId }
+  })
+  set({ error: null })
 }
 
 // ---- 共享 SSE 事件处理工厂 ----
@@ -73,8 +131,8 @@ type SSEStreamContext = {
   assistantMsgId: string
   parentMsgId?: string
   shouldGenerateTitle?: boolean
-  get: () => ChatState
-  set: (partial: Partial<ChatState> | ((s: ChatState) => Partial<ChatState>)) => void
+  get: GetState
+  set: SetState
   thinkState: { value: DeltaState }
   blockIdCounter: { value: number }
 }
@@ -201,35 +259,15 @@ function makeSSEHandler(
             ? [{ id: `block-${++ctx.blockIdCounter.value}`, type: 'text' as const, content: `错误: ${event.message}` }]
             : msg.blocks,
         }))
-        ctx.set((s) => {
-          const newCache = { ...s.sessionCache }
-          const newAbortControllers = { ...s.abortControllers }
-          delete newAbortControllers[ctx.sid]
-          if (s.currentSessionId !== ctx.sid) {
-            const cache = s.sessionCache[ctx.sid]
-            if (cache) {
-              newCache[ctx.sid] = { ...cache, isStreaming: false, streamingMessageId: null }
-            }
-            return { sessionCache: newCache, abortControllers: newAbortControllers, error: event.message }
-          }
-          newCache[ctx.sid] = { ...newCache[ctx.sid], isStreaming: false, streamingMessageId: null }
-          return { sessionCache: newCache, abortControllers: newAbortControllers, error: event.message }
-        })
+        clearStreaming(ctx.set, ctx.sid)
+        ctx.set({ error: event.message })
         break
     }
   }
 
   const handleDone = () => {
     updateMsg((msg) => ({ ...msg, isStreaming: false }))
-    ctx.set((s) => {
-      const newAbortControllers = { ...s.abortControllers }
-      delete newAbortControllers[ctx.sid]
-      const newCache = { ...s.sessionCache }
-      if (newCache[ctx.sid]) {
-        newCache[ctx.sid] = { ...newCache[ctx.sid], isStreaming: false, streamingMessageId: null }
-      }
-      return { sessionCache: newCache, abortControllers: newAbortControllers }
-    })
+    clearStreaming(ctx.set, ctx.sid)
 
     const refreshSessions = () => {
       import('../api/chat').then(({ fetchSessions }) => {
@@ -250,6 +288,46 @@ function makeSSEHandler(
   }
 
   return { handleEvent, handleDone }
+}
+
+/**
+ * finish 后的统一收尾:把临时 id 替换为数据库 id(assistant + 尚无 dbId 的 user),
+ * 同步 branchSelections 中指向旧临时 id 的选择,并清理流式状态。
+ * sendMessage / 确认续流共用此唯一实现。
+ */
+function applyFinishPatch(
+  set: SetState,
+  sid: string,
+  assistantMsgId: string,
+  event: Extract<SSEEvent, { type: 'finish' }>,
+  opts?: { selectNewBranch?: boolean },
+) {
+  patchSession(set, sid, (d) => {
+    const allMessages = [...d.allMessages]
+    let branchSelections = d.branchSelections
+    const asstIdx = allMessages.findIndex((m) => m.id === assistantMsgId)
+    if (asstIdx >= 0) {
+      const asst = allMessages[asstIdx]
+      const userTempId = asst.parentMessageId
+      allMessages[asstIdx] = { ...asst, dbId: event.assistantMessageId, parentMessageId: event.userMessageId, isStreaming: false }
+      if (userTempId) {
+        const userIdx = allMessages.findIndex((m) => m.id === userTempId)
+        if (userIdx >= 0 && !allMessages[userIdx].dbId) {
+          allMessages[userIdx] = { ...allMessages[userIdx], dbId: event.userMessageId }
+          const replaced: Record<string, string> = {}
+          for (const [k, v] of Object.entries(branchSelections)) {
+            replaced[k] = v === userTempId ? event.userMessageId : v
+          }
+          branchSelections = replaced
+        }
+      }
+    }
+    if (opts?.selectNewBranch) {
+      branchSelections = { ...branchSelections, [event.userMessageId]: event.assistantMessageId }
+    }
+    return { allMessages, branchSelections }
+  })
+  clearStreaming(set, sid)
 }
 
 // ---- Store ----
@@ -274,26 +352,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
     }
     const continuationMsgId = continuationMsg.id
 
-    set((s) => {
-      const newAllMessages = [...s.allMessages, continuationMsg]
-      const newSelections = { ...s.branchSelections }
-      newSelections[parentDbId] = continuationMsg.id
-      const newCache = { ...s.sessionCache }
-      newCache[sid] = {
-        messages: buildActivePath(newAllMessages, newSelections),
-        allMessages: newAllMessages,
-        branchSelections: newSelections,
-        isStreaming: true,
-        streamingMessageId: continuationMsgId,
-      }
-      return {
-        messages: buildActivePath(newAllMessages, newSelections),
-        allMessages: newAllMessages,
-        branchSelections: newSelections,
-        sessionCache: newCache,
-        error: null,
-      }
-    })
+    appendStreamingMessages(set, sid, [continuationMsg], continuationMsgId, { parentId: parentDbId, childId: continuationMsgId })
 
     const ctx: SSEStreamContext = {
       sid, assistantMsgId: continuationMsgId, parentMsgId: parentId,
@@ -303,25 +362,8 @@ export const useChatStore = create<ChatState>()((set, get) => {
     }
 
     const { handleEvent, handleDone } = makeSSEHandler(ctx, (event) => {
-      set((s) => {
-        const allMsgs = [...s.allMessages]
-        const msgs = [...s.messages]
-        const newSelections = { ...s.branchSelections }
-
-        const asstAllIdx = allMsgs.findIndex((m) => m.id === continuationMsgId)
-        if (asstAllIdx >= 0) {
-          allMsgs[asstAllIdx] = { ...allMsgs[asstAllIdx], dbId: event.assistantMessageId, parentMessageId: event.userMessageId }
-          const asstMsgIdx = msgs.findIndex((m) => m.id === continuationMsgId)
-          if (asstMsgIdx >= 0) msgs[asstMsgIdx] = { ...msgs[asstMsgIdx], dbId: event.assistantMessageId, parentMessageId: event.userMessageId }
-        }
-        newSelections[event.userMessageId] = event.assistantMessageId
-
-        const newCache = { ...s.sessionCache }
-        newCache[sid] = { ...newCache[sid], isStreaming: false, streamingMessageId: null, messages: msgs, allMessages: allMsgs, branchSelections: newSelections }
-        const newAbortControllers = { ...s.abortControllers }
-        delete newAbortControllers[sid]
-        return { messages: msgs, allMessages: allMsgs, branchSelections: newSelections, sessionCache: newCache, abortControllers: newAbortControllers }
-      })
+      // 续流完成:登记新分支选择(原实现特有),id 替换与流式清理走统一收尾
+      applyFinishPatch(set, sid, continuationMsgId, event, { selectNewBranch: true })
     })
 
     const controller = streamStarter(handleEvent, handleDone)
@@ -342,7 +384,8 @@ export const useChatStore = create<ChatState>()((set, get) => {
     const sid = get().currentSessionId
     if (!sid) return
 
-    const parentMsg = get().messages.find(m =>
+    const view = viewOf(get().sessionCache[sid] ?? EMPTY_SESSION)
+    const parentMsg = view.messages.find(m =>
       m.role === 'assistant' && m.blocks.some(b =>
         b.type === 'tool-call' && b.toolCallId === toolCallId
       )
@@ -369,7 +412,8 @@ export const useChatStore = create<ChatState>()((set, get) => {
     }))
 
     // 待决定块仍在 → 等待（confirming/suggesting/switching = 等待用户决定）
-    const updatedMsg = get().messages.find(m => m.id === parentId)
+    const updatedView = viewOf(get().sessionCache[sid] ?? EMPTY_SESSION)
+    const updatedMsg = updatedView.messages.find(m => m.id === parentId)
     const awaiting = (updatedMsg?.blocks.filter(b =>
       b.type === 'tool-call' && (b.status === 'confirming' || b.status === 'suggesting' || b.status === 'switching')
     ) || []) as Extract<MessageBlock, { type: 'tool-call' }>[]
@@ -399,20 +443,19 @@ export const useChatStore = create<ChatState>()((set, get) => {
   return {
   sessions: [],
   currentSessionId: null,
-  messages: [],
-  allMessages: [],
-  branchSelections: {},
+  sessionCache: {},
   error: null,
   abortControllers: {},
-  sessionCache: {},
 
   setSessions: (sessions) => set({ sessions }),
   setCurrentSession: (sessionId) => set({ currentSessionId: sessionId }),
-  setMessages: (allMsgs) => {
+  setError: (error) => set({ error }),
+
+  setSessionData: (sessionId, allMessages) => {
     // 首次加载历史消息时，自动选择每个分支点的最新版本
     const selections: Record<string, string> = {}
     const childrenMap = new Map<string, Message[]>()
-    for (const m of allMsgs) {
+    for (const m of allMessages) {
       const pid = m.parentMessageId
       if (pid) {
         if (!childrenMap.has(pid)) childrenMap.set(pid, [])
@@ -424,44 +467,30 @@ export const useChatStore = create<ChatState>()((set, get) => {
         selections[pid] = children[children.length - 1].dbId || children[children.length - 1].id
       }
     }
-    set({
-      allMessages: allMsgs,
-      branchSelections: selections,
-      messages: buildActivePath(allMsgs, selections),
+    set((s) => ({
+      sessionCache: { ...s.sessionCache, [sessionId]: { allMessages, branchSelections: selections, isStreaming: false, streamingMessageId: null } },
+    }))
+  },
+
+  clearSessionData: (sessionId) => {
+    set((s) => {
+      const newCache = { ...s.sessionCache }
+      delete newCache[sessionId]
+      return { sessionCache: newCache }
     })
   },
-  setError: (error) => set({ error }),
 
-  addMessage: (msg) =>
-    set((s) => ({
-      allMessages: [...s.allMessages, msg],
-      messages: [...s.messages, msg],
-    })),
+  hasCachedSession: (sessionId) => !!get().sessionCache[sessionId],
 
   updateStreamMessage: (sessionId, messageId, updater) =>
     set((s) => {
-      // 后台流式：更新缓存中的消息
-      if (s.currentSessionId !== sessionId) {
-        const cache = s.sessionCache[sessionId]
-        if (!cache) return {}
-        const newCache = { ...s.sessionCache }
-        const sessionData = { ...cache, allMessages: [...cache.allMessages], messages: [...cache.messages] }
-        const allIdx = sessionData.allMessages.findIndex((m) => m.id === messageId)
-        if (allIdx >= 0) sessionData.allMessages[allIdx] = updater(sessionData.allMessages[allIdx])
-        const msgIdx = sessionData.messages.findIndex((m) => m.id === messageId)
-        if (msgIdx >= 0) sessionData.messages[msgIdx] = updater(sessionData.messages[msgIdx])
-        newCache[sessionId] = sessionData
-        return { sessionCache: newCache }
-      }
-
-      // 前台流式：更新可见消息
-      const msgs = [...s.messages]
-      const allMsgs = [...s.allMessages]
-      const allIdx = allMsgs.findIndex((m) => m.id === messageId)
-      if (allIdx >= 0) allMsgs[allIdx] = updater(allMsgs[allIdx])
-      const msgIdx = msgs.findIndex((m) => m.id === messageId)
-      if (msgIdx >= 0) msgs[msgIdx] = updater(msgs[msgIdx])
-      return { messages: msgs, allMessages: allMsgs }
+      const cache = s.sessionCache[sessionId]
+      if (!cache) return {}
+      const allMessages = [...cache.allMessages]
+      const idx = allMessages.findIndex((m) => m.id === messageId)
+      if (idx < 0) return {}
+      allMessages[idx] = updater(allMessages[idx])
+      return { sessionCache: { ...s.sessionCache, [sessionId]: { ...cache, allMessages } } }
     }),
 
   sendMessage: (accountBookId, message, parentMessageId, replaceAssistantDbId, attachmentIds, attachments, enableWebSearch) => {
@@ -486,30 +515,9 @@ export const useChatStore = create<ChatState>()((set, get) => {
     }
     const assistantMsgId = assistantMsg.id
 
-    set((s) => {
-      const newAllMessages = [...s.allMessages, userMsg, assistantMsg]
-      const newSelections = { ...s.branchSelections }
-      if (parentMessageId) {
-        newSelections[parentMessageId] = userMsg.id
-      }
-      const newCache = { ...s.sessionCache }
-      newCache[sid] = {
-        messages: buildActivePath(newAllMessages, newSelections),
-        allMessages: newAllMessages,
-        branchSelections: newSelections,
-        isStreaming: true,
-        streamingMessageId: assistantMsgId,
-      }
-      return {
-        messages: buildActivePath(newAllMessages, newSelections),
-        allMessages: newAllMessages,
-        branchSelections: newSelections,
-        sessionCache: newCache,
-        error: null,
-      }
-    })
+    appendStreamingMessages(set, sid, [userMsg, assistantMsg], assistantMsgId, parentMessageId ? { parentId: parentMessageId, childId: userMsg.id } : undefined)
 
-    const existingUserMsgCount = state.allMessages.filter(m => m.role === 'user').length
+    const existingUserMsgCount = state.sessionCache[sid]?.allMessages.filter(m => m.role === 'user').length ?? 0
     // 第二轮对话，或首轮无文本（纯图片）时需要 AI 生成标题
     const shouldGenerateTitle = existingUserMsgCount === 1 || (existingUserMsgCount === 0 && !message.trim())
 
@@ -522,76 +530,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
     }
 
     const { handleEvent, handleDone } = makeSSEHandler(ctx, (event) => {
-      set((s) => {
-        // 后台流式：更新缓存
-        if (s.currentSessionId !== sid) {
-          const cache = s.sessionCache[sid]
-          if (!cache) return {}
-          const newCache = { ...s.sessionCache }
-          const sessionData = { ...cache, allMessages: [...cache.allMessages], messages: [...cache.messages], branchSelections: { ...cache.branchSelections } }
-
-          const asstAllIdx = sessionData.allMessages.findIndex((m) => m.id === assistantMsgId)
-          if (asstAllIdx >= 0) {
-            const asst = sessionData.allMessages[asstAllIdx]
-            const userTempId = asst.parentMessageId
-            sessionData.allMessages[asstAllIdx] = { ...asst, dbId: event.assistantMessageId, parentMessageId: event.userMessageId, usage: event.usage as Message['usage'], isStreaming: false }
-            const asstMsgIdx = sessionData.messages.findIndex((m) => m.id === assistantMsgId)
-            if (asstMsgIdx >= 0) sessionData.messages[asstMsgIdx] = { ...sessionData.messages[asstMsgIdx], dbId: event.assistantMessageId, parentMessageId: event.userMessageId, usage: event.usage as Message['usage'], isStreaming: false }
-            if (userTempId) {
-              const userAllIdx = sessionData.allMessages.findIndex((m) => m.id === userTempId)
-              if (userAllIdx >= 0 && !sessionData.allMessages[userAllIdx].dbId) {
-                sessionData.allMessages[userAllIdx] = { ...sessionData.allMessages[userAllIdx], dbId: event.userMessageId }
-                const userMsgIdx = sessionData.messages.findIndex((m) => m.id === userTempId)
-                if (userMsgIdx >= 0) sessionData.messages[userMsgIdx] = { ...sessionData.messages[userMsgIdx], dbId: event.userMessageId }
-                for (const key of Object.keys(sessionData.branchSelections)) {
-                  if (sessionData.branchSelections[key] === userTempId) sessionData.branchSelections[key] = event.userMessageId
-                }
-              }
-            }
-          }
-          sessionData.isStreaming = false
-          sessionData.streamingMessageId = null
-          newCache[sid] = sessionData
-          const newAbortControllers = { ...s.abortControllers }
-          delete newAbortControllers[sid]
-          return { sessionCache: newCache, abortControllers: newAbortControllers }
-        }
-
-        // 前台流式：更新可见消息
-        const allMsgs = [...s.allMessages]
-        const msgs = [...s.messages]
-        const newSelections = { ...s.branchSelections }
-
-        const asstAllIdx = allMsgs.findIndex((m) => m.id === assistantMsgId)
-        if (asstAllIdx >= 0) {
-          const asst = allMsgs[asstAllIdx]
-          const userTempId = asst.parentMessageId
-
-          allMsgs[asstAllIdx] = { ...asst, dbId: event.assistantMessageId, parentMessageId: event.userMessageId }
-          const asstMsgIdx = msgs.findIndex((m) => m.id === assistantMsgId)
-          if (asstMsgIdx >= 0) msgs[asstMsgIdx] = { ...msgs[asstMsgIdx], dbId: event.assistantMessageId, parentMessageId: event.userMessageId }
-
-          if (userTempId) {
-            const userAllIdx = allMsgs.findIndex((m) => m.id === userTempId)
-            if (userAllIdx >= 0 && !allMsgs[userAllIdx].dbId) {
-              allMsgs[userAllIdx] = { ...allMsgs[userAllIdx], dbId: event.userMessageId }
-              const userMsgIdx = msgs.findIndex((m) => m.id === userTempId)
-              if (userMsgIdx >= 0) msgs[userMsgIdx] = { ...msgs[userMsgIdx], dbId: event.userMessageId }
-
-              for (const key of Object.keys(newSelections)) {
-                if (newSelections[key] === userTempId) {
-                  newSelections[key] = event.userMessageId
-                }
-              }
-            }
-          }
-        }
-        const newCache = { ...s.sessionCache }
-        newCache[sid] = { ...newCache[sid], isStreaming: false, streamingMessageId: null, messages: msgs, allMessages: allMsgs, branchSelections: newSelections }
-        const newAbortControllers = { ...s.abortControllers }
-        delete newAbortControllers[sid]
-        return { messages: msgs, allMessages: allMsgs, branchSelections: newSelections, sessionCache: newCache, abortControllers: newAbortControllers }
-      })
+      applyFinishPatch(set, sid, assistantMsgId, event)
     })
 
     const controller = sendMessageStream(
@@ -619,11 +558,12 @@ export const useChatStore = create<ChatState>()((set, get) => {
   retryMessage: (assistantMsgId) => {
     const state = get()
     const sid = state.currentSessionId
-    if (sid && state.sessionCache[sid]?.isStreaming) return
+    if (!sid || state.sessionCache[sid]?.isStreaming) return
 
-    const idx = state.messages.findIndex((m) => m.id === assistantMsgId)
+    const view = viewOf(state.sessionCache[sid] ?? EMPTY_SESSION)
+    const idx = view.messages.findIndex((m) => m.id === assistantMsgId)
     if (idx <= 0) return
-    const prevUserMsg = state.messages[idx - 1]
+    const prevUserMsg = view.messages[idx - 1]
     if (prevUserMsg.role !== 'user') return
 
     const text = prevUserMsg.blocks
@@ -632,36 +572,25 @@ export const useChatStore = create<ChatState>()((set, get) => {
       .join('\n')
     if (!text) return
 
-    const assistantDbId = state.messages[idx].dbId || state.messages[idx].id
+    const assistantDbId = view.messages[idx].dbId || view.messages[idx].id
 
-    // 从 allMessages 中删除被替换的助手消息及其所有后代
-    const descendantIds = collectDescendantIds(state.allMessages, assistantDbId)
-    const newAllMessages = state.allMessages.filter(
+    // 从 allMessages 中删除被替换的助手消息及其所有后代,也删除原用户消息
+    const descendantIds = collectDescendantIds(view.allMessages, assistantDbId)
+    const newAllMessages = view.allMessages.filter(
       (m) => !descendantIds.has(m.dbId || m.id) && (m.dbId || m.id) !== assistantDbId,
     )
-    // 也删除原用户消息
     const userMsgId = prevUserMsg.dbId || prevUserMsg.id
     const filteredAllMessages = newAllMessages.filter((m) => (m.dbId || m.id) !== userMsgId)
 
-    // 截断活跃路径
-    const newMessages = state.messages.slice(0, idx - 1)
-
-    set({
-      messages: newMessages,
-      allMessages: filteredAllMessages,
-    })
+    patchSession(set, sid, () => ({ allMessages: filteredAllMessages }))
 
     // 注意：实际发送由 ChatWindow.handleRetry 调用 sendMessage 完成
   },
 
   selectBranch: (parentId, childId) => {
-    set((s) => {
-      const newSelections = { ...s.branchSelections, [parentId]: childId }
-      return {
-        branchSelections: newSelections,
-        messages: buildActivePath(s.allMessages, newSelections),
-      }
-    })
+    const sid = get().currentSessionId
+    if (!sid) return
+    patchSession(set, sid, (d) => ({ branchSelections: { ...d.branchSelections, [parentId]: childId } }))
   },
 
   stopStreaming: (sessionId) => {
@@ -670,46 +599,25 @@ export const useChatStore = create<ChatState>()((set, get) => {
     const controller = get().abortControllers[sid]
     if (controller) {
       controller.abort()
-      set((s) => {
-        const newAbortControllers = { ...s.abortControllers }
-        delete newAbortControllers[sid]
-        const newCache = { ...s.sessionCache }
-        if (newCache[sid]) {
-          newCache[sid] = { ...newCache[sid], isStreaming: false, streamingMessageId: null }
-        }
-        return { sessionCache: newCache, abortControllers: newAbortControllers }
-      })
+      clearStreaming(set, sid)
     }
-  },
-
-  saveCurrentToCache: () => {
-    const { currentSessionId, messages, allMessages, branchSelections, sessionCache } = get()
-    if (!currentSessionId) return
-    // 流状态已在 sessionCache 中正确维护，直接沿用
-    const existing = sessionCache[currentSessionId]
-    set((s) => ({
-      sessionCache: {
-        ...s.sessionCache,
-        [currentSessionId]: {
-          messages: [...messages],
-          allMessages: [...allMessages],
-          branchSelections: { ...branchSelections },
-          isStreaming: existing?.isStreaming ?? false,
-          streamingMessageId: existing?.streamingMessageId ?? null,
-        },
-      },
-    }))
-  },
-
-  restoreFromCache: (sessionId: string) => {
-    const cache = get().sessionCache[sessionId]
-    if (!cache) return false
-    set({
-      messages: cache.messages,
-      allMessages: cache.allMessages,
-      branchSelections: cache.branchSelections,
-    })
-    return true
   },
   }
 })
+
+/** 当前会话视图:messages 为按分支选择派生的活跃路径(allMessages 为权威全量)。组件响应式消费 */
+export function useSessionView() {
+  const sid = useChatStore((s) => s.currentSessionId)
+  const data = useChatStore((s) => (sid ? s.sessionCache[sid] : undefined))
+  return useMemo(
+    () => (data ? viewOf(data) : { messages: [], allMessages: [], branchSelections: {} }),
+    [data],
+  )
+}
+
+/** 非 hook 场景(getState 式)读取当前会话视图 */
+export function getSessionView() {
+  const s = useChatStore.getState()
+  const data = s.currentSessionId ? s.sessionCache[s.currentSessionId] : undefined
+  return data ? viewOf(data) : { messages: [], allMessages: [], branchSelections: {} }
+}

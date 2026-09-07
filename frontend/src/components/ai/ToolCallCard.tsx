@@ -2,7 +2,8 @@ import { cn } from '@/lib/utils'
 import { markSubmitted, isSubmitted } from '@/lib/ai-submit'
 import { getToolDisplayName } from '@/lib/tool-names'
 import type { ToolCallEntry, SuggestionOption } from '@/stores/chat'
-import { useChatStore } from '@/stores/chat'
+import { useChatStore, useSessionView, getSessionView } from '@/stores/chat'
+import { resolveToolCallStatus } from '@homibook/core'
 import { useBookStore } from '@/stores/book'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -64,39 +65,8 @@ export function ToolCallCard({ toolCall }: Props) {
   // 只有 mode=preview 时显示交互卡片，analyze 模式等同查询工具直接返回数据
   const args = typeof toolCall.args === 'object' && toolCall.args != null ? toolCall.args as Record<string, unknown> : null
 
-  // 从历史记录加载时 status 可能为 'pending'（旧数据快照），根据已有字段推断实际状态
-  const { effectiveStatus, effectiveSuggestion, isExpired, expiredMessage } = useMemo(() => {
-    if (toolCall.status !== 'pending') {
-      return { effectiveStatus: toolCall.status, effectiveSuggestion: toolCall.suggestion, isExpired: false, expiredMessage: undefined as string | undefined }
-    }
-    // suggest_options 有 questions 参数 → 实际在等待用户选择
-    if (toolCall.toolName === 'suggest_options') {
-      const questions = (toolCall.args as any)?.questions
-      if (questions?.length > 0) {
-        return { effectiveStatus: 'suggesting' as const, effectiveSuggestion: { questions }, isExpired: true, expiredMessage: undefined }
-      }
-    }
-    // switch_book 有 result 带 books → 实际在等待用户选择
-    if (toolCall.toolName === 'switch_book') {
-      const books = (toolCall.result as any)?.books
-      if (books?.length > 0) {
-        return { effectiveStatus: 'switching' as const, effectiveSuggestion: undefined, isExpired: true, expiredMessage: '切换操作已过期，请重新发起' }
-      }
-    }
-    // 有 result → 实际已执行成功
-    if (toolCall.result != null) return { effectiveStatus: 'success' as const, effectiveSuggestion: undefined, isExpired: false, expiredMessage: undefined }
-    // 有 preview → 等待确认
-    if (toolCall.preview) return { effectiveStatus: 'confirming' as const, effectiveSuggestion: undefined, isExpired: true, expiredMessage: undefined }
-    // preview_import 预览模式但没有 result → 预览数据未持久化
-    if (toolCall.toolName === 'preview_import' && (toolCall.args as any)?.mode === 'preview') {
-      return { effectiveStatus: 'error' as const, effectiveSuggestion: undefined, isExpired: true, expiredMessage: '导入预览数据已过期，请重新上传文件发起导入' }
-    }
-    // confirm_import 但没有 result → 确认状态未持久化
-    if (toolCall.toolName === 'confirm_import') {
-      return { effectiveStatus: 'error' as const, effectiveSuggestion: undefined, isExpired: true, expiredMessage: '导入确认已过期，请重新发起导入' }
-    }
-    return { effectiveStatus: 'pending' as const, effectiveSuggestion: undefined, isExpired: false, expiredMessage: undefined }
-  }, [toolCall.status, toolCall.toolName, toolCall.args, toolCall.result, toolCall.preview, toolCall.suggestion])
+  // 从历史记录加载时 status 可能为 'pending'（旧数据快照），状态推断单一来源在 core
+  const { effectiveStatus, effectiveSuggestion, isExpired, expiredMessage } = useMemo(() => resolveToolCallStatus(toolCall), [toolCall])
 
   const isInteractivePreview = isPreviewImport && args?.mode === 'preview'
   const confirmResult = isConfirmImport && effectiveStatus === 'success' ? ((toolCall.result as any)?.data ?? null) : null
@@ -533,7 +503,7 @@ function SwitchBookView({
   const submittingRef = useRef(false)
 
   // 从 toolCall result 获取账本列表
-  const parentMsg = useChatStore.getState().messages.find(m =>
+  const parentMsg = getSessionView().messages.find(m =>
     m.role === 'assistant' && m.blocks.some(b =>
       b.type === 'tool-call' && b.toolCallId === toolCallId
     )
@@ -705,7 +675,7 @@ const FIELD_LABELS: Record<string, string> = {
 }
 
 function BatchIndicator({ toolCallId }: { toolCallId: string }) {
-  const messages = useChatStore(s => s.messages)
+  const messages = useSessionView().messages
   const parentMsg = messages.find(m =>
     m.role === 'assistant' && m.blocks.some(b =>
       b.type === 'tool-call' && b.toolCallId === toolCallId
