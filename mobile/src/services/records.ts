@@ -435,11 +435,6 @@ export async function batchCreateBudgetApi(
   await http.post('/api/budgets/batch', { ...data, accountBookId: bookId });
 }
 
-/** 批量编辑预算(仅提交传入的字段) */
-export async function batchUpdateBudgetApi(data: { ids: string[]; data: BudgetUpdatePayload }): Promise<void> {
-  await http.patch('/api/budgets/batch', data);
-}
-
 /** 复制预算:把 sourceYear/sourceMonth 的预算复制到 targetMonths */
 export async function copyBudgetApi(bookId: string, data: { sourceYear: number; sourceMonth: number; targetMonths: Array<{ year: number; month: number }> }): Promise<void> {
   await http.post('/api/budgets/copy', { ...data, accountBookId: bookId });
@@ -527,11 +522,6 @@ export async function listShareCodesApi(bookId: string): Promise<ShareCodeItem[]
 /** 删除分享码 */
 export async function deleteShareCodeApi(bookId: string, codeId: string): Promise<void> {
   await http.delete(`/api/books/${bookId}/share-codes/${codeId}`);
-}
-
-/** 校验分享码,返回账本信息 */
-export async function lookupShareCodeApi(code: string): Promise<{ bookId: string; bookName: string; code: string; expiresAt: string | null } | null> {
-  return (await http.get<{ bookId: string; bookName: string; code: string; expiresAt: string | null }>(`/api/books/share-codes/${code}`).catch(() => null)) ?? null;
 }
 
 /** 通过分享码加入账本 */

@@ -1,4 +1,4 @@
-import type { ToolDef, ToolContext } from './types.js'
+import type { ToolDef } from './types.js'
 import { queryRecordsTool } from './query-records.js'
 import { queryBudgetsTool } from './query-budgets.js'
 import { queryAccountsTool } from './query-accounts.js'
