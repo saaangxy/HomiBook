@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, ActivityIndicator, FlatList, Image, Linking, Platform, Pressable, ScrollView, Switch, TextInput, View } from 'react-native';
+import { Alert, ActivityIndicator, FlatList, Image, Linking, NativeScrollEvent, NativeSyntheticEvent, Platform, Pressable, ScrollView, Switch, TextInput, View } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 import { AlertTriangle, Bot, Brain, CheckCircle2, ChevronDown, Copy, ExternalLink, FileSpreadsheet, FileText, FileUp, Globe, HelpCircle, ImagePlus, List, Loader2, MessageSquareMore, Plus, RefreshCw, Search, Send, Sparkles, StopCircle, Trash2, Wrench, X, XCircle } from 'lucide-react-native';
 import { useTheme, alpha, haptics, semanticTypeColor } from '@/theme';
@@ -50,6 +50,8 @@ export function AIAssistant({ onClose }: { onClose?: () => void }) {
   // 全屏图片预览(待发缩略图 / 消息附件图共用)
   const [lightbox, setLightbox] = useState<{ images: string[]; index: number } | null>(null);
   const listRef = useRef<FlatList>(null);
+  // 列表是否接近底部:仅接近底部时自动跟随滚动,用户上翻(查看历史/批量确认工具卡)时内容变化不再强制滚到底
+  const isAtBottomRef = useRef(true);
 
   const {
     sessions, currentSessionId, error,
@@ -70,8 +72,20 @@ export function AIAssistant({ onClose }: { onClose?: () => void }) {
     loadToolNames();
   }, [loadSessions]);
 
-  // 内容尺寸变化(含流式增量)时平滑滚动到底部,替代逐条消息 setTimeout
+  // 切换会话时恢复自动跟随(新会话内容加载后滚到底部)
+  useEffect(() => {
+    isAtBottomRef.current = true;
+  }, [currentSessionId]);
+
+  // 滚动位置跟踪:判断用户是否处于底部附近(留 80px 容差)
+  const handleScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+    isAtBottomRef.current = contentOffset.y + layoutMeasurement.height >= contentSize.height - 80;
+  };
+
+  // 内容尺寸变化(含流式增量)时,若处于底部附近则平滑滚动到底部;用户已上翻则不打扰
   const handleContentSizeChange = () => {
+    if (!isAtBottomRef.current) return;
     listRef.current?.scrollToEnd({ animated: true });
   };
 
@@ -387,6 +401,8 @@ export function AIAssistant({ onClose }: { onClose?: () => void }) {
         renderItem={renderMessage}
         contentContainerStyle={{ padding: 14 }}
         onContentSizeChange={handleContentSizeChange}
+        onScroll={handleScroll}
+        scrollEventThrottle={100}
         ListEmptyComponent={
           <View style={{ alignItems: 'center', paddingTop: 48, paddingBottom: 24, gap: 8 }}>
             <View style={{ width: 58, height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center', backgroundColor: alpha(colors.primary, 0.1) }}>

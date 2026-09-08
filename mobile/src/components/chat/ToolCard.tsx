@@ -189,6 +189,7 @@ export function ToolCard({ toolCall, bookId }: { toolCall: ToolCallEntry; bookId
   const [custom, setCustom] = useState<Record<string, string>>({});
   const [bookChoice, setBookChoice] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [confirmOwnerId, setConfirmOwnerId] = useState('');
   const { confirmAndContinue, respondToSuggestion, switchBook } = useChatStore();
   const { messages } = useSessionView();
 
@@ -335,6 +336,20 @@ export function ToolCard({ toolCall, bookId }: { toolCall: ToolCallEntry; bookId
                   </View>
                 ))}
             </View>
+            {/* 归属人选择(多成员账本) */}
+            {(data.owners?.length ?? 0) > 1 && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                <Text style={{ fontSize: 11, color: colors.mutedForeground }}>归属人:</Text>
+                {(data.owners as { id: string; name: string }[]).map((o) => {
+                  const active = (confirmOwnerId || data.ownerId) === o.id;
+                  return (
+                    <Pressable key={o.id} onPress={() => setConfirmOwnerId(o.id)} style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: active ? colors.primary : colors.border, backgroundColor: active ? alpha(colors.primary, 0.12) : colors.card }}>
+                      <Text style={{ fontSize: 10.5, color: active ? colors.primary : colors.foreground }}>{o.name}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
             {data.records?.length > 0 && (
               <MiniTable
                 columns={['#', '日期', '类型', '金额', '账户', '分类', '说明']}
@@ -343,12 +358,12 @@ export function ToolCard({ toolCall, bookId }: { toolCall: ToolCallEntry; bookId
               />
             )}
             <View style={{ flexDirection: 'row', gap: 8 }}>
-              <Pressable onPress={() => confirmAndContinue(data.accountBookId || bookId, toolCall.toolCallId, true, { fileId: data.fileId, ownerId: data.ownerId })} disabled={submitted} style={{ flex: 1, borderRadius: 10, paddingVertical: 8, alignItems: 'center', backgroundColor: colors.primary, flexDirection: 'row', justifyContent: 'center', gap: 6, opacity: submitted ? 0.6 : 1 }}>
+              <Pressable onPress={() => confirmAndContinue(data.accountBookId || bookId, toolCall.toolCallId, true, { fileId: data.fileId, ownerId: confirmOwnerId || data.ownerId })} disabled={submitted} style={{ flex: 1.6, borderRadius: 10, paddingVertical: 8, alignItems: 'center', backgroundColor: colors.primary, flexDirection: 'row', justifyContent: 'center', gap: 6, opacity: submitted ? 0.6 : 1 }}>
                 {submitted && <ActivityIndicator size="small" color="#fff" />}
-                <Text style={{ color: '#fff', ...btnText }}>{submitted ? '提交中...' : `确认导入 ${data.stats?.totalRecords ?? 0} 条记录`}</Text>
+                <Text numberOfLines={1} style={{ color: '#fff', ...btnText }}>{submitted ? '提交中...' : `确认导入 ${data.stats?.totalRecords ?? 0} 条`}</Text>
               </Pressable>
               <Pressable onPress={() => confirmAndContinue(data.accountBookId || bookId, toolCall.toolCallId, false)} disabled={submitted} style={{ flex: 1, borderRadius: 10, paddingVertical: 8, alignItems: 'center', borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, opacity: submitted ? 0.6 : 1 }}>
-                <Text style={{ fontSize: 12.5, color: colors.foreground }}>取消</Text>
+                <Text numberOfLines={1} style={{ fontSize: 12.5, color: colors.foreground }}>取消</Text>
               </Pressable>
             </View>
           </View>
