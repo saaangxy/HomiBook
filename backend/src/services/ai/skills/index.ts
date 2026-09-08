@@ -1,4 +1,4 @@
-import type { SkillDef } from './types.js'
+import type { SkillDef, SkillPromptOptions } from './types.js'
 import { importTransactionsSkill } from './import-transactions.js'
 import { imageBillingSkill } from './image-billing.js'
 
@@ -15,9 +15,9 @@ export function detectSkills(userMessage: string): SkillDef[] {
 }
 
 /** 将技能列表构建为合并的提示词字符串 */
-export function buildSkillsPrompt(skills: SkillDef[]): string {
+export function buildSkillsPrompt(skills: SkillDef[], opts?: SkillPromptOptions): string {
   if (skills.length === 0) return ''
-  return skills.map((s) => s.buildPrompt()).join('\n\n')
+  return skills.map((s) => s.buildPrompt(opts)).join('\n\n')
 }
 
 /** 从 AI SDK CoreMessage 数组中提取最近的用户消息文本，用于技能检测 */

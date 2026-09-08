@@ -17,18 +17,20 @@ export function resolveToolCallStatus(toolCall: ToolCallEntry): ToolStatusResolu
   if (toolCall.status !== 'pending') {
     return { effectiveStatus: toolCall.status, effectiveSuggestion: toolCall.suggestion, isExpired: false, expiredMessage: undefined };
   }
+  // decisionData 仅由端内 decideTool 批准时暂存（不持久化）：表示用户已决定、等待续流结果，不属于历史重载过期场景
+  const decided = toolCall.decisionData != null;
   // suggest_options 有 questions 参数 → 实际在等待用户选择
   if (toolCall.toolName === 'suggest_options') {
     const questions = (toolCall.args as any)?.questions;
     if (questions?.length > 0) {
-      return { effectiveStatus: 'suggesting', effectiveSuggestion: { questions }, isExpired: true, expiredMessage: undefined };
+      return { effectiveStatus: 'suggesting', effectiveSuggestion: { questions }, isExpired: !decided, expiredMessage: undefined };
     }
   }
   // switch_book 有 result 带 books → 实际在等待用户选择
   if (toolCall.toolName === 'switch_book') {
     const books = (toolCall.result as any)?.books;
     if (books?.length > 0) {
-      return { effectiveStatus: 'switching', effectiveSuggestion: undefined, isExpired: true, expiredMessage: '切换操作已过期，请重新发起' };
+      return { effectiveStatus: 'switching', effectiveSuggestion: undefined, isExpired: !decided, expiredMessage: decided ? undefined : '切换操作已过期，请重新发起' };
     }
   }
   // 有 result → 实际已执行成功

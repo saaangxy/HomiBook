@@ -1,5 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { streamText, generateText, stepCountIs, jsonSchema } from 'ai'
+import { existsSync, readFileSync } from 'fs'
+import path from 'path'
 import { prisma } from '../app.js'
 import { authenticate } from '../middleware/auth.js'
 import { createModel, ALL_PROVIDERS, DEFAULT_BASE_URLS, type ProviderType } from '../services/ai/providers.js'
@@ -63,6 +65,33 @@ function friendlyAIErrorMessage(err: unknown): string {
   // 其余超长错误信息截断,保留关键头部
   const MAX = 300
   return raw.length > MAX ? `${raw.slice(0, MAX)}…` : (raw || 'AI 服务异常')
+}
+
+const IMAGE_EXT_RE = /\.(jpe?g|png|webp|gif|bmp)$/i
+const IMAGE_MEDIA_TYPES: Record<string, string> = {
+  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+  '.webp': 'image/webp', '.gif': 'image/gif', '.bmp': 'image/bmp',
+}
+
+/** 多模态主模型：把图片附件以 base64 注入最后一条用户消息（ai SDK 多模态 content 数组） */
+function injectImagesToLastUserMessage(messages: any[], imageAttachments: { url: string; originalFilename: string }[]): any[] {
+  const msgs = [...messages]
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i].role !== 'user') continue
+    const text = typeof msgs[i].content === 'string' ? msgs[i].content : ''
+    const parts: any[] = [{ type: 'text', text }]
+    for (const att of imageAttachments) {
+      try {
+        const filePath = path.join(process.cwd(), att.url.replace(/^\/api\//, ''))
+        if (!existsSync(filePath)) continue
+        const ext = path.extname(att.originalFilename).toLowerCase()
+        parts.push({ type: 'image', image: readFileSync(filePath).toString('base64'), mediaType: IMAGE_MEDIA_TYPES[ext] || 'image/jpeg' })
+      } catch { /* 单张图片读取失败时跳过，不影响其余图片 */ }
+    }
+    msgs[i] = { ...msgs[i], content: parts }
+    break
+  }
+  return msgs
 }
 
 async function streamAssistantResponse(opts: StreamAssistantOptions) {
@@ -795,15 +824,12 @@ export async function chatRoutes(app: FastifyInstance) {
     })
     const bookName = book?.name || accountBookId
 
-    // 构建 system prompt（根据用户消息检测并注入技能提示词）
     // 网络搜索开关：关闭时将搜索工具加入禁用列表
     const webSearchTools = ['web_search', 'read_webpage']
-    const effectiveDisabledTools = enableWebSearch === false
+    let effectiveDisabledTools = enableWebSearch === false
       ? [...new Set([...(prefs.disabledTools || []), ...webSearchTools])]
       : (prefs.disabledTools || [])
     const activeSkills = detectSkills(fullMessage)
-    const skillsPrompt = buildSkillsPrompt(activeSkills)
-    const systemPrompt = buildSystemPrompt(prefs, accountBookId, bookName, memories, skillsPrompt, effectiveDisabledTools)
 
     // 模型路由
     let route
@@ -829,6 +855,17 @@ export async function chatRoutes(app: FastifyInstance) {
     const activeConfig = route.provider === simpleProvider ? simpleConfig : complexConfig
     const apiKey = activeConfig?.apiKey || ''
     const baseURL = activeConfig?.baseURL || (await loadBaseURL(route.provider))
+
+    // 多模态主模型：消息含图片附件时直接注入图片，并禁用 OCR 工具（改用多模态直读技能提示词）
+    const imageAttachments = attachments.filter(a => IMAGE_EXT_RE.test(a.originalFilename))
+    const isMultimodalImage = !!activeConfig?.multimodal && imageAttachments.length > 0
+    if (isMultimodalImage) {
+      effectiveDisabledTools = [...new Set([...effectiveDisabledTools, 'ocr_receipt'])]
+    }
+
+    // 构建 system prompt（根据用户消息检测并注入技能提示词）
+    const skillsPrompt = buildSkillsPrompt(activeSkills, { multimodalImage: isMultimodalImage })
+    const systemPrompt = buildSystemPrompt(prefs, accountBookId, bookName, memories, skillsPrompt, effectiveDisabledTools)
 
     const messages = [...history]
     const messageIds = [...historyIds]
@@ -861,13 +898,18 @@ export async function chatRoutes(app: FastifyInstance) {
       }).catch(() => {})
     }
 
+    // 多模态：压缩只处理纯文本，故在压缩后把图片 base64 注入最后一条用户消息
+    const finalMessages = isMultimodalImage
+      ? injectImagesToLastUserMessage(compressed.messages, imageAttachments)
+      : compressed.messages
+
     await streamAssistantResponse({
       reply,
       sessionId: session.id,
       accountBookId,
       userId,
       systemPrompt: compressed.systemPrompt,
-      messages: compressed.messages,
+      messages: finalMessages,
       parentMessageId: userMsgDb.id,
       provider: route.provider,
       model: route.model,

@@ -52,7 +52,7 @@ export function AIAssistantSettings() {
   // 模型配置编辑弹窗
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<UserProviderConfig | null>(null);
-  const [form, setForm] = useState({ provider: 'deepseek', name: '', apiKey: '', baseURL: '', models: '', temperature: '', maxTokens: '', contextWindow: '' });
+  const [form, setForm] = useState({ provider: 'deepseek', name: '', apiKey: '', baseURL: '', models: '', temperature: '', maxTokens: '', contextWindow: '', multimodal: false });
   const [formError, setFormError] = useState('');
   const [formSaving, setFormSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -136,7 +136,7 @@ export function AIAssistantSettings() {
   // ── 模型配置 CRUD ──
   const openAdd = () => {
     setEditing(null);
-    setForm({ provider: 'deepseek', name: '', apiKey: '', baseURL: defaultBaseURL('deepseek'), models: '', temperature: '', maxTokens: '', contextWindow: '' });
+    setForm({ provider: 'deepseek', name: '', apiKey: '', baseURL: defaultBaseURL('deepseek'), models: '', temperature: '', maxTokens: '', contextWindow: '', multimodal: false });
     setFormError('');
     setTestMsg(null);
     setFormOpen(true);
@@ -153,6 +153,7 @@ export function AIAssistantSettings() {
       temperature: c.temperature != null ? String(c.temperature) : '',
       maxTokens: c.maxTokens != null ? String(c.maxTokens) : '',
       contextWindow: c.contextWindow != null ? String(c.contextWindow) : '',
+      multimodal: c.multimodal,
     });
     setFormError('');
     setTestMsg(null);
@@ -171,6 +172,7 @@ export function AIAssistantSettings() {
         temperature: form.temperature ? Number(form.temperature) : null,
         maxTokens: form.maxTokens ? Number(form.maxTokens) : null,
         contextWindow: form.contextWindow ? Number(form.contextWindow) : null,
+        multimodal: form.multimodal,
         models: form.models,
       };
       if (editing) {
@@ -325,7 +327,7 @@ export function AIAssistantSettings() {
                 <View style={{ flex: 1, gap: 2 }}>
                   <Text style={{ fontSize: 13, fontWeight: '600' }} numberOfLines={1}>{c.name || providerLabel(c.provider)}</Text>
                   <Text variant="muted" style={{ fontSize: 11 }} numberOfLines={1}>
-                    {providerLabel(c.provider)}{c.baseURL ? ` · ${c.baseURL}` : ''}{c.apiKey ? ' · Key 已配置' : ''}
+                    {providerLabel(c.provider)}{c.baseURL ? ` · ${c.baseURL}` : ''}{c.apiKey ? ' · Key 已配置' : ''}{c.multimodal ? ' · 多模态' : ''}
                   </Text>
                 </View>
                 <Pressable hitSlop={6} disabled={testingId === c.id} onPress={() => testFromList(c)} style={{ width: 30, height: 30, alignItems: 'center', justifyContent: 'center' }}>
@@ -427,6 +429,19 @@ export function AIAssistantSettings() {
                 </View>
               </View>
               <LabeledInput label="上下文窗口 (可选)" value={form.contextWindow} onChangeText={(v) => setForm((f) => ({ ...f, contextWindow: v }))} keyboardType="numeric" placeholder="如 32768" />
+              {/* 多模态开关 */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 12.5, fontWeight: '500' }}>多模态模型</Text>
+                  <Text variant="muted" style={{ fontSize: 11 }}>开启后聊天图片直接发给该模型识别，不再调用 OCR 工具（仅作为主模型时生效）</Text>
+                </View>
+                <Pressable
+                  onPress={() => setForm((f) => ({ ...f, multimodal: !f.multimodal }))}
+                  style={{ width: 40, height: 22, borderRadius: 11, backgroundColor: form.multimodal ? colors.primary : colors.muted, justifyContent: 'center', paddingHorizontal: 2 }}
+                >
+                  <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: '#fff', alignSelf: form.multimodal ? 'flex-end' : 'flex-start' }} />
+                </Pressable>
+              </View>
               <View style={{ flexDirection: 'row', gap: 10 }}>
                 <Btn title="取消" variant="secondary" onPress={() => setFormOpen(false)} />
                 <Btn title="测试连接" variant="secondary" onPress={testForm} loading={testing} />

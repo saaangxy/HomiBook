@@ -384,6 +384,7 @@ function SuggestionView({
   const { questions } = suggestion
   const [selectedOption, setSelectedOption] = useState<Record<string, string>>({})
   const [customInputs, setCustomInputs] = useState<Record<string, string>>({})
+  const [submitted, setSubmitted] = useState(false)
   const submittingRef = useRef(false)
 
   const getValue = (field: string) => {
@@ -404,6 +405,7 @@ function SuggestionView({
     }
     markSubmitted(toolCallId)
     submittingRef.current = true
+    setSubmitted(true)
     useChatStore.getState().respondToSuggestion(currentBookId, toolCallId, values)
   }
 
@@ -469,7 +471,7 @@ function SuggestionView({
         <Button
           size="sm"
           variant="default"
-          disabled={!allFilled || expired}
+          disabled={!allFilled || expired || submitted}
           onClick={handleSubmit}
         >
           提交
@@ -477,7 +479,7 @@ function SuggestionView({
         <Button
           size="sm"
           variant="ghost"
-          disabled={expired}
+          disabled={expired || submitted}
           onClick={() => {
             const { currentBookId } = useBookStore.getState()
             if (currentBookId) {

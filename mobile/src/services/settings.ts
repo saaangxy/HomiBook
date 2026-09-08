@@ -123,6 +123,7 @@ export interface UserProviderConfig {
   temperature: number | null;
   maxTokens: number | null;
   contextWindow: number | null;
+  multimodal: boolean;
   testStatus: string;
 }
 

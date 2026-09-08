@@ -77,6 +77,7 @@ export function AIAssistantSettings() {
   const [formTemperature, setFormTemperature] = useState('')
   const [formMaxTokens, setFormMaxTokens] = useState('')
   const [formContextWindow, setFormContextWindow] = useState('')
+  const [formMultimodal, setFormMultimodal] = useState(false)
   const [formModels, setFormModels] = useState('')
   const [formSaving, setFormSaving] = useState(false)
   const [formError, setFormError] = useState('')
@@ -164,6 +165,7 @@ export function AIAssistantSettings() {
     setFormTemperature('')
     setFormMaxTokens('')
     setFormContextWindow('')
+    setFormMultimodal(false)
     setFormModels('')
     setFormModelList([])
     setFormError('')
@@ -181,6 +183,7 @@ export function AIAssistantSettings() {
     setFormTemperature(config.temperature != null ? String(config.temperature) : '')
     setFormMaxTokens(config.maxTokens != null ? String(config.maxTokens) : '')
     setFormContextWindow(config.contextWindow != null ? String(config.contextWindow) : '')
+    setFormMultimodal(config.multimodal)
     setFormModels(config.models)
     setFormModelList([])
     setFormError('')
@@ -223,6 +226,7 @@ export function AIAssistantSettings() {
         temperature: formTemperature ? Number(formTemperature) : null,
         maxTokens: formMaxTokens ? Number(formMaxTokens) : null,
         contextWindow: formContextWindow ? Number(formContextWindow) : null,
+        multimodal: formMultimodal,
         models: formModels,
       }
       if (editingConfig) {
@@ -553,6 +557,7 @@ export function AIAssistantSettings() {
                         {config.baseURL && ` · ${config.baseURL}`}
                         {config.apiKey && ' · Key 已配置'}
                         {config.contextWindow && ` · ${Math.round(config.contextWindow / 1024)}K上下文`}
+                        {config.multimodal && ' · 多模态'}
                       </div>
                     </div>
                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" disabled={testingId === config.id} onClick={() => handleTestFromList(config)} title="测试连接">
@@ -817,6 +822,16 @@ export function AIAssistantSettings() {
                   className="text-xs"
                 />
               </div>
+            </div>
+            {/* 多模态开关 */}
+            <div className="flex items-center gap-3 p-2 border rounded-lg">
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium">多模态模型</div>
+                <div className="text-xs text-muted-foreground">
+                  开启后聊天中的图片直接发送给该模型识别，不再调用 OCR 工具（仅对作为主模型时生效）
+                </div>
+              </div>
+              <Switch checked={formMultimodal} onCheckedChange={setFormMultimodal} />
             </div>
           </div>
           <DialogFooter>

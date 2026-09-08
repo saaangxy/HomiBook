@@ -461,6 +461,7 @@ model UserProviderConfig {
   testStatus   String   @default("untested") // untested | pass | fail
   lastTestedAt DateTime?
   sortOrder   Int      @default(0)
+  multimodal  Boolean  @default(false) // 多模态模型：聊天图片直接发送给该模型，不调用 OCR 工具
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

@@ -66,6 +66,7 @@ export const createProviderConfigSchema = z.object({
   temperature: z.number().min(0).max(2).nullable().optional().describe('默认温度'),
   maxTokens: z.number().min(1).max(1000000).nullable().optional().describe('默认最大token'),
   contextWindow: z.number().int().min(1024).max(10000000).nullable().optional().describe('模型上下文窗口大小（token）'),
+  multimodal: z.boolean().optional().describe('是否为多模态模型：聊天图片直接发送给该模型，不调用 OCR 工具'),
 })
 
 export const updateProviderConfigSchema = z.object({
@@ -77,4 +78,5 @@ export const updateProviderConfigSchema = z.object({
   temperature: z.number().min(0).max(2).nullable().optional().describe('默认温度'),
   maxTokens: z.number().min(1).max(1000000).nullable().optional().describe('默认最大token'),
   contextWindow: z.number().int().min(1024).max(10000000).nullable().optional().describe('模型上下文窗口大小（token）'),
+  multimodal: z.boolean().optional().describe('是否为多模态模型：聊天图片直接发送给该模型，不调用 OCR 工具'),
 })
