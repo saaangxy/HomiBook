@@ -57,7 +57,7 @@ interface ChatState {
   sendMessage: (accountBookId: string, message: string, parentMessageId?: string, replaceAssistantDbId?: string, attachmentIds?: string[], enableWebSearch?: boolean, localAttachments?: Message['attachments']) => void;
   confirmAndContinue: (accountBookId: string, toolCallId: string, approved: boolean, data?: Record<string, unknown>) => void;
   respondToSuggestion: (accountBookId: string, toolCallId: string, values: Record<string, string> | null) => void;
-  switchBook: (toolCallId: string, bookId: string) => void;
+  switchBook: (accountBookId: string, toolCallId: string, bookId: string) => void;
   retryMessage: (assistantMsgId: string) => void;
   selectBranch: (parentMessageId: string, childMessageId: string) => void;
   stopStreaming: (sessionId?: string) => void;
@@ -577,8 +577,8 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     decideTool(set, get, accountBookId, toolCallId, values !== null, values !== null ? { values } : undefined);
   },
 
-  switchBook: (toolCallId, bookId) => {
-    decideTool(set, get, '', toolCallId, true, { bookId });
+  switchBook: (accountBookId, toolCallId, bookId) => {
+    decideTool(set, get, accountBookId, toolCallId, true, { bookId });
   },
 
   retryMessage: (assistantMsgId) => {

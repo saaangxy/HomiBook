@@ -6,13 +6,13 @@ export const createAccountTool: ToolDef = {
   name: 'create_account',
   displayName: '创建账户',
   promptHint: '需要用户确认',
-  description: '创建新账户。参数：name(名称)、type(账户类型，如CASH/BANK/CREDIT_CARD/ALIPAY/WECHAT/INVESTMENT/EBANK/OTHER)、currency(货币代码，默认CNY)、initialBalance(初始余额)、accountNo(账号)、bankName(银行名称)、visibility(PUBLIC|PRIVATE)。',
-  parameters: {
-    type: 'object',
-    properties: {
-      name: { type: 'string', description: '账户名称' },
-      type: { type: 'string', enum: ['CASH', 'BANK', 'CREDIT_CARD', 'ALIPAY', 'WECHAT', 'INVESTMENT', 'EBANK', 'OTHER'], description: '账户类型' },
-      currency: { type: 'string', description: '货币代码，默认 CNY' },
+  description: '创建新账户。参数：name(名称)、type(账户类型)、currency(货币代码，默认CNY)、initialBalance(初始余额)、accountNo(账号)、bankName(银行名称)、visibility(PUBLIC|PRIVATE)。',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: '账户名称' },
+        type: { type: 'string', enum: ['BANK_DEBIT', 'CREDIT_CARD', 'ALIPAY', 'WECHAT', 'CASH', 'RECHARGE_CARD', 'INVESTMENT', 'OTHER'], description: '账户类型：BANK_DEBIT(借记卡)/CREDIT_CARD(信用卡)/ALIPAY/WECHAT/CASH(现金)/RECHARGE_CARD(充值卡)/INVESTMENT(投资)/OTHER' },
+        currency: { type: 'string', description: '货币代码，默认 CNY' },
       initialBalance: { type: 'number', description: '初始余额' },
       accountNo: { type: 'string', description: '账号' },
       bankName: { type: 'string', description: '银行名称' },

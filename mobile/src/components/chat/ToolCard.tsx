@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Linking, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { AlertTriangle, CheckCircle2, ChevronDown, ExternalLink, HelpCircle, Loader2, MessageSquareMore, Wrench, XCircle } from 'lucide-react-native';
-import { useTheme, alpha } from '@/theme';
+import { useTheme, alpha, semanticTypeColor } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { useChatStore, useSessionView } from '@/stores/chat';
 import { getToolDisplayName } from '@/services/chat';
-import { IMPORT_SOURCE_LABELS, resolveToolCallStatus, type ToolCallEntry } from '@homibook/core';
+import { IMPORT_SOURCE_LABELS, RECORD_TYPE_LABELS, resolveToolCallStatus, type ToolCallEntry } from '@homibook/core';
+import { settingsApi } from '@/services/settings';
 import { MiniTable, computeColWidths } from './MiniTable';
 import { ImportPreviewCard } from './ImportPreviewCard';
 import type { Ledger } from '@/types';
@@ -32,6 +33,40 @@ function parsePreview(preview?: string): ConfirmPreview | null {
   if (!preview) return null;
   try { return JSON.parse(preview) as ConfirmPreview; } catch { return null; }
 }
+
+// ── 分类字典缓存(工具卡分类编码→名称,模块级共享,一次加载) ──
+let categoryDictCache: Map<string, string> | null = null;
+let categoryDictPromise: Promise<Map<string, string>> | null = null;
+function loadCategoryDict(): Promise<Map<string, string>> {
+  if (!categoryDictPromise) {
+    categoryDictPromise = Promise.all(
+      ['transaction_category_income', 'transaction_category_expense', 'transaction_category_transfer'].map((g) => settingsApi.getDictionary(g)),
+    ).then((lists) => {
+      const m = new Map<string, string>();
+      for (const list of lists) for (const item of list) m.set(item.code, item.label);
+      categoryDictCache = m;
+      return m;
+    }).catch(() => new Map<string, string>());
+  }
+  return categoryDictPromise;
+}
+function useCategoryLabels(): Map<string, string> {
+  const [labels, setLabels] = useState<Map<string, string>>(() => categoryDictCache ?? new Map());
+  useEffect(() => {
+    if (categoryDictCache) return;
+    let mounted = true;
+    loadCategoryDict().then((m) => { if (mounted) setLabels(m); });
+    return () => { mounted = false; };
+  }, []);
+  return labels;
+}
+
+const TOOL_ACCOUNT_TYPE_LABELS: Record<string, string> = {
+  BANK_DEBIT: '储蓄卡', CREDIT_CARD: '信用卡', ALIPAY: '支付宝', WECHAT: '微信',
+  INVESTMENT: '投资', CASH: '现金', RECHARGE_CARD: '充值卡', OTHER: '其他',
+};
+const typeLabel = (t?: string) => (RECORD_TYPE_LABELS as Record<string, string>)[t ?? ''] || t || '-';
+const typeSign = (t?: string) => (t === 'INCOME' ? '+' : t === 'EXPENSE' ? '-' : '');
 
 // 英文字段名 → 中文(web FIELD_LABELS)
 const FIELD_LABELS: Record<string, string> = {
@@ -135,7 +170,7 @@ function ConfirmPreviewView({ preview, submitted, submitting, onConfirm }: {
       {parsed?.type === 'record-changes' && parsed.changes?.map((ch) => (
         <View key={ch.id} style={{ borderRadius: 8, borderWidth: 1, borderColor: colors.hairline, overflow: 'hidden' }}>
           <View style={{ paddingHorizontal: 8, paddingVertical: 4, backgroundColor: colors.muted }}>
-            <Text style={{ fontSize: 10.5, color: colors.mutedForeground }}>ID: {ch.id} | 日期: {ch.date}</Text>
+            <Text style={{ fontSize: 10.5, color: colors.mutedForeground }}>{ch.date ? `日期: ${ch.date}` : ''}</Text>
           </View>
           {ch.fields.map((f) => (
             <View key={f.label} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderTopWidth: 1, borderTopColor: colors.hairline }}>
@@ -220,6 +255,132 @@ export function ToolCard({ toolCall, bookId }: { toolCall: ToolCallEntry; bookId
   const showResult = effectiveStatus === 'success' && toolCall.result != null;
   const showError = effectiveStatus === 'error';
 
+  // 同一 assistant 消息内待决定工具数(confirming/suggesting/switching):>1 时提示批量确认机制
+  const batchRemaining = messages.find(m =>
+    m.role === 'assistant' && m.blocks.some(b => b.type === 'tool-call' && b.toolCallId === toolCall.toolCallId)
+  )?.blocks.filter(b => b.type === 'tool-call' && ['confirming', 'suggesting', 'switching'].includes(b.status)).length ?? 0;
+
+  // 结构化结果渲染:按工具类型映射为可读摘要/表格(替代 JSON 倾倒);summary 始终显示,table 展开后显示
+  const labels = useCategoryLabels();
+  const cat = (code?: string | null) => (code ? (labels.get(code) || code) : '-');
+  const structured = (() => {
+    if (!showResult || typeof toolCall.result !== 'object' || toolCall.result === null) return null;
+    const raw: any = toolCall.result;
+    const rd: any = raw?.data ?? raw;
+    switch (toolCall.toolName) {
+      case 'create_record':
+      case 'update_record': {
+        if (!rd?.type) return null;
+        const action = toolCall.toolName === 'create_record' ? '已创建' : '已更新';
+        return {
+          summary: (
+            <View style={{ marginTop: 4, gap: 3 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <CheckCircle2 size={12} color="#22c55e" />
+                <Text style={{ fontSize: 11.5, fontWeight: '600', color: '#22c55e' }}>{action}</Text>
+                <Text style={{ fontSize: 11.5, fontWeight: '600', color: semanticTypeColor(colors, rd.type) }}>{typeSign(rd.type)}{(rd.amount ?? 0).toFixed(2)}</Text>
+                <Text style={{ fontSize: 11, color: colors.foreground }}>{typeLabel(rd.type)}</Text>
+              </View>
+              <Text variant="muted" style={{ fontSize: 10.5 }}>
+                {rd.date || '-'} · 账户 {rd.accountName || '-'} · 分类 {cat(rd.categoryCode)}{rd.payer ? ` · 交易方 ${rd.payer}` : ''}
+              </Text>
+              {rd.remark ? <Text variant="muted" style={{ fontSize: 10.5 }} numberOfLines={2}>备注: {rd.remark}</Text> : null}
+            </View>
+          ),
+        };
+      }
+      case 'delete_record':
+        return rd?.deleted ? {
+          summary: (
+            <View style={{ marginTop: 4, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <CheckCircle2 size={12} color="#22c55e" />
+              <Text style={{ fontSize: 11.5, color: '#22c55e' }}>已删除该记录</Text>
+            </View>
+          ),
+        } : null;
+      case 'set_budget':
+        return rd?.year != null ? {
+          summary: (
+            <View style={{ marginTop: 4, gap: 3 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <CheckCircle2 size={12} color="#22c55e" />
+                <Text style={{ fontSize: 11.5, fontWeight: '600', color: '#22c55e' }}>已设置</Text>
+                <Text style={{ fontSize: 11.5, fontWeight: '600', color: colors.foreground }}>{rd.name || cat(rd.categoryCode)}</Text>
+              </View>
+              <Text variant="muted" style={{ fontSize: 10.5 }}>
+                {rd.type === 'FIXED' ? '固定' : '月度'} · {rd.year}年{rd.month ? `${rd.month}月` : '全年'} · 金额 {(rd.amount ?? 0).toFixed(2)}
+              </Text>
+            </View>
+          ),
+        } : null;
+      case 'query_records':
+      case 'batch_create_records': {
+        if (!Array.isArray(rd?.records)) return null;
+        const header = toolCall.toolName === 'query_records'
+          ? `共 ${rd.totalCount ?? rd.records.length} 条 · 合计 ${(rd.totalAmount ?? 0).toFixed(2)}`
+          : `已创建 ${rd.created ?? rd.records.length} 条记录`;
+        return {
+          table: (
+            <View style={{ marginTop: 4, gap: 4 }}>
+              <Text variant="muted" style={{ fontSize: 10.5 }}>{header}{rd.records.length > 50 ? '（仅展示前 50 条）' : ''}</Text>
+              <MiniTable
+                columns={['日期', '类型', '金额', '账户', '分类', '说明']}
+                rows={rd.records.slice(0, 50).map((r: any) => [r.date || '-', typeLabel(r.type), `${typeSign(r.type)}${(r.amount ?? 0).toFixed(2)}`, r.accountName || '-', cat(r.categoryCode), r.remark || r.payer || '-'])}
+                maxHeight={220}
+              />
+            </View>
+          ),
+        };
+      }
+      case 'query_budgets': {
+        if (!Array.isArray(rd?.budgets)) return null;
+        return {
+          table: (
+            <View style={{ marginTop: 4 }}>
+              <MiniTable
+                columns={['名称', '类型', '周期', '金额', '已用', '剩余', '进度']}
+                rows={rd.budgets.map((b: any) => [b.name || cat(b.categoryCode), b.type === 'FIXED' ? '固定' : '月度', `${b.year}年${b.month ? `${b.month}月` : ''}`, (b.amount ?? 0).toFixed(2), (b.used ?? 0).toFixed(2), (b.remaining ?? 0).toFixed(2), `${b.percentage ?? 0}%`])}
+                maxHeight={220}
+              />
+            </View>
+          ),
+        };
+      }
+      case 'query_accounts': {
+        if (!Array.isArray(rd?.accounts)) return null;
+        return {
+          table: (
+            <View style={{ marginTop: 4, gap: 4 }}>
+              <Text variant="muted" style={{ fontSize: 10.5 }}>共 {rd.accounts.length} 个账户 · 总余额 {(rd.totalBalance ?? 0).toFixed(2)}</Text>
+              <MiniTable
+                columns={['账户', '类型', '余额']}
+                aligns={['left', 'left', 'right']}
+                rows={rd.accounts.map((a: any) => [a.name, TOOL_ACCOUNT_TYPE_LABELS[a.type] || a.type, (a.balance ?? 0).toFixed(2)])}
+                maxHeight={220}
+              />
+            </View>
+          ),
+        };
+      }
+      case 'query_categories': {
+        if (!Array.isArray(rd?.categories)) return null;
+        return {
+          table: (
+            <View style={{ marginTop: 4 }}>
+              <MiniTable
+                columns={['分类', '类型', '编码']}
+                rows={rd.categories.map((c: any) => [c.name, typeLabel(c.type), c.code])}
+                maxHeight={220}
+              />
+            </View>
+          ),
+        };
+      }
+      default:
+        return null;
+    }
+  })();
+
   const handleConfirm = (approved: boolean) => {
     if (submitted) return;
     setSubmitted(true);
@@ -261,6 +422,11 @@ export function ToolCard({ toolCall, bookId }: { toolCall: ToolCallEntry; bookId
         </View>
       )}
 
+      {/* 批量确认提示:同消息还有待决定工具时,全部决定后才会统一提交 */}
+      {['confirming', 'suggesting', 'switching'].includes(effectiveStatus) && batchRemaining > 1 && (
+        <Text style={{ fontSize: 10.5, color: '#f59e0b' }}>等待全部确认 · 剩余 {batchRemaining} 个，全部决定后统一提交</Text>
+      )}
+
       {/* 错误信息(始终可见) */}
       {showError && (
         <Text style={{ fontSize: 11.5, color: '#dc2626' }}>
@@ -287,8 +453,12 @@ export function ToolCard({ toolCall, bookId }: { toolCall: ToolCallEntry; bookId
         </View>
       )}
 
-      {/* 其他工具结果(折叠内) */}
-      {!isInteractivePreview && !isConfirmCard && toolCall.toolName !== 'web_search' && showResult && expanded && (
+      {/* 结构化结果:操作简报(始终显示) + 数据表格(展开后显示) */}
+      {structured?.summary}
+      {structured?.table && expanded && structured.table}
+
+      {/* 其他工具结果(无结构化渲染时兜底,折叠内) */}
+      {!isInteractivePreview && !isConfirmCard && toolCall.toolName !== 'web_search' && !structured && showResult && expanded && (
         <View>
           <Text style={{ fontSize: 9.5, textTransform: 'uppercase', color: colors.mutedForeground, letterSpacing: 0.5 }}>结果</Text>
           <Text style={{ fontSize: 10.5, color: colors.mutedForeground, marginTop: 2 }}>
@@ -450,39 +620,50 @@ export function ToolCard({ toolCall, bookId }: { toolCall: ToolCallEntry; bookId
       )}
 
       {/* 切换账本(始终可见) */}
-      {effectiveStatus === 'switching' && (
-        <View style={{ marginTop: 4, gap: 8 }}>
-          <Text style={{ fontSize: 12.5, fontWeight: '600', color: colors.foreground }}>选择要切换的账本：</Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            {((toolCall.result as any)?.books ?? []).map((b: Ledger) => {
-              const active = bookChoice === b.id;
-              return (
-                <Pressable
-                  key={b.id}
-                  onPress={() => setBookChoice(b.id)}
-                  style={{ width: 150, borderRadius: 10, borderWidth: 1, padding: 10, borderColor: active ? '#10b981' : colors.hairline, backgroundColor: active ? alpha('#10b981', 0.08) : colors.card }}
-                >
-                  <Text style={{ fontSize: 12.5, fontWeight: '600', color: colors.foreground }} numberOfLines={1}>{b.name}</Text>
-                  <Text style={{ fontSize: 10.5, color: colors.mutedForeground, marginTop: 2 }}>{b.memberCount} 位成员</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-          {isExpired && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-              <AlertTriangle size={12} color="#f59e0b" />
-              <Text style={{ fontSize: 10.5, color: '#f59e0b', flex: 1 }}>切换操作已过期，请在聊天输入框中直接说明要切换的账本</Text>
+      {effectiveStatus === 'switching' && (() => {
+        // 已提交或决定已暂存后锁定选择,不可再修改
+        const switchLocked = submitted || toolCall.decisionData != null;
+        return (
+          <View style={{ marginTop: 4, gap: 8 }}>
+            <Text style={{ fontSize: 12.5, fontWeight: '600', color: colors.foreground }}>选择要切换的账本：</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              {((toolCall.result as any)?.books ?? []).map((b: Ledger) => {
+                const active = bookChoice === b.id;
+                return (
+                  <Pressable
+                    key={b.id}
+                    onPress={() => setBookChoice(b.id)}
+                    disabled={switchLocked}
+                    style={{ width: 150, borderRadius: 10, borderWidth: 1, padding: 10, borderColor: active ? '#10b981' : colors.hairline, backgroundColor: active ? alpha('#10b981', 0.08) : colors.card, opacity: switchLocked && !active ? 0.6 : 1 }}
+                  >
+                    <Text style={{ fontSize: 12.5, fontWeight: '600', color: colors.foreground }} numberOfLines={1}>{b.name}</Text>
+                    <Text style={{ fontSize: 10.5, color: colors.mutedForeground, marginTop: 2 }}>{b.memberCount} 位成员</Text>
+                  </Pressable>
+                );
+              })}
             </View>
-          )}
-          <Pressable
-            onPress={() => { if (bookChoice) { setSubmitted(true); switchBook(toolCall.toolCallId, bookChoice); } }}
-            disabled={!bookChoice}
-            style={{ borderRadius: 10, paddingVertical: 8, alignItems: 'center', backgroundColor: '#10b981', opacity: !bookChoice ? 0.5 : 1 }}
-          >
-            <Text style={{ color: '#fff', ...btnText }}>切换到此账本</Text>
-          </Pressable>
-        </View>
-      )}
+            {switchLocked ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <CheckCircle2 size={12} color="#16a34a" />
+                <Text style={{ fontSize: 10.5, color: '#16a34a' }}>已选择目标账本，等待提交处理</Text>
+              </View>
+            ) : null}
+            {isExpired && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                <AlertTriangle size={12} color="#f59e0b" />
+                <Text style={{ fontSize: 10.5, color: '#f59e0b', flex: 1 }}>切换操作已过期，请在聊天输入框中直接说明要切换的账本</Text>
+              </View>
+            )}
+            <Pressable
+              onPress={() => { if (bookChoice && !switchLocked) { setSubmitted(true); switchBook(bookId, toolCall.toolCallId, bookChoice); } }}
+              disabled={!bookChoice || switchLocked}
+              style={{ borderRadius: 10, paddingVertical: 8, alignItems: 'center', backgroundColor: '#10b981', opacity: !bookChoice || switchLocked ? 0.5 : 1 }}
+            >
+              <Text style={{ color: '#fff', ...btnText }}>{switchLocked ? '已选择' : '切换到此账本'}</Text>
+            </Pressable>
+          </View>
+        );
+      })()}
     </View>
   );
 }

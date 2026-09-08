@@ -1,6 +1,7 @@
 import { prisma } from '../../app.js'
 import { parseAlipayCSV, parseWechatXlsx, parseJdCSV } from '../import/parsers.js'
 import { applyAccountMappings, applyCategoryMappings, matchAccountByName, type ParsedRow } from '../import/shared.js'
+import { ACCOUNT_TYPE_LABELS } from '@homibook/core'
 import fs from 'fs'
 import path from 'path'
 
@@ -37,6 +38,8 @@ const TYPE_LABELS: Record<string, string> = {
   TRANSFER: '转账',
 }
 
+const ACCOUNT_TYPE_LABELS_FALLBACK = ACCOUNT_TYPE_LABELS as Record<string, string>
+
 /** 将 Record 行转为表格行 */
 function recordToRow(r: {
   id: string
@@ -58,7 +61,6 @@ function recordToRow(r: {
   }
 
   return [[
-    { text: r.id },
     { text: date },
     { text: typeLabel, color: r.type === 'INCOME' ? 'green' : r.type === 'EXPENSE' ? 'red' : undefined },
     { text: accountText },
@@ -68,12 +70,12 @@ function recordToRow(r: {
   ]]
 }
 
-/** 查询分类名称映射 */
+/** 查询分类名称映射(group 为三个 transaction_category_* 组,展示 label 辅助用户判断) */
 async function getCategoryLabelMap(codes: string[]): Promise<Map<string, string>> {
   const unique = [...new Set(codes.filter(Boolean))]
   if (unique.length === 0) return new Map()
   const dicts = await prisma.dictionary.findMany({
-    where: { group: 'category', code: { in: unique } },
+    where: { group: { in: ['transaction_category_income', 'transaction_category_expense', 'transaction_category_transfer'] }, code: { in: unique } },
     select: { code: true, label: true },
   })
   return new Map(dicts.map((d) => [d.code, d.label]))
@@ -123,10 +125,24 @@ export async function buildConfirmPreview(
       return buildBatchUpdatePreview(args, accountBookId)
     case 'set_budget':
       return buildBudgetPreview(args)
-    case 'delete_recurring':
-      return buildDeleteRecurringPreview(args, accountBookId)
+    case 'copy_budgets':
+      return buildCopyBudgetsPreview(args, accountBookId)
+    case 'batch_create_budgets':
+      return buildBatchCreateBudgetsPreview(args)
+    case 'create_recurring':
+      return buildCreateRecurringPreview(args, accountBookId)
+    case 'update_recurring':
+      return buildUpdateRecurringPreview(args, accountBookId)
     case 'toggle_recurring':
       return buildToggleRecurringPreview(args, accountBookId)
+    case 'delete_recurring':
+      return buildDeleteRecurringPreview(args, accountBookId)
+    case 'create_account':
+      return buildCreateAccountPreview(args)
+    case 'update_account':
+      return buildUpdateAccountPreview(args)
+    case 'adjust_balance':
+      return buildAdjustBalancePreview(args)
     case 'delete_account':
       return buildDeleteAccountPreview(args, accountBookId)
     case 'delete_budget':
@@ -163,7 +179,7 @@ async function buildDeletePreview(args: any, accountBookId: string): Promise<str
     type: 'records-table',
     title: '确认删除以下流水记录',
     description: '此操作不可撤销，账户余额将相应调整',
-    columns: ['ID', '日期', '类型', '账户', '分类', '金额', '备注'],
+    columns: ['日期', '类型', '账户', '分类', '金额', '备注'],
     rows: recordToRow({
       id: record.id,
       type: record.type,
@@ -208,7 +224,7 @@ async function buildBatchDeletePreview(args: any, accountBookId: string): Promis
     type: 'records-table',
     title: `确认批量删除 ${records.length} 条流水记录`,
     description: `此操作不可撤销，账户余额将相应调整${notFound.length > 0 ? `\n未找到的记录: ${notFound.join(', ')}` : ''}`,
-    columns: ['ID', '日期', '类型', '账户', '分类', '金额', '备注'],
+    columns: ['日期', '类型', '账户', '分类', '金额', '备注'],
     rows: records.map((r) =>
       recordToRow({
         id: r.id,
@@ -246,7 +262,7 @@ async function buildClonePreview(args: any, accountBookId: string): Promise<stri
     type: 'records-table',
     title: '确认克隆以下流水记录',
     description: '将复制记录的所有字段，归属人设为当前用户',
-    columns: ['ID', '日期', '类型', '账户', '分类', '金额', '备注'],
+    columns: ['日期', '类型', '账户', '分类', '金额', '备注'],
     rows: recordToRow({
       id: record.id,
       type: record.type,
@@ -325,6 +341,8 @@ async function buildUpdatePreview(args: any, accountBookId: string): Promise<str
     { key: 'amount', label: '金额', format: (v) => Number(v).toFixed(2) },
     { key: 'date', label: '日期', format: (v) => dateStr(v) },
     { key: 'accountId', label: '账户', format: (v) => accountMap.get(v) || v },
+    { key: 'fromAccountId', label: '转出账户', format: (v) => accountMap.get(v) || v },
+    { key: 'toAccountId', label: '转入账户', format: (v) => accountMap.get(v) || v },
     { key: 'categoryCode', label: '分类', format: (v) => categoryMap.get(v) || v },
     { key: 'remark', label: '备注', format: (v) => v || '-' },
     { key: 'payer', label: '交易方', format: (v) => v || '-' },
@@ -368,7 +386,7 @@ async function buildUpdatePreview(args: any, accountBookId: string): Promise<str
   const preview: ConfirmPreview = {
     type: 'record-changes',
     title: '确认修改流水记录',
-    description: `记录 ID: ${record.id}，日期: ${dateStr(record.date)}`,
+    description: `${record.account?.name || '-'} · ${categoryMap.get(record.categoryCode || '') || '无分类'} · ${TYPE_LABELS[record.type] || record.type} ${record.amount.toFixed(2)} · ${dateStr(record.date)}`,
     changes: [{
       id: record.id,
       date: dateStr(record.date),
@@ -451,6 +469,8 @@ async function buildBatchUpdatePreview(args: any, accountBookId: string): Promis
     { key: 'amount', label: '金额', format: (v) => Number(v).toFixed(2) },
     { key: 'date', label: '日期', format: (v) => dateStr(v) },
     { key: 'accountId', label: '账户', format: (v) => accountMap.get(v) || v },
+    { key: 'fromAccountId', label: '转出账户', format: (v) => accountMap.get(v) || v },
+    { key: 'toAccountId', label: '转入账户', format: (v) => accountMap.get(v) || v },
     { key: 'categoryCode', label: '分类', format: (v) => categoryMap.get(v) || v },
     { key: 'remark', label: '备注', format: (v) => v || '-' },
     { key: 'payer', label: '交易方', format: (v) => v || '-' },
@@ -891,6 +911,233 @@ function buildGenericPreview(toolName: string, args: any): string {
     type: 'generic',
     title: ``,
     text: JSON.stringify(args, null, 2),
+  }
+  return JSON.stringify(preview)
+}
+
+// 修改固定收支:旧值 vs 新值变更列表
+async function buildUpdateRecurringPreview(args: any, accountBookId: string): Promise<string> {
+  const rt = await prisma.recurringTransaction.findUnique({
+    where: { id: args.id },
+    include: {
+      account: { select: { name: true } },
+      toAccount: { select: { name: true } },
+    },
+  })
+  if (!rt) return buildGenericPreview('update_recurring', { error: `固定收支记录不存在: ${args.id}` })
+
+  const newCodes = [args.categoryCode].filter(Boolean)
+  const newAccountIds = [args.accountId, args.toAccountId].filter(Boolean)
+  const [categoryMap, accountMap] = await Promise.all([
+    getCategoryLabelMap([...newCodes, rt.categoryCode || ''].filter(Boolean)),
+    getAccountNameMap([...newAccountIds, rt.accountId, rt.toAccountId || ''].filter(Boolean), accountBookId),
+  ])
+
+  const fieldDefs: { key: string; label: string; format: (v: any) => string }[] = [
+    { key: 'name', label: '名称', format: (v) => v || '-' },
+    { key: 'amount', label: '金额', format: (v) => Number(v).toFixed(2) },
+    { key: 'cron', label: '触发规则', format: (v) => v || '-' },
+    { key: 'accountId', label: '账户', format: (v) => accountMap.get(v) || v },
+    { key: 'toAccountId', label: '目标账户', format: (v) => accountMap.get(v) || v },
+    { key: 'categoryCode', label: '分类', format: (v) => categoryMap.get(v) || v },
+    { key: 'payer', label: '交易方', format: (v) => v || '-' },
+    { key: 'remark', label: '备注', format: (v) => v || '-' },
+  ]
+
+  const fields: { label: string; before: string; after: string }[] = []
+  for (const f of fieldDefs) {
+    const newVal = args[f.key]
+    if (newVal === undefined || newVal === null) continue
+    const oldVal = (rt as any)[f.key]
+    const before = f.format(oldVal)
+    const after = f.format(newVal)
+    if (before !== after) fields.push({ label: f.label, before, after })
+  }
+
+  if (fields.length === 0) {
+    return JSON.stringify({
+      type: 'generic',
+      title: '修改固定收支',
+      description: '未检测到任何字段变更',
+    } satisfies ConfirmPreview)
+  }
+
+  const preview: ConfirmPreview = {
+    type: 'record-changes',
+    title: '确认修改固定收支',
+    description: `${rt.name} · 当前 ${TYPE_LABELS[rt.type] || rt.type} ${rt.amount.toFixed(2)} · 账户 ${rt.account?.name || '-'}`,
+    changes: [{ id: rt.id, date: '', fields }],
+  }
+  return JSON.stringify(preview)
+}
+
+// 创建固定收支
+async function buildCreateRecurringPreview(args: any, accountBookId: string): Promise<string> {
+  const accountIds = [args.accountId, args.toAccountId].filter(Boolean)
+  const [categoryMap, accountMap] = await Promise.all([
+    args.categoryCode ? getCategoryLabelMap([args.categoryCode]) : Promise.resolve(new Map<string, string>()),
+    getAccountNameMap(accountIds, accountBookId),
+  ])
+
+  const isLoan = args.recurringType === 'LOAN'
+  const fields: { label: string; value: string }[] = [
+    { label: '名称', value: args.name || '-' },
+    { label: '类型', value: TYPE_LABELS[args.type] || args.type },
+    {
+      label: '金额',
+      value: isLoan
+        ? `月供 ${(args.amount ?? 0).toFixed(2)}（贷款总额 ${(args.loanTotalAmount ?? 0).toFixed(2)}，${args.loanTermMonths ?? '?'} 期）`
+        : (args.amount ?? 0).toFixed(2),
+    },
+    { label: '账户', value: accountMap.get(args.accountId) || args.accountId || '-' },
+  ]
+  if (args.type === 'TRANSFER') fields.push({ label: '目标账户', value: accountMap.get(args.toAccountId) || args.toAccountId || '-' })
+  if (args.categoryCode) fields.push({ label: '分类', value: categoryMap.get(args.categoryCode) || args.categoryCode })
+  fields.push({ label: '触发规则', value: args.cron || '-' })
+  fields.push({ label: '周期类型', value: isLoan ? '贷款' : '定期' })
+  if (isLoan && args.loanInterestMethod) {
+    fields.push({ label: '还款方式', value: args.loanInterestMethod === 'EQUAL_PRINCIPAL' ? '等额本金' : '等额本息' })
+  }
+  if (args.payer) fields.push({ label: '交易方', value: args.payer })
+  if (args.remark) fields.push({ label: '备注', value: args.remark })
+
+  const preview: ConfirmPreview = {
+    type: 'budget-card',
+    title: '确认创建固定收支',
+    budgetFields: fields,
+  }
+  return JSON.stringify(preview)
+}
+
+// 备制预算复制:源月份预算清单 + 目标月份
+async function buildCopyBudgetsPreview(args: any, accountBookId: string): Promise<string> {
+  const sourceBudgets = await prisma.budget.findMany({
+    where: { accountBookId, year: args.sourceYear, month: args.sourceMonth },
+  })
+  if (sourceBudgets.length === 0) {
+    return JSON.stringify({
+      type: 'generic',
+      title: '复制预算',
+      description: `${args.sourceYear}年${args.sourceMonth}月没有预算可复制`,
+    } satisfies ConfirmPreview)
+  }
+
+  const categoryMap = await getCategoryLabelMap(sourceBudgets.map((b) => b.categoryCode).filter(Boolean) as string[])
+  const targetText = (args.targetMonths || []).map((m: any) => `${m.year}年${m.month}月`).join('、')
+
+  const preview: ConfirmPreview = {
+    type: 'records-table',
+    title: `确认复制预算到 ${targetText}`,
+    description: `源月份：${args.sourceYear}年${args.sourceMonth}月（跳过已存在的同名预算）`,
+    columns: ['预算名称', '类型', '金额'],
+    rows: sourceBudgets.map((b) => [
+      { text: b.name || (b.categoryCode ? (categoryMap.get(b.categoryCode) || b.categoryCode) : '-') },
+      { text: b.type === 'FIXED' ? '月度固定预算' : '自由预算' },
+      { text: b.amount.toFixed(2) },
+    ]),
+  }
+  return JSON.stringify(preview)
+}
+
+// 批量创建预算:同一配置复制到多个月份
+async function buildBatchCreateBudgetsPreview(args: any): Promise<string> {
+  const categoryMap = args.categoryCode ? await getCategoryLabelMap([args.categoryCode]) : new Map<string, string>()
+  const monthsText = (args.months || []).map((m: number) => `${args.year}年${m}月`).join('、')
+
+  const preview: ConfirmPreview = {
+    type: 'budget-card',
+    title: `确认批量创建 ${(args.months || []).length} 个月份的预算`,
+    budgetFields: [
+      { label: '名称', value: args.name || '-' },
+      { label: '类型', value: args.type === 'FIXED' ? '月度固定预算' : '自由预算' },
+      { label: '金额', value: `每月 ${(args.amount ?? 0).toFixed(2)}` },
+      { label: '月份', value: monthsText || '-' },
+      ...(args.categoryCode ? [{ label: '关联分类', value: categoryMap.get(args.categoryCode) || args.categoryCode }] : []),
+      ...(args.remark ? [{ label: '备注', value: args.remark }] : []),
+    ],
+  }
+  return JSON.stringify(preview)
+}
+
+// 修改账户:旧值 vs 新值变更列表
+async function buildUpdateAccountPreview(args: any): Promise<string> {
+  const account = await prisma.account.findUnique({ where: { id: args.id } })
+  if (!account) return buildGenericPreview('update_account', { error: `账户不存在: ${args.id}` })
+
+  const STATUS_LABELS: Record<string, string> = { ACTIVE: '启用', ARCHIVED: '归档' }
+  const fieldDefs: { key: string; label: string; format: (v: any) => string }[] = [
+    { key: 'name', label: '名称', format: (v) => v || '-' },
+    { key: 'type', label: '类型', format: (v) => ACCOUNT_TYPE_LABELS_FALLBACK[v] || v },
+    { key: 'currency', label: '货币', format: (v) => v || '-' },
+    { key: 'accountNo', label: '账号', format: (v) => v || '-' },
+    { key: 'bankName', label: '银行', format: (v) => v || '-' },
+    { key: 'visibility', label: '可见性', format: (v) => v === 'PUBLIC' ? '共享' : v === 'PRIVATE' ? '私有' : v || '-' },
+    { key: 'status', label: '状态', format: (v) => STATUS_LABELS[v] || v || '-' },
+  ]
+
+  const fields: { label: string; before: string; after: string }[] = []
+  for (const f of fieldDefs) {
+    const newVal = args[f.key]
+    if (newVal === undefined || newVal === null) continue
+    const oldVal = (account as any)[f.key]
+    const before = f.format(oldVal)
+    const after = f.format(newVal)
+    if (before !== after) fields.push({ label: f.label, before, after })
+  }
+
+  if (fields.length === 0) {
+    return JSON.stringify({
+      type: 'generic',
+      title: '修改账户',
+      description: '未检测到任何字段变更',
+    } satisfies ConfirmPreview)
+  }
+
+  const preview: ConfirmPreview = {
+    type: 'record-changes',
+    title: '确认修改账户',
+    description: `${account.name} · 当前余额 ${account.balance.toFixed(2)}`,
+    changes: [{ id: account.id, date: '', fields }],
+  }
+  return JSON.stringify(preview)
+}
+
+// 创建账户
+async function buildCreateAccountPreview(args: any): Promise<string> {
+  const fields: { label: string; value: string }[] = [
+    { label: '名称', value: args.name || '-' },
+    { label: '类型', value: ACCOUNT_TYPE_LABELS_FALLBACK[args.type] || args.type },
+    { label: '初始余额', value: (args.initialBalance ?? 0).toFixed(2) },
+    { label: '货币', value: args.currency || 'CNY' },
+  ]
+  if (args.accountNo) fields.push({ label: '账号', value: args.accountNo })
+  if (args.bankName) fields.push({ label: '银行', value: args.bankName })
+
+  const preview: ConfirmPreview = {
+    type: 'budget-card',
+    title: '确认创建账户',
+    budgetFields: fields,
+  }
+  return JSON.stringify(preview)
+}
+
+// 调整余额:当前余额 vs 调整后余额
+async function buildAdjustBalancePreview(args: any): Promise<string> {
+  const account = await prisma.account.findUnique({ where: { id: args.accountId } })
+  if (!account) return buildGenericPreview('adjust_balance', { error: `账户不存在: ${args.accountId}` })
+
+  const diff = (args.balanceAfter ?? 0) - account.balance
+  const preview: ConfirmPreview = {
+    type: 'budget-card',
+    title: '确认调整账户余额',
+    budgetFields: [
+      { label: '账户', value: account.name },
+      { label: '当前余额', value: account.balance.toFixed(2) },
+      { label: '调整后余额', value: (args.balanceAfter ?? 0).toFixed(2) },
+      { label: '变动金额', value: `${diff >= 0 ? '+' : ''}${diff.toFixed(2)}` },
+      ...(args.date ? [{ label: '计算起始', value: args.date }] : []),
+      ...(args.remark ? [{ label: '备注', value: args.remark }] : []),
+    ],
   }
   return JSON.stringify(preview)
 }

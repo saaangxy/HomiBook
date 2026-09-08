@@ -12,6 +12,7 @@ import {
 } from '@homibook/core'
 import type { SSEEvent } from '../api/chat'
 import { sendMessageStream, confirmActionStream } from '../api/chat'
+import { useBookStore } from './book'
 
 // ---- 消息块类型 ----
 // 权威定义在 @homibook/core(与 mobile 共享),此处 re-export 供组件引用
@@ -430,6 +431,13 @@ export const useChatStore = create<ChatState>()((set, get) => {
       approved: b.status !== 'error',
       ...(b.decisionData ? { data: b.decisionData } : {}),
     }))
+
+    // 切换账本决定:提交前同步前端当前账本(与后端续流上下文保持一致)
+    const switchBlock = decidedBlocks.find(b => b.toolName === 'switch_book' && b.status !== 'error')
+    const switchTarget = (switchBlock?.decisionData as any)?.bookId as string | undefined
+    if (switchTarget && switchTarget !== useBookStore.getState().currentBookId) {
+      useBookStore.getState().setCurrentBook(switchTarget)
+    }
 
     startContinuationStream(
       parentDbId, parentId,

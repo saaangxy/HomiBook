@@ -4,11 +4,13 @@ import { getToolDisplayName } from '@/lib/tool-names'
 import type { ToolCallEntry, SuggestionOption } from '@/stores/chat'
 import { useChatStore, useSessionView, getSessionView } from '@/stores/chat'
 import { resolveToolCallStatus } from '@homibook/core'
+import { RECORD_TYPE_LABELS, RECORD_TYPE_TEXT_CLASS, RECORD_TYPE_BADGE_CLASS } from '@/lib/record-type'
+import { settingsApi } from '@/api/settings'
 import { useBookStore } from '@/stores/book'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Wrench, CheckCircle2, XCircle, Loader2, HelpCircle, ChevronDown, MessageSquareMore, AlertTriangle, ExternalLink } from 'lucide-react'
-import { useState, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { ImportPreviewInteractive, type ImportPreviewData } from './ImportPreviewInteractive'
 import { ImportConfirmCard } from './ImportConfirmCard'
 
@@ -50,6 +52,200 @@ function parsePreview(preview?: string): ConfirmPreview | null {
   }
 }
 
+// ---- 结构化结果渲染:把 AI 工具返回数据渲染为可读表格/摘要(替代 JSON 倾倒) ----
+
+const CATEGORY_DICT_GROUPS = ['transaction_category_income', 'transaction_category_expense', 'transaction_category_transfer']
+let categoryDictCache: Map<string, string> | null = null
+let categoryDictPromise: Promise<Map<string, string>> | null = null
+
+function loadCategoryDict(): Promise<Map<string, string>> {
+  if (!categoryDictPromise) {
+    categoryDictPromise = Promise.all(CATEGORY_DICT_GROUPS.map((g) => settingsApi.getDictionary(g)))
+      .then((lists) => {
+        const m = new Map<string, string>()
+        for (const list of lists) for (const item of list) m.set(item.code, item.label)
+        categoryDictCache = m
+        return m
+      })
+      .catch(() => new Map<string, string>())
+  }
+  return categoryDictPromise
+}
+
+/** 分类编码 → 名称(字典未加载完成或无匹配时回退显示编码) */
+function useCategoryLabels(): Map<string, string> {
+  const [labels, setLabels] = useState<Map<string, string>>(() => categoryDictCache ?? new Map())
+  useEffect(() => {
+    if (categoryDictCache) return
+    let mounted = true
+    loadCategoryDict().then((m) => { if (mounted) setLabels(m) })
+    return () => { mounted = false }
+  }, [])
+  return labels
+}
+
+function categoryText(labels: Map<string, string>, code?: string | null): string {
+  if (!code) return '-'
+  return labels.get(code) || code
+}
+
+interface ToolRecord {
+  type?: string
+  amount?: number
+  date?: string
+  accountName?: string
+  categoryCode?: string | null
+  payer?: string | null
+  remark?: string | null
+}
+
+/** 收支类型徽标(中文 + 语义色) */
+function RecordTypeBadge({ type }: { type?: string }) {
+  const t = type || ''
+  return (
+    <span className={cn('inline-block px-1.5 rounded text-[10px] leading-4 whitespace-nowrap', RECORD_TYPE_BADGE_CLASS[t] || 'bg-muted text-muted-foreground')}>
+      {RECORD_TYPE_LABELS[t] || type || '-'}
+    </span>
+  )
+}
+
+/** 语义色金额(收入 +/支出 -/转账无符号) */
+function RecordAmount({ type, amount }: { type?: string; amount?: number }) {
+  const t = type || ''
+  const sign = type === 'INCOME' ? '+' : type === 'EXPENSE' ? '-' : ''
+  return <span className={cn('font-medium whitespace-nowrap', RECORD_TYPE_TEXT_CLASS[t] || '')}>{sign}{(amount ?? 0).toFixed(2)}</span>
+}
+
+/** 单条记录摘要(创建/更新结果) */
+function RecordSummary({ record, actionLabel, labels }: { record: ToolRecord; actionLabel: string; labels: Map<string, string> }) {
+  return (
+    <div className="mt-1.5 space-y-1 text-xs">
+      <div className="flex items-center gap-2">
+        <span className="inline-flex items-center gap-1 text-green-600 font-medium"><CheckCircle2 size={12} />{actionLabel}</span>
+        <RecordTypeBadge type={record.type} />
+        <RecordAmount type={record.type} amount={record.amount} />
+      </div>
+      <div className="text-muted-foreground flex flex-wrap gap-x-3 gap-y-0.5">
+        <span>{record.date || '-'}</span>
+        <span>账户: {record.accountName || '-'}</span>
+        <span>分类: {categoryText(labels, record.categoryCode)}</span>
+        {record.payer && <span>交易方: {record.payer}</span>}
+      </div>
+      {record.remark && <div className="text-muted-foreground">备注: {record.remark}</div>}
+    </div>
+  )
+}
+
+/** 记录列表表格(查询/批量创建结果) */
+function RecordTable({ records, labels }: { records: ToolRecord[]; labels: Map<string, string> }) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow className="bg-muted/50 hover:bg-muted/50">
+          <TableHead className="text-xs">日期</TableHead>
+          <TableHead className="text-xs">类型</TableHead>
+          <TableHead className="text-xs text-right">金额</TableHead>
+          <TableHead className="text-xs">账户</TableHead>
+          <TableHead className="text-xs">分类</TableHead>
+          <TableHead className="text-xs">说明</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {records.map((r, i) => (
+          <TableRow key={i} className="hover:bg-accent/50">
+            <TableCell className="text-xs whitespace-nowrap">{r.date || '-'}</TableCell>
+            <TableCell className="text-xs"><RecordTypeBadge type={r.type} /></TableCell>
+            <TableCell className="text-xs text-right"><RecordAmount type={r.type} amount={r.amount} /></TableCell>
+            <TableCell className="text-xs whitespace-nowrap max-w-24 truncate">{r.accountName || '-'}</TableCell>
+            <TableCell className="text-xs whitespace-nowrap max-w-24 truncate">{categoryText(labels, r.categoryCode)}</TableCell>
+            <TableCell className="text-xs text-muted-foreground max-w-36 truncate">{r.remark || r.payer || '-'}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  )
+}
+
+/** 预算列表表格 */
+function BudgetTable({ budgets, labels }: { budgets: any[]; labels: Map<string, string> }) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow className="bg-muted/50 hover:bg-muted/50">
+          <TableHead className="text-xs">名称</TableHead>
+          <TableHead className="text-xs">类型</TableHead>
+          <TableHead className="text-xs">周期</TableHead>
+          <TableHead className="text-xs text-right">金额</TableHead>
+          <TableHead className="text-xs text-right">已用</TableHead>
+          <TableHead className="text-xs text-right">剩余</TableHead>
+          <TableHead className="text-xs text-right">进度</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {budgets.map((b, i) => (
+          <TableRow key={i} className="hover:bg-accent/50">
+            <TableCell className="text-xs whitespace-nowrap max-w-24 truncate">{b.name || categoryText(labels, b.categoryCode)}</TableCell>
+            <TableCell className="text-xs">{b.type === 'FIXED' ? '固定' : '月度'}</TableCell>
+            <TableCell className="text-xs whitespace-nowrap">{b.year}年{b.month ? `${b.month}月` : '全年'}</TableCell>
+            <TableCell className="text-xs text-right">{(b.amount ?? 0).toFixed(2)}</TableCell>
+            <TableCell className="text-xs text-right">{(b.used ?? 0).toFixed(2)}</TableCell>
+            <TableCell className={cn('text-xs text-right', (b.remaining ?? 0) < 0 && 'text-red-600')}>{(b.remaining ?? 0).toFixed(2)}</TableCell>
+            <TableCell className={cn('text-xs text-right', (b.percentage ?? 0) > 100 && 'text-red-600')}>{b.percentage ?? 0}%</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  )
+}
+
+const ACCOUNT_TYPE_LABELS_MAP: Record<string, string> = {
+  BANK_DEBIT: '储蓄卡', CREDIT_CARD: '信用卡', ALIPAY: '支付宝', WECHAT: '微信',
+  INVESTMENT: '投资', CASH: '现金', RECHARGE_CARD: '充值卡', OTHER: '其他',
+}
+
+/** 账户列表表格 */
+function AccountTable({ accounts, totalBalance }: { accounts: any[]; totalBalance?: number }) {
+  return (
+    <div className="space-y-1">
+      {totalBalance != null && (
+        <div className="text-xs text-muted-foreground">共 {accounts.length} 个账户 · 总余额 <span className="font-medium text-foreground">{totalBalance.toFixed(2)}</span></div>
+      )}
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-muted/50 hover:bg-muted/50">
+            <TableHead className="text-xs">账户</TableHead>
+            <TableHead className="text-xs">类型</TableHead>
+            <TableHead className="text-xs text-right">余额</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {accounts.map((a, i) => (
+            <TableRow key={i} className="hover:bg-accent/50">
+              <TableCell className="text-xs whitespace-nowrap">{a.name}</TableCell>
+              <TableCell className="text-xs text-muted-foreground">{ACCOUNT_TYPE_LABELS_MAP[a.type] || a.type}</TableCell>
+              <TableCell className={cn('text-xs text-right font-medium', (a.balance ?? 0) < 0 && 'text-red-600')}>{(a.balance ?? 0).toFixed(2)}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
+/** 单条预算摘要(设置预算结果) */
+function BudgetSummary({ budget, labels }: { budget: any; labels: Map<string, string> }) {
+  return (
+    <div className="mt-1.5 space-y-1 text-xs">
+      <div className="flex items-center gap-2">
+        <span className="inline-flex items-center gap-1 text-green-600 font-medium"><CheckCircle2 size={12} />已设置</span>
+        <span className="font-medium">{budget.name || categoryText(labels, budget.categoryCode)}</span>
+        <span className="text-muted-foreground">{budget.type === 'FIXED' ? '固定' : '月度'} · {budget.year}年{budget.month ? `${budget.month}月` : '全年'}</span>
+      </div>
+      <div className="text-muted-foreground">金额: <span className="font-medium text-foreground">{(budget.amount ?? 0).toFixed(2)}</span></div>
+    </div>
+  )
+}
+
 function cellColorClass(color?: 'green' | 'red') {
   if (color === 'green') return 'text-green-600'
   if (color === 'red') return 'text-red-600'
@@ -86,6 +282,72 @@ export function ToolCallCard({ toolCall }: Props) {
   const showArgs = toolCall.args != null
   const showResult = effectiveStatus === 'success' && toolCall.result != null
   const showError = effectiveStatus === 'error'
+
+  // 结构化结果渲染:按工具类型映射到可读表格/摘要(未知工具回退 JSON dump)
+  // summary = 操作结果简报(始终显示);table = 数据表格(展开后显示)
+  const labels = useCategoryLabels()
+  const structuredResult = useMemo<{ summary?: React.ReactNode; table?: React.ReactNode } | null>(() => {
+    if (!showResult || typeof toolCall.result !== 'object' || toolCall.result === null) return null
+    const raw = toolCall.result as any
+    const rd = raw?.data ?? raw
+    switch (toolCall.toolName) {
+      case 'create_record':
+        return rd?.type ? { summary: <RecordSummary record={rd} actionLabel="已创建" labels={labels} /> } : null
+      case 'update_record':
+        return rd?.type ? { summary: <RecordSummary record={rd} actionLabel="已更新" labels={labels} /> } : null
+      case 'delete_record':
+        return rd?.deleted ? { summary: <div className="mt-1.5 flex items-center gap-1 text-xs text-green-600"><CheckCircle2 size={12} />已删除该记录</div> } : null
+      case 'query_records':
+        return Array.isArray(rd?.records) ? {
+          table: (
+            <div className="space-y-1">
+              <div className="text-xs text-muted-foreground">共 <span className="font-medium text-foreground">{rd.totalCount ?? rd.records.length}</span> 条 · 合计 <span className="font-medium text-foreground">{(rd.totalAmount ?? 0).toFixed(2)}</span>{rd.records.length > 50 && '（仅展示前 50 条）'}</div>
+              <RecordTable records={rd.records.slice(0, 50)} labels={labels} />
+            </div>
+          ),
+        } : null
+      case 'batch_create_records':
+        return Array.isArray(rd?.records) ? {
+          table: (
+            <div className="space-y-1">
+              <div className="text-xs text-muted-foreground">已创建 <span className="font-medium text-foreground">{rd.created ?? rd.records.length}</span> 条记录</div>
+              <RecordTable records={rd.records.slice(0, 50)} labels={labels} />
+            </div>
+          ),
+        } : null
+      case 'query_budgets':
+        return Array.isArray(rd?.budgets) ? { table: <BudgetTable budgets={rd.budgets} labels={labels} /> } : null
+      case 'query_accounts':
+        return Array.isArray(rd?.accounts) ? { table: <AccountTable accounts={rd.accounts} totalBalance={rd.totalBalance} /> } : null
+      case 'query_categories':
+        return Array.isArray(rd?.categories) ? {
+          table: (
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50 hover:bg-muted/50">
+                  <TableHead className="text-xs">分类</TableHead>
+                  <TableHead className="text-xs">类型</TableHead>
+                  <TableHead className="text-xs">编码</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rd.categories.map((c: any, i: number) => (
+                  <TableRow key={i} className="hover:bg-accent/50">
+                    <TableCell className="text-xs">{c.name}</TableCell>
+                    <TableCell className="text-xs"><RecordTypeBadge type={c.type} /></TableCell>
+                    <TableCell className="text-xs font-mono text-muted-foreground">{c.code}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ),
+        } : null
+      case 'set_budget':
+        return rd?.year != null ? { summary: <BudgetSummary budget={rd} labels={labels} /> } : null
+      default:
+        return null
+    }
+  }, [toolCall, labels, showResult])
 
   // 交互式预览：成功但未完成导入 → 琥珀色
   const isImportPending = isInteractivePreview && effectiveStatus === 'success' && !(toolCall.result as any)?.data?.confirmed
@@ -206,8 +468,12 @@ export function ToolCallCard({ toolCall }: Props) {
         </div>
       )}
 
-      {/* 其他工具结果（含 preview_import 分析模式）-- 折叠内 */}
-      {!isInteractivePreview && !isConfirmCard && toolCall.toolName !== 'web_search' && toolCall.toolName !== 'read_webpage' && showResult && expanded && (
+      {/* 结构化结果:操作简报(始终显示) + 数据表格(展开后显示) */}
+      {structuredResult?.summary}
+      {structuredResult?.table && expanded && <div className="mt-1.5">{structuredResult.table}</div>}
+
+      {/* 其他工具结果(无结构化渲染时兜底) -- 折叠内 */}
+      {!isInteractivePreview && !isConfirmCard && toolCall.toolName !== 'web_search' && toolCall.toolName !== 'read_webpage' && !structuredResult && showResult && expanded && (
         <div className="mt-1.5">
           <span className="text-muted-foreground text-[10px] uppercase tracking-wide">结果</span>
           <div className="mt-0.5 text-muted-foreground">
@@ -230,7 +496,7 @@ export function ToolCallCard({ toolCall }: Props) {
       )}
 
       {/* 批量确认计数器 */}
-      {effectiveStatus === 'confirming' && <BatchIndicator toolCallId={toolCall.toolCallId} />}
+      {(effectiveStatus === 'confirming' || effectiveStatus === 'suggesting' || effectiveStatus === 'switching') && <BatchIndicator toolCallId={toolCall.toolCallId} />}
 
       {/* 确认按钮 —— 始终可见 */}
       {(effectiveStatus === 'confirming' || (isExpired && toolCall.preview)) && (
@@ -319,7 +585,7 @@ function ConfirmPreviewView({
           {preview.changes.map((ch) => (
             <div key={ch.id} className="rounded border overflow-hidden">
               <div className="bg-muted/30 px-2 py-1 text-[11px] text-muted-foreground">
-                ID: {ch.id} | 日期: {ch.date}
+                {ch.date ? `日期: ${ch.date}` : ''}
               </div>
               <table className="w-full text-[11px]">
                 <tbody>
@@ -502,6 +768,7 @@ function SwitchBookView({
   expired?: boolean
 }) {
   const [bookId, setBookId] = useState<string>('')
+  const [submitted, setSubmitted] = useState(false)
   const submittingRef = useRef(false)
 
   // 从 toolCall result 获取账本列表
@@ -513,16 +780,17 @@ function SwitchBookView({
   const toolBlock = parentMsg?.blocks.find(b => b.type === 'tool-call' && b.toolCallId === toolCallId)
   const books: { id: string; name: string; role: string; memberCount: number; isCurrent: boolean }[] =
     (toolBlock?.type === 'tool-call' ? (toolBlock.result as any)?.books : undefined) || []
+  // 已提交(isSubmitted 标记)或决定已暂存(decisionData)后锁定选择,不可再修改
+  const locked = submitted || isSubmitted(toolCallId) || (toolBlock?.type === 'tool-call' && toolBlock.decisionData != null)
 
   const handleSwitch = () => {
-    if (!bookId || submittingRef.current || isSubmitted(toolCallId)) return
+    if (locked || !bookId) return
     markSubmitted(toolCallId)
     submittingRef.current = true
+    setSubmitted(true)
     const { currentBookId: cid } = useBookStore.getState()
     if (!cid) return
-    // 更新前端账本状态
-    useBookStore.getState().setCurrentBook(bookId)
-    // 通知后端切换
+    // 只提交决定；前端账本切换统一在批量提交发起时同步(decideTool)，避免暂存期间前后端状态不一致
     useChatStore.getState().switchBook(cid, toolCallId, bookId)
   }
 
@@ -541,7 +809,7 @@ function SwitchBookView({
                   : 'border-gray-200 hover:border-emerald-300 bg-white'
             }`}
             onClick={() => setBookId(book.id)}
-            disabled={expired}
+            disabled={expired || locked}
           >
             <div className="font-medium">{book.name}</div>
             <div className="text-xs text-muted-foreground">
@@ -552,6 +820,12 @@ function SwitchBookView({
           </button>
         ))}
       </div>
+      {locked && !expired && (
+        <div className="flex items-center gap-1.5 text-emerald-600 text-xs">
+          <CheckCircle2 size={12} />
+          <span>已选择目标账本，等待提交处理</span>
+        </div>
+      )}
       {expired && (
         <div className="flex items-center gap-1.5 text-amber-600 text-xs">
           <AlertTriangle size={12} />
@@ -562,10 +836,10 @@ function SwitchBookView({
         <Button
           size="sm"
           variant="default"
-          disabled={!bookId || expired}
+          disabled={!bookId || expired || locked}
           onClick={handleSwitch}
         >
-          切换到此账本
+          {locked ? '已选择' : '切换到此账本'}
         </Button>
       </div>
     </div>
