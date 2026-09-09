@@ -17,8 +17,8 @@ sync-to-github:
     - docker
   timeout: 15 minutes
   variables:
-    # 代理仅用于推送 GitHub（fetch 内网 GitLab 不能走代理，否则可能挂死）
-    GIT_PROXY_ARGS: "-c http.proxy=http://192.168.1.13:7890 -c https.proxy=http://192.168.1.13:7890"
+    # 代理仅用于推送 GitHub（fetch 内网 GitLab 不能走代理）；走代理必须降级 HTTP/1.1，否则报 HTTP/2 stream not closed cleanly
+    GIT_PROXY_ARGS: "-c http.proxy=http://192.168.1.13:7890 -c https.proxy=http://192.168.1.13:7890 -c http.version=HTTP/1.1"
   script:
     # 添加 GitHub 远程
     - git remote add github https://saaangxy:${GITHUB_TOKEN}@github.com/saaangxy/HomiBook.git
