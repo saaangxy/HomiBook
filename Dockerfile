@@ -7,6 +7,8 @@
 # ---- 前端构建 ----
 FROM node:22-slim AS frontend-build
 WORKDIR /app
+# vite alias '@homibook/core' 指向 ../packages/core/src，构建上下文必须带 core 源码
+COPY packages/core ./packages/core
 COPY frontend/package.json frontend/yarn.lock ./
 RUN yarn install --frozen-lockfile
 COPY frontend/ .
@@ -20,6 +22,7 @@ ENV PUPPETEER_SKIP_DOWNLOAD=true
 # build tools：better-sqlite3 原生模块在预编译二进制拉取失败时需源码编译（node-gyp）
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
     && rm -rf /var/lib/apt/lists/*
+COPY packages/core ./packages/core
 COPY backend/package.json backend/package-lock.json ./
 COPY backend/prisma ./prisma
 COPY backend/prisma.config.ts ./
@@ -36,6 +39,7 @@ ENV PUPPETEER_CACHE_DIR=/app/node_modules/.cache/puppeteer
 # unzip：Puppeteer 解压 Chrome；python3/make/g++：better-sqlite3 源码编译兜底；Prisma 7 无引擎二进制
 RUN apt-get update && apt-get install -y --no-install-recommends unzip python3 make g++ \
     && rm -rf /var/lib/apt/lists/*
+COPY packages/core ./packages/core
 COPY backend/package.json backend/package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
@@ -56,6 +60,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY --from=prod-deps /app/node_modules ./node_modules
+# @homibook/core 在 node_modules 中是 symlink(../packages/core)，需实体复制含 dist 的 core
+COPY --from=backend-build /app/packages/core ./packages/core
 COPY --from=backend-build /app/dist ./dist
 COPY --from=backend-build /app/prisma ./prisma
 # prisma.config.ts：运行时 migrate deploy 依赖它按 DATABASE_PROVIDER 选择 schema
