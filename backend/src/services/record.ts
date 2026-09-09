@@ -1,5 +1,5 @@
 import { prisma } from '../app.js'
-import { beijingDayStartOf, beijingDayEnd, beijingDayStart } from '../lib/date-time.js'
+import { dayStartOf, dayEnd, dayStart } from '../lib/date-time.js'
 
 // ---- 过滤器参数 ----
 
@@ -37,9 +37,9 @@ function applyMultiSelect(where: Record<string, unknown>, field: string, value: 
   else if (ids.length > 1) where[field] = { in: ids }
 }
 
-/** 解析日期过滤值:兼容 'YYYY-MM-DD'(锚定北京当日起止,与双端本地展示口径一致)与带时间的完整 ISO(原样解析);非法值返回 null 跳过 */
+/** 解析日期过滤值:兼容 'YYYY-MM-DD'(锚定本地当日起止,与双端本地展示口径一致)与带时间的完整 ISO(原样解析);非法值返回 null 跳过 */
 function parseDateFilter(raw: string, endOfDay: boolean): Date | null {
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return endOfDay ? beijingDayEnd(raw) : beijingDayStart(raw)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return endOfDay ? dayEnd(raw) : dayStart(raw)
   const date = new Date(raw)
   return Number.isNaN(date.getTime()) ? null : date
 }
@@ -119,9 +119,9 @@ export async function computeBalance(accountId: string): Promise<{ balance: numb
   const baseBalance = latestAdjustment?.balanceAfter ?? account.initialBalance ?? 0
   const baseDate = latestAdjustment?.date ?? null
 
-  // 调整按"北京日起点"对齐:调整日当天的交易(含更早时刻的补记)都计入调整之后,
-  // 与余额走势图"当日先应用调整再叠加交易"的口径一致(原 gt baseDate 会漏掉调整日北京 0-8 点的交易)
-  const dateFilter = baseDate ? { gt: beijingDayStartOf(baseDate) } : undefined
+  // 调整按"本地日起点"对齐:调整日当天的交易(含更早时刻的补记)都计入调整之后,
+  // 与余额走势图"当日先应用调整再叠加交易"的口径一致(原 gt baseDate 会漏掉调整日凌晨 0-8 点的交易)
+  const dateFilter = baseDate ? { gt: dayStartOf(baseDate) } : undefined
 
   const [incomeResult, expenseResult, transferOutResult, transferInResult] = await Promise.all([
     prisma.record.aggregate({ where: { accountId, type: 'INCOME', ...(dateFilter ? { date: dateFilter } : {}) }, _sum: { amount: true } }),

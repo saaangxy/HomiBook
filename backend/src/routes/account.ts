@@ -4,11 +4,11 @@ import { prisma } from '../app.js'
 import { authenticate, assertIsMember } from '../middleware/auth.js'
 import { zSchema } from '../lib/schema-helpers.js'
 import {
-  beijingDayStartOf,
-  parseBeijingDay,
-  parseBeijingDayEnd,
-  toBeijingDateKey,
-  toBeijingMonthKey,
+  dayStartOf,
+  parseDayStart,
+  parseDayEnd,
+  dateKey,
+  monthKey,
 } from '../lib/date-time.js'
 import {
   createAccountSchema,
@@ -220,9 +220,9 @@ export async function accountRoutes(app: FastifyInstance) {
       orderBy: { createdAt: 'asc' },
     })
 
-    // 查询范围锚定北京日(与分桶口径一致)
-    const startDate = parseBeijingDay(dateFrom)
-    const endDate = parseBeijingDayEnd(dateTo)
+    // 查询范围锚定本地日(与分桶口径一致)
+    const startDate = parseDayStart(dateFrom)
+    const endDate = parseDayEnd(dateTo)
 
     const result = []
 
@@ -236,7 +236,7 @@ export async function accountRoutes(app: FastifyInstance) {
       const baseBalance = latestAdjustment?.balanceAfter ?? account.initialBalance ?? 0
       const baseDate = latestAdjustment?.date ?? null
 
-      // 查询 baseDate(北京日对齐)之后、startDate 之前的记录
+      // 查询 baseDate(本地日对齐)之后、startDate 之前的记录
       const preRecords = await prisma.record.findMany({
         where: {
           OR: [
@@ -245,7 +245,7 @@ export async function accountRoutes(app: FastifyInstance) {
             { toAccountId: account.id },
           ],
           date: {
-            ...(baseDate ? { gt: beijingDayStartOf(baseDate) } : {}),
+            ...(baseDate ? { gt: dayStartOf(baseDate) } : {}),
             lt: startDate,
           },
         },
@@ -274,12 +274,12 @@ export async function accountRoutes(app: FastifyInstance) {
         orderBy: { date: 'asc' },
       })
 
-      // 按粒度分组(北京日/月键,与前端本地展示口径一致)
+      // 按粒度分组(本地日/月键,与前端本地展示口径一致)
       const periodMap: Record<string, number> = {}
       for (const r of rangeRecords) {
         const key = granularity === 'monthly'
-          ? toBeijingMonthKey(r.date)
-          : toBeijingDateKey(r.date)
+          ? monthKey(r.date)
+          : dateKey(r.date)
         if (!periodMap[key]) periodMap[key] = 0
         if (r.accountId === account.id && r.type === 'INCOME') periodMap[key] += r.amount
         else if (r.accountId === account.id && r.type === 'EXPENSE') periodMap[key] -= r.amount
@@ -295,16 +295,16 @@ export async function accountRoutes(app: FastifyInstance) {
       const adjustmentMap: Record<string, number> = {}
       for (const adj of rangeAdjustments) {
         const key = granularity === 'monthly'
-          ? toBeijingMonthKey(adj.date)
-          : toBeijingDateKey(adj.date)
+          ? monthKey(adj.date)
+          : dateKey(adj.date)
         adjustmentMap[key] = adj.balanceAfter
       }
 
-      // 生成北京日期/月份键序列(原 cursor 混用本地时区与 UTC 键)
+      // 生成本地日期/月份键序列(原 cursor 混用本地时区与 UTC 键)
       const keys: string[] = []
       if (granularity === 'monthly') {
-        let [y, m] = toBeijingMonthKey(startDate).split('-').map(Number)
-        const [ey, em] = toBeijingMonthKey(endDate).split('-').map(Number)
+        let [y, m] = monthKey(startDate).split('-').map(Number)
+        const [ey, em] = monthKey(endDate).split('-').map(Number)
         while (y < ey || (y === ey && m <= em)) {
           keys.push(`${y}-${String(m).padStart(2, '0')}`)
           m += 1
@@ -312,7 +312,7 @@ export async function accountRoutes(app: FastifyInstance) {
         }
       } else {
         for (let t = startDate.getTime(); t <= endDate.getTime(); t += 86_400_000) {
-          keys.push(toBeijingDateKey(new Date(t)))
+          keys.push(dateKey(new Date(t)))
         }
       }
 
@@ -565,8 +565,8 @@ export async function accountRoutes(app: FastifyInstance) {
       prisma.balanceAdjustment.create({
         data: {
           accountId: id,
-          // 锚定北京日 00:00:调整日当天的交易(含更早时刻)都计入调整之后,与 computeBalance 口径一致
-          date: parseBeijingDay(date),
+          // 锚定本地日 00:00:调整日当天的交易(含更早时刻)都计入调整之后,与 computeBalance 口径一致
+          date: parseDayStart(date),
           amount,
           balanceBefore,
           balanceAfter,
@@ -575,7 +575,7 @@ export async function accountRoutes(app: FastifyInstance) {
       }),
       prisma.account.update({
         where: { id },
-        data: { balance: balanceAfter, balanceAt: parseBeijingDay(date) },
+        data: { balance: balanceAfter, balanceAt: parseDayStart(date) },
       }),
     ])
 

@@ -2,7 +2,7 @@ import { prisma } from '../../../app.js'
 import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 import { resolveAccountId } from './helpers.js'
-import { toBeijingDateKey } from '../../../lib/date-time.js'
+import { dateKey } from '../../../lib/date-time.js'
 
 interface UpdateInput {
   recordId: string
@@ -111,7 +111,7 @@ export const batchUpdateRecordsTool: ToolDef = {
           id: r.id,
           type: r.type,
           amount: r.amount,
-          date: toBeijingDateKey(r.date),
+          date: dateKey(r.date),
           accountName: r.account.name,
           categoryCode: r.categoryCode,
           remark: r.remark,

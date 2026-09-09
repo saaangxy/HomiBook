@@ -1,7 +1,7 @@
 import { prisma } from '../../../app.js'
 import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
-import { beijingDayStartOf, parseBeijingDay, parseBeijingDayEnd, toBeijingDateKey, toBeijingMonthKey } from '../../../lib/date-time.js'
+import { dayStartOf, parseDayStart, parseDayEnd, dateKey, monthKey } from '../../../lib/date-time.js'
 
 interface BalanceHistoryArgs {
   accountIds?: string
@@ -42,9 +42,9 @@ export const queryBalanceHistoryTool: ToolDef = {
         orderBy: { createdAt: 'asc' },
       })
 
-      // 查询范围锚定北京日(与分桶口径一致)
-      const startDate = parseBeijingDay(args.dateFrom)
-      const endDate = parseBeijingDayEnd(args.dateTo)
+      // 查询范围锚定本地日(与分桶口径一致)
+      const startDate = parseDayStart(args.dateFrom)
+      const endDate = parseDayEnd(args.dateTo)
 
       const result = []
 
@@ -65,7 +65,7 @@ export const queryBalanceHistoryTool: ToolDef = {
               { toAccountId: account.id },
             ],
             date: {
-              ...(baseDate ? { gt: beijingDayStartOf(baseDate) } : {}),
+              ...(baseDate ? { gt: dayStartOf(baseDate) } : {}),
               lt: startDate,
             },
           },
@@ -96,8 +96,8 @@ export const queryBalanceHistoryTool: ToolDef = {
         const periodMap: Record<string, number> = {}
         for (const r of rangeRecords) {
           const key = args.granularity === 'monthly'
-            ? toBeijingMonthKey(r.date)
-            : toBeijingDateKey(r.date)
+            ? monthKey(r.date)
+            : dateKey(r.date)
           if (!periodMap[key]) periodMap[key] = 0
           if (r.accountId === account.id && r.type === 'INCOME') periodMap[key] += r.amount
           else if (r.accountId === account.id && r.type === 'EXPENSE') periodMap[key] -= r.amount
@@ -112,16 +112,16 @@ export const queryBalanceHistoryTool: ToolDef = {
         const adjustmentMap: Record<string, number> = {}
         for (const adj of rangeAdjustments) {
           const key = args.granularity === 'monthly'
-            ? toBeijingMonthKey(adj.date)
-            : toBeijingDateKey(adj.date)
+            ? monthKey(adj.date)
+            : dateKey(adj.date)
           adjustmentMap[key] = adj.balanceAfter
         }
 
-        // 生成北京日期/月份键序列
+        // 生成本地日期/月份键序列
         const keys: string[] = []
         if (args.granularity === 'monthly') {
-          let [y, m] = toBeijingMonthKey(startDate).split('-').map(Number)
-          const [ey, em] = toBeijingMonthKey(endDate).split('-').map(Number)
+          let [y, m] = monthKey(startDate).split('-').map(Number)
+          const [ey, em] = monthKey(endDate).split('-').map(Number)
           while (y < ey || (y === ey && m <= em)) {
             keys.push(`${y}-${String(m).padStart(2, '0')}`)
             m += 1
@@ -129,7 +129,7 @@ export const queryBalanceHistoryTool: ToolDef = {
           }
         } else {
           for (let t = startDate.getTime(); t <= endDate.getTime(); t += 86_400_000) {
-            keys.push(toBeijingDateKey(new Date(t)))
+            keys.push(dateKey(new Date(t)))
           }
         }
 

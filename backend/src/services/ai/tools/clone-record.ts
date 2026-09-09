@@ -2,7 +2,7 @@ import { prisma } from '../../../app.js'
 import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 import { refreshAccountBalance } from '../../account.js'
-import { toBeijingDateKey } from '../../../lib/date-time.js'
+import { dateKey } from '../../../lib/date-time.js'
 
 export const cloneRecordTool: ToolDef = {
   name: 'clone_record',
@@ -55,7 +55,7 @@ export const cloneRecordTool: ToolDef = {
         id: cloned.id,
         type: cloned.type,
         amount: cloned.amount,
-        date: toBeijingDateKey(cloned.date),
+        date: dateKey(cloned.date),
         accountName: cloned.account.name,
         categoryCode: cloned.categoryCode,
         remark: cloned.remark,

@@ -11,6 +11,8 @@ services:
     restart: unless-stopped
     environment:
       PORT: ${PORT:-8080}
+      # 业务时区(日期边界/统计分桶/AI 提示"今天是"),Node 按此解析本地时间;可在 .env 覆盖为任意 IANA 时区
+      TZ: ${TZ:-Asia/Shanghai}
       DATABASE_PROVIDER: ${DATABASE_PROVIDER:-sqlite}
       DATABASE_URL: ${DATABASE_URL:-file:/app/data/dev.db}
       JWT_SECRET: ${JWT_SECRET:-homibook-secret-key-change-in-production}

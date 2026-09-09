@@ -2,7 +2,7 @@ import { prisma } from '../../../app.js'
 import { retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 import { assertCanManageAccount } from '../../account.js'
-import { parseBeijingDay } from '../../../lib/date-time.js'
+import { parseDayStart } from '../../../lib/date-time.js'
 
 export const adjustBalanceTool: ToolDef = {
   name: 'adjust_balance',
@@ -39,8 +39,8 @@ export const adjustBalanceTool: ToolDef = {
         prisma.balanceAdjustment.create({
           data: {
             accountId: args.accountId,
-            // 锚定北京日 00:00,与 computeBalance/余额走势的"调整日交易计入调整之后"口径一致
-            date: parseBeijingDay(args.date),
+            // 锚定本地日 00:00,与 computeBalance/余额走势的"调整日交易计入调整之后"口径一致
+            date: parseDayStart(args.date),
             amount,
             balanceBefore,
             balanceAfter: args.balanceAfter,
@@ -49,7 +49,7 @@ export const adjustBalanceTool: ToolDef = {
         }),
         prisma.account.update({
           where: { id: args.accountId },
-          data: { balance: args.balanceAfter, balanceAt: parseBeijingDay(args.date) },
+          data: { balance: args.balanceAfter, balanceAt: parseDayStart(args.date) },
         }),
       ])
 

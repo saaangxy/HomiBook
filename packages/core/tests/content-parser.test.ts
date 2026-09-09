@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { parseContentIntoBlocks, processTextDelta } from '../src/ai/content-parser.js';
-import type { MessageBlock } from '../src/types/index.js';
+import { parseContentIntoBlocks, processTextDelta } from '../src';
+import type { MessageBlock } from '../src';
 
 // 用 unicode 转义构造 think 标签,避免字面量被工具链吞掉
 const OPEN = '\u003cthink\u003e';

@@ -16,7 +16,7 @@ import { loadMemoriesForPrompt, listMemories, deleteMemory, updateMemory } from 
 import { estimateTokens } from '../services/ai/token-estimate.js'
 import { compressContext, computeHistoryBudget, stripThinkTags } from '../services/ai/context-compress.js'
 import { zSchema } from '../lib/schema-helpers.js'
-import { toBeijingDateKey } from '../lib/date-time.js'
+import { dateKey } from '../lib/date-time.js'
 import { z } from 'zod'
 
 declare module 'fastify' {
@@ -1730,7 +1730,7 @@ function buildSystemPrompt(prefs: any, bookId: string, bookName: string, memorie
   let prompt = `你是 Homibook 家庭记账本的 AI 助手。当前操作的账本为「${bookName}」(ID: ${bookId})。本会话支持跨账本操作，用户可通过 switch_book 查看并切换账本。
 
 ## 时间
-今天是${toBeijingDateKey(new Date())}。
+今天是${dateKey(new Date())}。
 
 ## 能力
 你可以通过调用函数工具来完成以下操作：

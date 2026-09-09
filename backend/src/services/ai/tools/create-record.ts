@@ -2,7 +2,7 @@ import { prisma } from '../../../app.js'
 import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 import { resolveAccountId } from './helpers.js'
-import { parseBeijingDay, toBeijingDateKey } from '../../../lib/date-time.js'
+import { parseDayStart, dateKey } from '../../../lib/date-time.js'
 
 export const createRecordTool: ToolDef = {
   name: 'create_record',
@@ -70,7 +70,7 @@ export const createRecordTool: ToolDef = {
           accountBookId: ctx.accountBookId,
           type: args.type,
           amount,
-          date: parseBeijingDay(args.date),
+          date: parseDayStart(args.date),
           remark: args.remark,
           tags: JSON.stringify(args.tags ?? []),
           accountId: resolvedAccountId,
@@ -95,7 +95,7 @@ export const createRecordTool: ToolDef = {
         id: record.id,
         type: record.type,
         amount: record.amount,
-        date: toBeijingDateKey(record.date),
+        date: dateKey(record.date),
         accountName: record.account.name,
         categoryCode: record.categoryCode,
         remark: record.remark,
