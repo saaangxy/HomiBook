@@ -2,7 +2,7 @@
 
 # 🏠 HomiBook 家庭记账本
 
-前后端分离的家庭记账应用，内置 AI 记账助手，支持自然语言记账、账单导入、支出分析与联网搜索。
+前后端分离的家庭记账应用，内置 AI 记账助手，支持自然语言记账、账单导入、支出分析与联网搜索。提供 Web 端与移动端（iOS / Android）双客户端，数据互通。
 
 <p align="center">
   <img alt="release" src="https://img.shields.io/github/v/release/saaangxy/HomiBook" />
@@ -15,6 +15,7 @@
 <p align="center">
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.x-blue" />
   <img alt="React" src="https://img.shields.io/badge/React-19-blue" />
+  <img alt="React Native" src="https://img.shields.io/badge/React%20Native-Expo-blue" />
   <img alt="Fastify" src="https://img.shields.io/badge/Fastify-5-blue" />
   <img alt="Prisma" src="https://img.shields.io/badge/Prisma-7-blue" />
   <img alt="Tailwind CSS" src="https://img.shields.io/badge/Tailwind%20CSS-4-blue" />
@@ -53,6 +54,12 @@
   - 🔍 联网搜索：支持 Bing / 百度 / Google 切换
   - 🌐 网页内容读取：Puppeteer 抓取网页内容辅助分析
   - 💬 问答交互：回答财务与记账相关的问题
+- 📱 **移动端**（React Native / Expo）
+  - 与 Web 端功能对齐：流水、日历、统计、预算、固定收支、多账户、多账本、成员管理一应俱全
+  - 📷 拍照记账：拍照或从相册选图，多模态模型直接读图记账
+  - ⚡ 记一笔悬浮按钮：首页快捷记一笔，随手记账不打断浏览
+  - 🎨 主题系统：浅色 / 深色 / 手工杂货铺 / 旧式电报机 / 植物记账簿 / 糖果铺 / 原色构成，双端同步切换
+  - 🔗 自托管连接：App 内配置服务器地址，连接自己部署的 HomiBook 后端，数据与 Web 端互通
 - 🎨 **多主题**：深色 / 浅色 / 跟随系统
 
 ## 📸 页面预览
@@ -73,7 +80,8 @@
 | 端 | 技术 |
 |---|---|
 | 后端 | Node.js + TypeScript (ESM)、Fastify 5、Prisma 7、Zod |
-| 前端 | React 19 + TypeScript、Vite、Shadcn/ui、Tailwind CSS 4、React Router DOM 7、Zustand、TanStack Query |
+| Web 前端 | React 19 + TypeScript、Vite、Shadcn/ui、Tailwind CSS 4、React Router DOM 7、Zustand、TanStack Query |
+| 移动端 | React Native 0.86 + Expo 57（expo-router）、NativeWind、Reanimated、Zustand，共享 `@homibook/core` 业务包 |
 | AI | AI SDK、工具调用、Puppeteer 网页抓取 |
 | 数据库 | SQLite / MySQL / PostgreSQL（环境变量切换） |
 | 部署 | 单容器镜像（Fastify 托管前端静态文件）、Docker Compose、CI/CD 自动构建 |
@@ -86,6 +94,9 @@ homibook/
 │   ├── prisma/         # schema.prisma（SQLite 主 schema）+ 多库生成脚本
 │   └── src/            # 路由、服务、AI 工具
 ├── frontend/           # React + Vite 前端
+├── mobile/             # React Native (Expo) 移动端
+│   └── src/            # expo-router 页面、组件、主题、stores
+├── packages/core/      # @homibook/core 双端共享业务包（导入解析、财务健康、AI 协议）
 ├── docs/               # 文档（开发指南、部署指南等）
 ├── screenshots/        # README 页面截图
 ├── example/            # 账单导入示例文件
@@ -115,6 +126,15 @@ yarn dev
 ```
 
 打开 http://localhost:5173 即可。
+
+```bash
+# 3. 移动端（可选，需先启动后端；Expo 默认端口 8081）
+cd mobile
+npm install
+npm start          # 扫码在 Expo Go 中运行，或 -a / -i 启动模拟器
+```
+
+启动后在 App「服务器设置」中填入后端地址（本机开发可用局域网 IP，如 `http://192.168.x.x:3002`）。
 
 ### Docker 部署
 

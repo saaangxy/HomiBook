@@ -13,6 +13,9 @@
 /backend/uploads/
 /backend/src/generated/
 /example/
+/mobile/node_modules/
+/node_modules/
+/mobile/dist/
 /.codebuddy/
 /.trae/
 /logo/
