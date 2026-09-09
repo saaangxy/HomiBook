@@ -21,3 +21,4 @@
 /logo/
 /node_modules/
 /packages/core/dist/
+/packages/core/node_modules/
