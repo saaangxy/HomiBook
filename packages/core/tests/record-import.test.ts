@@ -12,6 +12,7 @@ import {
   RECORD_TYPE_LABELS,
   IMPORT_SOURCE_LABELS,
   TYPE_TO_GROUP,
+  type AccountResolution,
 } from '../src/record-import.js';
 import type { PoolAccount, RawAccountCreation, UnmatchedAccountInput } from '../src/record-import.js';
 
@@ -163,7 +164,7 @@ describe('autoDetectColumns', () => {
 
 describe('detectTypeValues', () => {
   it('提取去重且去空白的唯一值', () => {
-    const rows = [
+    const rows: Record<string, string>[] = [
       { t: '收入' },
       { t: ' 支出 ' },
       { t: '支出' },
@@ -250,11 +251,12 @@ describe('initAccountResolutions', () => {
 describe('unresolvedAccountCount', () => {
   it('统计 existing 缺 accountId / create 缺 name 的数量', () => {
     const unmatched = [{ csvName: 'a' }, { csvName: 'b' }, { csvName: 'c' }, { csvName: 'd' }, { csvName: 'e' }];
-    const resolutions = {
-      a: { action: 'existing' as const },          // 缺 accountId → 未解决
-      b: { action: 'existing' as const, accountId: 'x' },
-      c: { action: 'create' as const, name: 'n' },
-      d: { action: 'create' as const },            // 缺 name → 未解决
+    // 故意构造缺字段的非法决议测统计容错,超出 AccountResolution 合法形状,需断言绕过
+    const resolutions: Record<string, AccountResolution> = {
+      a: { action: 'existing' } as AccountResolution,          // 缺 accountId → 未解决
+      b: { action: 'existing', accountId: 'x' },
+      c: { action: 'create', name: 'n' } as AccountResolution,
+      d: { action: 'create' } as AccountResolution,            // 缺 name → 未解决
       // e 无决议 → 不计入(视为未出现在 unmatched 决议中)
     };
     expect(unresolvedAccountCount(unmatched, resolutions)).toBe(2);
