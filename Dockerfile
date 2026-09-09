@@ -29,8 +29,11 @@ COPY backend/prisma.config.ts ./
 RUN npm ci
 COPY backend/tsconfig.json ./
 COPY backend/src ./src
-# prebuild 钩子会先为 sqlite/mysql/postgresql 各生成一份 Prisma Client 到 src/generated/<provider>，再 tsc 编译
-RUN npm run build
+# 依次：构建 core（生成 dist）→ prebuild（Prisma generate-all）→ tsc 编译 backend
+# 不用 npm run build：其脚本内的 ../packages/core 相对路径以 backend 为基准，容器内 backend 平铺在 /app 时不成立
+RUN npm run build --prefix packages/core \
+    && npm run prebuild \
+    && npx tsc
 
 # ---- 生产依赖（仅 dependencies，Puppeteer 自动下载 Chrome）----
 FROM node:22-slim AS prod-deps
