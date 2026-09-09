@@ -1,4 +1,4 @@
-name: Build and Push Docker Image
+name: Build and Release
 
 on:
   push:
@@ -6,7 +6,8 @@ on:
       - 'v*'
 
 jobs:
-  build-and-push:
+  # Docker 镜像：构建并推送 DockerHub（latest + 版本 tag）
+  docker:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,3 +33,115 @@ jobs:
             ${{ secrets.DOCKERHUB_USERNAME }}/homibook:${{ steps.tag.outputs.VERSION }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # Mobile APK：expo prebuild 生成原生工程后 gradle 构建 release APK（debug keystore 签名，可直接安装）
+  mobile-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install dependencies
+        working-directory: mobile
+        run: npm ci
+
+      # 版本号跟随 tag（v1.2.3 -> 1.2.3），versionCode 用 workflow 运行号保证递增
+      - name: Set version from tag
+        working-directory: mobile
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          node -e "
+            const fs = require('fs');
+            const app = JSON.parse(fs.readFileSync('app.json', 'utf8'));
+            app.expo.version = '$VERSION';
+            app.expo.android.versionCode = '$VERSION_CODE';
+            fs.writeFileSync('app.json', JSON.stringify(app, null, 2));
+          "
+          echo "version=$VERSION versionCode=$VERSION_CODE"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Expo prebuild (android)
+        working-directory: mobile
+        run: npx expo prebuild -p android --no-install
+
+      # 按 CPU 架构分包：arm64-v8a / armeabi-v7a / x86_64 + universal（4 个 APK）
+      - name: Enable ABI splits
+        working-directory: mobile
+        run: >
+          node -e "
+          const fs = require('fs');
+          const p = 'android/app/build.gradle';
+          let s = fs.readFileSync(p, 'utf8');
+          if (s.includes('universalApk true')) { console.log('splits already enabled'); process.exit(0); }
+          const block = [
+            '    splits {',
+            '        abi {',
+            '            enable true',
+            '            reset()',
+            '            include \"armeabi-v7a\", \"arm64-v8a\", \"x86_64\"',
+            '            universalApk true',
+            '        }',
+            '    }'
+          ].join('\n');
+          s = s.replace('android {', 'android {\n' + block);
+          fs.writeFileSync(p, s);
+          console.log('ABI splits enabled');
+          "
+
+      - name: Cache gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('mobile/android/**/*.gradle*', 'mobile/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-
+
+      - name: Build APK
+        working-directory: mobile/android
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: mobile/android/app/build/outputs/apk/release/*.apk
+
+  # GitHub Release：挂载 APK（镜像已由 docker job 推送 DockerHub）
+  release:
+    needs: [docker, mobile-apk]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: apk
+          path: apk
+
+      - name: Rename APKs
+        run: |
+          for f in apk/*.apk; do
+            base=$(basename "$f" .apk)   # app-arm64-v8a-release
+            arch=${base#app-}            # arm64-v8a-release
+            arch=${arch%-release}        # arm64-v8a / universal
+            mv "$f" "homibook-${arch}-${{ github.ref_name }}.apk"
+          done
+          ls -l homibook-*.apk
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: homibook-*.apk
+          generate_release_notes: true

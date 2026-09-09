@@ -11,6 +11,7 @@
       "icon": "./assets/images/icon.png"
     },
     "android": {
+      "package": "com.saaangxy.homibook",
       "adaptiveIcon": {
         "backgroundColor": "#fdf8ee",
         "foregroundImage": "./assets/images/android-icon-foreground.png"
