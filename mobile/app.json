@@ -33,7 +33,8 @@
         }
       ],
       "expo-secure-store",
-      "expo-sharing"
+      "expo-sharing",
+      "./plugins/with-android-tweaks"
     ],
     "experiments": {
       "typedRoutes": true,
