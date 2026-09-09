@@ -1,6 +1,7 @@
 import { prisma } from '../../../app.js'
 import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
+import { beijingDayStartOf, parseBeijingDay, parseBeijingDayEnd, toBeijingDateKey, toBeijingMonthKey } from '../../../lib/date-time.js'
 
 interface BalanceHistoryArgs {
   accountIds?: string
@@ -41,10 +42,9 @@ export const queryBalanceHistoryTool: ToolDef = {
         orderBy: { createdAt: 'asc' },
       })
 
-      const startDate = new Date(args.dateFrom)
-      startDate.setUTCHours(0, 0, 0, 0)
-      const endDate = new Date(args.dateTo)
-      endDate.setUTCHours(23, 59, 59, 999)
+      // 查询范围锚定北京日(与分桶口径一致)
+      const startDate = parseBeijingDay(args.dateFrom)
+      const endDate = parseBeijingDayEnd(args.dateTo)
 
       const result = []
 
@@ -65,7 +65,7 @@ export const queryBalanceHistoryTool: ToolDef = {
               { toAccountId: account.id },
             ],
             date: {
-              ...(baseDate ? { gt: baseDate } : {}),
+              ...(baseDate ? { gt: beijingDayStartOf(baseDate) } : {}),
               lt: startDate,
             },
           },
@@ -96,8 +96,8 @@ export const queryBalanceHistoryTool: ToolDef = {
         const periodMap: Record<string, number> = {}
         for (const r of rangeRecords) {
           const key = args.granularity === 'monthly'
-            ? r.date.toISOString().slice(0, 7)
-            : r.date.toISOString().slice(0, 10)
+            ? toBeijingMonthKey(r.date)
+            : toBeijingDateKey(r.date)
           if (!periodMap[key]) periodMap[key] = 0
           if (r.accountId === account.id && r.type === 'INCOME') periodMap[key] += r.amount
           else if (r.accountId === account.id && r.type === 'EXPENSE') periodMap[key] -= r.amount
@@ -112,28 +112,32 @@ export const queryBalanceHistoryTool: ToolDef = {
         const adjustmentMap: Record<string, number> = {}
         for (const adj of rangeAdjustments) {
           const key = args.granularity === 'monthly'
-            ? adj.date.toISOString().slice(0, 7)
-            : adj.date.toISOString().slice(0, 10)
+            ? toBeijingMonthKey(adj.date)
+            : toBeijingDateKey(adj.date)
           adjustmentMap[key] = adj.balanceAfter
         }
 
-        const balances: { date: string; balance: number }[] = []
-        const cursor = new Date(startDate)
-        while (cursor <= endDate) {
-          const key = args.granularity === 'monthly'
-            ? `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`
-            : cursor.toISOString().slice(0, 10)
-
-          if (adjustmentMap[key] !== undefined) runningBalance = adjustmentMap[key]
-          if (periodMap[key] !== undefined) runningBalance += periodMap[key]
-          balances.push({ date: key, balance: Math.round(runningBalance * 100) / 100 })
-
-          if (args.granularity === 'monthly') {
-            cursor.setMonth(cursor.getMonth() + 1)
-          } else {
-            cursor.setDate(cursor.getDate() + 1)
+        // 生成北京日期/月份键序列
+        const keys: string[] = []
+        if (args.granularity === 'monthly') {
+          let [y, m] = toBeijingMonthKey(startDate).split('-').map(Number)
+          const [ey, em] = toBeijingMonthKey(endDate).split('-').map(Number)
+          while (y < ey || (y === ey && m <= em)) {
+            keys.push(`${y}-${String(m).padStart(2, '0')}`)
+            m += 1
+            if (m > 12) { m = 1; y += 1 }
+          }
+        } else {
+          for (let t = startDate.getTime(); t <= endDate.getTime(); t += 86_400_000) {
+            keys.push(toBeijingDateKey(new Date(t)))
           }
         }
+
+        const balances: { date: string; balance: number }[] = keys.map((key) => {
+          if (adjustmentMap[key] !== undefined) runningBalance = adjustmentMap[key]
+          if (periodMap[key] !== undefined) runningBalance += periodMap[key]
+          return { date: key, balance: Math.round(runningBalance * 100) / 100 }
+        })
 
         result.push({ accountId: account.id, accountName: account.name, balances })
       }

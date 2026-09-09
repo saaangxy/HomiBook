@@ -1,6 +1,7 @@
 import { prisma } from '../../../app.js'
 import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
+import { toBeijingDateKey } from '../../../lib/date-time.js'
 
 export const queryRepaymentPlanTool: ToolDef = {
   name: 'query_repayment_plan',
@@ -45,7 +46,7 @@ export const queryRepaymentPlanTool: ToolDef = {
         totalPaid: Math.round(totalPaid * 100) / 100,
         plans: plans.map((p) => ({
           period: p.period,
-          dueDate: p.dueDate.toISOString().slice(0, 10),
+          dueDate: toBeijingDateKey(p.dueDate),
           totalPayment: p.totalPayment,
           principal: p.principal,
           interest: p.interest,

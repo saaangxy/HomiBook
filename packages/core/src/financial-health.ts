@@ -17,8 +17,8 @@ export function lerpScore(x: number, x0: number, x1: number, s0: number, s1: num
 // 应急能力:紧急备用金覆盖月数
 export function scoreEmergency(months: number): number {
   if (months >= 12) return 100
-  if (months >= 6) return lerpScore(months, 6, 12, 90, 100)
-  if (months >= 3) return lerpScore(months, 3, 6, 60, 80)
+  if (months >= 6) return lerpScore(months, 6, 12, 80, 100)
+  if (months >= 3) return lerpScore(months, 3, 6, 50, 80)
   return lerpScore(months, 0, 3, 20, 50)
 }
 
@@ -38,7 +38,7 @@ export function scoreLeverage(ratio: number): number {
 
 // 储蓄能力:年储蓄 ÷ 年收入
 export function scoreSavings(ratio: number): number {
-  if (ratio >= 0.3) return lerpScore(ratio, 0.3, 0.5, 90, 100)
+  if (ratio >= 0.3) return lerpScore(ratio, 0.3, 0.5, 80, 100)
   if (ratio >= 0.2) return lerpScore(ratio, 0.2, 0.3, 60, 80)
   if (ratio >= 0.1) return lerpScore(ratio, 0.1, 0.2, 40, 60)
   return lerpScore(ratio, 0, 0.1, 20, 40)
@@ -46,8 +46,8 @@ export function scoreSavings(ratio: number): number {
 
 // 投资积累:投资资产 ÷ 净资产
 export function scoreInvestment(ratio: number): number {
-  if (ratio >= 0.5) return lerpScore(ratio, 0.5, 0.8, 90, 100)
-  if (ratio >= 0.2) return lerpScore(ratio, 0.2, 0.5, 60, 80)
+  if (ratio >= 0.5) return lerpScore(ratio, 0.5, 0.8, 80, 100)
+  if (ratio >= 0.2) return lerpScore(ratio, 0.2, 0.5, 50, 80)
   return lerpScore(ratio, 0, 0.2, 20, 50)
 }
 
@@ -63,11 +63,11 @@ export function scoreFreedom(ratio: number): number {
 export function scoreInsurance(ratio: number): number {
   if (ratio >= 0.05 && ratio <= 0.15) {
     const peak = 0.1
-    if (ratio <= peak) return lerpScore(ratio, 0.05, peak, 90, 100)
+    if (ratio <= peak) return lerpScore(ratio, 0.05, peak, 80, 100)
     return lerpScore(ratio, peak, 0.15, 100, 90)
   }
-  if (ratio >= 0.03 && ratio < 0.05) return lerpScore(ratio, 0.03, 0.05, 60, 80)
-  if (ratio > 0.15 && ratio <= 0.2) return lerpScore(ratio, 0.15, 0.2, 80, 60)
+  if (ratio >= 0.03 && ratio < 0.05) return lerpScore(ratio, 0.03, 0.05, 50, 80)
+  if (ratio > 0.15 && ratio <= 0.2) return lerpScore(ratio, 0.15, 0.2, 90, 60)
   if (ratio < 0.03) return lerpScore(ratio, 0, 0.03, 20, 50)
-  return lerpScore(ratio, 0.2, 0.3, 50, 20)
+  return lerpScore(ratio, 0.2, 0.3, 60, 20)
 }

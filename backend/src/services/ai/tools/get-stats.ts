@@ -1,6 +1,7 @@
 import { prisma } from '../../../app.js'
 import { assertIsMember, retryable, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
+import { parseBeijingDay, parseBeijingDayEnd, beijingDayStart, beijingDayEnd, toBeijingDateKey, toBeijingMonthKey } from '../../../lib/date-time.js'
 
 interface GetStatsArgs {
   startDate?: string
@@ -35,29 +36,32 @@ export const getStatsTool: ToolDef = {
 
     return retryable(async () => {
       const now = new Date()
-      const year = args.year ? Number(args.year) : now.getFullYear()
+      // 默认年份按北京日取(服务器若跑 UTC,跨年窗口内 getFullYear 会差一年)
+      const year = args.year ? Number(args.year) : Number(toBeijingDateKey(now).slice(0, 4))
       const month = args.month ? Number(args.month) : undefined
 
-      // 日期范围：优先使用 startDate/endDate，其次 year/month
+      // 日期范围：优先使用 startDate/endDate，其次 year/month;'YYYY-MM-DD' 锚定北京当日起止(整日含入)
       let dateFilter: Record<string, unknown>
       let period: string
       if (args.startDate || args.endDate) {
         dateFilter = {}
-        if (args.startDate) dateFilter.gte = new Date(args.startDate)
-        if (args.endDate) dateFilter.lte = new Date(args.endDate)
+        if (args.startDate) dateFilter.gte = parseBeijingDay(args.startDate)
+        if (args.endDate) dateFilter.lte = parseBeijingDayEnd(args.endDate)
         period = args.startDate && args.endDate
           ? `${args.startDate} ~ ${args.endDate}`
           : args.startDate ? `${args.startDate} 起` : `至 ${args.endDate}`
       } else if (month) {
+        const mm = String(month).padStart(2, '0')
+        const lastDay = new Date(year, month, 0).getDate()
         dateFilter = {
-          gte: new Date(`${year}-${String(month).padStart(2, '0')}-01`),
-          lte: new Date(`${year}-${String(month).padStart(2, '0')}-${new Date(year, month, 0).getDate()}`),
+          gte: beijingDayStart(`${year}-${mm}-01`),
+          lte: beijingDayEnd(`${year}-${mm}-${String(lastDay).padStart(2, '0')}`),
         }
         period = `${year}年${month}月`
       } else {
         dateFilter = {
-          gte: new Date(`${year}-01-01`),
-          lte: new Date(`${year}-12-31`),
+          gte: beijingDayStart(`${year}-01-01`),
+          lte: beijingDayEnd(`${year}-12-31`),
         }
         period = `${year}年`
       }
@@ -89,7 +93,7 @@ export const getStatsTool: ToolDef = {
 
         const monthlyMap = new Map<string, { income: number; expense: number }>()
         for (const r of records) {
-          const key = r.date.toISOString().slice(0, 7) // YYYY-MM
+          const key = toBeijingMonthKey(r.date) // YYYY-MM(北京月)
           if (!monthlyMap.has(key)) monthlyMap.set(key, { income: 0, expense: 0 })
           const m = monthlyMap.get(key)!
           if (r.type === 'INCOME') m.income += r.amount

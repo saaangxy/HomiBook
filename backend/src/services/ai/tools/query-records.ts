@@ -1,6 +1,7 @@
 import { prisma } from '../../../app.js'
 import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
+import { parseBeijingDay, parseBeijingDayEnd, toBeijingDateKey } from '../../../lib/date-time.js'
 
 interface QueryRecordsArgs {
   keyword?: string
@@ -52,9 +53,10 @@ export const queryRecordsTool: ToolDef = {
         }
       }
       if (args.startDate || args.endDate) {
+        // 'YYYY-MM-DD' 锚定北京当日起止,避免 endDate 当天白天的交易被漏掉
         where.date = {
-          ...(args.startDate ? { gte: new Date(args.startDate) } : {}),
-          ...(args.endDate ? { lte: new Date(args.endDate) } : {}),
+          ...(args.startDate ? { gte: parseBeijingDay(args.startDate) } : {}),
+          ...(args.endDate ? { lte: parseBeijingDayEnd(args.endDate) } : {}),
         }
       }
       if (args.keyword) {
@@ -88,7 +90,7 @@ export const queryRecordsTool: ToolDef = {
           id: r.id,
           type: r.type,
           amount: r.amount,
-          date: r.date.toISOString().slice(0, 10),
+          date: toBeijingDateKey(r.date),
           remark: r.remark,
           categoryCode: r.categoryCode,
           payer: r.payer,

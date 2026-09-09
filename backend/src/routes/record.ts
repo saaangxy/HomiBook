@@ -18,6 +18,7 @@ import path from 'path'
 import fs from 'fs'
 import {randomUUID} from 'crypto'
 import {buildRecordWhere, formatRecord, computeBalance, refreshAccountBalance} from '../services/record.js'
+import {toBeijingMonthKey, toBeijingDateKey, beijingDayStart, beijingDayEnd, parseBeijingDay} from '../lib/date-time.js'
 
 const RECORD_INCLUDE = {
     account: {select: {id: true, name: true, type: true}},
@@ -241,8 +242,11 @@ export async function recordRoutes(app: FastifyInstance) {
             return reply.status(e.statusCode || 403).send({message: e.message})
         }
 
-        const start = new Date(Date.UTC(year, month - 1, 1))
-        const end = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999))
+        // 北京月边界:月内交易含北京凌晨 0-8 点(UTC 前一日 16-24 点)的记录
+        const mm = String(month).padStart(2, '0')
+        const lastDay = new Date(year, month, 0).getDate()
+        const start = beijingDayStart(`${year}-${mm}-01`)
+        const end = beijingDayEnd(`${year}-${mm}-${String(lastDay).padStart(2, '0')}`)
 
         const records = await prisma.record.findMany({
             where: {accountBookId: bookId, date: {gte: start, lte: end}},
@@ -251,7 +255,7 @@ export async function recordRoutes(app: FastifyInstance) {
 
         const dayMap: Record<string, { income: number; expense: number; transfer: number; count: number }> = {}
         for (const r of records) {
-            const day = r.date.toISOString().slice(0, 10)
+            const day = toBeijingDateKey(r.date)
             if (!dayMap[day]) dayMap[day] = {income: 0, expense: 0, transfer: 0, count: 0}
             dayMap[day].count++
             if (r.type === 'INCOME') dayMap[day].income += r.amount
@@ -404,20 +408,21 @@ export async function recordRoutes(app: FastifyInstance) {
 
         const monthMap: Record<string, { income: number; expense: number }> = {}
         for (const r of records) {
-            const month = r.date.toISOString().slice(0, 7)
+            const month = toBeijingMonthKey(r.date)
             if (!monthMap[month]) monthMap[month] = {income: 0, expense: 0}
             if (r.type === 'INCOME') monthMap[month].income += r.amount
             else if (r.type === 'EXPENSE') monthMap[month].expense += r.amount
         }
 
         if (dateFrom && dateTo) {
-            const start = new Date(dateFrom)
-            const end = new Date(dateTo)
-            const cursor = new Date(start.getFullYear(), start.getMonth(), 1)
-            while (cursor <= end) {
-                const month = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`
+            // 以北京月份键填充空月(与分桶口径一致,原实现 UTC 分桶 + 服务器本地 cursor 混用)
+            let [y, m] = toBeijingMonthKey(new Date(dateFrom)).split('-').map(Number)
+            const [ey, em] = toBeijingMonthKey(new Date(dateTo)).split('-').map(Number)
+            while (y < ey || (y === ey && m <= em)) {
+                const month = `${y}-${String(m).padStart(2, '0')}`
                 if (!monthMap[month]) monthMap[month] = {income: 0, expense: 0}
-                cursor.setMonth(cursor.getMonth() + 1)
+                m += 1
+                if (m > 12) { m = 1; y += 1 }
             }
         }
 
@@ -477,13 +482,15 @@ export async function recordRoutes(app: FastifyInstance) {
         if (!dateFrom && !dateTo) {
             if (granularity === 'monthly' && year) {
                 (where as any).date = {
-                    gte: new Date(Date.UTC(year, 0, 1)),
-                    lte: new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999)),
+                    gte: beijingDayStart(`${year}-01-01`),
+                    lte: beijingDayEnd(`${year}-12-31`),
                 }
             } else if (month && year) {
-                (where as any).date = {
-                    gte: new Date(Date.UTC(year, month - 1, 1)),
-                    lte: new Date(Date.UTC(year, month, 0, 23, 59, 59, 999)),
+                const mm = String(month).padStart(2, '0')
+                const lastDay = new Date(year, month, 0).getDate()
+                ;(where as any).date = {
+                    gte: beijingDayStart(`${year}-${mm}-01`),
+                    lte: beijingDayEnd(`${year}-${mm}-${String(lastDay).padStart(2, '0')}`),
                 }
             }
         }
@@ -495,8 +502,8 @@ export async function recordRoutes(app: FastifyInstance) {
         })
 
         const periodKey = granularity === 'monthly'
-            ? (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-            : (d: Date) => d.toISOString().slice(0, 10)
+            ? (d: Date) => toBeijingMonthKey(d)
+            : (d: Date) => toBeijingDateKey(d)
 
         const periodMap: Record<string, Record<string, number>> = {}
         const allCategories = new Set<string>()
@@ -687,7 +694,7 @@ export async function recordRoutes(app: FastifyInstance) {
                 accountBookId: data.accountBookId,
                 type: data.type,
                 amount: data.amount,
-                date: new Date(data.date),
+                date: parseBeijingDay(data.date),
                 remark: data.remark,
                 tags: JSON.stringify(data.tags ?? []),
                 recordAttachments: {
@@ -747,7 +754,7 @@ export async function recordRoutes(app: FastifyInstance) {
         const updateData: any = {...parsed.data}
         delete updateData.attachmentIds
         if (updateData.tags) updateData.tags = JSON.stringify(updateData.tags)
-        if (updateData.date) updateData.date = new Date(updateData.date)
+        if (updateData.date) updateData.date = parseBeijingDay(updateData.date)
 
         await prisma.record.updateMany({
             where: {id: {in: ids}},
@@ -903,7 +910,7 @@ export async function recordRoutes(app: FastifyInstance) {
         const updateData: any = {...parsed.data}
         delete updateData.attachmentIds
         if (parsed.data.tags) updateData.tags = JSON.stringify(parsed.data.tags)
-        if (parsed.data.date) updateData.date = new Date(parsed.data.date)
+        if (parsed.data.date) updateData.date = parseBeijingDay(parsed.data.date)
 
         // 更新为转账时，校验账户属于当前账本
         if (updateData.type === 'TRANSFER' && updateData.fromAccountId && updateData.toAccountId) {

@@ -8,6 +8,7 @@ import path from 'path'
 import { prisma } from '../app.js'
 import { authenticate, assertIsMember } from '../middleware/auth.js'
 import { zSchema } from '../lib/schema-helpers.js'
+import { toBeijingDateKey } from '../lib/date-time.js'
 import {
   matchAccountByName,
   applyAccountMappings,
@@ -621,7 +622,7 @@ export async function importExportRoutes(app: FastifyInstance) {
       const tags = JSON.parse(r.tags || '[]') as string[]
       const owner = r.owner.nickname || r.owner.email
       return [
-        r.date.toISOString().slice(0, 10),
+        toBeijingDateKey(r.date),
         typeLabels[r.type] || r.type,
         String(r.amount),
         r.account?.name || '',

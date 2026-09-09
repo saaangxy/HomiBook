@@ -2,6 +2,7 @@ import { prisma } from '../../app.js'
 import { parseAlipayCSV, parseWechatXlsx, parseJdCSV } from '../import/parsers.js'
 import { applyAccountMappings, applyCategoryMappings, matchAccountByName, type ParsedRow } from '../import/shared.js'
 import { ACCOUNT_TYPE_LABELS } from '@homibook/core'
+import { toBeijingDateKey } from '../../lib/date-time.js'
 import fs from 'fs'
 import path from 'path'
 
@@ -52,7 +53,7 @@ function recordToRow(r: {
   categoryLabel?: string
   remark?: string | null
 }): PreviewCell[][] {
-  const date = typeof r.date === 'string' ? r.date : r.date.toISOString().slice(0, 10)
+  const date = typeof r.date === 'string' ? r.date : toBeijingDateKey(r.date)
   const typeLabel = TYPE_LABELS[r.type] || r.type
 
   let accountText = r.accountName || '-'
@@ -334,7 +335,7 @@ async function buildUpdatePreview(args: any, accountBookId: string): Promise<str
     getAccountNameMap([...newAccountIds, record.accountId, record.fromAccountId || '', record.toAccountId || ''].filter(Boolean), accountBookId),
   ])
 
-  const dateStr = (d: Date | string) => typeof d === 'string' ? d : d.toISOString().slice(0, 10)
+  const dateStr = (d: Date | string) => typeof d === 'string' ? d : toBeijingDateKey(d)
 
   const fieldDefs: { key: string; label: string; format: (v: any) => string }[] = [
     { key: 'type', label: '类型', format: (v) => TYPE_LABELS[v] || v },
@@ -462,7 +463,7 @@ async function buildBatchUpdatePreview(args: any, accountBookId: string): Promis
     getAccountNameMap([...allAccountIds], accountBookId),
   ])
 
-  const dateStr = (d: Date | string) => typeof d === 'string' ? d : d.toISOString().slice(0, 10)
+  const dateStr = (d: Date | string) => typeof d === 'string' ? d : toBeijingDateKey(d)
 
   const fieldDefs: { key: string; label: string; format: (v: any) => string }[] = [
     { key: 'type', label: '类型', format: (v) => TYPE_LABELS[v] || v },

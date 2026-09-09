@@ -2,6 +2,7 @@ import { prisma } from '../../../app.js'
 import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
 import { buildDuplicateKey } from '@homibook/core'
 import type { ToolDef, ToolContext } from './types.js'
+import { toBeijingDateKey } from '../../../lib/date-time.js'
 
 interface DetectDuplicatesArgs {
   matchFields: {
@@ -66,7 +67,7 @@ export const detectDuplicatesTool: ToolDef = {
             id: r.id,
             type: r.type,
             amount: r.amount,
-            date: r.date.toISOString().slice(0, 10),
+            date: toBeijingDateKey(r.date),
             remark: r.remark,
             accountName: r.account.name,
             payer: r.payer,

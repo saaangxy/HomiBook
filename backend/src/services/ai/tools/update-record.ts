@@ -2,6 +2,7 @@ import { prisma } from '../../../app.js'
 import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 import { resolveAccountId } from './helpers.js'
+import { parseBeijingDay, toBeijingDateKey } from '../../../lib/date-time.js'
 import fs from 'fs'
 import path from 'path'
 
@@ -115,7 +116,7 @@ export const updateRecordTool: ToolDef = {
       const data: Record<string, unknown> = {}
       if (args.type) data.type = args.type
       if (args.amount != null) data.amount = Number(args.amount)
-      if (args.date) data.date = new Date(args.date)
+      if (args.date) data.date = parseBeijingDay(args.date)
       if (resolvedAccountId) data.accountId = resolvedAccountId
       if (args.categoryCode !== undefined) data.categoryCode = args.categoryCode
       if (args.remark !== undefined) data.remark = args.remark
@@ -133,7 +134,7 @@ export const updateRecordTool: ToolDef = {
         id: record.id,
         type: record.type,
         amount: record.amount,
-        date: record.date.toISOString().slice(0, 10),
+        date: toBeijingDateKey(record.date),
         accountName: record.account.name,
         categoryCode: record.categoryCode,
         remark: record.remark,

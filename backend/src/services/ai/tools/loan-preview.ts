@@ -5,6 +5,7 @@ import {
   generateEqualInstallmentPlan,
   generateEqualPrincipalPlan,
 } from '../../recurring.js'
+import { toBeijingDateKey } from '../../../lib/date-time.js'
 
 interface LoanPreviewArgs {
   total: number
@@ -48,7 +49,7 @@ export const loanPreviewTool: ToolDef = {
         totalInterest: calc.totalInterest,
         plan: plan.map((p) => ({
           period: p.period,
-          dueDate: p.dueDate.toISOString().slice(0, 10),
+          dueDate: toBeijingDateKey(p.dueDate),
           totalPayment: p.totalPayment,
           principal: p.principal,
           interest: p.interest,

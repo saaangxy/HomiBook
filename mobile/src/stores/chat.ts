@@ -332,7 +332,7 @@ function startContinuationStream(
   const ctx: SSEStreamContext = {
     sid, assistantMsgId: continuationMsgId, parentMsgId: parentId,
     get, set,
-    thinkState: { value: 'text' },
+    thinkState: { value: { mode: 'text', pending: '' } },
     blockIdCounter: { value: 0 },
   };
 
@@ -552,7 +552,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
     const ctx: SSEStreamContext = {
       sid, assistantMsgId, get, set, shouldGenerateTitle,
-      thinkState: { value: 'text' },
+      thinkState: { value: { mode: 'text', pending: '' } },
       blockIdCounter: { value: 0 },
     };
 

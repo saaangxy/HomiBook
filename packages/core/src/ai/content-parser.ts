@@ -67,46 +67,86 @@ function parseTextSegment(text: string, startId: number): { blocks: MessageBlock
 
 // ---- SSE 流解析 ----
 
-export type DeltaState = 'text' | 'thinking';
+const THINK_OPEN = '<think>';
+const THINK_CLOSE = '</think>';
 
+export interface DeltaState {
+  mode: 'text' | 'thinking';
+  /** 上一 delta 尾部疑似标签前缀(如 "<th")的暂存,待与下一 delta 拼接后判定,防止标签跨分块被当文本泄漏 */
+  pending: string;
+}
+
+/**
+ * 处理单个 text-delta。SSE 按模型 token 分块,think 标签可能跨 delta 分割
+ * (如 "<th" + "ink>"),必须把尾部疑似标签前缀暂存到 state.pending,与下一 delta 拼接后再判定。
+ */
 export function processTextDelta(
   delta: string,
-  thinkState: DeltaState,
+  state: DeltaState,
   blocks: MessageBlock[],
   idCounter: { value: number },
 ): DeltaState {
-  let state = thinkState;
-  let remaining = delta;
+  let working = state.pending + delta;
+  let mode = state.mode;
+  let pending = '';
 
-  while (remaining.length > 0) {
-    if (state === 'thinking') {
-      const closeIdx = remaining.indexOf('</think>');
+  let guard = 0;
+  while (working.length > 0 && guard++ < 1000) {
+    if (mode === 'thinking') {
+      const closeIdx = working.indexOf(THINK_CLOSE);
       if (closeIdx === -1) {
-        appendTextToBlocks(blocks, 'thinking', remaining, idCounter);
-        remaining = '';
+        const hold = partialTagHold(working, THINK_CLOSE);
+        if (hold > 0) {
+          appendTextToBlocks(blocks, 'thinking', working.slice(0, working.length - hold), idCounter);
+          pending = working.slice(working.length - hold);
+        } else {
+          appendTextToBlocks(blocks, 'thinking', working, idCounter);
+        }
+        working = '';
       } else {
-        if (closeIdx > 0) appendTextToBlocks(blocks, 'thinking', remaining.slice(0, closeIdx), idCounter);
-        remaining = remaining.slice(closeIdx + 8);
-        state = 'text';
+        if (closeIdx > 0) appendTextToBlocks(blocks, 'thinking', working.slice(0, closeIdx), idCounter);
+        working = working.slice(closeIdx + THINK_CLOSE.length);
+        mode = 'text';
       }
     } else {
-      const openIdx = remaining.indexOf('<think>');
-      const closeIdx = remaining.indexOf('</think>');
+      const openIdx = working.indexOf(THINK_OPEN);
+      const closeIdx = working.indexOf(THINK_CLOSE);
       if (openIdx === -1 && closeIdx === -1) {
-        appendTextToBlocks(blocks, 'text', remaining, idCounter);
-        remaining = '';
+        const hold = partialTagHold(working, THINK_OPEN, THINK_CLOSE);
+        if (hold > 0) {
+          appendTextToBlocks(blocks, 'text', working.slice(0, working.length - hold), idCounter);
+          pending = working.slice(working.length - hold);
+        } else {
+          appendTextToBlocks(blocks, 'text', working, idCounter);
+        }
+        working = '';
       } else if (closeIdx !== -1 && (openIdx === -1 || closeIdx < openIdx)) {
-        if (closeIdx > 0) appendTextToBlocks(blocks, 'thinking', remaining.slice(0, closeIdx), idCounter);
-        remaining = remaining.slice(closeIdx + 8);
-        state = 'text';
+        // 游离闭标签(模型输出错乱):消费掉,前段保持 text 分类
+        if (closeIdx > 0) appendTextToBlocks(blocks, 'text', working.slice(0, closeIdx), idCounter);
+        working = working.slice(closeIdx + THINK_CLOSE.length);
       } else {
-        if (openIdx > 0) appendTextToBlocks(blocks, 'text', remaining.slice(0, openIdx), idCounter);
-        remaining = remaining.slice(openIdx + 7);
-        state = 'thinking';
+        if (openIdx > 0) appendTextToBlocks(blocks, 'text', working.slice(0, openIdx), idCounter);
+        working = working.slice(openIdx + THINK_OPEN.length);
+        mode = 'thinking';
       }
     }
   }
-  return state;
+  return { mode, pending };
+}
+
+/** 检测 text 尾部是否恰好是某个标签的真前缀(如 "<th"),返回最长匹配长度 */
+function partialTagHold(text: string, ...tags: string[]): number {
+  let hold = 0;
+  for (const tag of tags) {
+    const max = Math.min(text.length, tag.length - 1);
+    for (let k = max; k > hold; k--) {
+      if (text.endsWith(tag.slice(0, k))) {
+        hold = k;
+        break;
+      }
+    }
+  }
+  return hold;
 }
 
 function appendTextToBlocks(

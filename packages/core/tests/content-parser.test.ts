@@ -13,7 +13,7 @@ describe('parseContentIntoBlocks', () => {
 
   it('think 标签拆分为 text / thinking / text', () => {
     const blocks = parseContentIntoBlocks(`前${OPEN}思考中${CLOSE}后`);
-    expect(blocks.map((b) => [b.type, b.content])).toEqual([
+    expect(blocks.map((b) => [b.type, (b as { content: string }).content])).toEqual([
       ['text', '前'],
       ['thinking', '思考中'],
       ['text', '后'],
@@ -83,28 +83,30 @@ describe('parseContentIntoBlocks', () => {
 
 describe('processTextDelta', () => {
   const newCounter = () => ({ value: 0 });
+  const S = (mode: 'text' | 'thinking') => ({ mode, pending: '' });
 
   it('text 状态纯文本 → 追加 text 块,状态不变', () => {
     const blocks: MessageBlock[] = [];
-    const state = processTextDelta('你好', 'text', blocks, newCounter());
-    expect(state).toBe('text');
+    const state = processTextDelta('你好', S('text'), blocks, newCounter());
+    expect(state.mode).toBe('text');
+    expect(state.pending).toBe('');
     expect(blocks).toEqual([{ id: 'block-1', type: 'text', content: '你好' }]);
   });
 
   it('连续 delta 合并到同一 text 块', () => {
     const blocks: MessageBlock[] = [];
     const counter = newCounter();
-    processTextDelta('你', 'text', blocks, counter);
-    processTextDelta('好', 'text', blocks, counter);
+    processTextDelta('你', S('text'), blocks, counter);
+    processTextDelta('好', { mode: 'text', pending: '' }, blocks, counter);
     expect(blocks).toHaveLength(1);
     expect((blocks[0] as { content: string }).content).toBe('你好');
   });
 
   it('开标签进入 thinking 状态', () => {
     const blocks: MessageBlock[] = [];
-    const state = processTextDelta(`A${OPEN}B`, 'text', blocks, newCounter());
-    expect(state).toBe('thinking');
-    expect(blocks.map((b) => [b.type, b.content])).toEqual([
+    const state = processTextDelta(`A${OPEN}B`, S('text'), blocks, newCounter());
+    expect(state.mode).toBe('thinking');
+    expect(blocks.map((b) => [b.type, (b as { content: string }).content])).toEqual([
       ['text', 'A'],
       ['thinking', 'B'],
     ]);
@@ -112,16 +114,16 @@ describe('processTextDelta', () => {
 
   it('闭标签回到 text 状态', () => {
     const blocks: MessageBlock[] = [];
-    const state = processTextDelta(`C${CLOSE}`, 'thinking', blocks, newCounter());
-    expect(state).toBe('text');
+    const state = processTextDelta(`C${CLOSE}`, S('thinking'), blocks, newCounter());
+    expect(state.mode).toBe('text');
     expect(blocks).toEqual([{ id: 'block-1', type: 'thinking', content: 'C' }]);
   });
 
   it('单个 delta 内完整开闭标签', () => {
     const blocks: MessageBlock[] = [];
-    const state = processTextDelta(`A${OPEN}B${CLOSE}D`, 'text', blocks, newCounter());
-    expect(state).toBe('text');
-    expect(blocks.map((b) => [b.type, b.content])).toEqual([
+    const state = processTextDelta(`A${OPEN}B${CLOSE}D`, S('text'), blocks, newCounter());
+    expect(state.mode).toBe('text');
+    expect(blocks.map((b) => [b.type, (b as { content: string }).content])).toEqual([
       ['text', 'A'],
       ['thinking', 'B'],
       ['text', 'D'],
@@ -130,38 +132,113 @@ describe('processTextDelta', () => {
 
   it('thinking 状态持续无闭标签 → 全部进入 thinking', () => {
     const blocks: MessageBlock[] = [];
-    const state = processTextDelta('继续思考', 'thinking', blocks, newCounter());
-    expect(state).toBe('thinking');
+    const state = processTextDelta('继续思考', S('thinking'), blocks, newCounter());
+    expect(state.mode).toBe('thinking');
     expect(blocks).toEqual([{ id: 'block-1', type: 'thinking', content: '继续思考' }]);
   });
 
   it('text 状态出现游离闭标签 → 被消费,状态保持 text', () => {
     const blocks: MessageBlock[] = [];
-    const state = processTextDelta(`${CLOSE}abc`, 'text', blocks, newCounter());
-    expect(state).toBe('text');
+    const state = processTextDelta(`${CLOSE}abc`, S('text'), blocks, newCounter());
+    expect(state.mode).toBe('text');
     expect(blocks).toEqual([{ id: 'block-1', type: 'text', content: 'abc' }]);
   });
 
   it('thinking 状态内残留的开标签被清洗', () => {
     const blocks: MessageBlock[] = [];
-    processTextDelta(`a${OPEN}b`, 'thinking', blocks, newCounter());
+    processTextDelta(`a${OPEN}b`, S('thinking'), blocks, newCounter());
     expect(blocks).toEqual([{ id: 'block-1', type: 'thinking', content: 'ab' }]);
   });
 
   it('空 delta 不改变状态与块', () => {
     const blocks: MessageBlock[] = [];
-    const state = processTextDelta('', 'thinking', blocks, newCounter());
-    expect(state).toBe('thinking');
+    const state = processTextDelta('', S('thinking'), blocks, newCounter());
+    expect(state.mode).toBe('thinking');
     expect(blocks).toHaveLength(0);
   });
 
   it('纯空白内容不创建新块,但会合并进同类型已有块', () => {
     const blocks: MessageBlock[] = [{ id: 'block-1', type: 'text', content: 'a' }];
-    processTextDelta(' ', 'text', blocks, newCounter());
+    processTextDelta(' ', S('text'), blocks, newCounter());
     expect((blocks[0] as { content: string }).content).toBe('a ');
 
     const empty: MessageBlock[] = [];
-    processTextDelta(' ', 'text', empty, newCounter());
+    processTextDelta(' ', S('text'), empty, newCounter());
     expect(empty).toHaveLength(0);
+  });
+
+  // ---- 标签跨 delta 分割(SSE 按 token 分块是常态) ----
+
+  it('开标签跨 delta 分割("<" + "th" + "ink>")不泄漏为文本', () => {
+    const blocks: MessageBlock[] = [];
+    const counter = newCounter();
+    let state = processTextDelta('A', S('text'), blocks, counter);
+    state = processTextDelta('<', state, blocks, counter);
+    state = processTextDelta('th', state, blocks, counter);
+    state = processTextDelta('ink>', state, blocks, counter);
+    state = processTextDelta('推理', state, blocks, counter);
+    expect(state.mode).toBe('thinking');
+    expect(state.pending).toBe('');
+    expect(blocks.map((b) => [b.type, (b as { content: string }).content])).toEqual([
+      ['text', 'A'],
+      ['thinking', '推理'],
+    ]);
+  });
+
+  it('闭标签跨 delta 分割("</" + "think" + ">")正确退出 thinking', () => {
+    const blocks: MessageBlock[] = [];
+    const counter = newCounter();
+    let state = processTextDelta('思考', S('thinking'), blocks, counter);
+    state = processTextDelta('结论</', state, blocks, counter);
+    expect(state.pending).toBe('</');
+    state = processTextDelta('think', state, blocks, counter);
+    expect(state.pending).toBe('</think');
+    state = processTextDelta('>答', state, blocks, counter);
+    expect(state.mode).toBe('text');
+    expect(state.pending).toBe('');
+    expect(blocks.map((b) => [b.type, (b as { content: string }).content])).toEqual([
+      ['thinking', '思考结论'],
+      ['text', '答'],
+    ]);
+  });
+
+  it('尾部疑似标签前缀但后续证实是字面文本 → 前缀部分正确输出不丢字', () => {
+    const blocks: MessageBlock[] = [];
+    const counter = newCounter();
+    let state = processTextDelta('abc<th', S('text'), blocks, counter);
+    expect(state.pending).toBe('<th');
+    state = processTextDelta('eory>', state, blocks, counter);
+    expect(state.pending).toBe('');
+    expect(blocks).toEqual([{ id: 'block-1', type: 'text', content: 'abc<theory>' }]);
+  });
+
+  it('pending 暂存期间收到空 delta → 状态与 pending 不变', () => {
+    const blocks: MessageBlock[] = [];
+    const counter = newCounter();
+    let state = processTextDelta('x<', S('text'), blocks, counter);
+    expect(state.pending).toBe('<');
+    state = processTextDelta('', state, blocks, counter);
+    expect(state.pending).toBe('<');
+    expect(state.mode).toBe('text');
+  });
+
+  it('整段输出按 3 字符滚动切块后,与一次性解析结果一致(随机边界鲁棒性)', () => {
+    const full = `你好${OPEN}第一步推理${CLOSE}答案A${OPEN}补充${CLOSE}完毕`;
+    for (let size = 1; size <= 7; size++) {
+      const blocks: MessageBlock[] = [];
+      const counter = newCounter();
+      let state = processTextDelta('', S('text'), blocks, counter);
+      for (let i = 0; i < full.length; i += size) {
+        state = processTextDelta(full.slice(i, i + size), state, blocks, counter);
+      }
+      const flat = blocks.map((b) => [b.type, (b as { content: string }).content]).filter(([, c]) => (c as string).trim());
+      expect(flat, `chunk size ${size}`).toEqual([
+        ['text', '你好'],
+        ['thinking', '第一步推理'],
+        ['text', '答案A'],
+        ['thinking', '补充'],
+        ['text', '完毕'],
+      ]);
+    }
   });
 });

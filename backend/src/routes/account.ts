@@ -4,6 +4,13 @@ import { prisma } from '../app.js'
 import { authenticate, assertIsMember } from '../middleware/auth.js'
 import { zSchema } from '../lib/schema-helpers.js'
 import {
+  beijingDayStartOf,
+  parseBeijingDay,
+  parseBeijingDayEnd,
+  toBeijingDateKey,
+  toBeijingMonthKey,
+} from '../lib/date-time.js'
+import {
   createAccountSchema,
   updateAccountSchema,
   createAdjustmentSchema,
@@ -213,10 +220,9 @@ export async function accountRoutes(app: FastifyInstance) {
       orderBy: { createdAt: 'asc' },
     })
 
-    const startDate = new Date(dateFrom)
-    startDate.setUTCHours(0, 0, 0, 0)
-    const endDate = new Date(dateTo)
-    endDate.setUTCHours(23, 59, 59, 999)
+    // 查询范围锚定北京日(与分桶口径一致)
+    const startDate = parseBeijingDay(dateFrom)
+    const endDate = parseBeijingDayEnd(dateTo)
 
     const result = []
 
@@ -230,7 +236,7 @@ export async function accountRoutes(app: FastifyInstance) {
       const baseBalance = latestAdjustment?.balanceAfter ?? account.initialBalance ?? 0
       const baseDate = latestAdjustment?.date ?? null
 
-      // 查询 baseDate 之后、startDate 之前的记录
+      // 查询 baseDate(北京日对齐)之后、startDate 之前的记录
       const preRecords = await prisma.record.findMany({
         where: {
           OR: [
@@ -239,7 +245,7 @@ export async function accountRoutes(app: FastifyInstance) {
             { toAccountId: account.id },
           ],
           date: {
-            ...(baseDate ? { gt: baseDate } : {}),
+            ...(baseDate ? { gt: beijingDayStartOf(baseDate) } : {}),
             lt: startDate,
           },
         },
@@ -268,12 +274,12 @@ export async function accountRoutes(app: FastifyInstance) {
         orderBy: { date: 'asc' },
       })
 
-      // 按粒度分组
+      // 按粒度分组(北京日/月键,与前端本地展示口径一致)
       const periodMap: Record<string, number> = {}
       for (const r of rangeRecords) {
         const key = granularity === 'monthly'
-          ? r.date.toISOString().slice(0, 7)
-          : r.date.toISOString().slice(0, 10)
+          ? toBeijingMonthKey(r.date)
+          : toBeijingDateKey(r.date)
         if (!periodMap[key]) periodMap[key] = 0
         if (r.accountId === account.id && r.type === 'INCOME') periodMap[key] += r.amount
         else if (r.accountId === account.id && r.type === 'EXPENSE') periodMap[key] -= r.amount
@@ -289,19 +295,28 @@ export async function accountRoutes(app: FastifyInstance) {
       const adjustmentMap: Record<string, number> = {}
       for (const adj of rangeAdjustments) {
         const key = granularity === 'monthly'
-          ? adj.date.toISOString().slice(0, 7)
-          : adj.date.toISOString().slice(0, 10)
+          ? toBeijingMonthKey(adj.date)
+          : toBeijingDateKey(adj.date)
         adjustmentMap[key] = adj.balanceAfter
       }
 
-      // 生成日期序列
-      const balances: { date: string; balance: number }[] = []
-      const cursor = new Date(startDate)
-      while (cursor <= endDate) {
-        const key = granularity === 'monthly'
-          ? `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`
-          : cursor.toISOString().slice(0, 10)
+      // 生成北京日期/月份键序列(原 cursor 混用本地时区与 UTC 键)
+      const keys: string[] = []
+      if (granularity === 'monthly') {
+        let [y, m] = toBeijingMonthKey(startDate).split('-').map(Number)
+        const [ey, em] = toBeijingMonthKey(endDate).split('-').map(Number)
+        while (y < ey || (y === ey && m <= em)) {
+          keys.push(`${y}-${String(m).padStart(2, '0')}`)
+          m += 1
+          if (m > 12) { m = 1; y += 1 }
+        }
+      } else {
+        for (let t = startDate.getTime(); t <= endDate.getTime(); t += 86_400_000) {
+          keys.push(toBeijingDateKey(new Date(t)))
+        }
+      }
 
+      const balances: { date: string; balance: number }[] = keys.map((key) => {
         // 先应用余额调整（如果有的话），再叠加期间交易变动
         if (adjustmentMap[key] !== undefined) {
           runningBalance = adjustmentMap[key]
@@ -309,14 +324,8 @@ export async function accountRoutes(app: FastifyInstance) {
         if (periodMap[key] !== undefined) {
           runningBalance += periodMap[key]
         }
-        balances.push({ date: key, balance: Math.round(runningBalance * 100) / 100 })
-
-        if (granularity === 'monthly') {
-          cursor.setMonth(cursor.getMonth() + 1)
-        } else {
-          cursor.setDate(cursor.getDate() + 1)
-        }
-      }
+        return { date: key, balance: Math.round(runningBalance * 100) / 100 }
+      })
 
       result.push({
         accountId: account.id,
@@ -556,7 +565,8 @@ export async function accountRoutes(app: FastifyInstance) {
       prisma.balanceAdjustment.create({
         data: {
           accountId: id,
-          date: new Date(date),
+          // 锚定北京日 00:00:调整日当天的交易(含更早时刻)都计入调整之后,与 computeBalance 口径一致
+          date: parseBeijingDay(date),
           amount,
           balanceBefore,
           balanceAfter,
@@ -565,7 +575,7 @@ export async function accountRoutes(app: FastifyInstance) {
       }),
       prisma.account.update({
         where: { id },
-        data: { balance: balanceAfter, balanceAt: new Date(date) },
+        data: { balance: balanceAfter, balanceAt: parseBeijingDay(date) },
       }),
     ])
 
