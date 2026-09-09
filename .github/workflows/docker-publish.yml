@@ -75,29 +75,40 @@ jobs:
         working-directory: mobile
         run: npx expo prebuild -p android --no-install
 
-      # 按 CPU 架构分包：arm64-v8a / armeabi-v7a / x86_64 + universal（4 个 APK）
-      - name: Enable ABI splits
+      # 按 CPU 架构分包（arm64-v8a / armeabi-v7a / x86_64 + universal）；
+      # 调大 gradle/kotlin JVM 内存（runner 上 lint/dex 合并会 Metaspace OOM）并禁用 release lint
+      - name: Configure android build
         working-directory: mobile
-        run: >
-          node -e "
+        run: |
+          node <<'EOF'
           const fs = require('fs');
-          const p = 'android/app/build.gradle';
-          let s = fs.readFileSync(p, 'utf8');
-          if (s.includes('universalApk true')) { console.log('splits already enabled'); process.exit(0); }
-          const block = [
-            '    splits {',
-            '        abi {',
-            '            enable true',
-            '            reset()',
-            '            include \"armeabi-v7a\", \"arm64-v8a\", \"x86_64\"',
-            '            universalApk true',
-            '        }',
-            '    }'
-          ].join('\n');
-          s = s.replace('android {', 'android {\n' + block);
-          fs.writeFileSync(p, s);
-          console.log('ABI splits enabled');
-          "
+          // 1) app/build.gradle: 注入 ABI splits
+          const gp = 'android/app/build.gradle';
+          let s = fs.readFileSync(gp, 'utf8');
+          if (!s.includes('universalApk true')) {
+            const block = [
+              '    splits {',
+              '        abi {',
+              '            enable true',
+              '            reset()',
+              '            include "armeabi-v7a", "arm64-v8a", "x86_64"',
+              '            universalApk true',
+              '        }',
+              '    }'
+            ].join('\n');
+            s = s.replace('android {', 'android {\n' + block);
+            fs.writeFileSync(gp, s);
+            console.log('ABI splits enabled');
+          }
+          // 2) gradle.properties: JVM 内存 + 禁用 lint
+          const pp = 'android/gradle.properties';
+          let p = fs.readFileSync(pp, 'utf8');
+          p = p.replace(/^org\.gradle\.jvmargs=.*$/m, 'org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m');
+          if (!/^kotlin\.daemon\.jvmargs=/m.test(p)) p += '\nkotlin.daemon.jvmargs=-Xmx2g -XX:MaxMetaspaceSize=512m';
+          if (!/^android\.lint\.enabled=/m.test(p)) p += '\nandroid.lint.enabled=false';
+          fs.writeFileSync(pp, p);
+          console.log('gradle.properties configured');
+          EOF
 
       - name: Cache gradle
         uses: actions/cache@v4
