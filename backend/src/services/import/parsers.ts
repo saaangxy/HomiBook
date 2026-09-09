@@ -67,7 +67,7 @@ export function parseAlipayCSV(buffer: Buffer): { rows: ParsedRow[]; errors: str
 
   for (let i = 0; i < records.length; i++) {
     const r = records[i] as unknown as Record<string, string>
-    const rowIndex = i + 2
+    const rowIndex = headerIndex + i + 2
     try {
       const tradeTime = r['交易时间'] || ''
       const category = r['交易分类'] || ''
@@ -103,8 +103,9 @@ export function parseAlipayCSV(buffer: Buffer): { rows: ParsedRow[]; errors: str
       } else if (direction === '不计支出' || direction === '不计收支') {
         const isHuabeiRepay = (category === '金融借贷' || category === '信用借还' || counterparty === '花呗')
           && (counterparty === '花呗' || /花呗/.test(description))
+        // 余额宝/余利宝均为支付宝系理财(网商银行),转入转出按理财转账处理
         const isYueBaoTransfer = category === '投资理财'
-          && (counterparty === '余额宝' || /余额宝/.test(description))
+          && (counterparty === '余额宝' || /余额宝|余利宝/.test(description))
         const isAntTransfer = category === '投资理财'
           && (counterparty === '蚂蚁财富' || /蚂蚁财富/.test(description) || /蚂蚁智还/.test(description))
         const isIncome = /收益|分红/.test(description) || /收益/.test(counterparty)
@@ -186,7 +187,8 @@ export function resolveWechatAccountName(name: string) {
 
 function excelSerialToISO(serial: number): string {
   const excelEpoch = Date.UTC(1899, 11, 30)
-  return new Date(excelEpoch + serial * 86400000).toISOString()
+  // Excel 序列号是无时区的墙上时间(北京时间语义),须减 8h 转 UTC,与字符串路径 +08:00 解析保持一致
+  return new Date(excelEpoch + serial * 86400000 - 8 * 3600000).toISOString()
 }
 
 export function parseWechatXlsx(buffer: Buffer): { rows: ParsedRow[]; errors: string[] } {
@@ -342,7 +344,7 @@ export function parseJdCSV(buffer: Buffer): { rows: ParsedRow[]; errors: string[
 
   for (let i = 0; i < records.length; i++) {
     const r = records[i] as unknown as Record<string, string>
-    const rowIndex = i + 2
+    const rowIndex = headerIndex + i + 2
     try {
       const tradeTime = r['交易时间'] || ''
       const merchantName = r['商户名称'] || ''
@@ -404,7 +406,7 @@ export function parseJdCSV(buffer: Buffer): { rows: ParsedRow[]; errors: string[
         toAccountName: resolvedToAccountName, toAccountId: null,
         categoryCode: category || null, mappedCategoryCode: null,
         payer: merchantName || null, remark: combinedRemark,
-        tags: ['导入', '京东'], rowIndex: i + 2,
+        tags: ['导入', '京东'], rowIndex,
       })
     } catch (e: any) {
       errors.push(`第${rowIndex}行: ${e.message}`)

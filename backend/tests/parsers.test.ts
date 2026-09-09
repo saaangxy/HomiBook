@@ -162,6 +162,16 @@ describe('parseAlipayCSV', () => {
     expect(r.errors[0]).toContain('日期格式无法解析');
   });
 
+  it('有前导说明行时错误行号与数据行号按原文件偏移', () => {
+    // 前导 2 行 + 表头 1 行 → 首条数据在第 4 行
+    const r = parseAlipayCSV(
+      Buffer.from(alipayCsv([aliRow(), aliRow({ date: 'bad-date' })], { preamble: ['支付宝交易明细查询', '起始时间:2024-01-01'] }), 'utf8'),
+    );
+    expect(r.rows).toHaveLength(1);
+    expect(r.rows[0].rowIndex).toBe(4);
+    expect(r.errors[0]).toContain('第5行');
+  });
+
   it('GBK 编码文件正常解析', () => {
     const r = parseAlipayCSV(iconv.encode(alipayCsv([aliRow()]), 'gbk'));
     expect(r.rows).toHaveLength(1);
@@ -214,6 +224,23 @@ describe('parseAlipayCSV', () => {
       const r = parseAlipayCSV(
         Buffer.from(alipayCsv([aliRow({ ...neutral, category: '投资理财', counterparty: '余额宝', description: '转入' })]), 'utf8'),
       );
+      expect(r.rows[0].type).toBe('TRANSFER');
+      expect(r.rows[0].toAccountName).toBe('支付宝');
+    });
+
+    it('支付宝转入到余利宝(网商银行) → 与余额宝转入同规则,内部跳过(2026-09 真实账单回归)', () => {
+      // 付款方式为"账户余额" → 支付宝→支付宝,应跳过而非落 UNKNOWN 被路由分流
+      const r = parseAlipayCSV(
+        Buffer.from(alipayCsv([aliRow({ ...neutral, category: '投资理财', counterparty: '网商银行', description: '支付宝转入到余利宝', paymentMethod: '账户余额' })]), 'utf8'),
+      );
+      expect(r.rows).toHaveLength(0);
+    });
+
+    it('银行卡转入余利宝 → TRANSFER 到 支付宝', () => {
+      const r = parseAlipayCSV(
+        Buffer.from(alipayCsv([aliRow({ ...neutral, category: '投资理财', counterparty: '网商银行', description: '支付宝转入到余利宝', paymentMethod: '农业银行储蓄卡(5172)' })]), 'utf8'),
+      );
+      expect(r.rows).toHaveLength(1);
       expect(r.rows[0].type).toBe('TRANSFER');
       expect(r.rows[0].toAccountName).toBe('支付宝');
     });
@@ -350,10 +377,18 @@ describe('parseWechatXlsx', () => {
     expect(row.tags).toEqual(['导入', '微信']);
   });
 
-  it('Excel 序列号日期 → UTC ISO', () => {
-    // serial 45306 = 2024-01-15
+  it('Excel 序列号日期(北京墙上时间语义) → UTC ISO', () => {
+    // serial 45306 = 2024-01-15 00:00 北京时间 → UTC 前一日 16:00
     const r = parseWechatXlsx(wechatXlsx([WX_HEADER, wxRow({ time: 45306, paymentMethod: '招商银行' })]));
-    expect(r.rows[0].date).toBe('2024-01-15T00:00:00.000Z');
+    expect(r.rows[0].date).toBe('2024-01-14T16:00:00.000Z');
+  });
+
+  it('含时间成分的 Excel 序列号与字符串路径一致(无 8 小时偏移)', () => {
+    // serial 45306.4375 = 2024-01-15 10:30 北京时间 = 02:30 UTC
+    const serial = parseWechatXlsx(wechatXlsx([WX_HEADER, wxRow({ time: 45306.4375, paymentMethod: '招商银行' })]));
+    const str = parseWechatXlsx(wechatXlsx([WX_HEADER, wxRow({ time: '2024-01-15 10:30:00', paymentMethod: '招商银行' })]));
+    expect(serial.rows[0].date).toBe('2024-01-15T02:30:00.000Z');
+    expect(serial.rows[0].date).toBe(str.rows[0].date);
   });
 
   it('收入方向 → INCOME', () => {
