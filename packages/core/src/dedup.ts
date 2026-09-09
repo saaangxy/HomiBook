@@ -93,10 +93,17 @@ export function parseDuplicateGroupKey(key: string, fields: DedupMatchFields, op
     labels.push(`日期: ${fields.date === 'date' ? val : fmt(val)}`);
   }
   if (fields.type) labels.push(`类型: ${DEDUP_TYPE_LABELS[parts[idx++] as RecordType] ?? parts[idx - 1]}`);
-  if (fields.accountId) labels.push(`账户: ${opts?.accountDisplay?.get(parts[idx++]) ?? parts[idx - 1]}`);
+  // idx 自增须与 optional chaining 解耦:opts 缺省时 ?. 短路会使 idx++ 不执行,导致取段错位
+  if (fields.accountId) {
+    const val = parts[idx++];
+    labels.push(`账户: ${opts?.accountDisplay?.get(val) ?? val}`);
+  }
   if (fields.payer) labels.push(`交易方: ${parts[idx++] === DEDUP_EMPTY_PAYER ? '(空)' : parts[idx - 1]}`);
   if (fields.amount) labels.push(`金额: ${parts[idx++]}`);
-  if (fields.ownerId) labels.push(`归属人: ${opts?.ownerNames?.get(parts[idx++]) ?? parts[idx - 1]}`);
+  if (fields.ownerId) {
+    const val = parts[idx++];
+    labels.push(`归属人: ${opts?.ownerNames?.get(val) ?? val}`);
+  }
 
   return labels;
 }

@@ -14,7 +14,9 @@
     "db:migrate": "node prisma/run.mjs migrate dev",
     "db:migrate:all": "node prisma/migrate-all.mjs",
     "db:deploy": "node prisma/run.mjs migrate deploy",
-    "db:push": "node prisma/run.mjs db push"
+    "db:push": "node prisma/run.mjs db push",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.85",

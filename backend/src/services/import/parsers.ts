@@ -9,11 +9,13 @@ function detectEncoding(buffer: Buffer): string {
   if (buffer.length >= 3 && buffer[0] === 0xEF && buffer[1] === 0xBB && buffer[2] === 0xBF) {
     return 'utf8'
   }
+  // 严格 UTF-8 解码:GBK 中文按 UTF-8 解码必抛错,合法 UTF-8(含无 BOM 的通用 CSV)必成功,纯 ASCII 两种编码等价
   try {
-    const test = buffer.toString('utf8')
-    if (test.includes('交易时间') && test.includes('收/支')) return 'utf8'
-  } catch { /* fall through */ }
-  return 'gbk'
+    new TextDecoder('utf-8', { fatal: true }).decode(buffer)
+    return 'utf8'
+  } catch {
+    return 'gbk'
+  }
 }
 
 function parseDateStr(raw: string): string | null {
@@ -546,7 +548,7 @@ export function parseCsvWithMapping(
         continue
       }
 
-      const amount = parseFloat(amountStr.replace(/[¥¥$，,\s元€£]/g, ''))
+      const amount = parseFloat(amountStr.replace(/[¥￥$，,\s元€£]/g, ''))
       if (isNaN(amount) || amount === 0) continue
 
       let recordType: 'INCOME' | 'EXPENSE' | 'TRANSFER' | 'UNKNOWN'
