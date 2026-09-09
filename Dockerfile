@@ -32,6 +32,9 @@ COPY backend/package.json backend/package-lock.json ./
 COPY backend/prisma ./prisma
 COPY backend/prisma.config.ts ./
 RUN npm ci
+# core 在容器内无独立 node_modules，构建 core（npm run build --prefix ../packages/core）时
+# tsc 向上解析 @types/node / typescript 需要 /app/node_modules，软链到 backend 的依赖
+RUN ln -s /app/backend/node_modules /app/node_modules
 COPY backend/tsconfig.json ./
 COPY backend/src ./src
 # prebuild 钩子会先为 sqlite/mysql/postgresql 各生成一份 Prisma Client 到 src/generated/<provider>，再 tsc 编译
