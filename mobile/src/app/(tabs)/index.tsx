@@ -260,18 +260,20 @@ export default function HomeScreen() {
           </Pressable>
         </FadeInView>
 
-        {/* 最近流水 */}
-        <FadeInView index={4}>
-          <Text variant="muted" style={{ fontSize: 12, letterSpacing: 1, marginBottom: 10 }}>最近流水</Text>
-          <Card className="px-5 py-4 mb-4">
-            {recent.map((r, i) => (
-              <View key={r.id}>
-                <RecordRow record={r} showDivider={i < recent.length - 1} />
-                {i < recent.length - 1 && <View style={{ height: 12 }} />}
-              </View>
-            ))}
-          </Card>
-        </FadeInView>
+        {/* 最近流水(无流水记录时整块不展示) */}
+        {recent.length > 0 && (
+          <FadeInView index={4}>
+            <Text variant="muted" style={{ fontSize: 12, letterSpacing: 1, marginBottom: 10 }}>最近流水</Text>
+            <Card className="px-5 py-4 mb-4">
+              {recent.map((r, i) => (
+                <View key={r.id}>
+                  <RecordRow record={r} showDivider={i < recent.length - 1} />
+                  {i < recent.length - 1 && <View style={{ height: 12 }} />}
+                </View>
+              ))}
+            </Card>
+          </FadeInView>
+        )}
       </View>
     </Screen>
   );
