@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ActivityIndicator, Alert, Dimensions, Image, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, BackHandler, Dimensions, Image, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import Animated, { FadeIn, SlideInDown } from 'react-native-reanimated';
 import { ImagePlus, X } from 'lucide-react-native';
 import { useTheme, haptics, motion } from '@/theme';
@@ -49,8 +49,24 @@ export function RecordModal() {
       hide.remove();
     };
   }, []);
-  // 固定外部高度;键盘弹出时整体缩到键盘上方
-  const sheetH = Math.round(kbH > 0 ? Math.min(screenH * 0.84, screenH - kbH - 12) : screenH * 0.84);
+  // 固定外部高度;键盘弹出时整体缩到键盘上方;
+  // 主 window 为 edge-to-edge 全屏,height 基准含状态栏,显式扣除保证弹窗顶部不越过状态栏
+  const sheetH = Math.round(
+    kbH > 0
+      ? Math.min(screenH * 0.84, screenH - kbH - 12)
+      : Math.min(screenH * 0.84, screenH - insets.top - 12),
+  );
+
+  // Android 返回键关闭(Modal 替换为主 window 覆盖层后,需自行拦截返回键)
+  useEffect(() => {
+    if (!recordOpen) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      close();
+      return true;
+    });
+    return () => sub.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recordOpen]);
 
   // 模式记忆:关闭时是 AI → 下次打开(含重启)仍是 AI;编辑流水强制手动
   const [mode, setMode] = useState<Mode>('manual');
@@ -266,8 +282,12 @@ export function RecordModal() {
     <Text style={{ fontSize: 12, color: colors.mutedForeground, marginBottom: 6, marginTop: 2 }}>{t}</Text>
   );
 
+  // 主 window 覆盖层(替代 RN Modal):Android 上 Modal 的独立 Dialog 窗口在
+  // edge-to-edge 全屏设备上高度会被截断(底部缝隙)且部分环境闪退,改用绝对定位覆盖层
+  if (!recordOpen) return null;
+
   return (
-    <Modal visible={recordOpen} transparent animationType="none" onRequestClose={close}>
+    <View style={StyleSheet.absoluteFill}>
       <KeyboardAvoidingView style={{ flex: 1, justifyContent: 'flex-end' }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <Animated.View entering={FadeIn.duration(160)} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)' }}>
           <Pressable style={{ flex: 1 }} onPress={close} />
@@ -482,6 +502,6 @@ export function RecordModal() {
           onClose={() => setLightboxIdx(null)}
         />
       )}
-    </Modal>
+    </View>
   );
 }

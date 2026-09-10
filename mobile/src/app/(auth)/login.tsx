@@ -84,7 +84,7 @@ export default function LoginScreen() {
   return (
     <View style={{ flex: 1 }}>
       <LinearGradient colors={[colors.background, colors.muted]} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, paddingTop: insets.top }}>
-        <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 20 }} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
+        <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 20, paddingBottom: 100 }} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
           <FadeInView>
             {/* 品牌 */}
             <Text style={{ fontFamily: fonts.display, color: colors.foreground, fontSize: 42, fontWeight: '800', letterSpacing: -2, textAlign: 'center' }}>
