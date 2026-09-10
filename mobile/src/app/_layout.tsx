@@ -1,7 +1,7 @@
 import '@/global.css';
 // 全局错误兜底(副作用模块):未处理 rejection / 致命异常的分级提示,须在应用代码前加载
 import '@/lib/global-error';
-import { useState } from 'react';
+import { useEffect } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
@@ -10,6 +10,7 @@ import { StatusBar } from 'expo-status-bar';
 import { AlertTriangle, RefreshCw } from 'lucide-react-native';
 import { Text } from '@/components/ui/Text';
 import { useFonts } from 'expo-font';
+import * as SplashScreen from 'expo-splash-screen';
 import { CrimsonText_400Regular, CrimsonText_600SemiBold, CrimsonText_700Bold } from '@expo-google-fonts/crimson-text';
 import { JetBrainsMono_400Regular, JetBrainsMono_500Medium, JetBrainsMono_700Bold } from '@expo-google-fonts/jetbrains-mono';
 import { CormorantGaramond_400Regular, CormorantGaramond_500Medium, CormorantGaramond_600SemiBold } from '@expo-google-fonts/cormorant-garamond';
@@ -26,7 +27,9 @@ import { LedgerModal } from '@/components/chrome/LedgerModal';
 import { RecordModal } from '@/components/chrome/RecordModal';
 import { AIAssistantModal } from '@/components/chrome/AIAssistantModal';
 import { ToastHost } from '@/components/chrome/Toast';
-import { Splash } from '@/components/Splash';
+
+// native splash 保持到字体就绪(自定义开屏首帧渲染后由下方 hideAsync 隐藏),避免闪现空白页
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 function RootNavigator() {
   const { isLoggedIn } = useAuth();
@@ -63,8 +66,10 @@ export default function RootLayout() {
     DMSans_400Regular, DMSans_500Medium, DMSans_700Bold,
   });
 
-  // 开屏展示控制:字体就绪后展示 logo,淡出完成后由 Splash 回调卸载
-  const [showSplash, setShowSplash] = useState(true);
+  // 字体就绪后隐藏 native splash(品牌字已合入 splash 图,无需 JS 层开屏)
+  useEffect(() => {
+    if (fontsLoaded) SplashScreen.hideAsync().catch(() => {});
+  }, [fontsLoaded]);
 
   if (!fontsLoaded) return null;
 
@@ -84,7 +89,6 @@ export default function RootLayout() {
                 <RecordModal />
                 <AIAssistantModal />
                 <ToastHost />
-                {showSplash && <Splash onDone={() => setShowSplash(false)} />}
               </RecordsProvider>
               </UIShellProvider>
             </LedgerProvider>

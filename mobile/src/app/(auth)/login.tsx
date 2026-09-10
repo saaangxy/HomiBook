@@ -183,10 +183,6 @@ export default function LoginScreen() {
                       {showSecret ? <EyeOff size={18} color={colors.mutedForeground} /> : <Eye size={18} color={colors.mutedForeground} />}
                     </Pressable>
                   </View>
-
-                  <Text variant="muted" style={{ fontSize: 12, lineHeight: 18, marginBottom: 16 }}>
-                    已预填当前服务器的账号密码(保存于本机安全存储),可直接登录;如密码过期可修改后重试。
-                  </Text>
                 </>
               ) : (
                 <>
