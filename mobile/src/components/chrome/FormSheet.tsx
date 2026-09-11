@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from 'react';
-import { KeyboardAvoidingView, Modal, Pressable, StyleSheet, View } from 'react-native';
+import { BackHandler, KeyboardAvoidingView, Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
   FadeIn,
   FadeInDown,
@@ -52,8 +52,22 @@ export function FormSheet({ visible, title, onClose, onSave, saveLabel = '保存
 
   const sheetAnim = useAnimatedStyle(() => ({ transform: [{ translateY: translateY.value }] }));
 
+  // Android 返回键关闭(Modal 替换为主 window 覆盖层后,需自行拦截返回键)
+  useEffect(() => {
+    if (!visible) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      onClose();
+      return true;
+    });
+    return () => sub.remove();
+  }, [visible, onClose]);
+
+  // 主 window 覆盖层(替代 RN Modal):Android 上 Modal 的独立 Dialog 窗口在
+  // edge-to-edge 全屏设备上高度会被截断(底部缝隙),改用绝对定位覆盖层
+  if (!visible) return null;
+
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
+    <View style={StyleSheet.absoluteFill}>
       <KeyboardAvoidingView
         style={{ flex: 1, justifyContent: 'flex-end' }}
         behavior="padding"
@@ -97,6 +111,6 @@ export function FormSheet({ visible, title, onClose, onSave, saveLabel = '保存
           </Animated.View>
         </Animated.View>
       </KeyboardAvoidingView>
-    </Modal>
+    </View>
   );
 }

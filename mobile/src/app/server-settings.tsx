@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, Bot, Brain, BookOpen, Database, FolderOpen, Key, Link2, Settings, Wallet } from 'lucide-react-native';
@@ -10,6 +10,8 @@ import { Section, Field, Chips, Btn, ErrorText, OkText, LabeledInput } from '@/c
 import { AccountMappingManager, ApiKeyManager, CategoryMappingManager, DictManager, DICT_GROUPS } from '@/components/settings/Managers';
 import { AIAssistantSettings } from '@/components/settings/AIAssistantSettings';
 import { holidayApi, memoryApi, settingsApi, type UserMemory } from '@/services/settings';
+import { ConfirmProvider, useConfirm } from '@/components/chrome/ConfirmSheet';
+import { showToast } from '@/components/chrome/Toast';
 
 const MEMORY_TYPE_LABELS: Record<string, string> = { habit: '习惯', preference: '偏好', rule: '规则', fact: '事实' };
 
@@ -44,21 +46,21 @@ function MemoryManager() {
     }
   };
 
+  // 删除二次确认(ConfirmSheet 已上提到页面层,通过 useConfirm 触发)
+  const confirm = useConfirm();
   const del = (m: UserMemory) => {
-    Alert.alert('删除记忆', '确定要删除这条记忆吗?', [
-      { text: '取消', style: 'cancel' },
-      {
-        text: '删除', style: 'destructive',
-        onPress: async () => {
-          try {
-            await memoryApi.deleteMemory(m.id);
-            setMemories((prev) => prev.filter((x) => x.id !== m.id));
-          } catch (e: any) {
-            setError(e?.message ?? '删除记忆失败');
-          }
-        },
+    confirm({
+      title: '删除记忆',
+      message: '确定要删除这条记忆吗?',
+      onConfirm: async () => {
+        try {
+          await memoryApi.deleteMemory(m.id);
+          setMemories((prev) => prev.filter((x) => x.id !== m.id));
+        } catch (e: any) {
+          setError(e?.message ?? '删除记忆失败');
+        }
       },
-    ]);
+    });
   };
 
   return (
@@ -111,6 +113,8 @@ function MemoryManager() {
           ))}
         </View>
       )}
+
+      {/* 删除二次确认已上提到页面层 ConfirmProvider */}
     </View>
   );
 }
@@ -143,7 +147,6 @@ function GeneralSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [ok, setOk] = useState('');
   const [cfg, setCfg] = useState({
     registrationOpen: true,
     defaultCurrency: 'CNY',
@@ -174,7 +177,6 @@ function GeneralSettings() {
   const save = async () => {
     setSaving(true);
     setError('');
-    setOk('');
     try {
       await settingsApi.updateConfig({
         registrationOpen: cfg.registrationOpen,
@@ -185,9 +187,9 @@ function GeneralSettings() {
         jwtExpiresIn: cfg.jwtExpiresIn,
         auditLogRetentionDays: cfg.auditLogRetentionDays,
       });
-      setOk('配置已保存');
+      showToast('配置已保存');
     } catch (e: any) {
-      setError(e?.message ?? '保存失败');
+      showToast(`保存失败: ${e?.message ?? '未知错误'}`);
     } finally {
       setSaving(false);
     }
@@ -197,9 +199,9 @@ function GeneralSettings() {
     setSyncing(true);
     try {
       const res = await holidayApi.sync();
-      Alert.alert('同步完成', `导入了 ${res.imported} 条节假日数据`);
+      showToast(`同步完成,导入了 ${res.imported} 条节假日数据`);
     } catch (e: any) {
-      Alert.alert('同步失败', e?.message);
+      showToast(`同步失败: ${e?.message ?? '未知错误'}`);
     } finally {
       setSyncing(false);
     }
@@ -213,7 +215,6 @@ function GeneralSettings() {
   return (
     <View style={{ gap: 12 }}>
       <ErrorText msg={error} />
-      <OkText msg={ok} />
       <Field label="开放注册" desc="关闭后登录页面将隐藏注册入口">
         <Chips options={[{ value: 'true', label: '已开启' }, { value: 'false', label: '已关闭' }]} value={String(cfg.registrationOpen)} onChange={(v) => setCfg((s) => ({ ...s, registrationOpen: v === 'true' }))} />
       </Field>
@@ -270,26 +271,27 @@ function AttachmentManager() {
     }
   };
 
+  // 清理二次确认(ConfirmSheet 已上提到页面层,通过 useConfirm 触发)
+  const confirm = useConfirm();
   const clean = () => {
-    Alert.alert('清理无效附件', `确定要删除所有无效附件吗?将永久删除 ${result?.files ?? 0} 个磁盘文件。`, [
-      { text: '取消', style: 'cancel' },
-      {
-        text: '确认清理', style: 'destructive',
-        onPress: async () => {
-          setCleaning(true);
-          setError('');
-          try {
-            const res = await settingsApi.cleanOrphanAttachments();
-            setCleaned(res);
-            setResult(null);
-          } catch (e: any) {
-            setError(e?.message ?? '清理失败');
-          } finally {
-            setCleaning(false);
-          }
-        },
+    confirm({
+      title: '清理无效附件',
+      message: `确定要删除所有无效附件吗?将永久删除 ${result?.files ?? 0} 个磁盘文件。`,
+      confirmLabel: '确认清理',
+      onConfirm: async () => {
+        setCleaning(true);
+        setError('');
+        try {
+          const res = await settingsApi.cleanOrphanAttachments();
+          setCleaned(res);
+          setResult(null);
+        } catch (e: any) {
+          setError(e?.message ?? '清理失败');
+        } finally {
+          setCleaning(false);
+        }
       },
-    ]);
+    });
   };
 
   return (
@@ -304,6 +306,8 @@ function AttachmentManager() {
         <View style={{ flex: 1 }}><Btn title="查询无效附件" variant="secondary" onPress={query} loading={loading} /></View>
         <View style={{ flex: 1 }}><Btn title="清理所有无效附件" variant="danger" onPress={clean} disabled={cleaning || !result || result.count === 0} loading={cleaning} /></View>
       </View>
+
+      {/* 清理二次确认已上提到页面层 ConfirmProvider */}
     </View>
   );
 }
@@ -328,49 +332,51 @@ export default function ServerSettingsScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      {/* 头部 */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingTop: insets.top + 8, paddingBottom: 12 }}>
-        <Pressable hitSlop={8} onPress={() => router.back()} style={{ width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.muted }}>
-          <ArrowLeft size={17} color={colors.foreground} />
-        </Pressable>
-        <Text style={{ fontSize: 18, fontWeight: '700' }}>服务器管理</Text>
-      </View>
-      <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
-        <Text variant="muted" style={{ fontSize: 11.5, marginBottom: 12 }}>
-          以下为服务端全局配置,影响所有连接此服务器的用户。
-        </Text>
-        <View style={{ gap: 12 }}>
-          <Section icon={<Settings size={15} color={colors.primaryForeground} />} title="通用设置">
-            <GeneralSettings />
-          </Section>
-          <Section icon={<Bot size={15} color={colors.primaryForeground} />} title="AI 助手">
-            <AIAssistantSettings />
-          </Section>
-          <Section icon={<Brain size={15} color={colors.primaryForeground} />} title="AI 记忆">
-            <MemoryManager />
-          </Section>
-          <Section icon={<BookOpen size={15} color={colors.primaryForeground} />} title="字典管理">
-            <DictManager />
-          </Section>
-          <Section icon={<FolderOpen size={15} color={colors.primaryForeground} />} title="附件管理">
-            <AttachmentManager />
-          </Section>
-          <Section icon={<Database size={15} color={colors.primaryForeground} />} title="数据迁移">
-            <Text variant="muted" style={{ fontSize: 12.5 }}>
-              数据导出/导入(备份恢复)涉及大文件传输,请登录网页端在「设置 → 数据迁移」中操作。
-            </Text>
-          </Section>
-          <Section icon={<Key size={15} color={colors.primaryForeground} />} title="API Key 管理">
-            <ApiKeyManager />
-          </Section>
-          <Section icon={<Link2 size={15} color={colors.primaryForeground} />} title="导入分类映射">
-            <CategoryMappingManager dictGroups={DICT_GROUPS.map((g) => g.key)} />
-          </Section>
-          <Section icon={<Wallet size={15} color={colors.primaryForeground} />} title="导入账户映射">
-            <AccountMappingManager />
-          </Section>
+      <ConfirmProvider>
+        {/* 头部 */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingTop: insets.top + 8, paddingBottom: 12 }}>
+          <Pressable hitSlop={8} onPress={() => router.back()} style={{ width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.muted }}>
+            <ArrowLeft size={17} color={colors.foreground} />
+          </Pressable>
+          <Text style={{ fontSize: 18, fontWeight: '700' }}>服务器管理</Text>
         </View>
-      </ScrollView>
+        <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
+          <Text variant="muted" style={{ fontSize: 11.5, marginBottom: 12 }}>
+            以下为服务端全局配置,影响所有连接此服务器的用户。
+          </Text>
+          <View style={{ gap: 12 }}>
+            <Section icon={<Settings size={15} color={colors.primaryForeground} />} title="通用设置">
+              <GeneralSettings />
+            </Section>
+            <Section icon={<Bot size={15} color={colors.primaryForeground} />} title="AI 助手">
+              <AIAssistantSettings />
+            </Section>
+            <Section icon={<Brain size={15} color={colors.primaryForeground} />} title="AI 记忆">
+              <MemoryManager />
+            </Section>
+            <Section icon={<BookOpen size={15} color={colors.primaryForeground} />} title="字典管理">
+              <DictManager />
+            </Section>
+            <Section icon={<FolderOpen size={15} color={colors.primaryForeground} />} title="附件管理">
+              <AttachmentManager />
+            </Section>
+            <Section icon={<Database size={15} color={colors.primaryForeground} />} title="数据迁移">
+              <Text variant="muted" style={{ fontSize: 12.5 }}>
+                数据导出/导入(备份恢复)涉及大文件传输,请登录网页端在「设置 → 数据迁移」中操作。
+              </Text>
+            </Section>
+            <Section icon={<Key size={15} color={colors.primaryForeground} />} title="API Key 管理">
+              <ApiKeyManager />
+            </Section>
+            <Section icon={<Link2 size={15} color={colors.primaryForeground} />} title="导入分类映射">
+              <CategoryMappingManager dictGroups={DICT_GROUPS.map((g) => g.key)} />
+            </Section>
+            <Section icon={<Wallet size={15} color={colors.primaryForeground} />} title="导入账户映射">
+              <AccountMappingManager />
+            </Section>
+          </View>
+        </ScrollView>
+      </ConfirmProvider>
     </View>
   );
 }

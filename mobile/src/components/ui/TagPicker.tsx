@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { Plus, X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -57,9 +57,9 @@ export function TagPicker({ value, onChange, suggestions, placeholder = '选择�
         </Pressable>
       </View>
 
-      {/* 底部弹窗 */}
-      <Modal visible={open} transparent animationType="none" onRequestClose={() => setOpen(false)}>
-        <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+      {/* 底部弹窗(KAV padding 让 sheet 随键盘上移避让) */}
+      <Modal visible={open} transparent animationType="none" onRequestClose={() => setOpen(false)} statusBarTranslucent navigationBarTranslucent>
+        <KeyboardAvoidingView style={{ flex: 1, justifyContent: 'flex-end' }} behavior="padding">
           <Animated.View entering={FadeIn.duration(180)} style={StyleSheet.absoluteFill}>
             <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={() => setOpen(false)} />
           </Animated.View>
@@ -115,7 +115,7 @@ export function TagPicker({ value, onChange, suggestions, placeholder = '选择�
               ))}
             </ScrollView>
           </Animated.View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </>
   );

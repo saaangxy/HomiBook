@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ActivityIndicator, Alert, BackHandler, Dimensions, Image, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, BackHandler, Dimensions, Image, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import Animated, { FadeIn, SlideInDown } from 'react-native-reanimated';
 import { ImagePlus, X } from 'lucide-react-native';
 import { useTheme, haptics, motion } from '@/theme';
@@ -11,6 +11,7 @@ import { DatePicker } from '@/components/ui/DatePicker';
 import { ChipSelect } from '@/components/ui/ChipSelect';
 import { TagPicker } from '@/components/ui/TagPicker';
 import { ImageLightbox, isImageUrl } from '@/components/ui/AttachmentViewer';
+import { showToast } from '@/components/chrome/Toast';
 import { AIAssistant } from '@/components/chat/AIAssistant';
 import { useUIShell, notifyPageRefresh } from './chrome';
 import { useRecords } from '@/stores/records';
@@ -173,13 +174,13 @@ export function RecordModal() {
           const up = await uploadRecordAttachment(asset.uri, fileName, asset.mimeType || 'application/octet-stream');
           uploaded.push({ id: up.id, url: up.url || up.fullUrl, originalFilename: fileName });
         } catch (e: any) {
-          Alert.alert('上传失败', `${fileName}: ${e?.message || '未知错误'}`);
+          showToast(`上传失败 ${fileName}: ${e?.message || '未知错误'}`);
         }
       }
       if (uploaded.length > 0) setFormAttachments((prev) => [...prev, ...uploaded]);
       setUploadingAtt(false);
     } catch (e: any) {
-      Alert.alert('选择文件失败', e?.message || '未知错误');
+      showToast(`选择文件失败: ${e?.message || '未知错误'}`);
       setUploadingAtt(false);
     }
   };

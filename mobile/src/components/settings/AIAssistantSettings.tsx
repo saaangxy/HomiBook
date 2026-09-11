@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Pressable, ScrollView, View } from 'react-native';
 import { Pencil, Plus, Trash2, Zap } from 'lucide-react-native';
-import { useTheme, alpha } from '@/theme';
+import { useTheme } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import {
   aiAdminApi, type ProviderInfo, type ToolInfo, type UserProviderConfig,
 } from '@/services/settings';
-import { Btn, Chips, ErrorText, Field, FieldRow, LabeledInput, OptionModal, useInputStyle } from './shared';
+import { Btn, Chips, ErrorText, Field, FieldRow, LabeledInput, OptionModal, Section, useInputStyle } from './shared';
+import { useConfirm } from '@/components/chrome/ConfirmSheet';
+import { showToast } from '@/components/chrome/Toast';
 
 const LANGUAGES = [
   { value: 'zh-CN', label: '简体中文' },
@@ -32,7 +34,6 @@ export function AIAssistantSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [okMsg, setOkMsg] = useState('');
 
   const [cfg, setCfg] = useState({
     enabled: false,
@@ -103,7 +104,6 @@ export function AIAssistantSettings() {
   const save = async () => {
     setSaving(true);
     setError('');
-    setOkMsg('');
     try {
       await aiAdminApi.updateAIConfig({
         enabled: cfg.enabled,
@@ -118,9 +118,9 @@ export function AIAssistantSettings() {
         maxSteps: parseInt(cfg.maxSteps) || 10,
         disabledTools,
       });
-      setOkMsg('助手配置已保存');
+      showToast('助手配置已保存');
     } catch (e: any) {
-      setError(e?.message ?? '保存失败');
+      showToast(`保存失败: ${e?.message ?? '未知错误'}`);
     } finally {
       setSaving(false);
     }
@@ -178,11 +178,11 @@ export function AIAssistantSettings() {
       if (editing) {
         const updated = await aiAdminApi.updateProviderConfig(editing.id, data);
         setConfigs((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
-        Alert.alert('成功', '模型配置已更新');
+        showToast('模型配置已更新');
       } else {
         const created = await aiAdminApi.createProviderConfig(data);
         setConfigs((prev) => [...prev, created]);
-        Alert.alert('成功', '模型配置已创建');
+        showToast('模型配置已创建');
       }
       setFormOpen(false);
     } catch (e: any) {
@@ -216,9 +216,9 @@ export function AIAssistantSettings() {
     try {
       const res = await aiAdminApi.testProviderConnection({ provider: c.provider, apiKey: '', baseURL: c.baseURL, model: c.models || undefined, configId: c.id });
       setConfigs((prev) => prev.map((x) => (x.id === c.id ? { ...x, testStatus: res.success ? 'pass' : 'fail' } : x)));
-      Alert.alert(res.success ? '测试通过' : '测试失败', res.message);
+      showToast(res.success ? `测试通过: ${res.message}` : `测试失败: ${res.message}`);
     } catch (e: any) {
-      Alert.alert('测试失败', e?.message ?? '测试请求失败');
+      showToast(`测试失败: ${e?.message ?? '测试请求失败'}`);
     } finally {
       setTestingId(null);
     }
@@ -229,25 +229,25 @@ export function AIAssistantSettings() {
       const created = await aiAdminApi.copyProviderConfig(id);
       setConfigs((prev) => [...prev, created]);
     } catch (e: any) {
-      Alert.alert('复制失败', e?.message);
+      showToast(`复制失败: ${e?.message}`);
     }
   };
 
-  const deleteConfig = (c: UserProviderConfig) => {
-    Alert.alert('删除模型配置', `确定要删除「${c.name || providerLabel(c.provider)}」吗?`, [
-      { text: '取消', style: 'cancel' },
-      {
-        text: '删除', style: 'destructive',
-        onPress: async () => {
-          try {
-            await aiAdminApi.deleteProviderConfig(c.id);
-            setConfigs((prev) => prev.filter((x) => x.id !== c.id));
-          } catch (e: any) {
-            Alert.alert('删除失败', e?.message);
-          }
-        },
+  // 删除二次确认(ConfirmSheet 已上提到页面层,通过 useConfirm 触发)
+  const confirm = useConfirm();
+  const confirmDeleteConfig = (c: UserProviderConfig) => {
+    confirm({
+      title: '删除模型配置',
+      message: `确定要删除「${c.name || providerLabel(c.provider)}」吗?`,
+      onConfirm: async () => {
+        try {
+          await aiAdminApi.deleteProviderConfig(c.id);
+          setConfigs((prev) => prev.filter((x) => x.id !== c.id));
+        } catch (e: any) {
+          showToast(`删除失败: ${e?.message}`);
+        }
       },
-    ]);
+    });
   };
 
   const inputStyle = useInputStyle();
@@ -265,7 +265,6 @@ export function AIAssistantSettings() {
   return (
     <View style={{ gap: 14 }}>
       <ErrorText msg={error} />
-      <Text style={{ fontSize: 12, color: colors.income }}>{okMsg}</Text>
 
       {/* 启用开关 */}
       <FieldRow label="启用 AI 助手" desc="开启后首页显示聊天窗口,关闭则隐藏">
@@ -339,7 +338,7 @@ export function AIAssistantSettings() {
                 <Pressable hitSlop={6} onPress={() => copyConfig(c.id)} style={{ width: 30, height: 30, alignItems: 'center', justifyContent: 'center' }}>
                   <Plus size={14} color={colors.mutedForeground} />
                 </Pressable>
-                <Pressable hitSlop={6} onPress={() => deleteConfig(c)} style={{ width: 30, height: 30, alignItems: 'center', justifyContent: 'center' }}>
+                <Pressable hitSlop={6} onPress={() => confirmDeleteConfig(c)} style={{ width: 30, height: 30, alignItems: 'center', justifyContent: 'center' }}>
                   <Trash2 size={14} color={colors.expense} />
                 </Pressable>
               </View>
@@ -359,9 +358,9 @@ export function AIAssistantSettings() {
         </View>
       </FieldRow>
 
-      {/* 工具管理 */}
-      <View style={{ gap: 8 }}>
-        <Field label="工具管理" desc="控制 AI 助手可使用的工具" />
+      {/* 工具管理(默认折叠) */}
+      <Section icon={<Zap size={15} color={colors.primaryForeground} />} title="工具管理">
+        <Text variant="muted" style={{ fontSize: 11.5 }}>控制 AI 助手可使用的工具。点击工具右侧开关启用/禁用。</Text>
         {toolGroups.map((g) => (
           <View key={g.label} style={{ gap: 6 }}>
             <Text variant="muted" style={{ fontSize: 11.5, fontWeight: '600' }}>{g.label}</Text>
@@ -384,7 +383,7 @@ export function AIAssistantSettings() {
             })}
           </View>
         ))}
-      </View>
+      </Section>
 
       <Btn title="保存配置" onPress={save} loading={saving} />
 
@@ -400,6 +399,7 @@ export function AIAssistantSettings() {
 
       {/* 模型配置编辑弹窗 */}
       <Modal visible={formOpen} transparent animationType="fade" onRequestClose={() => setFormOpen(false)}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 }} onPress={() => setFormOpen(false)}>
           <ScrollView keyboardShouldPersistTaps="handled">
             <Pressable style={{ backgroundColor: colors.card, borderRadius: 16, padding: 18, gap: 12 }} onPress={() => {}}>
@@ -450,7 +450,10 @@ export function AIAssistantSettings() {
             </Pressable>
           </ScrollView>
         </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
+
+      {/* 删除二次确认已上提到页面层 ConfirmProvider */}
     </View>
   );
 }

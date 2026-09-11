@@ -1,3 +1,4 @@
+import { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
 import { Pressable, View } from 'react-native';
 import { AlertTriangle } from 'lucide-react-native';
 import { useTheme, alpha } from '@/theme';
@@ -39,5 +40,54 @@ export function ConfirmSheet({ visible, title, message, confirmLabel = '删除',
         </View>
       </View>
     </FormSheet>
+  );
+}
+
+// ── 页面级 Confirm Provider:在作用域内挂载唯一一个 ConfirmSheet ──
+// 避免 ConfirmSheet 渲染在长列表组件内部时,FormSheet 的 absoluteFill 填充的是
+// 组件根 View(被内容撑到几千 px),底部 sheet 落在屏幕外用户需滚动很远才能看到。
+// 用法:页面顶层包 <ConfirmProvider>,子组件用 useConfirm() 触发。
+export interface ConfirmOptions {
+  title: string;
+  message?: string;
+  confirmLabel?: string;
+  onConfirm: () => void | Promise<void>;
+}
+
+interface ConfirmContextValue {
+  confirm: (opts: ConfirmOptions) => void;
+}
+
+const ConfirmContext = createContext<ConfirmContextValue | null>(null);
+
+/** 调用 confirm({title, message, onConfirm}) 触发二次确认弹窗,必须在 ConfirmProvider 内使用 */
+export function useConfirm() {
+  const ctx = useContext(ConfirmContext);
+  if (!ctx) throw new Error('useConfirm 必须在 ConfirmProvider 内使用');
+  return ctx.confirm;
+}
+
+export function ConfirmProvider({ children }: { children: ReactNode }) {
+  const [opts, setOpts] = useState<ConfirmOptions | null>(null);
+
+  const close = useCallback(() => setOpts(null), []);
+  const handleConfirm = useCallback(() => {
+    const o = opts;
+    setOpts(null);
+    o?.onConfirm();
+  }, [opts]);
+
+  return (
+    <ConfirmContext.Provider value={{ confirm: setOpts }}>
+      {children}
+      <ConfirmSheet
+        visible={!!opts}
+        title={opts?.title ?? ''}
+        message={opts?.message}
+        confirmLabel={opts?.confirmLabel}
+        onConfirm={handleConfirm}
+        onClose={close}
+      />
+    </ConfirmContext.Provider>
   );
 }

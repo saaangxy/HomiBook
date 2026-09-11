@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Dimensions, Image, Modal, Pressable, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Dimensions, Image, Modal, Pressable, ScrollView, View } from 'react-native';
 import { Download, FileText, X } from 'lucide-react-native';
 import { useTheme } from '@/theme';
 import { Text } from '@/components/ui/Text';
@@ -21,6 +21,22 @@ export function isImageUrl(url: string): boolean {
   return /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(url);
 }
 
+/** 弹窗内嵌错误轻提示:本组件基于 RN Modal(独立原生窗口,盖住主 window 的全局 ToastHost),
+ *  下载失败提示需就地渲染;3s 自动消失,样式与全局 Toast 一致 */
+function InlineErrorToast({ error, onExpire }: { error: string; onExpire: () => void }) {
+  useEffect(() => {
+    const t = setTimeout(onExpire, 3000);
+    return () => clearTimeout(t);
+  }, [error, onExpire]);
+  return (
+    <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, bottom: 40, alignItems: 'center' }}>
+      <View style={{ maxWidth: '82%', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 999, backgroundColor: 'rgba(22,22,26,0.92)' }}>
+        <Text style={{ fontSize: 13, color: '#fff', textAlign: 'center' }} numberOfLines={2}>{error}</Text>
+      </View>
+    </View>
+  );
+}
+
 /** 全屏大图预览:多图左右翻页 + 下载当前图 */
 export function ImageLightbox({ images, initialIndex = 0, onClose }: {
   images: string[];
@@ -32,6 +48,7 @@ export function ImageLightbox({ images, initialIndex = 0, onClose }: {
   const [index, setIndex] = useState(initialIndex);
   const [downloading, setDownloading] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [dlError, setDlError] = useState('');
   const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
@@ -50,7 +67,7 @@ export function ImageLightbox({ images, initialIndex = 0, onClose }: {
     try {
       await downloadAttachment(src, src.split('/').pop() || `image-${Date.now()}.jpg`, mode);
     } catch (e: any) {
-      Alert.alert('下载失败', e?.message || '未知错误');
+      setDlError(`下载失败: ${e?.message || '未知错误'}`);
     } finally {
       setDownloading(false);
     }
@@ -87,6 +104,8 @@ export function ImageLightbox({ images, initialIndex = 0, onClose }: {
           ))}
         </ScrollView>
       </View>
+      {/* 下载失败轻提示(就地渲染,见 InlineErrorToast 注释) */}
+      {dlError ? <InlineErrorToast error={dlError} onExpire={() => setDlError('')} /> : null}
       {/* 保存方式选择(保存到设备/系统分享) */}
       <DownloadModeSheet visible={sheetOpen} title="保存图片" onMode={runDownload} onClose={() => setSheetOpen(false)} />
     </Modal>
@@ -104,6 +123,7 @@ export function AttachmentViewer({ visible, attachments, onClose }: {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   // 待保存附件(先弹保存方式选择)
   const [dlTarget, setDlTarget] = useState<AttachmentItem | null>(null);
+  const [dlError, setDlError] = useState('');
 
   useEffect(() => {
     if (!visible) setPreviewIdx(null);
@@ -125,7 +145,7 @@ export function AttachmentViewer({ visible, attachments, onClose }: {
     try {
       await downloadAttachment(att.url, att.originalFilename, mode);
     } catch (e: any) {
-      Alert.alert('下载失败', e?.message || '未知错误');
+      setDlError(`下载失败: ${e?.message || '未知错误'}`);
     } finally {
       setDownloadingId(null);
     }
@@ -187,6 +207,8 @@ export function AttachmentViewer({ visible, attachments, onClose }: {
             </View>
           </ScrollView>
         </View>
+        {/* 下载失败轻提示(就地渲染,见 InlineErrorToast 注释) */}
+        {dlError ? <InlineErrorToast error={dlError} onExpire={() => setDlError('')} /> : null}
       </Modal>
       {/* 全屏预览层(位于网格之上) */}
       {previewIdx !== null && imageUrls.length > 0 && (

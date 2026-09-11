@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { BackHandler, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, alpha, haptics, sheetShadow, motion } from '@/theme';
@@ -121,8 +121,22 @@ export function FilterSheet({ visible, initial, onApply, onClose }: FilterSheetP
 
   const appliedCount = countActiveFilters(draft);
 
+  // Android 返回键关闭(Modal 替换为主 window 覆盖层后,需自行拦截返回键)
+  useEffect(() => {
+    if (!visible) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      onClose();
+      return true;
+    });
+    return () => sub.remove();
+  }, [visible, onClose]);
+
+  // 主 window 覆盖层(替代 RN Modal):Android 上 Modal 的独立 Dialog 窗口在
+  // edge-to-edge 全屏设备上高度会被截断(底部缝隙),改用绝对定位覆盖层
+  if (!visible) return null;
+
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
+    <View style={StyleSheet.absoluteFill}>
       <KeyboardAvoidingView style={{ flex: 1, justifyContent: 'flex-end' }} behavior="padding">
         <Animated.View entering={FadeIn.duration(180)} style={StyleSheet.absoluteFill}>
           <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={onClose} />
@@ -219,6 +233,6 @@ export function FilterSheet({ visible, initial, onApply, onClose }: FilterSheetP
           </View>
         </Animated.View>
       </KeyboardAvoidingView>
-    </Modal>
+    </View>
   );
 }

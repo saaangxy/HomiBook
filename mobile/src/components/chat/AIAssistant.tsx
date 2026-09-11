@@ -1,21 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, ActivityIndicator, FlatList, Image, Linking, NativeScrollEvent, NativeSyntheticEvent, Platform, Pressable, ScrollView, Switch, TextInput, View } from 'react-native';
+import { ActivityIndicator, FlatList, Image, NativeScrollEvent, NativeSyntheticEvent, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
 import Markdown from 'react-native-markdown-display';
-import { AlertTriangle, Bot, Brain, CheckCircle2, ChevronDown, Copy, ExternalLink, FileSpreadsheet, FileText, FileUp, Globe, HelpCircle, ImagePlus, List, Loader2, MessageSquareMore, Plus, RefreshCw, Search, Send, Sparkles, StopCircle, Trash2, Wrench, X, XCircle } from 'lucide-react-native';
-import { useTheme, alpha, haptics, semanticTypeColor } from '@/theme';
-import { accountLabel, isMultiOwnerAccounts } from '@/lib/account';
+import { Bot, Brain, ChevronDown, FileText, FileUp, Globe, ImagePlus, List, Plus, RefreshCw, Send, Sparkles, StopCircle, Trash2, X } from 'lucide-react-native';
+import { useTheme, alpha, haptics } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { FormSheet } from '@/components/chrome/FormSheet';
+import { showToast } from '@/components/chrome/Toast';
 import { ImageLightbox, isImageUrl } from '@/components/ui/AttachmentViewer';
 import { useChatStore, useSessionView } from '@/stores/chat';
 import { useUIShell } from '@/components/chrome/chrome';
-import { uploadImage, loadToolNames, getToolDisplayName } from '@/services/chat';
+import { uploadImage, loadToolNames } from '@/services/chat';
 import { uploadImportTempFile } from '@/services/import';
 import { DownloadModeSheet } from '@/components/chrome/DownloadModeSheet';
 import { downloadAttachment, resolveRemoteUrl, type DownloadMode } from '@/services/http';
-import type { Message, MessageBlock, ToolCallEntry } from '@homibook/core';
-import { ACCOUNT_TYPE_LABELS, TYPE_TO_GROUP, IMPORT_SOURCE_LABELS, buildImportMessage, initAccountResolutions, parseImportMessage, resolveToolCallStatus, unresolvedAccountCount, type AccountResolution } from '@homibook/core';
-import type { Ledger } from '@/types';
+import type { Message, MessageBlock } from '@homibook/core';
+import {IMPORT_SOURCE_LABELS, buildImportMessage, parseImportMessage } from '@homibook/core';
 
 // AI 财务助手聊天主体(可嵌入:AI 弹窗 / 记一笔弹窗 AI tab)
 // 复刻 web 端 ChatWindow 能力:流式/Markdown/思考块/工具卡(确认·补充信息·切换账本)/小票上传/账单导入/联网搜索/重试/分支
@@ -138,7 +137,7 @@ export function AIAssistant({ onClose }: { onClose?: () => void }) {
       const up = await uploadImage(asset.uri, fileName, asset.mimeType || 'application/octet-stream');
       setPendingImages((p) => [...p, { id: up.id, uri: resolveRemoteUrl(up.fullUrl || up.url), fullUrl: up.fullUrl || up.url, originalFilename: fileName }]);
     } catch (e: any) {
-      Alert.alert('上传失败', e?.message || '未知错误');
+      showToast(`上传失败: ${e?.message || '未知错误'}`);
     }
   };
 
@@ -152,7 +151,7 @@ export function AIAssistant({ onClose }: { onClose?: () => void }) {
     try {
       await downloadAttachment(t.path, t.name, mode);
     } catch (e: any) {
-      Alert.alert('下载失败', e?.message || '未知错误');
+      showToast(`下载失败: ${e?.message || '未知错误'}`);
     }
   };
 
@@ -182,7 +181,7 @@ export function AIAssistant({ onClose }: { onClose?: () => void }) {
       // 发送格式化消息(fileId 进文本,AI 解析后调用 preview_import)
       sendText(buildImportMessage({ fileId: up.fileId, source, fileName: up.filename }));
     } catch (e: any) {
-      Alert.alert('导入失败', e?.message || '未知错误');
+      showToast(`导入失败: ${e?.message || '未知错误'}`);
     }
   };
 

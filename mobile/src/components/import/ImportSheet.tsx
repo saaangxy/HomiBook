@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { Check, CheckCircle2, ChevronDown, FileText } from 'lucide-react-native';
 import { useTheme, alpha, haptics, semanticTypeColor } from '@/theme';
 import { Text } from '@/components/ui/Text';
@@ -86,9 +86,10 @@ function OptionPickerSheet({
   }, [options]);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={onClose} />
-      <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: '65%', backgroundColor: colors.card, borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingBottom: 30 }}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent navigationBarTranslucent>
+      <KeyboardAvoidingView style={{ flex: 1, justifyContent: 'flex-end' }} behavior="padding">
+      <Pressable style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={onClose} />
+      <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: '65%', backgroundColor: colors.card, borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingBottom: 12 }}>
         <View style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 8 }}>
           <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: colors.muted }} />
           <Text style={{ fontSize: 15, fontWeight: '700', marginTop: 8 }}>{title}</Text>
@@ -116,6 +117,7 @@ function OptionPickerSheet({
           ))}
         </ScrollView>
       </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

@@ -1,11 +1,12 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { RefreshControl, ScrollView, View, Pressable, Alert, TextInput } from 'react-native';
+import { RefreshControl, ScrollView, View, Pressable, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIsFocused } from 'expo-router';
 import { Plus, Pencil, Trash2, Search, X } from 'lucide-react-native';
 import { useTheme, alpha } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ConfirmSheet } from '@/components/chrome/ConfirmSheet';
 import { ChipSelect } from '@/components/ui/ChipSelect';
 import { DatePicker } from '@/components/ui/DatePicker';
 import { TagPicker } from '@/components/ui/TagPicker';
@@ -55,6 +56,11 @@ export default function BudgetPage() {
   const [formEndDate, setFormEndDate] = useState('');
   const [formRemark, setFormRemark] = useState('');
   const [formError, setFormError] = useState('');
+
+  // 危险操作二次确认(ConfirmSheet 统一替代系统 Alert)
+  const [confirm, setConfirm] = useState<{
+    title: string; message?: string; confirmLabel?: string; onConfirm: () => void;
+  } | null>(null);
   const [formSaving, setFormSaving] = useState(false);
 
   // ── 批量添加 ──
@@ -185,15 +191,14 @@ export default function BudgetPage() {
   }, []);
 
   const handleDelete = useCallback((budget: BudgetItem) => {
-    Alert.alert('删除预算', `确定要删除「${budget.name}」吗？此操作不可撤销。`, [
-      { text: '取消', style: 'cancel' },
-      {
-        text: '删除', style: 'destructive', onPress: async () => {
-          await deleteBudgetApi(budget.id);
-          reload();
-        },
+    setConfirm({
+      title: '删除预算',
+      message: `确定要删除「${budget.name}」吗？此操作不可撤销。`,
+      onConfirm: async () => {
+        await deleteBudgetApi(budget.id);
+        reload();
       },
-    ]);
+    });
   }, [reload]);
 
   // ── 批量添加 ──
@@ -650,6 +655,16 @@ export default function BudgetPage() {
           )}
         </ScrollView>
       </FormSheet>
+
+      {/* 危险操作二次确认 */}
+      <ConfirmSheet
+        visible={!!confirm}
+        title={confirm?.title ?? ''}
+        message={confirm?.message}
+        confirmLabel={confirm?.confirmLabel}
+        onConfirm={() => { const c = confirm; setConfirm(null); c?.onConfirm(); }}
+        onClose={() => setConfirm(null)}
+      />
     </SafeAreaView>
   );
 }

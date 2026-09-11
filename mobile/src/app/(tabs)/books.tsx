@@ -1,13 +1,15 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import {
-  ScrollView, View, Pressable, Alert, TextInput,
+  ScrollView, View, Pressable, TextInput, Keyboard, Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
-import { BookPlus, Pencil, Trash2, Users, Link, Copy, LogOut, Crown, UserCheck, Plus, RefreshCw } from 'lucide-react-native';
+import { BookPlus, Pencil, Trash2, Users, Link, Copy, LogOut, Crown, UserCheck, Plus, RefreshCw, X } from 'lucide-react-native';
 import { useTheme, alpha } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ConfirmSheet } from '@/components/chrome/ConfirmSheet';
+import { showToast } from '@/components/chrome/Toast';
 import { useUIShell } from '@/components/chrome/chrome';
 import { useAuth } from '@/stores/auth';
 import {
@@ -30,6 +32,18 @@ export default function BooksPage() {
   const [joinCode, setJoinCode] = useState('');
   const [addEmail, setAddEmail] = useState('');
 
+  // 键盘高度:e2e 下 adjustResize 不生效,底部弹层需自行避让(同 server/profile 页方案)
+  const winH = useRef(Dimensions.get('window').height).current;
+  const [kbH, setKbH] = useState(0);
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', (e) => setKbH(e.endCoordinates.height));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKbH(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+
   // 成员列表 + 分享码:打开管理弹窗时从后端加载
   const [members, setMembers] = useState<LedgerMember[]>([]);
   const [shareCodes, setShareCodes] = useState<ShareCodeItem[]>([]);
@@ -38,6 +52,11 @@ export default function BooksPage() {
     fetchBookMembers(managing.id).then(setMembers);
     listShareCodesApi(managing.id).then(setShareCodes);
   }, [managing]);
+
+  // 危险操作二次确认(ConfirmSheet 统一替代系统 Alert)
+  const [confirm, setConfirm] = useState<{
+    title: string; message?: string; confirmLabel?: string; onConfirm: () => void;
+  } | null>(null);
 
   // ── CRUD ──
   const handleCreate = useCallback(() => {
@@ -54,29 +73,29 @@ export default function BooksPage() {
 
   const handleDelete = useCallback((ledger: Ledger) => {
     if (ledger.role !== 'OWNER') return;
-    Alert.alert('删除账本', `确定要删除「${ledger.name}」吗？此操作不可恢复。`, [
-      { text: '取消', style: 'cancel' },
-      { text: '删除', style: 'destructive', onPress: async () => { await deleteBookApi(ledger.id); } },
-    ]);
+    setConfirm({
+      title: '删除账本',
+      message: `确定要删除「${ledger.name}」吗？此操作不可恢复。`,
+      onConfirm: () => deleteBookApi(ledger.id),
+    });
   }, []);
 
   const handleLeave = useCallback((ledger: Ledger) => {
     if (ledger.role === 'OWNER') return;
-    Alert.alert('退出账本', `确定要退出「${ledger.name}」吗？`, [
-      { text: '取消', style: 'cancel' },
-      {
-        text: '退出', style: 'destructive',
-        onPress: async () => {
-          // 当前用户对应成员 id:退出=移除自己
-          const ms = await fetchBookMembers(ledger.id).catch(() => []);
-          const me = ms.find((m) => m.userId === user?.id);
-          if (me) {
-            await removeBookMemberApi(ledger.id, me.id).catch(() => {});
-            await refreshLedgers();
-          }
-        },
+    setConfirm({
+      title: '退出账本',
+      message: `确定要退出「${ledger.name}」吗？`,
+      confirmLabel: '退出',
+      onConfirm: async () => {
+        // 当前用户对应成员 id:退出=移除自己
+        const ms = await fetchBookMembers(ledger.id).catch(() => []);
+        const me = ms.find((m) => m.userId === user?.id);
+        if (me) {
+          await removeBookMemberApi(ledger.id, me.id).catch(() => {});
+          await refreshLedgers();
+        }
       },
-    ]);
+    });
   }, [user, refreshLedgers]);
 
   const handleJoin = useCallback(async () => {
@@ -88,6 +107,7 @@ export default function BooksPage() {
 
   const handleCopyCode = useCallback(async (code: string) => {
     await Clipboard.setStringAsync(code);
+    showToast('分享码已复制');
   }, []);
 
   // ── 渲染辅助 ──
@@ -144,9 +164,19 @@ export default function BooksPage() {
   );
 
   const renderManageSheet = () => managing && (
-    <View style={{ padding: 20, gap: 16 }}>
+    // 内容较长(分享码+成员列表)且键盘弹出时会挤压,包一层可滚动容器,高度随键盘收缩
+    <ScrollView
+      keyboardShouldPersistTaps="handled"
+      nestedScrollEnabled
+      style={{ maxHeight: Math.min(640, winH - 140 - kbH) }}
+      contentContainerStyle={{ padding: 20, gap: 16 }}
+    >
+      <View style={{ gap: 16 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         <Text style={{ fontSize: 18, fontWeight: '700', color: colors.foreground, flex: 1 }}>{managing.name}</Text>
+        <Pressable onPress={() => setManaging(null)} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.muted }}>
+          <X size={17} color={colors.mutedForeground} />
+        </Pressable>
       </View>
       {/* 分享码管理(OWNER 可生成/删除) */}
       <View style={{ gap: 8 }}>
@@ -173,7 +203,12 @@ export default function BooksPage() {
                 <Copy size={14} color={colors.primary} />
               </Pressable>
               {managing.role === 'OWNER' && (
-                <Pressable onPress={async () => { await deleteShareCodeApi(managing.id, sc.id); setShareCodes(await listShareCodesApi(managing.id)); }} style={{ padding: 4 }}>
+                <Pressable onPress={() => setConfirm({
+                  title: '删除分享码',
+                  message: `确定要删除分享码「${sc.code}」吗？删除后该码将失效。`,
+                  confirmLabel: '删除',
+                  onConfirm: async () => { await deleteShareCodeApi(managing.id, sc.id); setShareCodes(await listShareCodesApi(managing.id)); },
+                })} style={{ padding: 4 }}>
                   <Trash2 size={14} color={colors.destructive} />
                 </Pressable>
               )}
@@ -223,10 +258,12 @@ export default function BooksPage() {
                   </Pressable>
                 )}
                 <Pressable onPress={() => {
-                  Alert.alert('移除成员', `确定移除「${m.nickname}」吗？`, [
-                    { text: '取消', style: 'cancel' },
-                    { text: '移除', style: 'destructive', onPress: async () => { await removeBookMemberApi(managing.id, m.id).catch(() => {}); setMembers(await fetchBookMembers(managing.id)); } },
-                  ]);
+                  setConfirm({
+                    title: '移除成员',
+                    message: `确定移除「${m.nickname}」吗？`,
+                    confirmLabel: '移除',
+                    onConfirm: async () => { await removeBookMemberApi(managing.id, m.id).catch(() => {}); setMembers(await fetchBookMembers(managing.id)); },
+                  });
                 }}>
                   <Trash2 size={14} color={colors.destructive} />
                 </Pressable>
@@ -235,13 +272,8 @@ export default function BooksPage() {
           </View>
         ))}
       </View>
-      <Pressable onPress={() => setManaging(null)} style={{
-        alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 20, borderRadius: 8,
-        backgroundColor: colors.muted,
-      }}>
-        <Text style={{ color: colors.foreground, fontWeight: '500' }}>关闭</Text>
-      </Pressable>
-    </View>
+      </View>
+    </ScrollView>
   );
 
   // ── 主渲染 ──
@@ -342,7 +374,7 @@ export default function BooksPage() {
           <Pressable style={{
             position: 'absolute', bottom: 0, left: 0, right: 0,
             backgroundColor: colors.background, borderTopLeftRadius: 20, borderTopRightRadius: 20,
-            padding: 4,
+            padding: 4, paddingBottom: kbH,
           }} onPress={() => {}}>
             {activeSheet === 'create' && renderFormSheet('创建账本', handleCreate)}
             {activeSheet === 'edit' && renderFormSheet('编辑账本', handleEdit)}
@@ -351,6 +383,16 @@ export default function BooksPage() {
           </Pressable>
         </Pressable>
       )}
+
+      {/* 危险操作二次确认 */}
+      <ConfirmSheet
+        visible={!!confirm}
+        title={confirm?.title ?? ''}
+        message={confirm?.message}
+        confirmLabel={confirm?.confirmLabel}
+        onConfirm={() => { const c = confirm; setConfirm(null); c?.onConfirm(); }}
+        onClose={() => setConfirm(null)}
+      />
     </SafeAreaView>
   );
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Platform, Pressable, RefreshControl, View } from 'react-native';
+import { ActivityIndicator, FlatList, Platform, Pressable, RefreshControl, View } from 'react-native';
 import { useIsFocused } from 'expo-router';
 import { ArrowUpRight, ArrowDownRight, ArrowLeftRight, SlidersHorizontal, X, Copy, Trash2, CopyMinus, FileUp, Download, Save, Share2 } from 'lucide-react-native';
 import { useTheme, alpha, haptics } from '@/theme';
@@ -17,6 +17,7 @@ import { FilterSheet, countActiveFilters, emptyFilters, type RecordFilters } fro
 import { DedupSheet } from '@/components/DedupSheet';
 import { ImportSheet } from '@/components/import/ImportSheet';
 import { ConfirmSheet } from '@/components/chrome/ConfirmSheet';
+import { showToast } from '@/components/chrome/Toast';
 import { FormSheet } from '@/components/chrome/FormSheet';
 import { exportRecordsCsv, type ExportMode } from '@/services/import';
 import { formatMoneyShort } from '@/lib/format';
@@ -180,7 +181,7 @@ export default function RecordsScreen() {
       );
       haptics.success();
     } catch (e: any) {
-      Alert.alert('导出失败', e.message?.slice(0, 200) || '未知错误');
+      showToast(`导出失败: ${e.message?.slice(0, 200) || '未知错误'}`);
     } finally {
       setExporting(false);
     }

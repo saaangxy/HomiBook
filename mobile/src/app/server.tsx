@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Keyboard, Modal, Platform, Pressable, TextInput, View, ScrollView, ActivityIndicator } from 'react-native';
+import { Keyboard, Modal, Platform, Pressable, TextInput, View, ScrollView, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -102,7 +102,7 @@ export default function ServerScreen() {
     try {
       await removeServer(id);
     } catch (e: any) {
-      Alert.alert('删除失败', e?.message || '未知错误');
+      showToast(`删除失败: ${e?.message || '未知错误'}`);
     }
   };
 
@@ -140,7 +140,7 @@ export default function ServerScreen() {
       if (!ok) throw new Error('当前环境不支持保存文件');
       await Sharing.shareAsync(cacheUri, { mimeType: 'application/json', dialogTitle: fileName });
     } catch (e: any) {
-      Alert.alert('导出失败', e?.message || '未知错误');
+      showToast(`导出失败: ${e?.message || '未知错误'}`);
     }
   };
 
@@ -172,7 +172,7 @@ export default function ServerScreen() {
       haptics.success();
       showToast(skipped > 0 ? `导入 ${added} 个,跳过 ${skipped} 个(重复或格式无效)` : `成功导入 ${added} 个服务器配置`);
     } catch (e: any) {
-      Alert.alert('导入失败', e?.message || '未知错误');
+      showToast(`导入失败: ${e?.message || '未知错误'}`);
     } finally {
       setImporting(false);
     }

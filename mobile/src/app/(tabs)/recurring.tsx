@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Pressable, RefreshControl, ScrollView, Switch, TextInput, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, Switch, TextInput, View, Keyboard, Dimensions } from 'react-native';
 import { Plus, ArrowUpRight, ArrowDownRight, ArrowLeftRight, Trash2, FileText, Pencil } from 'lucide-react-native';
 import { useTheme, alpha } from '@/theme';
 import { Screen } from '@/components/Screen';
@@ -12,6 +12,7 @@ import { DatePicker } from '@/components/ui/DatePicker';
 import { CronBuilder } from '@/components/ui/CronBuilder';
 import { TagPicker } from '@/components/ui/TagPicker';
 import { FormSheet } from '@/components/chrome/FormSheet';
+import { ConfirmSheet } from '@/components/chrome/ConfirmSheet';
 import { useUIShell } from '@/components/chrome/chrome';
 import {
   createRecurringApi, deleteRecurringApi, fetchRecurring, fetchRepaymentPlanApi,
@@ -41,6 +42,18 @@ export default function RecurringScreen() {
   const accounts = useMemo(() => allAccounts.filter((a) => a.status === 'ACTIVE'), [allAccounts]);
 
   const [items, setItems] = useState<RecurringTransaction[]>([]);
+
+  // 键盘高度:(tabs) 内 FormSheet 的 KeyboardAvoidingView 不生效,编辑表单需手动收缩(同账本管理页方案)
+  const winH = useRef(Dimensions.get('window').height).current;
+  const [kbH, setKbH] = useState(0);
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', (e) => setKbH(e.endCoordinates.height));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKbH(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   // ── 表单状态 ──
   const [sheet, setSheet] = useState(false);
@@ -232,20 +245,19 @@ export default function RecurringScreen() {
     reload();
   };
 
+  // 删除二次确认(ConfirmSheet 统一替代系统 Alert);先关表单再弹确认(避免叠加)
+  const [removing, setRemoving] = useState<RecurringTransaction | null>(null);
   const remove = (t: RecurringTransaction) => {
-    // 先关表单,再弹确认(避免叠加)
     setSheet(false);
-    Alert.alert('删除固定收支', `确定要删除「${t.name}」吗？已生成的流水不会被删除。`, [
-      { text: '取消', style: 'cancel' },
-      {
-        text: '删除', style: 'destructive',
-        onPress: async () => {
-          await deleteRecurringApi(t.id);
-          setEditing(null);
-          reload();
-        },
-      },
-    ]);
+    setRemoving(t);
+  };
+  const confirmRemove = async () => {
+    const t = removing;
+    if (!t) return;
+    setRemoving(null);
+    await deleteRecurringApi(t.id);
+    setEditing(null);
+    reload();
   };
 
   const openPlan = (t: RecurringTransaction) => {
@@ -437,7 +449,7 @@ export default function RecurringScreen() {
 
       {/* 新增/编辑 */}
       <FormSheet visible={sheet} title={editing ? '编辑固定收支' : '新增固定收支'} onClose={() => { setSheet(false); setEditing(null); }} onSave={save} saveLabel={editing ? '保存' : '创建'} saveLoading={saving}>
-        <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ maxHeight: 520 }}>
+        <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ maxHeight: Math.min(460, winH - 260 - kbH) }}>
           {/* 固定收支类型(仅创建可选) */}
           {!editing ? (
             <>
@@ -656,6 +668,15 @@ export default function RecurringScreen() {
           </ScrollView>
         )}
       </FormSheet>
+
+      {/* 删除二次确认 */}
+      <ConfirmSheet
+        visible={!!removing}
+        title="删除固定收支"
+        message={`确定要删除「${removing?.name ?? ''}」吗？已生成的流水不会被删除。`}
+        onConfirm={confirmRemove}
+        onClose={() => setRemoving(null)}
+      />
     </Screen>
   );
 }

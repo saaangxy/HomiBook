@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Pressable, RefreshControl, ScrollView, TextInput, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, TextInput, View } from 'react-native';
 import { useIsFocused } from 'expo-router';
 import { Plus, CreditCard, Wallet, MessageCircle, Banknote, TrendingUp, Landmark, Archive, RotateCcw, Trash2, SlidersHorizontal, Pencil } from 'lucide-react-native';
 import { useTheme, alpha } from '@/theme';
@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { FadeInView } from '@/components/FadeInView';
 import { FormSheet } from '@/components/chrome/FormSheet';
+import { ConfirmSheet } from '@/components/chrome/ConfirmSheet';
 import { useUIShell, usePageRefresh } from '@/components/chrome/chrome';
 import { createAccountApi, createAdjustmentApi, deleteAccountApi, fetchAccounts, listAdjustmentsApi, updateAccountApi } from '@/services/records';
 import type { BalanceAdjustment } from '@/services/records';
@@ -156,20 +157,19 @@ export default function AccountsScreen() {
     setSheet(false);
   };
 
+  // 删除二次确认(ConfirmSheet 统一替代系统 Alert);先关表单再弹确认(避免叠加)
+  const [removing, setRemoving] = useState<AccountItem | null>(null);
   const remove = (a: AccountItem) => {
-    // 先关表单,再弹确认(避免叠加)
     setSheet(false);
-    Alert.alert('删除账户', `确定要删除「${a.name}」吗？此操作不可恢复。`, [
-      { text: '取消', style: 'cancel' },
-      {
-        text: '删除', style: 'destructive',
-        onPress: async () => {
-          await deleteAccountApi(a.id);
-          if (bookId) fetchAccounts(bookId).then(setAccounts);
-          setEditing(null);
-        },
-      },
-    ]);
+    setRemoving(a);
+  };
+  const confirmRemove = async () => {
+    const a = removing;
+    if (!a) return;
+    setRemoving(null);
+    await deleteAccountApi(a.id);
+    if (bookId) fetchAccounts(bookId).then(setAccounts);
+    setEditing(null);
   };
 
   // ── 余额调整 ──
@@ -366,6 +366,15 @@ export default function AccountsScreen() {
           ))
         )}
       </FormSheet>
+
+      {/* 删除二次确认 */}
+      <ConfirmSheet
+        visible={!!removing}
+        title="删除账户"
+        message={`确定要删除「${removing?.name ?? ''}」吗？此操作不可恢复。`}
+        onConfirm={confirmRemove}
+        onClose={() => setRemoving(null)}
+      />
     </Screen>
   );
 }

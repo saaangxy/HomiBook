@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Modal, Pressable, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Pressable, TextInput, View } from 'react-native';
 import { Check, ChevronDown, ChevronRight } from 'lucide-react-native';
 import { useTheme, alpha } from '@/theme';
 import { Text } from '@/components/ui/Text';
@@ -87,13 +87,15 @@ export function OptionModal({ visible, title, options, value, onClose, onSelect 
 }) {
   const { colors } = useTheme();
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent navigationBarTranslucent>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
       <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 32 }} onPress={onClose}>
         <Pressable style={{ backgroundColor: colors.card, borderRadius: 16, maxHeight: 420, overflow: 'hidden' }} onPress={() => {}}>
           <Text style={{ fontSize: 15, fontWeight: '700', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.hairline }}>{title}</Text>
           <Pressableish options={options} value={value} onSelect={onSelect} onClose={onClose} />
         </Pressable>
       </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

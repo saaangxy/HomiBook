@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Alert, Pressable, RefreshControl, ScrollView, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Dimensions, Keyboard, Pressable, RefreshControl, ScrollView, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Plus, Trash2, KeyRound, UserCheck, Power, PowerOff } from 'lucide-react-native';
 import { useTheme, alpha } from '@/theme';
@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { FadeInView } from '@/components/FadeInView';
 import { FormSheet } from '@/components/chrome/FormSheet';
+import { ConfirmSheet } from '@/components/chrome/ConfirmSheet';
 import { fetchUsers } from '@/services/admin';
 import type { AdminUser, UserRole } from '@/types';
 
@@ -34,6 +35,18 @@ export default function UsersScreen() {
 
   // 改密字段
   const [newPwd, setNewPwd] = useState('');
+
+  // 键盘高度:e2e 下 adjustResize 不生效,底部弹层需自行避让(同账本管理页方案)
+  const winH = useRef(Dimensions.get('window').height).current;
+  const [kbH, setKbH] = useState(0);
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', (e) => setKbH(e.endCoordinates.height));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKbH(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -90,17 +103,15 @@ export default function UsersScreen() {
     setPwdTarget(null);
   };
 
-  const remove = (u: AdminUser) => {
-    Alert.alert('删除用户', `确定要删除「${u.nickname}」吗？此操作不可恢复。`, [
-      { text: '取消', style: 'cancel' },
-      {
-        text: '删除', style: 'destructive',
-        onPress: () => {
-          setUsers((prev) => prev.filter((x) => x.id !== u.id));
-          setPwdTarget(null);
-        },
-      },
-    ]);
+  // 删除二次确认(ConfirmSheet 统一替代系统 Alert)
+  const [removing, setRemoving] = useState<AdminUser | null>(null);
+  const remove = (u: AdminUser) => setRemoving(u);
+  const confirmRemove = () => {
+    const u = removing;
+    if (!u) return;
+    setRemoving(null);
+    setUsers((prev) => prev.filter((x) => x.id !== u.id));
+    setPwdTarget(null);
   };
 
   // 卡片操作按钮统一样式(对齐账户管理页 opBtn)
@@ -241,9 +252,20 @@ export default function UsersScreen() {
 
       {/* 重置密码 */}
       <FormSheet visible={!!pwdTarget} title={`重置密码 · ${pwdTarget?.nickname ?? ''}`} onClose={() => { setPwdTarget(null); setNewPwd(''); }} onSave={confirmPwd} saveLabel="保存新密码">
-        <Text style={labelStyle}>新密码</Text>
-        <TextInput value={newPwd} onChangeText={setNewPwd} placeholder="输入新密码(≥6位)" placeholderTextColor={colors.mutedForeground} secureTextEntry autoCapitalize="none" style={inputStyle} />
+        <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ maxHeight: Math.min(420, winH - 180 - kbH) }}>
+          <Text style={labelStyle}>新密码</Text>
+          <TextInput value={newPwd} onChangeText={setNewPwd} placeholder="输入新密码(≥6位)" placeholderTextColor={colors.mutedForeground} secureTextEntry autoCapitalize="none" style={inputStyle} />
+        </ScrollView>
       </FormSheet>
+
+      {/* 删除二次确认 */}
+      <ConfirmSheet
+        visible={!!removing}
+        title="删除用户"
+        message={`确定要删除「${removing?.nickname ?? ''}」吗？此操作不可恢复。`}
+        onConfirm={confirmRemove}
+        onClose={() => setRemoving(null)}
+      />
     </Screen>
   );
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Pressable, ScrollView, View } from 'react-native';
 import { Pencil, Plus, Trash2 } from 'lucide-react-native';
 import { useTheme, alpha } from '@/theme';
 import { Text } from '@/components/ui/Text';
@@ -8,6 +8,8 @@ import {
   type AccountMapping, type ApiKeyItem, type CategoryMapping, type DictItem,
 } from '@/services/settings';
 import { Btn, Chips, ErrorText, LabeledInput, OptionModal, useInputStyle } from './shared';
+import { useConfirm } from '@/components/chrome/ConfirmSheet';
+import { showToast } from '@/components/chrome/Toast';
 import * as Clipboard from 'expo-clipboard';
 
 export const DICT_GROUPS = [
@@ -71,6 +73,9 @@ export function DictManager() {
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
 
+  // 危险操作二次确认(ConfirmSheet 已上提到页面层,通过 useConfirm 触发)
+  const confirm = useConfirm();
+
   const load = useCallback(async (g: string) => {
     setLoading(true);
     setError('');
@@ -96,10 +101,10 @@ export function DictManager() {
     try {
       if (editing) {
         await settingsApi.updateDictionaryItem(editing.id, { code: code.trim() || undefined, label: label.trim(), order: parseInt(order) || 0 });
-        Alert.alert('成功', '字典项已更新');
+        showToast('字典项已更新');
       } else {
         await settingsApi.createDictionaryItem({ group, code: code.trim() || label.trim(), label: label.trim(), order: parseInt(order) || 0 });
-        Alert.alert('成功', '字典项已添加');
+        showToast('字典项已添加');
       }
       setAdding(false);
       resetForm();
@@ -112,20 +117,18 @@ export function DictManager() {
   };
 
   const confirmDelete = (item: DictItem) => {
-    Alert.alert('删除字典项', `确定要删除「${item.label}」吗？此操作不可撤销,已使用该值的记录不受影响。`, [
-      { text: '取消', style: 'cancel' },
-      {
-        text: '删除', style: 'destructive',
-        onPress: async () => {
-          try {
-            await settingsApi.deleteDictionaryItem(item.id);
-            load(group);
-          } catch (e: any) {
-            Alert.alert('删除失败', e?.message);
-          }
-        },
+    confirm({
+      title: '删除字典项',
+      message: `确定要删除「${item.label}」吗？此操作不可撤销,已使用该值的记录不受影响。`,
+      onConfirm: async () => {
+        try {
+          await settingsApi.deleteDictionaryItem(item.id);
+          load(group);
+        } catch (e: any) {
+          showToast(e?.message ?? '删除失败');
+        }
       },
-    ]);
+    });
   };
 
   const inputStyle = useInputStyle();
@@ -155,6 +158,7 @@ export function DictManager() {
       )}
 
       <Modal visible={adding} transparent animationType="fade" onRequestClose={() => setAdding(false)}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 28 }} onPress={() => setAdding(false)}>
           <Pressable style={{ backgroundColor: colors.card, borderRadius: 16, padding: 18, gap: 12 }} onPress={() => {}}>
             <Text style={{ fontSize: 16, fontWeight: '700' }}>{editing ? '编辑字典项' : `添加${groupLabel}`}</Text>
@@ -168,7 +172,10 @@ export function DictManager() {
             </View>
           </Pressable>
         </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
+
+      {/* 删除二次确认已上提到页面层 ConfirmProvider */}
     </View>
   );
 }
@@ -184,6 +191,9 @@ export function ApiKeyManager() {
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
   const [created, setCreated] = useState<string | null>(null);
+
+  // 危险操作二次确认(ConfirmSheet 已上提到页面层,通过 useConfirm 触发)
+  const confirm = useConfirm();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -217,20 +227,18 @@ export function ApiKeyManager() {
   };
 
   const confirmDelete = (item: ApiKeyItem) => {
-    Alert.alert('删除 API Key', `确定要删除「${item.name}」吗?使用此密钥的客户端将立即失去访问权限。`, [
-      { text: '取消', style: 'cancel' },
-      {
-        text: '删除', style: 'destructive',
-        onPress: async () => {
-          try {
-            await apikeyApi.delete(item.id);
-            load();
-          } catch (e: any) {
-            Alert.alert('删除失败', e?.message);
-          }
-        },
+    confirm({
+      title: '删除 API Key',
+      message: `确定要删除「${item.name}」吗?使用此密钥的客户端将立即失去访问权限。`,
+      onConfirm: async () => {
+        try {
+          await apikeyApi.delete(item.id);
+          load();
+        } catch (e: any) {
+          showToast(e?.message ?? '删除失败');
+        }
       },
-    ]);
+    });
   };
 
   return (
@@ -239,7 +247,7 @@ export function ApiKeyManager() {
         <View style={{ borderRadius: 12, borderWidth: 1, borderColor: '#eab308', backgroundColor: alpha('#eab308', 0.1), padding: 12, gap: 8 }}>
           <Text style={{ fontSize: 12.5, fontWeight: '600', color: '#a16207' }}>密钥已生成,请立即复制!关闭后将无法再次查看。</Text>
           <Pressable
-            onPress={async () => { await Clipboard.setStringAsync(created); Alert.alert('已复制', '密钥已复制到剪贴板'); }}
+            onPress={async () => { await Clipboard.setStringAsync(created); showToast('密钥已复制到剪贴板'); }}
             style={{ backgroundColor: colors.elevated, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8 }}
           >
             <Text style={{ fontSize: 11.5 }} numberOfLines={2} selectable>{created}</Text>
@@ -271,6 +279,7 @@ export function ApiKeyManager() {
       )}
 
       <Modal visible={creating} transparent animationType="fade" onRequestClose={() => setCreating(false)}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 28 }} onPress={() => setCreating(false)}>
           <Pressable style={{ backgroundColor: colors.card, borderRadius: 16, padding: 18, gap: 12 }} onPress={() => {}}>
             <Text style={{ fontSize: 16, fontWeight: '700' }}>创建 API Key</Text>
@@ -282,7 +291,10 @@ export function ApiKeyManager() {
             </View>
           </Pressable>
         </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
+
+      {/* 删除二次确认已上提到页面层 ConfirmProvider */}
     </View>
   );
 }
@@ -314,6 +326,9 @@ export function CategoryMappingManager({ dictGroups }: { dictGroups: string[] })
   const [dictPick, setDictPick] = useState(false);
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // 危险操作二次确认(ConfirmSheet 已上提到页面层,通过 useConfirm 触发)
+  const confirm = useConfirm();
 
   const load = useCallback(async (src: string) => {
     setLoading(true);
@@ -354,7 +369,7 @@ export function CategoryMappingManager({ dictGroups }: { dictGroups: string[] })
         recordType: recordType === '__all__' ? undefined : recordType,
         targetCategoryCode: targetCode,
       }]);
-      Alert.alert('成功', editing ? '分类映射已更新' : '分类映射已添加');
+      showToast(editing ? '分类映射已更新' : '分类映射已添加');
       setFormOpen(false);
       load(source);
     } catch (e: any) {
@@ -365,20 +380,18 @@ export function CategoryMappingManager({ dictGroups }: { dictGroups: string[] })
   };
 
   const confirmDelete = (m: CategoryMapping) => {
-    Alert.alert('删除分类映射', `确定要删除「${m.sourceCategory}」→ ${m.targetCategoryCode} 的映射吗?`, [
-      { text: '取消', style: 'cancel' },
-      {
-        text: '删除', style: 'destructive',
-        onPress: async () => {
-          try {
-            await importExportApi.deleteMapping(m.id);
-            load(source);
-          } catch (e: any) {
-            Alert.alert('删除失败', e?.message);
-          }
-        },
+    confirm({
+      title: '删除分类映射',
+      message: `确定要删除「${m.sourceCategory}」→ ${m.targetCategoryCode} 的映射吗?`,
+      onConfirm: async () => {
+        try {
+          await importExportApi.deleteMapping(m.id);
+          load(source);
+        } catch (e: any) {
+          showToast(e?.message ?? '删除失败');
+        }
       },
-    ]);
+    });
   };
 
   const openEdit = (m: CategoryMapping) => {
@@ -425,6 +438,7 @@ export function CategoryMappingManager({ dictGroups }: { dictGroups: string[] })
       )}
 
       <Modal visible={formOpen} transparent animationType="fade" onRequestClose={() => setFormOpen(false)}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 24 }} onPress={() => setFormOpen(false)}>
           <ScrollView style={{ maxHeight: '80%' }} keyboardShouldPersistTaps="handled">
             <Pressable style={{ backgroundColor: colors.card, borderRadius: 16, padding: 18, gap: 12 }} onPress={() => {}}>
@@ -452,6 +466,7 @@ export function CategoryMappingManager({ dictGroups }: { dictGroups: string[] })
             </Pressable>
           </ScrollView>
         </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
 
       <OptionModal
@@ -462,6 +477,8 @@ export function CategoryMappingManager({ dictGroups }: { dictGroups: string[] })
         onClose={() => setDictPick(false)}
         onSelect={setTargetCode}
       />
+
+      {/* 删除二次确认已上提到页面层 ConfirmProvider */}
     </View>
   );
 }
@@ -481,6 +498,9 @@ export function AccountMappingManager() {
   const [targetName, setTargetName] = useState('');
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // 危险操作二次确认(ConfirmSheet 已上提到页面层,通过 useConfirm 触发)
+  const confirm = useConfirm();
 
   const load = useCallback(async (src: string) => {
     setLoading(true);
@@ -512,7 +532,7 @@ export function AccountMappingManager() {
         descriptionContains: desc.trim() || undefined,
         targetAccountName: targetName.trim(),
       }]);
-      Alert.alert('成功', editing ? '账户映射已更新' : '账户映射已添加');
+      showToast(editing ? '账户映射已更新' : '账户映射已添加');
       setFormOpen(false);
       resetForm();
       load(source);
@@ -524,20 +544,18 @@ export function AccountMappingManager() {
   };
 
   const confirmDelete = (m: AccountMapping) => {
-    Alert.alert('删除账户映射', `确定要删除「${m.sourceAccountName}」→ ${m.targetAccountName} 的映射吗?`, [
-      { text: '取消', style: 'cancel' },
-      {
-        text: '删除', style: 'destructive',
-        onPress: async () => {
-          try {
-            await importExportApi.deleteAccountMapping(m.id);
-            load(source);
-          } catch (e: any) {
-            Alert.alert('删除失败', e?.message);
-          }
-        },
+    confirm({
+      title: '删除账户映射',
+      message: `确定要删除「${m.sourceAccountName}」→ ${m.targetAccountName} 的映射吗?`,
+      onConfirm: async () => {
+        try {
+          await importExportApi.deleteAccountMapping(m.id);
+          load(source);
+        } catch (e: any) {
+          showToast(e?.message ?? '删除失败');
+        }
       },
-    ]);
+    });
   };
 
   return (
@@ -571,6 +589,7 @@ export function AccountMappingManager() {
       )}
 
       <Modal visible={formOpen} transparent animationType="fade" onRequestClose={() => setFormOpen(false)}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 24 }} onPress={() => setFormOpen(false)}>
           <ScrollView keyboardShouldPersistTaps="handled">
             <Pressable style={{ backgroundColor: colors.card, borderRadius: 16, padding: 18, gap: 12 }} onPress={() => {}}>
@@ -587,6 +606,7 @@ export function AccountMappingManager() {
             </Pressable>
           </ScrollView>
         </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );

@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
 import { Check, CopyMinus } from 'lucide-react-native';
 import { useTheme, alpha, haptics, semanticTypeColor } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { FormSheet } from '@/components/chrome/FormSheet';
+import { ConfirmSheet } from '@/components/chrome/ConfirmSheet';
 import { ChipSelect } from '@/components/ui/ChipSelect';
 import { notifyPageRefresh } from '@/components/chrome/chrome';
 import { useRecords } from '@/stores/records';
@@ -122,29 +123,26 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
     });
   };
 
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
   const handleDelete = () => {
     if (selectedIds.size === 0 || deleting) return;
-    Alert.alert('删除选中记录', `将永久删除 ${selectedIds.size} 条流水,不可恢复。`, [
-      { text: '取消', style: 'cancel' },
-      {
-        text: '删除',
-        style: 'destructive',
-        onPress: async () => {
-          setDeleting(true);
-          setError('');
-          try {
-            await batchDeleteRecordsApi(Array.from(selectedIds));
-            haptics.success();
-            notifyPageRefresh();
-            handleClose();
-          } catch (e: any) {
-            setError(e.message);
-          } finally {
-            setDeleting(false);
-          }
-        },
-      },
-    ]);
+    setConfirmOpen(true);
+  };
+
+  const doDelete = async () => {
+    setDeleting(true);
+    setError('');
+    try {
+      await batchDeleteRecordsApi(Array.from(selectedIds));
+      haptics.success();
+      notifyPageRefresh();
+      handleClose();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const activeFieldCount = DEDUP_TOGGLE_FIELDS.filter((f) => matchFields[f.key]).length + (matchFields.date ? 1 : 0);
@@ -361,6 +359,15 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
           )}
         </Pressable>
       ) : null}
+
+      {/* 删除二次确认 */}
+      <ConfirmSheet
+        visible={confirmOpen}
+        title="删除选中记录"
+        message={`将永久删除 ${selectedIds.size} 条流水,不可恢复。`}
+        onConfirm={doDelete}
+        onClose={() => setConfirmOpen(false)}
+      />
     </FormSheet>
   );
 }
