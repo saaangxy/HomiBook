@@ -18,6 +18,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   toolCalls?: string;
+  reasoningContent?: string;
   modelProvider?: string;
   modelName?: string;
   parentMessageId?: string | null;

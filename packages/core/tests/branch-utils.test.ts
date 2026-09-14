@@ -69,6 +69,24 @@ describe('buildActivePath', () => {
     expect(path).toEqual([root, child, broken]);
   });
 
+  it('多根场景:本地 greeting 后无父消息的临时链完整渲染(首个提问不丢回复)', () => {
+    // 模拟 web 端:会话含本地 greeting(无 dbId),首次提问 user/assistant 均为临时消息且无 parent
+    const greeting = msg('greeting');
+    const user = msg('u1');
+    const assistant = msg('a1', 'u1');
+    const path = buildActivePath([greeting, user, assistant], {});
+    expect(path).toEqual([greeting, user, assistant]);
+  });
+
+  it('断链孤儿带子链时整链渲染', () => {
+    const root = msg('r');
+    const child = msg('c', 'r');
+    const broken = msg('b', 'ghost');
+    const brokenChild = msg('bc', 'b');
+    const path = buildActivePath([root, child, broken, brokenChild], {});
+    expect(path).toEqual([root, child, broken, brokenChild]);
+  });
+
   it('选中分支后继续沿该分支向下', () => {
     const root = msg('r');
     const a = msg('a', 'r');

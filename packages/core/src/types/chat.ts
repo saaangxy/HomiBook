@@ -110,6 +110,7 @@ export interface FinishEvent {
 
 export type ChatSSEEvent =
   | { type: 'text-delta'; delta: string }
+  | { type: 'reasoning-delta'; delta: string }
   | { type: 'tool-call' } & ToolCallEvent
   | ({ type: 'tool-result' } & ToolResultEvent)
   | ({ type: 'tool-confirm-required' } & ToolConfirmRequiredEvent)

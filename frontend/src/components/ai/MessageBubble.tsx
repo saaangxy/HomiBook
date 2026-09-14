@@ -289,9 +289,9 @@ export function MessageBubble({ message, onRetry, onEditSubmit, versions, onSwit
             )}
 
             {/* Token 消耗展示 */}
-            {!isStreaming && message.usage && (
+            {!isStreaming && message.usage && message.usage.inputTokens != null && (
               <div className="text-xs text-muted-foreground/60">
-                Token: ↑{message.usage.inputTokens.toLocaleString()} + ↓{message.usage.outputTokens.toLocaleString()} = {message.usage.totalTokens.toLocaleString()}
+                Token: ↑{message.usage.inputTokens.toLocaleString()} + ↓{message.usage.outputTokens?.toLocaleString() ?? 0} = {message.usage.totalTokens?.toLocaleString() ?? 0}
                 {message.usage.cachedInputTokens != null && message.usage.cachedInputTokens > 0 && (
                   <> | 缓存 {message.usage.cachedInputTokens.toLocaleString()}</>
                 )}

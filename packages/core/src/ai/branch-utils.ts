@@ -13,29 +13,27 @@ export function buildActivePath(allMessages: Message[], branchSelections: Record
 
   const inPath = new Set<string>();
 
-  let current = allMessages.find((m) => !m.parentMessageId || !byId.has(m.parentMessageId));
-  while (current) {
-    path.push(current);
-    inPath.add(current.id);
-    if (current.dbId) inPath.add(current.dbId);
-    const currentId = current.dbId || current.id;
+  // 遍历全部根消息,逐条 walk 到底按序拼接(单根场景行为不变;多根场景——
+  // 如本地 greeting 消息后紧跟无父的临时消息——每条根的子链都能完整渲染)
+  for (const root of allMessages) {
+    if (inPath.has(root.id)) continue;
+    if (root.parentMessageId && byId.has(root.parentMessageId)) continue;
 
-    const children = allMessages.filter((m) => m.parentMessageId === currentId);
-    if (children.length === 0) break;
+    let current: Message | undefined = root;
+    while (current) {
+      if (inPath.has(current.id)) break;
+      path.push(current);
+      inPath.add(current.id);
+      if (current.dbId) inPath.add(current.dbId);
+      const currentId: string = current.dbId || current.id;
 
-    const selectedId = branchSelections[currentId];
-    current = selectedId
-      ? children.find((c) => (c.dbId || c.id) === selectedId) || children[children.length - 1]
-      : children[children.length - 1];
-  }
+      const children: Message[] = allMessages.filter((m) => m.parentMessageId === currentId);
+      if (children.length === 0) break;
 
-  // 回退:仅追加 walk 未选中的根与断链孤儿(父消息不在集合中)按 DB 顺序兜底渲染,
-  // 未选中的兄弟分支不追加(否则切换版本/重试后旧回复会重复显示在活跃路径尾部)
-  for (const m of allMessages) {
-    if (!inPath.has(m.id) && (!m.parentMessageId || !byId.has(m.parentMessageId))) {
-      path.push(m);
-      inPath.add(m.id);
-      if (m.dbId) inPath.add(m.dbId);
+      const selectedId: string | undefined = branchSelections[currentId];
+      current = selectedId
+        ? children.find((c) => (c.dbId || c.id) === selectedId) || children[children.length - 1]
+        : children[children.length - 1];
     }
   }
 

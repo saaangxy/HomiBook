@@ -363,6 +363,7 @@ model ChatMessage {
   accountBook     AccountBook?             @relation(fields: [accountBookId], references: [id], onDelete: SetNull)
   role            String
   content         String @db.MediumText
+  reasoningContent String?  // DeepSeek 推理模型的 reason_content,多轮带 tools 时须回传
   toolCalls       String? @db.MediumText
   tokenCount      Int                      @default(0)
   modelProvider   String?

@@ -133,6 +133,17 @@ type SSEStreamContext = {
   blockIdCounter: { value: number };
 };
 
+/** 把流式 reasoning delta 追加到 thinking 块(与末块合并,否则新建) */
+function appendThinkingToBlocks(blocks: MessageBlock[], content: string, idCounter: { value: number }) {
+  if (!content) return;
+  const last = blocks[blocks.length - 1];
+  if (last && last.type === 'thinking') {
+    blocks[blocks.length - 1] = { ...last, content: last.content + content };
+  } else if (content.trim()) {
+    blocks.push({ id: `block-${++idCounter.value}`, type: 'thinking', content });
+  }
+}
+
 function makeSSEHandler(ctx: SSEStreamContext, onFinish: (event: Extract<SSEEvent, { type: 'finish' }>) => void) {
   const updateMsg = (updater: (msg: Message) => Message) => {
     ctx.get().updateStreamMessage(ctx.sid, ctx.assistantMsgId, updater);
@@ -150,6 +161,14 @@ function makeSSEHandler(ctx: SSEStreamContext, onFinish: (event: Extract<SSEEven
         updateMsg((msg) => {
           const blocks = [...msg.blocks];
           ctx.thinkState.value = processTextDelta(event.delta, ctx.thinkState.value, blocks, ctx.blockIdCounter);
+          return { ...msg, blocks };
+        });
+        break;
+      case 'reasoning-delta':
+        // DeepSeek 等推理模型的思考内容:渲染为 thinking 块
+        updateMsg((msg) => {
+          const blocks = [...msg.blocks];
+          appendThinkingToBlocks(blocks, event.delta, ctx.blockIdCounter);
           return { ...msg, blocks };
         });
         break;
@@ -449,6 +468,10 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       // 后端 ChatMessage -> Message(用 core parseContentIntoBlocks 解析 thinking/tool-call 块)
       const messages: Message[] = msgs.map((m) => {
         const blocks = parseContentIntoBlocks(m.content, m.toolCalls);
+        // 推理模型的思考内容(独立字段):置顶为 thinking 块
+        if (m.role === 'assistant' && m.reasoningContent) {
+          blocks.unshift({ id: nextId(), type: 'thinking' as const, content: m.reasoningContent });
+        }
         return {
           id: nextId(),
           dbId: m.id,

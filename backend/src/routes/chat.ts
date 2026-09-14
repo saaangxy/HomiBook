@@ -122,6 +122,7 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
 
   const toolCallEntries: any[] = []
   let fullText = ''
+  let reasoningContent = ''
   let activeToolCount = 0
   const pendingState = { confirmations: [] as { toolCallId: string; toolName: string; args: any }[], suggestion: null as { toolCallId: string; questions: any[] } | null }
 
@@ -133,6 +134,7 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
       accountBookId,
       role: 'assistant' as const,
       content: fullText,
+      reasoningContent: reasoningContent || null,
       modelProvider: provider,
       modelName: model,
       toolCalls: toolCallsJson,
@@ -287,8 +289,15 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
 
     for await (const part of result.fullStream) {
       if (part.type === 'text-delta') {
-        fullText += part.text
-        sendSSE('text-delta', { delta: part.text })
+        // ai@6 的 fullStream text/reasoning-delta part 字段名均为 text(经实测确认,非 delta)
+        const deltaText = (part as any).text ?? ''
+        fullText += deltaText
+        sendSSE('text-delta', { delta: deltaText })
+      } else if (part.type === 'reasoning-delta') {
+        // DeepSeek 等推理模型的思考内容:累积存库并转发给前端渲染 thinking 块
+        const deltaText = (part as any).text ?? ''
+        reasoningContent += deltaText
+        sendSSE('reasoning-delta', { delta: deltaText })
       } else if (part.type === 'error') {
         // AI SDK 把 API 错误作为流内 error part 发出，不会走 throw
         const errPart = part as { type: 'error'; error: unknown }
@@ -377,7 +386,7 @@ async function buildChatMessages(sessionId: string, pendingToolResults: { toolCa
   const dbMessages = await prisma.chatMessage.findMany({
     where: { sessionId },
     orderBy: { createdAt: 'asc' },
-    select: { id: true, role: true, content: true, toolCalls: true, parentMessageId: true, modelProvider: true, modelName: true, tokenCount: true },
+    select: { id: true, role: true, content: true, reasoningContent: true, toolCalls: true, parentMessageId: true, modelProvider: true, modelName: true, tokenCount: true },
     take: 1000,
   })
 
@@ -394,6 +403,11 @@ async function buildChatMessages(sessionId: string, pendingToolResults: { toolCa
       if (msg.content) {
         const cleanText = stripThinkTags(msg.content)
         if (cleanText) contentParts.push({ type: 'text', text: cleanText })
+      }
+      // 回传推理模型的 reasoning_content（openai-compatible 用 reasoning part 还原为 reasoning_content）
+      if (msg.reasoningContent) {
+        const cleanReasoning = stripThinkTags(msg.reasoningContent)
+        if (cleanReasoning) contentParts.push({ type: 'reasoning', text: cleanReasoning })
       }
       const completedResults: any[] = []
       for (const tc of tcList) {
@@ -1067,7 +1081,7 @@ export async function chatRoutes(app: FastifyInstance) {
     const messages = await prisma.chatMessage.findMany({
       where: { sessionId: id },
       select: {
-        id: true, role: true, content: true, toolCalls: true, modelProvider: true, modelName: true, parentMessageId: true, createdAt: true,
+        id: true, role: true, content: true, reasoningContent: true, toolCalls: true, modelProvider: true, modelName: true, parentMessageId: true, createdAt: true,
         attachments: {
           orderBy: { createdAt: 'asc' },
           select: { attachment: { select: { id: true, path: true, originalFilename: true } } },

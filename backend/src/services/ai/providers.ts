@@ -1,4 +1,4 @@
-import { createOpenAI } from '@ai-sdk/openai'
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { createAnthropic } from '@ai-sdk/anthropic'
 import type { LanguageModelV3 } from '@ai-sdk/provider'
 
@@ -147,10 +147,13 @@ export function createModel(
     return anthropic.languageModel(modelName)
   }
 
-  // OpenAI 兼容供应商
-  const openai = createOpenAI({
+  // OpenAI 兼容供应商（openai-compatible 支持回传 reasoning_content 给推理模型）
+  const openai = createOpenAICompatible({
+    name: 'openai-compatible',
     apiKey,
     baseURL: baseURL.replace(/\/v1\/?$/, '/v1'),
+    // 流式响应携带 usage(prompt_tokens/completion_tokens),否则 finish 事件 usage 为空
+    includeUsage: true,
   })
-  return openai.chat(modelName)
+  return openai.languageModel(modelName)
 }

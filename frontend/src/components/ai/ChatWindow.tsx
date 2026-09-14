@@ -105,6 +105,10 @@ export function ChatWindow() {
         const blocks: MessageBlock[] = m.role === 'assistant'
           ? parseContentIntoBlocks(m.content || '', m.toolCalls)
           : (m.content?.trim() ? [{ id: `hist-0`, type: 'text' as const, content: m.content }] : [])
+        // 推理模型的思考内容(独立字段):置顶为 thinking 块
+        if (m.role === 'assistant' && m.reasoningContent) {
+          blocks.unshift({ id: `hist-thinking-${m.id}`, type: 'thinking' as const, content: m.reasoningContent })
+        }
         return {
           id: m.id,
           dbId: m.id,
