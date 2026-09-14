@@ -1,5 +1,5 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
-import { RefreshControl, ScrollView, View, Pressable, TextInput } from 'react-native';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { RefreshControl, ScrollView, View, Pressable, TextInput, Keyboard, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIsFocused } from 'expo-router';
 import { Plus, Pencil, Trash2, Search, X } from 'lucide-react-native';
@@ -37,6 +37,18 @@ export default function BudgetPage() {
   const isFocused = useIsFocused();
   const now = new Date();
   const [budgets, setBudgets] = useState<BudgetItem[]>([]);
+
+  // 键盘高度:(tabs) 内 FormSheet 的 KeyboardAvoidingView 不生效,添加预算弹窗需手动收缩,避免顶部被状态栏裁切
+  const winH = useRef(Dimensions.get('window').height).current;
+  const [kbH, setKbH] = useState(0);
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', (e) => setKbH(e.endCoordinates.height));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKbH(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
   const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
   const [typeFilter, setTypeFilter] = useState<BudgetType | 'ALL'>('ALL');
   const [search, setSearch] = useState('');
@@ -327,7 +339,7 @@ export default function BudgetPage() {
   );
 
   const renderFormSheet = () => (
-    <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ maxHeight: 520 }}>
+    <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ maxHeight: Math.min(460, winH - 260 - kbH) }}>
       {fieldLabel('类型')}
       {editing ? (
         <Text style={{ fontSize: 14, color: colors.foreground }}>{formType === 'FIXED' ? '固定预算(每月固定支出)' : '自由预算(临时项目预算)'}</Text>
