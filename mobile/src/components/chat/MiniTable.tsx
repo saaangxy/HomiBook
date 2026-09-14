@@ -24,27 +24,31 @@ export function MiniTable({ columns, rows, aligns, maxHeight }: { columns: strin
   const { colors } = useTheme();
   // 列宽 = 表头 + 全部单元格按内容统一计算(行长短不一不再错位)
   const colWidths = computeColWidths([columns, ...rows], columns.length);
+  // 结构:纵向滚动在外(与外层聊天 FlatList 直接协商嵌套滚动,Android 上横向滚动容器夹在中间会断协商链),
+  // 横向滚动在内(方向正交无手势冲突)。代价:纵向滚动时表头会随内容滚出视野。
   return (
-    <View style={{ borderRadius: 8, borderWidth: 1, borderColor: colors.hairline, overflow: 'hidden', ...(maxHeight ? { maxHeight } : {}) }}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} nestedScrollEnabled>
-        <View>
-          <View style={{ flexDirection: 'row', backgroundColor: colors.muted }}>
-            {columns.map((c, i) => (
-              <View key={`${c}-${i}`} style={{ width: colWidths[i], paddingHorizontal: 6, paddingVertical: 4 }}>
-                <Text numberOfLines={1} style={{ fontSize: 10.5, color: colors.mutedForeground, fontWeight: '600', textAlign: aligns?.[i] ?? 'left' }}>{c}</Text>
-              </View>
-            ))}
-          </View>
-          {rows.map((row, ri) => (
-            <View key={ri} style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: colors.hairline }}>
-              {row.map((cell, ci) => (
-                <View key={ci} style={{ width: colWidths[ci], paddingHorizontal: 6, paddingVertical: 4 }}>
-                  <Text numberOfLines={1} style={{ fontSize: 10.5, color: colors.foreground, textAlign: aligns?.[ci] ?? 'left' }}>{cell}</Text>
+    <View style={{ borderRadius: 8, borderWidth: 1, borderColor: colors.hairline, overflow: 'hidden' }}>
+      <ScrollView nestedScrollEnabled style={maxHeight ? { maxHeight } : undefined}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} nestedScrollEnabled>
+          <View>
+            <View style={{ flexDirection: 'row', backgroundColor: colors.muted }}>
+              {columns.map((c, i) => (
+                <View key={`${c}-${i}`} style={{ width: colWidths[i], paddingHorizontal: 6, paddingVertical: 4 }}>
+                  <Text numberOfLines={1} style={{ fontSize: 10.5, color: colors.mutedForeground, fontWeight: '600', textAlign: aligns?.[i] ?? 'left' }}>{c}</Text>
                 </View>
               ))}
             </View>
-          ))}
-        </View>
+            {rows.map((row, ri) => (
+              <View key={ri} style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: colors.hairline }}>
+                {row.map((cell, ci) => (
+                  <View key={ci} style={{ width: colWidths[ci], paddingHorizontal: 6, paddingVertical: 4 }}>
+                    <Text numberOfLines={1} style={{ fontSize: 10.5, color: colors.foreground, textAlign: aligns?.[ci] ?? 'left' }}>{cell}</Text>
+                  </View>
+                ))}
+              </View>
+            ))}
+          </View>
+        </ScrollView>
       </ScrollView>
     </View>
   );

@@ -141,26 +141,29 @@ function ConfirmPreviewView({ preview, submitted, submitting, onConfirm }: {
         // 列宽按表头+全部单元格统一计算,保证各行列对齐
         const colWidths = computeColWidths([parsed.columns, ...parsed.rows.map((r) => r.map((cell) => cell.text))], parsed.columns.length);
         return (
-          <View style={{ borderRadius: 8, borderWidth: 1, borderColor: c.hairline, overflow: 'hidden', maxHeight: 180 }}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} nestedScrollEnabled>
-              <View>
-                <View style={{ flexDirection: 'row', backgroundColor: c.muted }}>
-                  {parsed.columns!.map((col, i) => (
-                    <View key={`${col}-${i}`} style={{ width: colWidths[i], paddingHorizontal: 6, paddingVertical: 4 }}>
-                      <Text numberOfLines={1} style={{ fontSize: 10.5, color: c.mutedForeground, fontWeight: '600' }}>{col}</Text>
-                    </View>
-                  ))}
-                </View>
-                {parsed.rows!.map((row, ri) => (
-                  <View key={ri} style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: c.hairline }}>
-                    {row.map((cell, ci) => (
-                      <View key={ci} style={{ width: colWidths[ci], paddingHorizontal: 6, paddingVertical: 4 }}>
-                        <Text numberOfLines={1} style={{ fontSize: 10.5, color: cellColor(cell.color), fontWeight: cell.highlight ? '700' : '400' }}>{cell.text}</Text>
+          <View style={{ borderRadius: 8, borderWidth: 1, borderColor: c.hairline, overflow: 'hidden' }}>
+            {/* 纵向滚动在外(与外层聊天 FlatList 直接协商嵌套滚动,横向滚动容器夹中间会断 Android 协商链),横向在内(方向正交) */}
+            <ScrollView nestedScrollEnabled style={{ maxHeight: 159 }}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} nestedScrollEnabled>
+                <View>
+                  <View style={{ flexDirection: 'row', backgroundColor: c.muted }}>
+                    {parsed.columns!.map((col, i) => (
+                      <View key={`${col}-${i}`} style={{ width: colWidths[i], paddingHorizontal: 6, paddingVertical: 4 }}>
+                        <Text numberOfLines={1} style={{ fontSize: 10.5, color: c.mutedForeground, fontWeight: '600' }}>{col}</Text>
                       </View>
                     ))}
                   </View>
-                ))}
-              </View>
+                  {parsed.rows!.map((row, ri) => (
+                    <View key={ri} style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: c.hairline }}>
+                      {row.map((cell, ci) => (
+                        <View key={ci} style={{ width: colWidths[ci], paddingHorizontal: 6, paddingVertical: 4 }}>
+                          <Text numberOfLines={1} style={{ fontSize: 10.5, color: cellColor(cell.color), fontWeight: cell.highlight ? '700' : '400' }}>{cell.text}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  ))}
+                </View>
+              </ScrollView>
             </ScrollView>
           </View>
         );
@@ -523,7 +526,7 @@ export function ToolCard({ toolCall, bookId }: { toolCall: ToolCallEntry; bookId
             {data.records?.length > 0 && (
               <MiniTable
                 columns={['#', '日期', '类型', '金额', '账户', '分类', '说明']}
-                rows={data.records.slice(0, 50).map((r: any) => [String(r.rowIndex), r.date, r.type, (r.amount ?? 0).toFixed(2), r.accountName, r.categoryLabel || r.categoryCode || '-', r.remark || '-'])}
+                rows={data.records.map((r: any) => [String(r.rowIndex), r.date, typeLabel(r.type), (r.amount ?? 0).toFixed(2), r.accountName, r.categoryLabel || r.categoryCode || '-', r.remark || '-'])}
                 maxHeight={220}
               />
             )}

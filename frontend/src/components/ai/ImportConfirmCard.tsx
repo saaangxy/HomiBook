@@ -160,7 +160,7 @@ export function ImportConfirmCard({ data, toolCallId }: Props) {
         </Select>
       </div>
 
-      {/* 记录表格（仅显示前50条） */}
+      {/* 记录表格（全量展示，容器内滚动） */}
       {data.records.length > 0 && (
         <div className="rounded border overflow-hidden max-h-64 overflow-y-auto">
           <Table>
@@ -179,7 +179,7 @@ export function ImportConfirmCard({ data, toolCallId }: Props) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.records.slice(0, 50).map((r) => (
+              {data.records.map((r) => (
                 <TableRow key={r.rowIndex}>
                   <TableCell className="text-[10px] px-1.5 py-0.5 text-muted-foreground">{r.rowIndex}</TableCell>
                   <TableCell className="text-[10px] px-1.5 py-0.5">{r.date}</TableCell>
