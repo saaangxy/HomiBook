@@ -22,13 +22,16 @@ import { fetchBudgetTags, fetchRecordTags } from '@/services/records';
 import { useRecords } from '@/stores/records';
 import { formatMoney, formatMoneyShort } from '@/lib/format';
 import type { AccountItem, LoanInterestMethod, LoanPreview, RecordType, RecurringTransaction, RepaymentPlan } from '@/types';
+import {
+  LOAN_INTEREST_METHOD_LABELS as METHOD_LABELS,
+  RECORD_TYPES,
+  RECORD_TYPE_LABELS as TYPE_LABEL,
+  RECURRING_TYPE_LABELS as REC_TYPE_LABELS,
+} from '@homibook/core';
 
-const TYPE_KEYS: RecordType[] = ['INCOME', 'EXPENSE', 'TRANSFER'];
-const TYPE_LABEL: Record<RecordType, string> = { INCOME: '收入', EXPENSE: '支出', TRANSFER: '转账' };
+const TYPE_KEYS: RecordType[] = [...RECORD_TYPES];
 const TYPE_ICON = { INCOME: ArrowUpRight, EXPENSE: ArrowDownRight, TRANSFER: ArrowLeftRight } as const;
 const TYPE_COLOR: Record<RecordType, 'income' | 'expense' | 'transfer'> = { INCOME: 'income', EXPENSE: 'expense', TRANSFER: 'transfer' };
-const REC_TYPE_LABELS = { PERIODIC: '周期', LOAN: '贷款' } as const;
-const METHOD_LABELS: Record<string, string> = { EQUAL_INSTALLMENT: '等额本息', EQUAL_PRINCIPAL: '等额本金' };
 
 const fmtDateTime = (s?: string | null) => (s ? new Date(s).toLocaleString('zh-CN') : '-');
 
@@ -647,7 +650,7 @@ export default function RecurringScreen() {
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 10 }}>
               <Text style={{ fontSize: 12, color: colors.mutedForeground }}>总额 <Text style={{ fontWeight: '600', color: colors.foreground }}>{formatMoney(planTarget.loanTotalAmount ?? 0)}</Text></Text>
               <Text style={{ fontSize: 12, color: colors.mutedForeground }}>剩余 <Text style={{ fontWeight: '600', color: colors.foreground }}>{formatMoney(planTarget.loanRemainingAmount ?? 0)}</Text></Text>
-              <Text style={{ fontSize: 12, color: colors.mutedForeground }}>方式 <Text style={{ fontWeight: '600', color: colors.foreground }}>{METHOD_LABELS[planTarget.loanInterestMethod ?? ''] ?? '-'}</Text></Text>
+              <Text style={{ fontSize: 12, color: colors.mutedForeground }}>方式 <Text style={{ fontWeight: '600', color: colors.foreground }}>{(METHOD_LABELS as Record<string, string>)[planTarget.loanInterestMethod ?? ''] ?? '-'}</Text></Text>
               <Text style={{ fontSize: 12, color: colors.mutedForeground }}>利率 <Text style={{ fontWeight: '600', color: colors.foreground }}>{planTarget.loanInterestRate ?? 0}%</Text></Text>
             </View>
             {plans.length === 0 ? (

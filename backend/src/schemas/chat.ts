@@ -1,4 +1,12 @@
 import { z } from 'zod'
+import { ALL_PROVIDERS } from '../services/ai/providers.js'
+
+// 供应商取值以后端注册表(ALL_PROVIDERS)为唯一来源,避免与前端列表漂移;
+// 存进非法 provider 会让该配置的模型调用直接失败,导致该用户 AI 完全不可用
+const providerField = z.string().refine(
+  (v) => (ALL_PROVIDERS.map((p) => p.value) as string[]).includes(v),
+  { message: '无效的供应商' },
+)
 
 // 发送消息
 export const sendMessageSchema = z.object({
@@ -59,7 +67,7 @@ export const updateAIConfigSchema = z.object({
 // 供应商配置
 export const createProviderConfigSchema = z.object({
   name: z.string().optional().describe('配置名称'),
-  provider: z.string().describe('供应商类型：openai/anthropic/deepseek等'),
+  provider: providerField.describe('供应商类型：openai/anthropic/deepseek等'),
   apiKey: z.string().optional().describe('API密钥'),
   baseURL: z.string().optional().describe('API基础URL'),
   models: z.string().optional().describe('可用模型列表，逗号分隔'),
@@ -71,7 +79,7 @@ export const createProviderConfigSchema = z.object({
 
 export const updateProviderConfigSchema = z.object({
   name: z.string().optional().describe('配置名称'),
-  provider: z.string().optional().describe('供应商类型'),
+  provider: providerField.optional().describe('供应商类型'),
   apiKey: z.string().optional().describe('API密钥'),
   baseURL: z.string().optional().describe('API基础URL'),
   models: z.string().optional().describe('可用模型列表'),

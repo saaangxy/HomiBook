@@ -1,5 +1,6 @@
 import { prisma } from '../../../app.js'
 import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
+import { ACCOUNT_TYPES, ACCOUNT_VISIBILITIES, normalizeAccountType } from '@homibook/core'
 import type { ToolDef, ToolContext } from './types.js'
 
 export const createAccountTool: ToolDef = {
@@ -11,12 +12,12 @@ export const createAccountTool: ToolDef = {
       type: 'object',
       properties: {
         name: { type: 'string', description: '账户名称' },
-        type: { type: 'string', enum: ['BANK_DEBIT', 'CREDIT_CARD', 'ALIPAY', 'WECHAT', 'CASH', 'RECHARGE_CARD', 'INVESTMENT', 'OTHER'], description: '账户类型：BANK_DEBIT(借记卡)/CREDIT_CARD(信用卡)/ALIPAY/WECHAT/CASH(现金)/RECHARGE_CARD(充值卡)/INVESTMENT(投资)/OTHER' },
+        type: { type: 'string', enum: [...ACCOUNT_TYPES], description: '账户类型：BANK_DEBIT(借记卡)/CREDIT_CARD(信用卡)/ALIPAY/WECHAT/CASH(现金)/RECHARGE_CARD(充值卡)/INVESTMENT(投资)/OTHER' },
         currency: { type: 'string', description: '货币代码，默认 CNY' },
       initialBalance: { type: 'number', description: '初始余额' },
       accountNo: { type: 'string', description: '账号' },
       bankName: { type: 'string', description: '银行名称' },
-      visibility: { type: 'string', enum: ['PUBLIC', 'PRIVATE'], description: '可见性' },
+      visibility: { type: 'string', enum: [...ACCOUNT_VISIBILITIES], description: '可见性' },
     },
     required: ['name', 'type'],
   },
@@ -36,7 +37,8 @@ export const createAccountTool: ToolDef = {
           accountBookId: ctx.accountBookId,
           ownerId: ctx.userId,
           name: args.name,
-          type: args.type,
+          // 归一化:模型可能不遵守 schema 枚举(如输出 "BANK"),非法类型会让客户端渲染崩溃
+          type: normalizeAccountType(args.type),
           currency: args.currency ?? 'CNY',
           initialBalance,
           balance: initialBalance,

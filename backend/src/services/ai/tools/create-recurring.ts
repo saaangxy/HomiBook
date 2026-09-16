@@ -9,6 +9,7 @@ import {
   getNextTriggerTime,
 } from '../../recurring.js'
 import { resolveAccountId } from './helpers.js'
+import { LOAN_INTEREST_METHODS, RECORD_TYPES, RECURRING_TYPES } from '@homibook/core'
 
 export const createRecurringTool: ToolDef = {
   name: 'create_recurring',
@@ -19,7 +20,7 @@ export const createRecurringTool: ToolDef = {
     type: 'object',
     properties: {
       name: { type: 'string', description: '名称' },
-      type: { type: 'string', enum: ['INCOME', 'EXPENSE', 'TRANSFER'], description: '交易类型' },
+      type: { type: 'string', enum: [...RECORD_TYPES], description: '交易类型' },
       amount: { type: 'number', description: '金额（贷款类型可省略，自动计算）' },
       cron: { type: 'string', description: 'Cron 表达式，如 "0 9 1 * *" 表示每月1号9点' },
       accountId: { type: 'string', description: '账户 ID 或账号' },
@@ -28,11 +29,11 @@ export const createRecurringTool: ToolDef = {
       payer: { type: 'string', description: '交易对方' },
       remark: { type: 'string', description: '备注' },
       tags: { type: 'array', items: { type: 'string' }, description: '标签' },
-      recurringType: { type: 'string', enum: ['PERIODIC', 'LOAN'], description: '周期类型' },
+      recurringType: { type: 'string', enum: [...RECURRING_TYPES], description: '周期类型' },
       active: { type: 'boolean', description: '是否启用' },
       loanTotalAmount: { type: 'number', description: '贷款总额' },
       loanInterestRate: { type: 'number', description: '贷款年利率（小数，如0.05表示5%）' },
-      loanInterestMethod: { type: 'string', enum: ['EQUAL_INSTALLMENT', 'EQUAL_PRINCIPAL'], description: '还款方式' },
+      loanInterestMethod: { type: 'string', enum: [...LOAN_INTEREST_METHODS], description: '还款方式' },
       loanStartDate: { type: 'string', description: '贷款开始日期 YYYY-MM-DD' },
       loanTermMonths: { type: 'number', description: '贷款期数（月）' },
       generateAll: { type: 'boolean', description: '是否一次性生成所有已到期还款计划' },

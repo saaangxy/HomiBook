@@ -1,7 +1,15 @@
 import { prisma } from '../../app.js'
 import { parseAlipayCSV, parseWechatXlsx, parseJdCSV } from '../import/parsers.js'
 import { applyAccountMappings, applyCategoryMappings, matchAccountByName, type ParsedRow } from '../import/shared.js'
-import { ACCOUNT_TYPE_LABELS } from '@homibook/core'
+import {
+  ACCOUNT_STATUS_LABELS,
+  ACCOUNT_TYPE_LABELS,
+  ACCOUNT_VISIBILITY_LABELS,
+  BUDGET_TYPE_LABELS,
+  LOAN_INTEREST_METHOD_LABELS,
+  RECORD_TYPE_LABELS,
+  RECURRING_TYPE_LABELS,
+} from '@homibook/core'
 import { dateKey } from '../../lib/date-time.js'
 import fs from 'fs'
 import path from 'path'
@@ -33,13 +41,14 @@ export interface PreviewCell {
 
 // ---- 辅助函数 ----
 
-const TYPE_LABELS: Record<string, string> = {
-  INCOME: '收入',
-  EXPENSE: '支出',
-  TRANSFER: '转账',
-}
+/** 收支类型标签(单一来源 @homibook/core;键放宽为 string 便于动态索引) */
+const TYPE_LABELS = RECORD_TYPE_LABELS as Record<string, string>
 
+// core 标签表按字符串索引(历史数据/外部写入可能存在非法值,需回退原值)
 const ACCOUNT_TYPE_LABELS_FALLBACK = ACCOUNT_TYPE_LABELS as Record<string, string>
+const ACCOUNT_STATUS_LABELS_FALLBACK = ACCOUNT_STATUS_LABELS as Record<string, string>
+const ACCOUNT_VISIBILITY_LABELS_FALLBACK = ACCOUNT_VISIBILITY_LABELS as Record<string, string>
+const RECURRING_TYPE_LABELS_FALLBACK = RECURRING_TYPE_LABELS as Record<string, string>
 
 /** 将 Record 行转为表格行 */
 function recordToRow(r: {
@@ -528,7 +537,7 @@ async function buildBudgetPreview(args: any): Promise<string> {
     categoryLabel = map.get(args.categoryCode) || args.categoryCode
   }
 
-  const typeLabel = args.type === 'FIXED' ? '月度固定预算' : '自由预算'
+  const typeLabel = args.type === 'FIXED' ? BUDGET_TYPE_LABELS.FIXED : BUDGET_TYPE_LABELS.FREE
   const period = args.type === 'FREE'
     ? `${args.startDate || '?'} ~ ${args.endDate || '?'}`
     : `${args.year}年${String(args.month).padStart(2, '0')}月`
@@ -697,12 +706,6 @@ async function buildConfirmImportPreview(args: any, accountBookId: string, userI
 
   const normalRecords = parseResult.rows.filter(r => r.type !== 'UNKNOWN')
 
-  const TYPE_LABELS: Record<string, string> = { INCOME: '收入', EXPENSE: '支出', TRANSFER: '转账' }
-  const TYPE_NAME: Record<string, string> = {
-    BANK_DEBIT: '储蓄卡', CREDIT_CARD: '信用卡', ALIPAY: '支付宝', WECHAT: '微信',
-    INVESTMENT: '投资', CASH: '现金', RECHARGE_CARD: '储值卡', OTHER: '其他',
-  }
-
   // 解析账户显示名称（优先查找已有账户，其次查找待创建的新账户）
   function resolveAccountName(csvName: string, mappedId: string | null | undefined): string {
     if (mappedId) {
@@ -760,7 +763,7 @@ async function buildConfirmImportPreview(args: any, accountBookId: string, userI
     const deduped = [...creationByName.values()]
     descriptionParts.push(`将创建 ${deduped.length} 个新账户`)
     const creationLines = deduped.map(c =>
-      `  • ${c.name} (${TYPE_NAME[c.type] || c.type}) ← ${[...c.sourceNames].join(', ')}`
+      `  • ${c.name} (${ACCOUNT_TYPE_LABELS_FALLBACK[c.type] || c.type}) ← ${[...c.sourceNames].join(', ')}`
     )
     descriptionParts.push(creationLines.join('\n'))
   }
@@ -809,7 +812,7 @@ async function buildDeleteRecurringPreview(args: any, _bookId: string): Promise<
     { label: '金额', value: rt.amount.toFixed(2) },
     { label: '账户', value: rt.account?.name || rt.accountId },
     { label: '触发规则', value: rt.cron },
-    { label: '周期类型', value: rt.recurringType === 'LOAN' ? '贷款' : '定期' },
+    { label: '周期类型', value: RECURRING_TYPE_LABELS_FALLBACK[rt.recurringType] || rt.recurringType },
     { label: '状态', value: rt.active ? '启用' : '停用' },
   ]
   if (rt.toAccount) fields.push({ label: '目标账户', value: rt.toAccount.name })
@@ -821,7 +824,7 @@ async function buildDeleteRecurringPreview(args: any, _bookId: string): Promise<
   if (rt.recurringType === 'LOAN') {
     fields.push({ label: '贷款总额', value: (rt.loanTotalAmount || 0).toFixed(2) })
     fields.push({ label: '剩余本金', value: (rt.loanRemainingAmount || 0).toFixed(2) })
-    fields.push({ label: '还款方式', value: rt.loanInterestMethod === 'EQUAL_PRINCIPAL' ? '等额本金' : '等额本息' })
+    fields.push({ label: '还款方式', value: rt.loanInterestMethod === 'EQUAL_PRINCIPAL' ? LOAN_INTEREST_METHOD_LABELS.EQUAL_PRINCIPAL : LOAN_INTEREST_METHOD_LABELS.EQUAL_INSTALLMENT })
   }
 
   const preview: ConfirmPreview = {
@@ -879,7 +882,7 @@ async function buildDeleteBudgetPreview(args: any, _bookId: string): Promise<str
   const budget = await prisma.budget.findUnique({ where: { id: args.id } })
   if (!budget) return buildGenericPreview('delete_budget', { error: `预算不存在: ${args.id}` })
 
-  const typeLabel = budget.type === 'FIXED' ? '月度固定预算' : '自由预算'
+  const typeLabel = budget.type === 'FIXED' ? BUDGET_TYPE_LABELS.FIXED : BUDGET_TYPE_LABELS.FREE
   const period = budget.type === 'FREE'
     ? `${budget.startDate?.toISOString().slice(0, 10) || '?'} ~ ${budget.endDate?.toISOString().slice(0, 10) || '?'}`
     : `${budget.year}年${String(budget.month).padStart(2, '0')}月`
@@ -995,9 +998,9 @@ async function buildCreateRecurringPreview(args: any, accountBookId: string): Pr
   if (args.type === 'TRANSFER') fields.push({ label: '目标账户', value: accountMap.get(args.toAccountId) || args.toAccountId || '-' })
   if (args.categoryCode) fields.push({ label: '分类', value: categoryMap.get(args.categoryCode) || args.categoryCode })
   fields.push({ label: '触发规则', value: args.cron || '-' })
-  fields.push({ label: '周期类型', value: isLoan ? '贷款' : '定期' })
+  fields.push({ label: '周期类型', value: isLoan ? RECURRING_TYPE_LABELS.LOAN : RECURRING_TYPE_LABELS.PERIODIC })
   if (isLoan && args.loanInterestMethod) {
-    fields.push({ label: '还款方式', value: args.loanInterestMethod === 'EQUAL_PRINCIPAL' ? '等额本金' : '等额本息' })
+    fields.push({ label: '还款方式', value: args.loanInterestMethod === 'EQUAL_PRINCIPAL' ? LOAN_INTEREST_METHOD_LABELS.EQUAL_PRINCIPAL : LOAN_INTEREST_METHOD_LABELS.EQUAL_INSTALLMENT })
   }
   if (args.payer) fields.push({ label: '交易方', value: args.payer })
   if (args.remark) fields.push({ label: '备注', value: args.remark })
@@ -1033,7 +1036,7 @@ async function buildCopyBudgetsPreview(args: any, accountBookId: string): Promis
     columns: ['预算名称', '类型', '金额'],
     rows: sourceBudgets.map((b) => [
       { text: b.name || (b.categoryCode ? (categoryMap.get(b.categoryCode) || b.categoryCode) : '-') },
-      { text: b.type === 'FIXED' ? '月度固定预算' : '自由预算' },
+      { text: b.type === 'FIXED' ? BUDGET_TYPE_LABELS.FIXED : BUDGET_TYPE_LABELS.FREE },
       { text: b.amount.toFixed(2) },
     ]),
   }
@@ -1050,7 +1053,7 @@ async function buildBatchCreateBudgetsPreview(args: any): Promise<string> {
     title: `确认批量创建 ${(args.months || []).length} 个月份的预算`,
     budgetFields: [
       { label: '名称', value: args.name || '-' },
-      { label: '类型', value: args.type === 'FIXED' ? '月度固定预算' : '自由预算' },
+      { label: '类型', value: args.type === 'FIXED' ? BUDGET_TYPE_LABELS.FIXED : BUDGET_TYPE_LABELS.FREE },
       { label: '金额', value: `每月 ${(args.amount ?? 0).toFixed(2)}` },
       { label: '月份', value: monthsText || '-' },
       ...(args.categoryCode ? [{ label: '关联分类', value: categoryMap.get(args.categoryCode) || args.categoryCode }] : []),
@@ -1065,15 +1068,14 @@ async function buildUpdateAccountPreview(args: any): Promise<string> {
   const account = await prisma.account.findUnique({ where: { id: args.id } })
   if (!account) return buildGenericPreview('update_account', { error: `账户不存在: ${args.id}` })
 
-  const STATUS_LABELS: Record<string, string> = { ACTIVE: '启用', ARCHIVED: '归档' }
   const fieldDefs: { key: string; label: string; format: (v: any) => string }[] = [
     { key: 'name', label: '名称', format: (v) => v || '-' },
     { key: 'type', label: '类型', format: (v) => ACCOUNT_TYPE_LABELS_FALLBACK[v] || v },
     { key: 'currency', label: '货币', format: (v) => v || '-' },
     { key: 'accountNo', label: '账号', format: (v) => v || '-' },
     { key: 'bankName', label: '银行', format: (v) => v || '-' },
-    { key: 'visibility', label: '可见性', format: (v) => v === 'PUBLIC' ? '共享' : v === 'PRIVATE' ? '私有' : v || '-' },
-    { key: 'status', label: '状态', format: (v) => STATUS_LABELS[v] || v || '-' },
+    { key: 'visibility', label: '可见性', format: (v) => ACCOUNT_VISIBILITY_LABELS_FALLBACK[v] || v || '-' },
+    { key: 'status', label: '状态', format: (v) => ACCOUNT_STATUS_LABELS_FALLBACK[v] || v || '-' },
   ]
 
   const fields: { label: string; before: string; after: string }[] = []

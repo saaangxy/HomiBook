@@ -1,4 +1,25 @@
 // 家庭财务健康雷达图共享评分工具 —— 纯 TS,web/mobile 两端共享(编排函数在各自端,评分规则单一来源)
+import type { AccountType } from './types/account.js'
+
+/** 资产口径:计入总资产的账户类型(信用卡单独按负债处理,故不在其中) */
+export const ASSET_ACCOUNT_TYPES = [
+  'BANK_DEBIT', 'ALIPAY', 'WECHAT', 'CASH', 'RECHARGE_CARD', 'INVESTMENT', 'OTHER',
+] as const satisfies readonly AccountType[]
+
+/** 紧急备用金口径:流动性现金类账户 */
+export const EMERGENCY_ACCOUNT_TYPES = [
+  'BANK_DEBIT', 'ALIPAY', 'WECHAT', 'CASH',
+] as const satisfies readonly AccountType[]
+
+/** 是否属于资产口径账户(参数放宽,便于直接用在 filter 里) */
+export function isAssetAccountType(type: unknown): boolean {
+  return (ASSET_ACCOUNT_TYPES as readonly unknown[]).includes(type)
+}
+
+/** 是否属于紧急备用金口径账户 */
+export function isEmergencyAccountType(type: unknown): boolean {
+  return (EMERGENCY_ACCOUNT_TYPES as readonly unknown[]).includes(type)
+}
 
 export interface RadarMetric {
   name: string

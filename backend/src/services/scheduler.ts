@@ -1,6 +1,7 @@
 import cron from 'node-cron'
 import { prisma } from '../app.js'
 import { getNextTriggerTime, ensureFixedTag } from './recurring.js'
+import { normalizeRecordType } from '@homibook/core'
 import { cleanupExpiredAuditLogs } from './ai/audit.js'
 
 interface CronLike {
@@ -112,7 +113,7 @@ export async function generateRecord(rt: RecurringTxParams, client: PrismaLike =
         const record = await tx.record.create({
           data: {
             accountBookId: rt.accountBookId,
-            type: rt.type,
+            type: normalizeRecordType(rt.type),
             amount,
             date: now,
             remark: remark.trim(),
@@ -148,7 +149,7 @@ export async function generateRecord(rt: RecurringTxParams, client: PrismaLike =
   await client.record.create({
     data: {
       accountBookId: rt.accountBookId,
-      type: rt.type,
+      type: normalizeRecordType(rt.type),
       amount,
       date: now,
       remark: remark || undefined,

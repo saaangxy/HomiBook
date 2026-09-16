@@ -3,6 +3,7 @@ import { assertIsMember, retryable, desensitize, type ToolResult } from '../secu
 import type { ToolDef, ToolContext } from './types.js'
 import { resolveAccountId } from './helpers.js'
 import { dateKey } from '../../../lib/date-time.js'
+import { RECORD_TYPES } from '@homibook/core'
 
 interface RecordInput {
   type: string
@@ -36,7 +37,7 @@ export const batchCreateRecordsTool: ToolDef = {
         items: {
           type: 'object',
           properties: {
-            type: { type: 'string', enum: ['INCOME', 'EXPENSE', 'TRANSFER'], description: '流水类型' },
+            type: { type: 'string', enum: [...RECORD_TYPES], description: '流水类型' },
             amount: { type: 'number', description: '金额' },
             date: { type: 'string', description: '日期 YYYY-MM-DD' },
             accountId: { type: 'string', description: '账户 ID' },

@@ -1,5 +1,6 @@
 import { prisma } from '../../../app.js'
 import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
+import { normalizeBudgetType } from '@homibook/core'
 import type { ToolDef, ToolContext } from './types.js'
 
 interface CopyBudgetsArgs {
@@ -49,11 +50,13 @@ export const copyBudgetsTool: ToolDef = {
       await prisma.$transaction(async (tx) => {
         for (const target of targetMonths) {
           for (const budget of sourceBudgets) {
+            // 归一化:源数据若为历史脏类型,复制出来的预算也不应继承
+            const budgetType = normalizeBudgetType(budget.type)
             const existing = await tx.budget.findUnique({
               where: {
                 accountBookId_type_year_month_name: {
                   accountBookId: ctx.accountBookId,
-                  type: budget.type,
+                  type: budgetType,
                   year: target.year,
                   month: target.month,
                   name: budget.name,
@@ -66,7 +69,7 @@ export const copyBudgetsTool: ToolDef = {
               data: {
                 accountBookId: ctx.accountBookId,
                 name: budget.name,
-                type: budget.type,
+                type: budgetType,
                 year: target.year,
                 month: target.month,
                 amount: budget.amount,

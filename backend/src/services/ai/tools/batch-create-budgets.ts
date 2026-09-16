@@ -1,10 +1,11 @@
 import { prisma } from '../../../app.js'
 import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
+import { BUDGET_TYPES, normalizeBudgetType, type BudgetType } from '@homibook/core'
 import type { ToolDef, ToolContext } from './types.js'
 
 interface BatchCreateBudgetsArgs {
   name: string
-  type: 'FIXED' | 'FREE'
+  type: BudgetType
   amount: number
   months: number[]
   year: number
@@ -24,7 +25,7 @@ export const batchCreateBudgetsTool: ToolDef = {
     type: 'object',
     properties: {
       name: { type: 'string', description: '预算名称' },
-      type: { type: 'string', enum: ['FIXED', 'FREE'], description: '预算类型' },
+      type: { type: 'string', enum: [...BUDGET_TYPES], description: '预算类型' },
       amount: { type: 'number', description: '预算金额' },
       months: { type: 'array', items: { type: 'number' }, description: '目标月份列表 (1-12)' },
       year: { type: 'number', description: '年份' },
@@ -44,6 +45,8 @@ export const batchCreateBudgetsTool: ToolDef = {
     return retryable(async () => {
       const tagsJson = JSON.stringify(args.tags || [])
       const created: { month: number; id: string }[] = []
+      // 归一化:模型可能不遵守 schema 枚举,非法预算类型会让该预算在所有列表里查不到
+      const budgetType = normalizeBudgetType(args.type)
 
       await prisma.$transaction(async (tx) => {
         for (const month of args.months) {
@@ -51,7 +54,7 @@ export const batchCreateBudgetsTool: ToolDef = {
             where: {
               accountBookId_type_year_month_name: {
                 accountBookId: ctx.accountBookId,
-                type: args.type,
+                type: budgetType,
                 year: args.year,
                 month,
                 name: args.name,
@@ -64,7 +67,7 @@ export const batchCreateBudgetsTool: ToolDef = {
             data: {
               accountBookId: ctx.accountBookId,
               name: args.name,
-              type: args.type,
+              type: budgetType,
               year: args.year,
               month,
               amount: args.amount,

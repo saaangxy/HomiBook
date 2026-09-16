@@ -8,7 +8,7 @@ import { useChatStore } from '@/stores/chat';
 import { getToolDisplayName } from '@/services/chat';
 import { accountLabel, isMultiOwnerAccounts } from '@/lib/account';
 import { MiniTable } from './MiniTable';
-import { ACCOUNT_TYPE_LABELS, TYPE_TO_GROUP, IMPORT_SOURCE_LABELS, initAccountResolutions, unresolvedAccountCount, type AccountResolution, type ToolCallEntry } from '@homibook/core';
+import { ACCOUNT_TYPE_LABELS, RECORD_TYPE_LABELS, TYPE_TO_GROUP, IMPORT_SOURCE_LABELS, initAccountResolutions, unresolvedAccountCount, type AccountResolution, type ToolCallEntry } from '@homibook/core';
 
 // ── 导入预览交互卡(复刻 web ImportPreviewInteractive,UI 适配移动端)。从 AIAssistant.tsx 拆出 ──
 // ── 导入消息文件卡片:把"请导入XX账单文件/fileId/source/文件名"文本渲染为附件卡片 ──
@@ -38,7 +38,8 @@ export function ImportFileCard({ fileName, source }: { fileName: string; source:
 // ── 导入预览交互卡(复刻 web ImportPreviewInteractive,UI 适配移动端) ──
 
 // 收支类型标签/字典组映射统一来自 @homibook/core;UNKNOWN 标签与分组标题为本卡片展示所需
-const IMPORT_TYPE_LABELS: Record<string, string> = { INCOME: '收入', EXPENSE: '支出', TRANSFER: '转账', UNKNOWN: '未知' };
+// 收支类型标签来自 core,UNKNOWN 为本卡片展示所需的额外值
+const IMPORT_TYPE_LABELS: Record<string, string> = { ...RECORD_TYPE_LABELS, UNKNOWN: '未知' };
 const IMPORT_TYPE_TO_GROUP = TYPE_TO_GROUP;
 const IMPORT_GROUP_HEADING: Record<string, string> = {
   transaction_category_expense: '支出分类',

@@ -3,6 +3,7 @@ import { prisma } from '../../../app.js'
 import { assertIsMember } from '../security.js'
 import { parseAlipayCSV, parseWechatXlsx, parseJdCSV } from '../../import/parsers.js'
 import { applyAccountMappings, applyCategoryMappings, matchAccountByName, inferAccount, type ParsedRow } from '../../import/shared.js'
+import { ACCOUNT_TYPES, IMPORT_AI_SOURCES, RECORD_TYPES } from '@homibook/core'
 import fs from 'fs'
 import path from 'path'
 
@@ -16,7 +17,7 @@ export const previewImportTool: ToolDef = {
     type: 'object',
     properties: {
       fileId: { type: 'string', description: '上传文件后获得的 fileId' },
-      source: { type: 'string', enum: ['alipay', 'wechat', 'jd'], description: '账单来源类型' },
+      source: { type: 'string', enum: [...IMPORT_AI_SOURCES], description: '账单来源类型' },
       mode: { type: 'string', enum: ['analyze', 'preview'], description: '模式：analyze=分析模式（默认），返回未匹配数据供 AI 分析，不展示交互卡片；preview=预览模式，展示交互卡片供用户确认' },
       accountResolutions: {
         type: 'array',
@@ -28,7 +29,7 @@ export const previewImportTool: ToolDef = {
             action: { type: 'string', enum: ['existing', 'create'], description: 'existing=匹配已有账户, create=导入时新建账户' },
             targetAccountId: { type: 'string', description: 'action=existing 时必填：目标已有账户的 ID' },
             targetAccountName: { type: 'string', description: 'action=create 时必填：新建账户的名称' },
-            accountType: { type: 'string', description: 'action=create 时必填：新建账户的类型(BANK_DEBIT/CREDIT_CARD/ALIPAY/WECHAT/INVESTMENT/OTHER)' },
+            accountType: { type: 'string', enum: [...ACCOUNT_TYPES], description: 'action=create 时必填：新建账户的类型(BANK_DEBIT/CREDIT_CARD/ALIPAY/WECHAT/CASH/RECHARGE_CARD/INVESTMENT/OTHER)' },
           },
           required: ['sourceAccountName', 'action'],
         },
@@ -41,7 +42,7 @@ export const previewImportTool: ToolDef = {
           properties: {
             sourceCategory: { type: 'string', description: '流水中的源分类名称' },
             targetCategoryCode: { type: 'string', description: '目标系统分类编码（必须在 allDictItems 中存在）' },
-            recordType: { type: 'string', enum: ['INCOME', 'EXPENSE', 'TRANSFER'], description: '限定记录类型（可选,不填则匹配所有类型,除确定不限类型全部映射的分类外,该字段应该填写对应类型）' },
+            recordType: { type: 'string', enum: [...RECORD_TYPES], description: '限定记录类型（可选,不填则匹配所有类型,除确定不限类型全部映射的分类外,该字段应该填写对应类型）' },
             payerContains: { type: 'string', description: '交易方名称正则过滤条件（可选），如 燃气|电力|汇通 匹配任一关键词' },
             descriptionContains: { type: 'string', description: '说明字段正则过滤条件（可选），如 燃气|电力|汇通 匹配任一关键词' },
           },

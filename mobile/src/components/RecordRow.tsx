@@ -6,17 +6,12 @@ import { useTheme, haptics } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { AttachmentViewer } from '@/components/ui/AttachmentViewer';
 import { formatMoney } from '@/lib/format';
+import { RECORD_TYPE_LABELS as TYPE_LABEL } from '@homibook/core';
 
 interface RecordRowProps {
   record: RecordItem;
   showDivider?: boolean;
 }
-
-const TYPE_LABEL: Record<string, string> = {
-  INCOME: '收入',
-  EXPENSE: '支出',
-  TRANSFER: '转账',
-};
 
 // 流水卡片:商家/标题(粗体) + 类型|分类|账户(浅灰) + 备注(浅灰) + 右侧金额
 // 有附件时在标题旁显示回形针角标,点击直接弹出附件查看器(网格展示/预览/下载)

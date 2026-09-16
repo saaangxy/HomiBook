@@ -5,6 +5,7 @@ import { parseAlipayCSV, parseWechatXlsx, parseJdCSV } from '../../import/parser
 import { applyAccountMappings, applyCategoryMappings, matchAccountByName, inferAccount, type ParsedRow } from '../../import/shared.js'
 import { createAccountsInTx, saveCategoryMappingsInTx, saveAccountMappingsInTx, AccountResolver, batchCreateRecordsInTx, refreshBalances } from '../../import/execute.js'
 import { consumeImportOverrides, peekImportOverrides } from './index.js'
+import { ACCOUNT_TYPES, ACCOUNT_TYPE_LABELS, IMPORT_AI_SOURCES, RECORD_TYPES, normalizeRecordType } from '@homibook/core'
 import fs from 'fs'
 import path from 'path'
 
@@ -19,7 +20,7 @@ export const confirmImportTool: ToolDef = {
     type: 'object',
     properties: {
       fileId: { type: 'string', description: '上传文件后获得的 fileId' },
-      source: { type: 'string', enum: ['alipay', 'wechat', 'jd'], description: '账单来源类型' },
+      source: { type: 'string', enum: [...IMPORT_AI_SOURCES], description: '账单来源类型' },
       ownerId: { type: 'string', description: '记录归属人ID，不填默认本人' },
       accountResolutions: {
         type: 'array',
@@ -31,7 +32,7 @@ export const confirmImportTool: ToolDef = {
             action: { type: 'string', enum: ['existing', 'create'] },
             targetAccountId: { type: 'string' },
             targetAccountName: { type: 'string' },
-            accountType: { type: 'string' },
+            accountType: { type: 'string', enum: [...ACCOUNT_TYPES], description: '新建账户的类型(BANK_DEBIT/CREDIT_CARD/ALIPAY/WECHAT/CASH/RECHARGE_CARD/INVESTMENT/OTHER)' },
           },
           required: ['sourceAccountName', 'action'],
         },
@@ -44,7 +45,7 @@ export const confirmImportTool: ToolDef = {
           properties: {
             sourceCategory: { type: 'string' },
             targetCategoryCode: { type: 'string' },
-            recordType: { type: 'string', enum: ['INCOME', 'EXPENSE', 'TRANSFER'] },
+            recordType: { type: 'string', enum: [...RECORD_TYPES] },
             payerContains: { type: 'string', description: '交易方名称正则过滤条件（可选），如 燃气|电力|汇通 匹配任一关键词' },
             descriptionContains: { type: 'string', description: '说明字段正则过滤条件（可选），如 燃气|电力|汇通 匹配任一关键词' },
           },
@@ -117,7 +118,8 @@ export const confirmImportTool: ToolDef = {
       for (const r of parseResult.rows) {
         const unres = unresMap.get(r.rowIndex)
         if (unres && r.type === 'UNKNOWN') {
-          r.type = unres.type as 'INCOME' | 'EXPENSE' | 'TRANSFER'
+          // 归一化:该类型来自客户端提交的人工指定,非法值直接落库会让各端渲染崩溃
+          r.type = normalizeRecordType(unres.type)
           r.accountId = unres.accountId || null
           if (unres.categoryCode) r.mappedCategoryCode = unres.categoryCode
         }
@@ -259,10 +261,7 @@ export const confirmImportTool: ToolDef = {
         : []
       const labelMap = new Map(dictEntries.map(d => [d.code, d.label]))
 
-      const ACCOUNT_TYPE_LABELS: Record<string, string> = {
-        BANK_DEBIT: '储蓄卡', CREDIT_CARD: '信用卡', ALIPAY: '支付宝',
-        WECHAT: '微信', INVESTMENT: '投资', CASH: '现金', RECHARGE_CARD: '充值卡', OTHER: '其他',
-      }
+      const accountTypeLabels = ACCOUNT_TYPE_LABELS as Record<string, string>
 
       return {
         success: true,
@@ -274,7 +273,7 @@ export const confirmImportTool: ToolDef = {
           accountsToCreate: accountCreations.map(a => ({
             name: a.name,
             type: a.type,
-            typeLabel: ACCOUNT_TYPE_LABELS[a.type] || a.type,
+            typeLabel: accountTypeLabels[a.type] || a.type,
           })),
           records: normalRecords.map(r => ({
             rowIndex: r.rowIndex,

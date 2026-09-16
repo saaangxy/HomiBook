@@ -30,6 +30,7 @@ export type {
   ShareCode,
 } from '@homibook/core';
 export { ACCOUNT_TYPE_LABELS } from '@homibook/core';
+import type { BookRole as _BookRole } from '@homibook/core';
 
 // ── 本地保留:后台用户管理(mobile 简化版,字段非空) ──
 import type { UserRole as _UR, UserStatus as _US } from '@homibook/core';
@@ -140,7 +141,7 @@ export interface Ledger {
   icon: string; // emoji
   memberCount: number;
   shareCode?: string;
-  role?: 'OWNER' | 'MEMBER';
+  role?: _BookRole;
 }
 
 export interface LedgerMember {
@@ -148,7 +149,7 @@ export interface LedgerMember {
   /** 成员对应的用户 id(归属人 ownerId 用) */
   userId?: string;
   nickname: string;
-  role: 'OWNER' | 'MEMBER';
+  role: _BookRole;
   joinedAt: string;
 }
 

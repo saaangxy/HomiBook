@@ -17,13 +17,14 @@ import { Spinner } from '@/components/ui/spinner'
 import { DatePicker } from '@/components/ui/date-picker'
 import { Search, RotateCcw, Eye, X, ChevronLeft, ChevronRight } from 'lucide-react'
 import { adminApi, type AdminUser, type AuditLogItem } from '@/api/admin'
+import { AUDIT_ACTION_LABELS } from '@homibook/core'
 
-// 操作类型映射：中文 + Badge 颜色
+// 操作类型映射：中文单一来源 @homibook/core，此处只负责 Badge 颜色
 const ACTION_CONFIG: Record<string, { label: string; className: string }> = {
-  tool_call: { label: '工具调用', className: 'bg-blue-100 text-blue-700' },
-  confirm: { label: '用户确认', className: 'bg-green-100 text-green-700' },
-  reject: { label: '用户拒绝', className: 'bg-orange-100 text-orange-700' },
-  model_call: { label: '模型调用', className: 'bg-purple-100 text-purple-700' },
+  tool_call: { label: AUDIT_ACTION_LABELS.tool_call, className: 'bg-blue-100 text-blue-700' },
+  confirm: { label: AUDIT_ACTION_LABELS.confirm, className: 'bg-green-100 text-green-700' },
+  reject: { label: AUDIT_ACTION_LABELS.reject, className: 'bg-orange-100 text-orange-700' },
+  model_call: { label: AUDIT_ACTION_LABELS.model_call, className: 'bg-purple-100 text-purple-700' },
 }
 
 // 状态映射

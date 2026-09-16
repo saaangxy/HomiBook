@@ -28,9 +28,11 @@ import { Spinner } from '@/components/ui/spinner'
 import { useBookStore } from '../stores/book'
 import { useAuthStore } from '../stores/auth'
 import { bookApi, type BookItem, type BookMember, type ShareCode, type ShareCodeLookup } from '../api/book'
+import { BOOK_ROLE_LABELS } from '@homibook/core'
 import { Plus, Users, Settings, Share, Trash2, Copy, LogOut, Shield, ShieldOff } from 'lucide-react'
 
-const roleLabels: Record<string, string> = { owner: '归属人', admin: '管理员', member: '成员' }
+// 角色标签单一来源 @homibook/core
+const roleLabels: Record<string, string> = BOOK_ROLE_LABELS
 
 export function BooksPage() {
   const { books, fetchBooks, removeBook } = useBookStore()

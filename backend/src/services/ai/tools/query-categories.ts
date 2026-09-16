@@ -1,6 +1,7 @@
 import { prisma } from '../../../app.js'
 import { assertIsMember, retryable, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
+import { RECORD_TYPES } from '@homibook/core'
 
 export const queryCategoriesTool: ToolDef = {
   name: 'query_categories',
@@ -10,7 +11,7 @@ export const queryCategoriesTool: ToolDef = {
   parameters: {
     type: 'object',
     properties: {
-      type: { type: 'string', enum: ['INCOME', 'EXPENSE', 'TRANSFER'], description: '分类类型筛选，不填返回全部' },
+      type: { type: 'string', enum: [...RECORD_TYPES], description: '分类类型筛选，不填返回全部' },
     },
   },
 

@@ -1,7 +1,6 @@
 import { z } from 'zod'
-
-export const RECORD_TYPES = ['INCOME', 'EXPENSE', 'TRANSFER'] as const
-export type RecordType = typeof RECORD_TYPES[number]
+// 流水类型值域单一来源 @homibook/core
+import { RECORD_TYPES } from '@homibook/core'
 
 export const createRecordSchema = z.object({
   accountBookId: z.string().min(1).describe('账本ID'),

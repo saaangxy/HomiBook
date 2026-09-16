@@ -14,7 +14,7 @@ import { uploadImportTempFile } from '@/services/import';
 import { DownloadModeSheet } from '@/components/chrome/DownloadModeSheet';
 import { downloadAttachment, resolveRemoteUrl, type DownloadMode } from '@/services/http';
 import type { Message, MessageBlock } from '@homibook/core';
-import {IMPORT_SOURCE_LABELS, buildImportMessage, parseImportMessage } from '@homibook/core';
+import {IMPORT_AI_SOURCES, IMPORT_SOURCE_LABELS, buildImportMessage, parseImportMessage } from '@homibook/core';
 
 // AI 财务助手聊天主体(可嵌入:AI 弹窗 / 记一笔弹窗 AI tab)
 // 复刻 web 端 ChatWindow 能力:流式/Markdown/思考块/工具卡(确认·补充信息·切换账本)/小票上传/账单导入/联网搜索/重试/分支
@@ -573,7 +573,7 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
           选择账单来源，支持导出的 CSV / XLS / XLSX 文件
         </Text>
         <View style={{ gap: 8 }}>
-          {(['alipay', 'wechat', 'jd'] as const).map((src) => {
+          {IMPORT_AI_SOURCES.map((src) => {
             const badge: Record<string, { bg: string; ch: string }> = {
               alipay: { bg: '#1677ff', ch: '支' },
               wechat: { bg: '#07c160', ch: '微' },

@@ -2,6 +2,7 @@ import { prisma } from '../../../app.js'
 import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 import { refreshAccountBalance } from '../../account.js'
+import { normalizeRecordType } from '@homibook/core'
 import { dateKey } from '../../../lib/date-time.js'
 
 export const cloneRecordTool: ToolDef = {
@@ -31,7 +32,8 @@ export const cloneRecordTool: ToolDef = {
       const cloned = await prisma.record.create({
         data: {
           accountBookId: existing.accountBookId,
-          type: existing.type,
+          // 归一化:复制来源若为历史脏数据,新记录也不应继承非法类型
+          type: normalizeRecordType(existing.type),
           amount: existing.amount,
           date: existing.date,
           remark: existing.remark,

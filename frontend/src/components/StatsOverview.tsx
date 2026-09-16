@@ -23,7 +23,7 @@ import {
   scoreInsurance,
   type RadarMetric,
 } from '@/lib/financial-health'
-import { formatMoney } from '@homibook/core'
+import { formatMoney, isAssetAccountType, isEmergencyAccountType } from '@homibook/core'
 
 const RADAR_TIPS: Record<string, string> = {
   '应急能力': '紧急备用金 ÷ 月均支出，反映应对突发开支的现金缓冲。健康区间 ≥6 个月',
@@ -165,12 +165,11 @@ function computeRadarMetrics(input: RadarInput): RadarMetric[] {
   const creditBal = Math.abs(act.filter((a) => a.type === 'CREDIT_CARD').reduce((s, a) => s + (a.computedBalance ?? 0), 0))
   const totalLiab = creditBal + input.loans.reduce((s, l) => s + (l.loanRemainingAmount ?? 0), 0)
   // 总资产剔除信用卡,避免重复计算
-  const assetTypes = ['BANK_DEBIT', 'ALIPAY', 'WECHAT', 'CASH', 'RECHARGE_CARD', 'INVESTMENT', 'OTHER']
-  const totalAssets = act.filter((a) => assetTypes.includes(a.type)).reduce((s, a) => s + (a.computedBalance ?? 0), 0)
+  const totalAssets = act.filter((a) => isAssetAccountType(a.type)).reduce((s, a) => s + (a.computedBalance ?? 0), 0)
   const netAssets = totalAssets - totalLiab
   const investAssets = act.filter((a) => a.type === 'INVESTMENT').reduce((s, a) => s + (a.computedBalance ?? 0), 0)
   // 紧急备用金:流动性现金账户
-  const emergency = act.filter((a) => ['BANK_DEBIT', 'ALIPAY', 'WECHAT', 'CASH'].includes(a.type)).reduce((s, a) => s + (a.computedBalance ?? 0), 0)
+  const emergency = act.filter((a) => isEmergencyAccountType(a.type)).reduce((s, a) => s + (a.computedBalance ?? 0), 0)
 
   const monthlyPayment = input.loans.reduce((s, l) => s + (l.amount ?? 0), 0)
   const income = input.summary.income || 0

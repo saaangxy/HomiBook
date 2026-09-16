@@ -1,5 +1,6 @@
 import { prisma } from '../../../app.js'
 import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
+import { BUDGET_TYPES, normalizeBudgetType } from '@homibook/core'
 import type { ToolDef, ToolContext } from './types.js'
 
 export const setBudgetTool: ToolDef = {
@@ -11,7 +12,7 @@ export const setBudgetTool: ToolDef = {
     type: 'object',
     properties: {
       name: { type: 'string', description: '预算名称' },
-      type: { type: 'string', enum: ['FIXED', 'FREE'], description: '预算类型' },
+      type: { type: 'string', enum: [...BUDGET_TYPES], description: '预算类型' },
       year: { type: 'number', description: '年份' },
       month: { type: 'number', description: '月份(1-12)，FREE 类型为 0' },
       amount: { type: 'number', description: '预算金额' },
@@ -33,12 +34,14 @@ export const setBudgetTool: ToolDef = {
       const year = Number(args.year)
       const month = Number(args.month)
       const amount = Number(args.amount)
+      // 归一化:模型可能不遵守 schema 枚举,非法预算类型会让该预算在所有列表里查不到
+      const budgetType = normalizeBudgetType(args.type)
 
       const existing = await prisma.budget.findUnique({
         where: {
           accountBookId_type_year_month_name: {
             accountBookId: ctx.accountBookId,
-            type: args.type,
+            type: budgetType,
             year,
             month,
             name: args.name,
@@ -64,7 +67,7 @@ export const setBudgetTool: ToolDef = {
           data: {
             accountBookId: ctx.accountBookId,
             name: args.name,
-            type: args.type,
+            type: budgetType,
             year,
             month,
             amount,

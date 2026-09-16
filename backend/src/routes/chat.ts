@@ -8,7 +8,7 @@ import { createModel, ALL_PROVIDERS, DEFAULT_BASE_URLS, type ProviderType } from
 import { detectImageFormat, isImageComplete, getImageSize, VISION_MEDIA_TYPES, IMAGE_FORMAT_LABELS } from '../services/ai/image-format.js'
 import { needsTiling, fitOversizedImage, VISION_MAX_SIDE } from '../services/ai/image-tile.js'
 import { routeIntent, classifyWithKeywords } from '../services/ai/model-router.js'
-import { assertIsMember } from '../services/ai/security.js'
+import { assertIsMember, loadUserProviderConfig } from '../services/ai/security.js'
 import { logToolCall } from '../services/ai/audit.js'
 import { ALL_TOOLS, TOOL_GROUPS, storeImportOverrides, peekImportOverrides } from '../services/ai/tools/index.js'
 import { buildConfirmPreview } from '../services/ai/confirm-preview.js'
@@ -20,6 +20,7 @@ import { compressContext, computeHistoryBudget, stripThinkTags } from '../servic
 import { zSchema } from '../lib/schema-helpers.js'
 import { dateKey } from '../lib/date-time.js'
 import { z } from 'zod'
+import { MEMORY_TYPE_LABELS } from '@homibook/core'
 
 declare module 'fastify' {
   interface FastifyContextConfig {
@@ -796,13 +797,9 @@ export async function chatRoutes(app: FastifyInstance) {
     // 加载用户配置
     const prefs = await loadAIConfig(userId)
 
-    // 加载供应商配置
-    const simpleConfig = prefs.simpleProviderConfigId
-      ? await prisma.userProviderConfig.findUnique({ where: { id: prefs.simpleProviderConfigId } })
-      : null
-    const complexConfig = prefs.complexProviderConfigId
-      ? await prisma.userProviderConfig.findUnique({ where: { id: prefs.complexProviderConfigId } })
-      : null
+    // 加载供应商配置(按归属读取:避免 AI 配置里的 ID 指向他人配置从而用其 apiKey)
+    const simpleConfig = await loadUserProviderConfig(userId, prefs.simpleProviderConfigId)
+    const complexConfig = await loadUserProviderConfig(userId, prefs.complexProviderConfigId)
 
     const simpleProvider = simpleConfig?.provider || ''
     const complexProvider = complexConfig?.provider || ''
@@ -1050,9 +1047,7 @@ export async function chatRoutes(app: FastifyInstance) {
     if (messages.length === 0) return { title: session.title }
 
     const prefs = await loadAIConfig(userId)
-    const simpleConfig = prefs.simpleProviderConfigId
-      ? await prisma.userProviderConfig.findUnique({ where: { id: prefs.simpleProviderConfigId } })
-      : null
+    const simpleConfig = await loadUserProviderConfig(userId, prefs.simpleProviderConfigId)
     const provider = simpleConfig?.provider || ''
     const model = prefs.simpleModel || ''
     if (!provider || !model) return { title: session.title }
@@ -1345,6 +1340,19 @@ export async function chatRoutes(app: FastifyInstance) {
     if (!existing || existing.userId !== userId) return reply.status(404).send({ message: '配置不存在' })
 
     await prisma.userProviderConfig.delete({ where: { id } })
+
+    // 同步清理 AI 配置里对它的引用:否则会留下悬空 ID(保存 AI 配置时会因 ID 校验被拒)
+    const prefs = await prisma.userAIConfig.findUnique({ where: { userId } })
+    if (prefs) {
+      const patch: { simpleProviderConfigId?: null; complexProviderConfigId?: null; visionProviderConfigId?: null } = {}
+      if (prefs.simpleProviderConfigId === id) patch.simpleProviderConfigId = null
+      if (prefs.complexProviderConfigId === id) patch.complexProviderConfigId = null
+      if (prefs.visionProviderConfigId === id) patch.visionProviderConfigId = null
+      if (Object.keys(patch).length > 0) {
+        await prisma.userAIConfig.update({ where: { userId }, data: patch })
+      }
+    }
+
     return { success: true }
   })
 
@@ -1385,6 +1393,21 @@ export async function chatRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.status(400).send({ message: parsed.error.issues[0].message })
 
     const userId = (req as any).user.id as string
+
+    // 校验引用的供应商配置确实属于当前用户:这些 ID 直接来自客户端,
+    // 不校验就能指向他人配置,后续模型调用会用别人的 apiKey(越权)
+    const referencedIds = [parsed.data.simpleProviderConfigId, parsed.data.complexProviderConfigId, parsed.data.visionProviderConfigId]
+      .filter((id): id is string => !!id)
+    if (referencedIds.length > 0) {
+      const owned = await prisma.userProviderConfig.findMany({
+        where: { id: { in: referencedIds }, userId },
+        select: { id: true },
+      })
+      const ownedIds = new Set(owned.map((c) => c.id))
+      if (referencedIds.some((id) => !ownedIds.has(id))) {
+        return reply.status(400).send({ message: '选择的供应商配置不存在或无权使用,请重新选择模型' })
+      }
+    }
 
     const { disabledTools, ...rest } = parsed.data
     const data: Record<string, unknown> = { ...rest }
@@ -1528,6 +1551,11 @@ export async function chatRoutes(app: FastifyInstance) {
     if (!validProviders.includes(provider as any)) return reply.status(400).send({ message: '无效的供应商' })
 
     const userId = (req as any).user.id as string
+
+    // configId 归属校验:否则可用他人配置 ID 触发写回(testStatus / lastTestedAt,下方 finishTest)
+    if (configId && !(await loadUserProviderConfig(userId, configId))) {
+      return reply.status(404).send({ message: '配置不存在' })
+    }
 
     // apiKey 为空时，从已保存的 UserProviderConfig 读取（编辑场景：apiKey 被掩码为 ****）
     let key = apiKey || ''
@@ -1781,7 +1809,7 @@ function buildToolPromptLines(disabledSet: Set<string>): string {
 }
 
 function buildSystemPrompt(prefs: any, bookId: string, bookName: string, memories: any[], skillsPrompt?: string, disabledTools: string[] = []): string {
-  const typeLabels: Record<string, string> = { habit: '习惯', preference: '偏好', rule: '规则', fact: '事实' }
+  const typeLabels = MEMORY_TYPE_LABELS
   const memoryContext = memories.length > 0
     ? `\n\n## 用户长期记忆（供参考）\n${memories.map((m: any, i: number) => `${i + 1}. [${typeLabels[m.memoryType] || '记忆'}] ${m.content}`).join('\n')}\n`
     : ''

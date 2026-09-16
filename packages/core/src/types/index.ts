@@ -7,3 +7,4 @@ export * from './book.js';
 export * from './user.js';
 export * from './audit.js';
 export * from './chat.js';
+export * from './memory.js';

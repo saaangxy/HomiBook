@@ -15,6 +15,7 @@ import Svg, {
   Line as SvgLine, Polyline, Rect, Circle, Text as SvgText, G, Path, Polygon,
 } from 'react-native-svg';
 import type { SharedValue } from 'react-native-reanimated';
+import type { StatGranularity } from '@homibook/core';
 import { useTheme, alpha, haptics, useChartColors } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { FormSheet } from '@/components/chrome/FormSheet';
@@ -226,7 +227,7 @@ export default function StatsPage() {
     let cancel = false;
     setTimeLoading(true);
     setBarSelected(null);
-    const granularity: 'monthly' | 'daily' = tab === 'yearly' ? 'monthly' : 'daily';
+    const granularity: StatGranularity = tab === 'yearly' ? 'monthly' : 'daily';
     const trendParams = tab === 'yearly'
       ? { granularity: 'monthly' as const, year, dateFrom: range.dateFrom, dateTo: range.dateTo }
       : tab === 'monthly'

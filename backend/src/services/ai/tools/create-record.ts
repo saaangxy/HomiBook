@@ -3,6 +3,7 @@ import { assertIsMember, retryable, desensitize, type ToolResult } from '../secu
 import type { ToolDef, ToolContext } from './types.js'
 import { resolveAccountId } from './helpers.js'
 import { parseDayStart, dateKey } from '../../../lib/date-time.js'
+import { RECORD_TYPES } from '@homibook/core'
 
 export const createRecordTool: ToolDef = {
   name: 'create_record',
@@ -12,7 +13,7 @@ export const createRecordTool: ToolDef = {
   parameters: {
     type: 'object',
     properties: {
-      type: { type: 'string', enum: ['INCOME', 'EXPENSE', 'TRANSFER'], description: '流水类型' },
+      type: { type: 'string', enum: [...RECORD_TYPES], description: '流水类型' },
       amount: { type: 'number', description: '金额，必须大于0' },
       date: { type: 'string', description: '日期，格式 YYYY-MM-DD' },
       accountId: { type: 'string', description: '主账户 ID' },

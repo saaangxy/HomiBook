@@ -72,7 +72,7 @@ export default function BooksPage() {
   }, [editing, newName]);
 
   const handleDelete = useCallback((ledger: Ledger) => {
-    if (ledger.role !== 'OWNER') return;
+    if (ledger.role !== 'owner') return;
     setConfirm({
       title: '删除账本',
       message: `确定要删除「${ledger.name}」吗？此操作不可恢复。`,
@@ -81,7 +81,7 @@ export default function BooksPage() {
   }, []);
 
   const handleLeave = useCallback((ledger: Ledger) => {
-    if (ledger.role === 'OWNER') return;
+    if (ledger.role === 'owner') return;
     setConfirm({
       title: '退出账本',
       message: `确定要退出「${ledger.name}」吗？`,
@@ -182,7 +182,7 @@ export default function BooksPage() {
       <View style={{ gap: 8 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <Text style={{ fontSize: 13, fontWeight: '600', color: colors.mutedForeground }}>分享码</Text>
-          {managing.role === 'OWNER' && (
+          {managing.role === 'owner' && (
             <Pressable onPress={async () => { await generateShareCodeApi(managing.id, 168); setShareCodes(await listShareCodesApi(managing.id)); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, backgroundColor: alpha(colors.primary, 0.1) }}>
               <RefreshCw size={12} color={colors.primary} />
               <Text style={{ fontSize: 11, color: colors.primary }}>生成</Text>
@@ -202,7 +202,7 @@ export default function BooksPage() {
               <Pressable onPress={() => handleCopyCode(sc.code)} style={{ padding: 4 }}>
                 <Copy size={14} color={colors.primary} />
               </Pressable>
-              {managing.role === 'OWNER' && (
+              {managing.role === 'owner' && (
                 <Pressable onPress={() => setConfirm({
                   title: '删除分享码',
                   message: `确定要删除分享码「${sc.code}」吗？删除后该码将失效。`,
@@ -221,7 +221,7 @@ export default function BooksPage() {
         <Text style={{ fontSize: 13, fontWeight: '600', color: colors.mutedForeground }}>
           成员 ({members.length})
         </Text>
-        {managing.role === 'OWNER' && (
+        {managing.role === 'owner' && (
           <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
             <TextInput
               value={addEmail} onChangeText={setAddEmail} placeholder="成员邮箱"
@@ -248,12 +248,12 @@ export default function BooksPage() {
               </Text>
             </View>
             <Text style={{ flex: 1, fontSize: 14, color: colors.foreground }}>{m.nickname}</Text>
-            {m.role === 'OWNER' ? (
+            {m.role === 'owner' ? (
               <Crown size={14} color={colors.primary} />
             ) : (
               <>
-                {managing.role === 'OWNER' && (
-                  <Pressable onPress={async () => { await updateBookMemberRoleApi(managing.id, m.id, 'OWNER').catch(() => {}); setMembers(await fetchBookMembers(managing.id)); }}>
+                {managing.role === 'owner' && (
+                  <Pressable onPress={async () => { await updateBookMemberRoleApi(managing.id, m.id, 'admin').catch(() => {}); setMembers(await fetchBookMembers(managing.id)); }}>
                     <UserCheck size={14} color={colors.foreground} />
                   </Pressable>
                 )}
@@ -315,7 +315,7 @@ export default function BooksPage() {
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <Users size={12} color={colors.mutedForeground} />
                   <Text style={{ fontSize: 12, color: colors.mutedForeground }}>{ledger.memberCount} 人</Text>
-                  {ledger.role === 'OWNER' && (
+                  {ledger.role === 'owner' && (
                     <View style={{
                       paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4,
                       backgroundColor: alpha(colors.primary, 0.12),
@@ -335,7 +335,7 @@ export default function BooksPage() {
                 <Users size={14} color={colors.foreground} />
                 <Text style={{ fontSize: 12, color: colors.foreground }}>成员</Text>
               </Pressable>
-              {ledger.role === 'OWNER' && (
+              {ledger.role === 'owner' && (
                 <>
                   <Pressable onPress={() => { setEditing(ledger); setNewName(ledger.name); }} style={{
                     flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6,
@@ -353,7 +353,7 @@ export default function BooksPage() {
                   </Pressable>
                 </>
               )}
-              {ledger.role !== 'OWNER' && (
+              {ledger.role !== 'owner' && (
                 <Pressable onPress={() => handleLeave(ledger)} style={{
                   flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6,
                   borderRadius: 8, backgroundColor: alpha(colors.destructive, 0.1),

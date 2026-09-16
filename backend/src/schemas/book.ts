@@ -1,4 +1,6 @@
 import { z } from 'zod'
+// 角色值域单一来源 @homibook/core(owner 不可指派,故只用可授予集合)
+import { ASSIGNABLE_BOOK_ROLES } from '@homibook/core'
 
 export const createBookSchema = z.object({
   name: z.string().min(1, '账本名称不能为空').max(50, '账本名称不能超过50个字符').describe('账本名称'),
@@ -21,5 +23,5 @@ export const addMemberSchema = z.object({
 })
 
 export const updateMemberRoleSchema = z.object({
-  role: z.enum(['member', 'admin']).describe('成员角色'),
+  role: z.enum(ASSIGNABLE_BOOK_ROLES).describe('成员角色'),
 })

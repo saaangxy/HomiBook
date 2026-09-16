@@ -1,4 +1,5 @@
 import { refreshAccountBalance } from '../record.js'
+import { normalizeAccountType, normalizeRecordType } from '@homibook/core'
 
 // ---- 类型 ----
 
@@ -71,7 +72,8 @@ export async function createAccountsInTx(
         accountBookId,
         ownerId: acctOwnerId,
         name: acct.name,
-        type: acct.type,
+        // 归一化:导入来源的账户类型可能来自 AI 参数(如 "BANK"),非法值会让客户端按 type 查图标时崩溃
+        type: normalizeAccountType(acct.type),
         bankName: acct.bankName || null,
         accountNo: acct.accountNo || null,
         balance: 0,
@@ -94,7 +96,8 @@ export async function saveCategoryMappingsInTx(
   mappings: CategoryMappingInput[],
 ): Promise<void> {
   for (const m of mappings) {
-    const recordType = m.recordType || ''
+    // 归一化:'' 表示不限类型(保留);其余非法值会让该映射永远匹配不上(静默失效)
+    const recordType = m.recordType ? normalizeRecordType(m.recordType) : ''
     const payerContains = m.payerContains || ''
     const descriptionContains = m.descriptionContains || ''
     await tx.importCategoryMapping.upsert({
@@ -206,7 +209,8 @@ export async function batchCreateRecordsInTx(
 
       return {
         accountBookId,
-        type: r.type,
+        // 归一化:导入类型可能来自客户端覆盖参数(未识别记录的人工指定),非法值会让客户端按 type 查图标时崩溃
+        type: normalizeRecordType(r.type),
         amount: r.amount,
         date: new Date(r.date),
         remark: r.remark || null,

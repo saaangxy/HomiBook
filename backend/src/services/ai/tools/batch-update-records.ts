@@ -2,6 +2,7 @@ import { prisma } from '../../../app.js'
 import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 import { resolveAccountId } from './helpers.js'
+import { RECORD_TYPES, normalizeRecordType } from '@homibook/core'
 import { dateKey } from '../../../lib/date-time.js'
 
 interface UpdateInput {
@@ -32,7 +33,7 @@ export const batchUpdateRecordsTool: ToolDef = {
           type: 'object',
           properties: {
             recordId: { type: 'string', description: '要修改的记录 ID' },
-            type: { type: 'string', enum: ['INCOME', 'EXPENSE', 'TRANSFER'], description: '流水类型' },
+            type: { type: 'string', enum: [...RECORD_TYPES], description: '流水类型' },
             amount: { type: 'number', description: '金额' },
             date: { type: 'string', description: '日期 YYYY-MM-DD' },
             accountId: { type: 'string', description: '账户 ID' },
@@ -88,7 +89,7 @@ export const batchUpdateRecordsTool: ToolDef = {
       const updated = await prisma.$transaction(
         args.updates.map((u) => {
           const data: Record<string, unknown> = {}
-          if (u.type) data.type = u.type
+          if (u.type) data.type = normalizeRecordType(u.type)
           if (u.amount != null) data.amount = Number(u.amount)
           if (u.date) data.date = new Date(u.date)
           if (u.accountId) data.accountId = resolvedIds[u.accountId]

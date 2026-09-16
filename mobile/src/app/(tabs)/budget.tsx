@@ -18,12 +18,14 @@ import {
   deleteBudgetApi, batchCreateBudgetApi, copyBudgetApi,
 } from '@/services/records';
 import type { BudgetItem, BudgetType } from '@/types';
+import { BUDGET_TYPE_LABELS } from '@homibook/core';
 
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
+// 类型标签单一来源 @homibook/core
 const BUDGET_TYPES: { key: BudgetType | 'ALL'; label: string }[] = [
   { key: 'ALL', label: '全部' },
-  { key: 'FIXED', label: '固定' },
-  { key: 'FREE', label: '自由' },
+  { key: 'FIXED', label: BUDGET_TYPE_LABELS.FIXED },
+  { key: 'FREE', label: BUDGET_TYPE_LABELS.FREE },
 ];
 
 // 预算管理页:对齐网页端完整新增/编辑 —— 固定/自由两种类型、批量添加、复制到多月份
@@ -345,8 +347,8 @@ export default function BudgetPage() {
         <Text style={{ fontSize: 14, color: colors.foreground }}>{formType === 'FIXED' ? '固定预算(每月固定支出)' : '自由预算(临时项目预算)'}</Text>
       ) : (
         seg([
-          { key: 'FIXED', label: '固定预算' },
-          { key: 'FREE', label: '自由预算' },
+          { key: 'FIXED', label: BUDGET_TYPE_LABELS.FIXED },
+          { key: 'FREE', label: BUDGET_TYPE_LABELS.FREE },
         ], formType, (k) => setFormType(k as BudgetType))
       )}
 
@@ -600,7 +602,7 @@ export default function BudgetPage() {
       <FormSheet visible={batchOpen} title="批量添加预算" onClose={() => setBatchOpen(false)} onSave={handleBatchCreate} saveLabel={batchType === 'FREE' ? '创建' : `生成(${batchMonths.length}个月)`} saveLoading={batchSaving}>
         <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ maxHeight: 520 }}>
           {fieldLabel('类型')}
-          {seg([{ key: 'FIXED', label: '固定预算' }, { key: 'FREE', label: '自由预算' }], batchType, (k) => setBatchType(k as BudgetType))}
+          {seg([{ key: 'FIXED', label: BUDGET_TYPE_LABELS.FIXED }, { key: 'FREE', label: BUDGET_TYPE_LABELS.FREE }], batchType, (k) => setBatchType(k as BudgetType))}
 
           {fieldLabel('名称')}
           <TextInput value={batchName} onChangeText={setBatchName} placeholder="预算名称" placeholderTextColor={colors.mutedForeground} style={inputStyle} />

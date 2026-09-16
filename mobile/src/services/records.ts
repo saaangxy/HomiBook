@@ -4,11 +4,15 @@ import type {
   AccountItem as CoreAccount,
   BookItem,
   BookMember,
+  BookRole,
   BudgetItem as CoreBudget,
+  BudgetType,
+  DedupMatchFields,
   MonthlyTrendPoint,
   RecordItem as CoreRecord,
   RecordSummary as CoreSummary,
 } from '@homibook/core';
+import { normalizeAccountType, normalizeRecordType } from '@homibook/core';
 
 // 数据访问层 —— 真实后端 API 对接
 // 后端权威类型 -> mobile 扁平展示类型
@@ -17,7 +21,8 @@ import type {
 function toRecordItem(r: CoreRecord): RecordItem {
   return {
     id: r.id,
-    type: r.type,
+    // 归一化:历史数据可能出现非法类型,直接透传会导致 UI 按 type 查图标/颜色时崩溃
+    type: normalizeRecordType(r.type),
     amount: r.amount,
     // 保留后端完整日期(含时分秒,与 web 端一致);按日匹配处用 date.slice(0,10)
     date: r.date || '',
@@ -41,7 +46,8 @@ function toAccountItem(a: CoreAccount): AccountItem {
   return {
     id: a.id,
     name: a.name,
-    type: a.type,
+    // 归一化:历史数据可能出现非法类型(如 "BANK"),直接透传会导致 UI 按 type 查图标时崩溃
+    type: normalizeAccountType(a.type),
     balance: a.computedBalance ?? 0,
     initialBalance: a.initialBalance ?? 0,
     bankName: a.bankName ?? null,
@@ -76,7 +82,8 @@ function toLedger(b: BookItem): Ledger {
     name: b.name,
     icon: '📒',
     memberCount: b.memberCount ?? 1,
-    role: b.role?.toUpperCase() as Ledger['role'],
+    // 角色原样透传(此前 toUpperCase 成 OWNER/MEMBER,与后端的 owner/admin/member 漂移)
+    role: b.role,
     shareCode: b.shareCode || undefined,
   };
 }
@@ -270,15 +277,8 @@ export async function deleteRecordApi(bookId: string, id: string): Promise<void>
 
 // ── 去重检测(对齐 web 端 DedupDialog / POST /api/records/detect-duplicates) ──
 
-export interface DedupMatchFields {
-  /** 日期匹配精度:exact=精确到秒,date=同日,null=忽略 */
-  date: 'exact' | 'date' | null;
-  type: boolean;
-  accountId: boolean;
-  payer: boolean;
-  amount: boolean;
-  ownerId: boolean;
-}
+// 去重匹配字段以 core 为准(此前此处重声明,与 core 漂移)
+export type { DedupMatchFields };
 
 export interface DuplicateGroup {
   key: string;
@@ -390,7 +390,7 @@ export async function fetchBudgets(bookId: string): Promise<BudgetItem[]> {
 
 export interface BudgetCreatePayload {
   name: string;
-  type: 'FIXED' | 'FREE';
+  type: BudgetType;
   year: number;
   month: number; // 0=全年(FREE)
   amount: number;
@@ -428,7 +428,7 @@ export async function deleteBudgetApi(id: string): Promise<void> {
 export async function batchCreateBudgetApi(
   bookId: string,
   data: {
-    name: string; type: 'FIXED' | 'FREE'; amount: number; categoryCode?: string; tags?: string[];
+    name: string; type: BudgetType; amount: number; categoryCode?: string; tags?: string[];
     year: number; months: number[]; startDate?: string; endDate?: string; remark?: string;
   },
 ): Promise<void> {
@@ -487,7 +487,7 @@ export async function fetchBookMembers(bookId: string): Promise<LedgerMember[]> 
     id: m.id,
     userId: m.user?.id ?? m.userId ?? m.id,
     nickname: m.user?.nickname ?? m.nickname ?? '成员',
-    role: m.role === 'admin' || m.role === 'owner' ? 'OWNER' : 'MEMBER',
+    role: m.role === 'owner' ? 'owner' : m.role === 'admin' ? 'admin' : 'member',
     joinedAt: m.joinedAt,
   }));
 }
@@ -504,8 +504,8 @@ export async function removeBookMemberApi(bookId: string, memberId: string): Pro
   await http.delete(`/api/books/${bookId}/members/${memberId}`);
 }
 
-/** 修改成员角色 OWNER/MEMBER */
-export async function updateBookMemberRoleApi(bookId: string, memberId: string, role: string): Promise<void> {
+/** 修改成员角色(owner/admin/member,与后端 z.enum 一致;owner 不可指派) */
+export async function updateBookMemberRoleApi(bookId: string, memberId: string, role: BookRole): Promise<void> {
   await http.patch(`/api/books/${bookId}/members/${memberId}/role`, { role });
 }
 

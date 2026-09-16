@@ -6,6 +6,19 @@
 
 export type RecordType = 'INCOME' | 'EXPENSE' | 'TRANSFER';
 
+/** 收支类型全集(运行时校验用,与 RecordType 联合保持一致) */
+export const RECORD_TYPES = ['INCOME', 'EXPENSE', 'TRANSFER'] as const;
+
+/** 是否为合法收支类型(历史数据/外部写入可能存在非法值) */
+export function isRecordType(value: unknown): value is RecordType {
+  return typeof value === 'string' && (RECORD_TYPES as readonly string[]).includes(value);
+}
+
+/** 收支类型归一化:非法值回落 EXPENSE(各端会按 type 查图标/颜色,非法值会直接导致渲染崩溃) */
+export function normalizeRecordType(value: unknown): RecordType {
+  return isRecordType(value) ? value : 'EXPENSE';
+}
+
 /** 流水记录(权威,后端响应结构) */
 export interface RecordItem {
   id: string;
@@ -93,3 +106,13 @@ export interface CategorySummary {
   amount: number;
   type: string;
 }
+
+/** 统计分组维度(与后端查询参数 groupBy 一致) */
+export type StatGroupBy = 'category' | 'ownerId' | 'accountId';
+
+export const STAT_GROUP_BYS = ['category', 'ownerId', 'accountId'] as const;
+
+/** 统计/余额历史粒度(与后端查询参数 granularity 一致) */
+export type StatGranularity = 'daily' | 'monthly';
+
+export const STAT_GRANULARITIES = ['daily', 'monthly'] as const;

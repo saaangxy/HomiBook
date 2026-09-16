@@ -2,9 +2,10 @@ import { prisma } from '../../../app.js'
 import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
 import { getNextTriggerTime } from '../../recurring.js'
 import type { ToolDef, ToolContext } from './types.js'
+import { RECURRING_TYPES, type RecurringType } from '@homibook/core'
 
 interface QueryRecurringArgs {
-  type?: 'PERIODIC' | 'LOAN'
+  type?: RecurringType
   active?: boolean
 }
 
@@ -16,7 +17,7 @@ export const queryRecurringTool: ToolDef = {
   parameters: {
     type: 'object',
     properties: {
-      type: { type: 'string', enum: ['PERIODIC', 'LOAN'], description: '类型筛选' },
+      type: { type: 'string', enum: [...RECURRING_TYPES], description: '类型筛选' },
       active: { type: 'boolean', description: '是否启用' },
     },
   },

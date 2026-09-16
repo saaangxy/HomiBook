@@ -2,16 +2,16 @@ import { readFileSync, existsSync } from 'fs'
 import path from 'path'
 import type { ToolDef } from './types.js'
 import { prisma } from '../../../app.js'
-import { assertIsMember } from '../security.js'
+import { assertIsMember, loadUserProviderConfig } from '../security.js'
 import { createModel, DEFAULT_BASE_URLS, type ProviderType } from '../providers.js'
 import { detectImageFormat, VISION_MEDIA_TYPES, IMAGE_FORMAT_LABELS } from '../image-format.js'
 import { generateText } from 'ai'
 
 async function loadVisionConfig(userId: string) {
   const prefs = await prisma.userAIConfig.findUnique({ where: { userId } })
-  // 优先使用视觉模型配置，回退到简单任务模型
+  // 优先使用视觉模型配置，回退到简单任务模型(按归属读取:避免引用到他人配置从而用其 apiKey)
   if (prefs?.visionProviderConfigId && prefs?.visionModel) {
-    const config = await prisma.userProviderConfig.findUnique({ where: { id: prefs.visionProviderConfigId } })
+    const config = await loadUserProviderConfig(userId, prefs.visionProviderConfigId)
     if (config) {
       const baseURL = config.baseURL || DEFAULT_BASE_URLS[config.provider as ProviderType] || ''
       return { provider: config.provider, model: prefs.visionModel, apiKey: config.apiKey, baseURL }
@@ -19,7 +19,7 @@ async function loadVisionConfig(userId: string) {
   }
   // 回退到简单任务模型
   if (prefs?.simpleProviderConfigId && prefs?.simpleModel) {
-    const config = await prisma.userProviderConfig.findUnique({ where: { id: prefs.simpleProviderConfigId } })
+    const config = await loadUserProviderConfig(userId, prefs.simpleProviderConfigId)
     if (config) {
       const baseURL = config.baseURL || DEFAULT_BASE_URLS[config.provider as ProviderType] || ''
       return { provider: config.provider, model: prefs.simpleModel, apiKey: config.apiKey, baseURL }

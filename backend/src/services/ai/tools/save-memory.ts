@@ -1,6 +1,7 @@
 import type { ToolDef, ToolContext } from './types.js'
 import type { ToolResult } from '../security.js'
 import { saveMemory } from '../memory.js'
+import { MEMORY_TYPES } from '@homibook/core'
 
 export const saveMemoryTool: ToolDef = {
   name: 'save_memory',
@@ -14,7 +15,7 @@ export const saveMemoryTool: ToolDef = {
       content: { type: 'string', description: '记忆内容，简洁描述一条习惯/偏好/规则/事实' },
       memoryType: {
         type: 'string',
-        enum: ['habit', 'preference', 'rule', 'fact'],
+        enum: [...MEMORY_TYPES],
         description: 'habit=消费习惯, preference=记账偏好, rule=明确规则, fact=事实信息',
       },
       importance: { type: 'number', description: '重要程度 0-1，可不填使用类型默认值' },

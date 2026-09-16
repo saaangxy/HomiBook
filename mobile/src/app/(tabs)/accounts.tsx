@@ -14,6 +14,7 @@ import { createAccountApi, createAdjustmentApi, deleteAccountApi, fetchAccounts,
 import type { BalanceAdjustment } from '@/services/records';
 import { formatMoney } from '@/lib/format';
 import type { AccountItem, AccountType } from '@/types';
+import { ACCOUNT_TYPES, ACCOUNT_TYPE_LABELS } from '@homibook/core';
 import { isMultiOwnerAccounts } from '@/lib/account';
 
 const FILTERS = ['全部', '活跃', '已归档'] as const;
@@ -24,16 +25,7 @@ const FILTER_STATUS: Record<Filter, 'ACTIVE' | 'ARCHIVED' | null> = {
   已归档: 'ARCHIVED',
 };
 
-const TYPE_LABEL: Record<AccountType, string> = {
-  BANK_DEBIT: '借记卡',
-  CREDIT_CARD: '信用卡',
-  ALIPAY: '支付宝',
-  WECHAT: '微信',
-  CASH: '现金',
-  RECHARGE_CARD: '储值卡',
-  INVESTMENT: '投资',
-  OTHER: '其他',
-};
+
 
 const TYPE_ICON: Record<AccountType, typeof CreditCard> = {
   BANK_DEBIT: CreditCard,
@@ -46,7 +38,7 @@ const TYPE_ICON: Record<AccountType, typeof CreditCard> = {
   OTHER: Landmark,
 };
 
-const TYPE_KEYS = Object.keys(TYPE_LABEL) as AccountType[];
+const TYPE_KEYS: AccountType[] = [...ACCOUNT_TYPES];
 
 // 账户管理:筛选 + 账户卡片列表 + 新建/编辑/归档/删除(对接真实 API)
 export default function AccountsScreen() {
@@ -267,7 +259,7 @@ export default function AccountsScreen() {
                         <Text style={{ fontSize: 15, fontWeight: '600' }}>{a.name}</Text>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
                           <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, backgroundColor: colors.muted }}>
-                            <Text style={{ fontSize: 10, color: colors.mutedForeground, fontWeight: '600' }}>{TYPE_LABEL[a.type]}</Text>
+                            <Text style={{ fontSize: 10, color: colors.mutedForeground, fontWeight: '600' }}>{ACCOUNT_TYPE_LABELS[a.type]}</Text>
                           </View>
                           {a.accountNo ? <Text variant="muted" style={{ fontSize: 11 }}>{a.accountNo}</Text> : null}
                           {multiOwnerAccounts && a.ownerName ? <Text variant="muted" style={{ fontSize: 11 }}>{a.ownerName}</Text> : null}
@@ -321,7 +313,7 @@ export default function AccountsScreen() {
               const active = type === t;
               return (
                 <Pressable key={t} onPress={() => setType(t)} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: active ? colors.primary : colors.border, backgroundColor: active ? alpha(colors.primary, 0.1) : colors.muted }}>
-                  <Text style={{ fontSize: 12, color: active ? colors.primary : colors.mutedForeground, fontWeight: active ? '600' : '400' }}>{TYPE_LABEL[t]}</Text>
+                  <Text style={{ fontSize: 12, color: active ? colors.primary : colors.mutedForeground, fontWeight: active ? '600' : '400' }}>{ACCOUNT_TYPE_LABELS[t]}</Text>
                 </Pressable>
               );
             })}

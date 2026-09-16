@@ -1,12 +1,11 @@
 import { z } from 'zod'
-
-const RECURRING_TYPES = ['PERIODIC', 'LOAN'] as const
-const INTEREST_METHODS = ['EQUAL_INSTALLMENT', 'EQUAL_PRINCIPAL'] as const
+// 值域单一来源 @homibook/core
+import { LOAN_INTEREST_METHODS, RECORD_TYPES, RECURRING_TYPES } from '@homibook/core'
 
 export const createRecurringSchema = z.object({
   accountBookId: z.string().min(1).describe('所属账本ID'),
   name: z.string().min(1, '请输入名称').describe('名称'),
-  type: z.enum(['INCOME', 'EXPENSE', 'TRANSFER']).describe('类型'),
+  type: z.enum(RECORD_TYPES).describe('类型'),
   amount: z.number().min(0).describe('金额'),
   remark: z.string().optional().describe('备注'),
   tags: z.array(z.string()).optional().describe('标签'),
@@ -23,7 +22,7 @@ export const createRecurringSchema = z.object({
   // 贷款字段
   loanTotalAmount: z.number().positive().optional().describe('贷款总额'),
   loanInterestRate: z.number().min(0).optional().describe('贷款利率'),
-  loanInterestMethod: z.enum(INTEREST_METHODS).optional().describe('贷款计息方式'),
+  loanInterestMethod: z.enum(LOAN_INTEREST_METHODS).optional().describe('贷款计息方式'),
   loanStartDate: z.string().optional().describe('贷款开始日期'),
   loanTermMonths: z.number().int().min(1).max(360).optional().describe('贷款期数（月）'),
 
@@ -47,7 +46,7 @@ export const createRecurringSchema = z.object({
 
 export const updateRecurringSchema = z.object({
   name: z.string().optional().describe('名称'),
-  type: z.enum(['INCOME', 'EXPENSE', 'TRANSFER']).optional().describe('类型'),
+  type: z.enum(RECORD_TYPES).optional().describe('类型'),
   amount: z.number().min(0).optional().describe('金额'),
   remark: z.string().nullable().optional().describe('备注'),
   tags: z.array(z.string()).optional().describe('标签'),

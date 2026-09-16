@@ -22,8 +22,7 @@ import { FormSheet } from '@/components/chrome/FormSheet';
 import { exportRecordsCsv, type ExportMode } from '@/services/import';
 import { formatMoneyShort } from '@/lib/format';
 import type { RecordItem, RecordType } from '@/types';
-
-const TYPE_LABEL: Record<RecordType, string> = { EXPENSE: '支出', INCOME: '收入', TRANSFER: '转账' };
+import { RECORD_TYPE_LABELS as TYPE_LABEL } from '@homibook/core';
 /** 列表分页大小:一次只加载 20 条,滚动到底自动加载下一页 */
 const PAGE_SIZE = 20;
 

@@ -5,19 +5,20 @@ import { prisma } from '../app.js'
 import { authenticate, requireAdmin } from '../middleware/auth.js'
 import { zSchema } from '../lib/schema-helpers.js'
 import { cleanupExpiredAuditLogs } from '../services/ai/audit.js'
+import { AUDIT_ACTIONS, USER_ROLES, USER_STATUSES } from '@homibook/core'
 
 const createUserSchema = z.object({
   username: z.string().min(3, '账号至少3位').max(30, '账号最多30位').regex(/^[a-zA-Z0-9_]+$/, '账号只能包含字母、数字和下划线'),
   email: z.string().email(),
   password: z.string().min(6),
   nickname: z.string().optional(),
-  role: z.enum(['ADMIN', 'USER']).default('USER'),
+  role: z.enum(USER_ROLES).default('USER'),
 })
 
 const updateUserSchema = z.object({
   nickname: z.string().optional(),
-  role: z.enum(['ADMIN', 'USER']).optional(),
-  status: z.enum(['ACTIVE', 'DISABLED']).optional(),
+  role: z.enum(USER_ROLES).optional(),
+  status: z.enum(USER_STATUSES).optional(),
 })
 
 const changePasswordSchema = z.object({
@@ -247,7 +248,7 @@ export async function adminRoutes(app: FastifyInstance) {
         page: z.coerce.number().int().min(1).default(1),
         pageSize: z.coerce.number().int().min(1).max(100).default(20),
         userId: z.string().optional(),
-        action: z.enum(['tool_call', 'confirm', 'reject', 'model_call']).optional(),
+        action: z.enum(AUDIT_ACTIONS).optional(),
         toolName: z.string().optional(),
         status: z.enum(['success', 'error']).optional(),
         sessionId: z.string().optional(),

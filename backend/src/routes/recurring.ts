@@ -4,6 +4,7 @@ import {authenticate, assertIsMember} from '../middleware/auth.js'
 import {z} from 'zod'
 import {zSchema} from '../lib/schema-helpers.js'
 import {createRecurringSchema, listRecurringSchema, updateRecurringSchema,} from '../schemas/recurring.js'
+import {normalizeRecordType} from '@homibook/core'
 import {
   calcEqualInstallment,
   ensureFixedTag,
@@ -353,7 +354,8 @@ export async function recurringRoutes(app: FastifyInstance) {
             const record = await prisma.record.create({
               data: {
                 accountBookId: rt.accountBookId,
-                type: rt.type,
+                // 归一化:固定收支若为历史脏数据,生成的流水也不应继承非法类型
+                type: normalizeRecordType(rt.type),
                 amount: pp.totalPayment,
                 date: pp.dueDate,
                 remark: `${rt.remark || '还款'}\n本金: ${pp.principal.toFixed(2)} | 利息: ${pp.interest.toFixed(2)}`.trim(),

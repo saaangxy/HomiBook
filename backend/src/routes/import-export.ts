@@ -16,6 +16,7 @@ import {
   inferAccount,
   type ParsedRow,
 } from '../services/import/shared.js'
+import { ACCOUNT_TYPES, IMPORT_SOURCES, RECORD_TYPES, RECORD_TYPE_LABELS } from '@homibook/core'
 import {
   createAccountsInTx,
   saveCategoryMappingsInTx,
@@ -115,16 +116,16 @@ async function resolveCategories(source: string, rows: ParsedRow[]) {
 // ======================== 路由 ========================
 
 const previewSchema = z.object({
-  source: z.enum(['alipay', 'wechat', 'csv', 'jd']),
+  source: z.enum(IMPORT_SOURCES),
   accountBookId: z.string().min(1),
 })
 
 const importConfirmSchema = z.object({
   accountBookId: z.string().min(1),
-  source: z.enum(['alipay', 'wechat', 'csv', 'jd']),
+  source: z.enum(IMPORT_SOURCES),
   records: z.array(z.object({
     date: z.string(),
-    type: z.enum(['INCOME', 'EXPENSE', 'TRANSFER']),
+    type: z.enum(RECORD_TYPES),
     amount: z.number().positive(),
     accountId: z.string().min(1),
     toAccountId: z.string().optional(),
@@ -137,7 +138,7 @@ const importConfirmSchema = z.object({
   accountCreations: z.array(z.object({
     csvName: z.string(),
     name: z.string().min(1).max(30),
-    type: z.string().min(1),
+    type: z.enum(ACCOUNT_TYPES),
     bankName: z.string().optional(),
     accountNo: z.string().optional(),
     ownerId: z.string().optional(),
@@ -616,7 +617,7 @@ export async function importExportRoutes(app: FastifyInstance) {
     })
 
     // 构建 CSV(列名与系统字段/导入列映射一致;转账来源恒等于账户故不导出)
-    const typeLabels: Record<string, string> = { INCOME: '收入', EXPENSE: '支出', TRANSFER: '转账' }
+    const typeLabels = RECORD_TYPE_LABELS as Record<string, string>
     const header = '日期,类型,金额,账户,转账目标,分类,交易方,备注,归属人,标签'
     const csvRows = records.map(r => {
       const tags = JSON.parse(r.tags || '[]') as string[]

@@ -3,6 +3,7 @@ import type { Prisma } from '../../../generated/sqlite/client.js'
 import { retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 import { computeAccountBalance, assertCanManageAccount } from '../../account.js'
+import { ACCOUNT_STATUSES, ACCOUNT_TYPES, ACCOUNT_VISIBILITIES, normalizeAccountType } from '@homibook/core'
 
 export const updateAccountTool: ToolDef = {
   name: 'update_account',
@@ -14,12 +15,12 @@ export const updateAccountTool: ToolDef = {
     properties: {
       id: { type: 'string', description: '账户 ID' },
       name: { type: 'string', description: '账户名称' },
-      type: { type: 'string', enum: ['BANK_DEBIT', 'CREDIT_CARD', 'ALIPAY', 'WECHAT', 'CASH', 'RECHARGE_CARD', 'INVESTMENT', 'OTHER'], description: '账户类型：BANK_DEBIT(借记卡)/CREDIT_CARD(信用卡)/ALIPAY/WECHAT/CASH(现金)/RECHARGE_CARD(充值卡)/INVESTMENT(投资)/OTHER' },
+      type: { type: 'string', enum: [...ACCOUNT_TYPES], description: '账户类型：BANK_DEBIT(借记卡)/CREDIT_CARD(信用卡)/ALIPAY/WECHAT/CASH(现金)/RECHARGE_CARD(充值卡)/INVESTMENT(投资)/OTHER' },
       currency: { type: 'string', description: '货币代码' },
       accountNo: { type: 'string', description: '账号' },
       bankName: { type: 'string', description: '银行名称' },
-      visibility: { type: 'string', enum: ['PUBLIC', 'PRIVATE'], description: '可见性' },
-      status: { type: 'string', enum: ['ACTIVE', 'ARCHIVED'], description: '状态' },
+      visibility: { type: 'string', enum: [...ACCOUNT_VISIBILITIES], description: '可见性' },
+      status: { type: 'string', enum: [...ACCOUNT_STATUSES], description: '状态' },
     },
     required: ['id'],
   },
@@ -41,7 +42,7 @@ export const updateAccountTool: ToolDef = {
 
       const data: Prisma.AccountUpdateInput = {}
       if (args.name !== undefined) data.name = args.name
-      if (args.type !== undefined) data.type = args.type
+      if (args.type !== undefined) data.type = normalizeAccountType(args.type)
       if (args.currency !== undefined) data.currency = args.currency
       if (args.accountNo !== undefined) data.accountNo = args.accountNo
       if (args.bankName !== undefined) data.bankName = args.bankName

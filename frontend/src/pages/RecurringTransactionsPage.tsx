@@ -29,18 +29,13 @@ import { TagCombobox } from '@/components/TagCombobox'
 import { recurringApi, type RecurringTransaction, type LoanPreview } from '@/api/recurring'
 import { accountApi, type AccountItem } from '@/api/account'
 import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
-import { formatMoney } from '@homibook/core'
+import { LOAN_INTEREST_METHOD_LABELS as METHOD_LABELS, RECURRING_TYPE_LABELS, formatMoney } from '@homibook/core'
 import { useBookStore } from '@/stores/book'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { Plus, Pencil, Trash2, Power, PowerOff, FileText } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 import { RECORD_TYPE_LABELS as TYPE_LABELS, RECORD_TYPE_BADGE_CLASS as TYPE_COLORS, RECORD_TYPE_TEXT_CLASS } from '@/lib/record-type'
-const RECURRING_TYPE_LABELS: Record<string, string> = { PERIODIC: '周期', LOAN: '贷款' }
-const METHOD_LABELS: Record<string, string> = {
-  EQUAL_INSTALLMENT: '等额本息',
-  EQUAL_PRINCIPAL: '等额本金',
-}
 
 export function RecurringTransactionsPage() {
   const { currentBookId } = useBookStore()
@@ -785,7 +780,7 @@ export function RecurringTransactionsPage() {
               <div className="flex gap-4 text-xs text-muted-foreground">
                 <span>总额: {formatMoney(planTarget.loanTotalAmount || 0)}</span>
                 <span>剩余: {formatMoney(planTarget.loanRemainingAmount || 0)}</span>
-                <span>方式: {METHOD_LABELS[planTarget.loanInterestMethod || ''] || '-'}</span>
+                <span>方式: {(METHOD_LABELS as Record<string, string>)[planTarget.loanInterestMethod || ''] || '-'}</span>
                 <span>利率: {planTarget.loanInterestRate}%</span>
               </div>
               <RepaymentPlanTable plans={planTarget.repaymentPlans || []} />

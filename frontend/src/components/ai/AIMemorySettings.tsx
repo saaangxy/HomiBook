@@ -6,13 +6,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Brain, Pencil, Trash2 } from 'lucide-react'
 import { fetchMemories, deleteMemory as deleteMemoryApi, updateMemory as updateMemoryApi, type UserMemory } from '@/api/chat'
 import { toast } from 'sonner'
-
-const MEMORY_TYPE_LABELS: Record<string, string> = {
-  habit: '习惯',
-  preference: '偏好',
-  rule: '规则',
-  fact: '事实',
-}
+import { MEMORY_TYPE_LABELS } from '@homibook/core'
 
 export function AIMemorySettings() {
   const [loading, setLoading] = useState(true)

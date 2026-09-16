@@ -3,7 +3,7 @@ import { markSubmitted, isSubmitted } from '@/lib/ai-submit'
 import { getToolDisplayName } from '@/lib/tool-names'
 import type { ToolCallEntry, SuggestionOption } from '@/stores/chat'
 import { useChatStore, useSessionView, getSessionView } from '@/stores/chat'
-import { resolveToolCallStatus } from '@homibook/core'
+import { ACCOUNT_TYPE_LABELS, BUDGET_TYPE_LABELS, resolveToolCallStatus } from '@homibook/core'
 import { RECORD_TYPE_LABELS, RECORD_TYPE_TEXT_CLASS, RECORD_TYPE_BADGE_CLASS } from '@/lib/record-type'
 import { settingsApi } from '@/api/settings'
 import { useBookStore } from '@/stores/book'
@@ -185,7 +185,7 @@ function BudgetTable({ budgets, labels }: { budgets: any[]; labels: Map<string, 
         {budgets.map((b, i) => (
           <TableRow key={i} className="hover:bg-accent/50">
             <TableCell className="text-xs whitespace-nowrap max-w-24 truncate">{b.name || categoryText(labels, b.categoryCode)}</TableCell>
-            <TableCell className="text-xs">{b.type === 'FIXED' ? '固定' : '月度'}</TableCell>
+            <TableCell className="text-xs">{budgetTypeLabel(b.type)}</TableCell>
             <TableCell className="text-xs whitespace-nowrap">{b.year}年{b.month ? `${b.month}月` : '全年'}</TableCell>
             <TableCell className="text-xs text-right">{(b.amount ?? 0).toFixed(2)}</TableCell>
             <TableCell className="text-xs text-right">{(b.used ?? 0).toFixed(2)}</TableCell>
@@ -198,10 +198,9 @@ function BudgetTable({ budgets, labels }: { budgets: any[]; labels: Map<string, 
   )
 }
 
-const ACCOUNT_TYPE_LABELS_MAP: Record<string, string> = {
-  BANK_DEBIT: '储蓄卡', CREDIT_CARD: '信用卡', ALIPAY: '支付宝', WECHAT: '微信',
-  INVESTMENT: '投资', CASH: '现金', RECHARGE_CARD: '充值卡', OTHER: '其他',
-}
+// 账户/预算类型标签单一来源 @homibook/core(此前本地手抄,与设置页文案漂移)
+const accountTypeLabel = (t?: string) => (ACCOUNT_TYPE_LABELS as Record<string, string>)[t ?? ''] || t || '-'
+const budgetTypeLabel = (t?: string) => (BUDGET_TYPE_LABELS as Record<string, string>)[t ?? ''] || t || '-'
 
 /** 账户列表表格 */
 function AccountTable({ accounts, totalBalance }: { accounts: any[]; totalBalance?: number }) {
@@ -222,7 +221,7 @@ function AccountTable({ accounts, totalBalance }: { accounts: any[]; totalBalanc
           {accounts.map((a, i) => (
             <TableRow key={i} className="hover:bg-accent/50">
               <TableCell className="text-xs whitespace-nowrap">{a.name}</TableCell>
-              <TableCell className="text-xs text-muted-foreground">{ACCOUNT_TYPE_LABELS_MAP[a.type] || a.type}</TableCell>
+              <TableCell className="text-xs text-muted-foreground">{accountTypeLabel(a.type)}</TableCell>
               <TableCell className={cn('text-xs text-right font-medium', (a.balance ?? 0) < 0 && 'text-red-600')}>{(a.balance ?? 0).toFixed(2)}</TableCell>
             </TableRow>
           ))}
@@ -239,7 +238,7 @@ function BudgetSummary({ budget, labels }: { budget: any; labels: Map<string, st
       <div className="flex items-center gap-2">
         <span className="inline-flex items-center gap-1 text-green-600 font-medium"><CheckCircle2 size={12} />已设置</span>
         <span className="font-medium">{budget.name || categoryText(labels, budget.categoryCode)}</span>
-        <span className="text-muted-foreground">{budget.type === 'FIXED' ? '固定' : '月度'} · {budget.year}年{budget.month ? `${budget.month}月` : '全年'}</span>
+        <span className="text-muted-foreground">{budgetTypeLabel(budget.type)} · {budget.year}年{budget.month ? `${budget.month}月` : '全年'}</span>
       </div>
       <div className="text-muted-foreground">金额: <span className="font-medium text-foreground">{(budget.amount ?? 0).toFixed(2)}</span></div>
     </div>

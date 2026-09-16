@@ -9,6 +9,15 @@ import type { RecordType } from './types/index.js';
 
 export type ImportSource = 'alipay' | 'wechat' | 'jd' | 'csv';
 
+/** 全部导入来源(运行时校验用,与 ImportSource 联合保持一致) */
+export const IMPORT_SOURCES = ['alipay', 'wechat', 'jd', 'csv'] as const;
+
+/**
+ * AI 导入工具可识别的来源(不含 csv:csv 需手动配置列映射,走向导而非对话)。
+ * backend 的 preview_import/confirm_import 工具与 mobile 的 AI 导入选择器共用此集合。
+ */
+export const IMPORT_AI_SOURCES = ['alipay', 'wechat', 'jd'] as const;
+
 /** 收支类型标签(导入/导出界面共用;全站统一的权威标签,web/mobile 各处勿再本地定义) */
 export const RECORD_TYPE_LABELS: Record<RecordType, string> = {
   INCOME: '收入',

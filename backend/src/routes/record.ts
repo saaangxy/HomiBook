@@ -13,7 +13,7 @@ import {
 } from '../schemas/record.js'
 import {z} from 'zod'
 import {zSchema} from '../lib/schema-helpers.js'
-import {buildDuplicateKey} from '@homibook/core'
+import {buildDuplicateKey, normalizeRecordType} from '@homibook/core'
 import path from 'path'
 import fs from 'fs'
 import {randomUUID} from 'crypto'
@@ -1024,7 +1024,8 @@ export async function recordRoutes(app: FastifyInstance) {
         const cloned = await prisma.record.create({
             data: {
                 accountBookId: existing.accountBookId,
-                type: existing.type,
+                // 归一化:复制来源若为历史脏数据,新记录也不应继承非法类型
+                type: normalizeRecordType(existing.type),
                 amount: existing.amount,
                 date: existing.date,
                 remark: existing.remark,

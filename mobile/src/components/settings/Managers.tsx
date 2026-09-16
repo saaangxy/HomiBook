@@ -11,6 +11,7 @@ import { Btn, Chips, ErrorText, LabeledInput, OptionModal, useInputStyle } from 
 import { useConfirm } from '@/components/chrome/ConfirmSheet';
 import { showToast } from '@/components/chrome/Toast';
 import * as Clipboard from 'expo-clipboard';
+import { IMPORT_SOURCE_DEFS, RECORD_TYPES, RECORD_TYPE_LABELS } from '@homibook/core';
 
 export const DICT_GROUPS = [
   { key: 'account_type', label: '账户类型' },
@@ -20,12 +21,8 @@ export const DICT_GROUPS = [
   { key: 'transaction_category_transfer', label: '转账分类' },
 ];
 
-const MAPPING_SOURCES = [
-  { value: 'alipay', label: '支付宝' },
-  { value: 'wechat', label: '微信' },
-  { value: 'jd', label: '京东' },
-  { value: 'csv', label: '其他CSV' },
-];
+// 导入来源单一来源 @homibook/core(顺序/文案与 web 一致)
+const MAPPING_SOURCES = IMPORT_SOURCE_DEFS.map((s) => ({ value: s.key, label: s.label }));
 
 function HeadRow({ title, btnTitle, onBtn }: { title: string; btnTitle: string; onBtn: () => void }) {
   const { colors } = useTheme();
@@ -302,12 +299,10 @@ export function ApiKeyManager() {
 // ── 导入分类映射 ──
 const RECORD_TYPE_OPTIONS = [
   { value: '__all__', label: '通用(不限)' },
-  { value: 'INCOME', label: '收入' },
-  { value: 'EXPENSE', label: '支出' },
-  { value: 'TRANSFER', label: '转账' },
+  ...RECORD_TYPES.map((t) => ({ value: t as string, label: RECORD_TYPE_LABELS[t] })),
 ];
 
-const TYPE_LABEL: Record<string, string> = { INCOME: '收入', EXPENSE: '支出', TRANSFER: '转账' };
+const TYPE_LABEL: Record<string, string> = RECORD_TYPE_LABELS;
 
 export function CategoryMappingManager({ dictGroups }: { dictGroups: string[] }) {
   const { colors } = useTheme();

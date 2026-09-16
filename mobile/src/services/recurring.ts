@@ -1,6 +1,7 @@
 import { http } from './http';
 import type { LoanInterestMethod, LoanPreview, RecurringTransaction, RepaymentPlan } from '@/types';
 import type { RecurringTransaction as CoreRecurring } from '@homibook/core';
+import { normalizeRecordType } from '@homibook/core';
 
 // 固定收支数据访问层 —— 真实后端 API(签名对齐 frontend/src/api/recurring.ts)
 
@@ -8,7 +9,8 @@ function toRecurring(r: CoreRecurring): RecurringTransaction {
   return {
     id: r.id,
     name: r.name,
-    type: r.type,
+    // 归一化:历史数据可能出现非法类型,直接透传会导致列表按 type 查图标时崩溃
+    type: normalizeRecordType(r.type),
     recurringType: r.recurringType ?? 'PERIODIC',
     amount: r.amount,
     accountId: r.accountId,

@@ -1,5 +1,9 @@
 import type { ToolDef, ToolContext } from './types.js'
 import { prisma } from '../../../app.js'
+import { IMPORT_SOURCE_DEFS, RECORD_TYPES } from '@homibook/core'
+
+// 来源取值以 core 的导入来源定义为唯一来源(避免各处硬编码漂移)
+const IMPORT_SOURCE_KEYS = IMPORT_SOURCE_DEFS.map((d) => d.key)
 
 export const saveImportMappingTool: ToolDef = {
   name: 'save_import_mapping',
@@ -11,7 +15,7 @@ export const saveImportMappingTool: ToolDef = {
     type: 'object',
     properties: {
       mappingType: { type: 'string', enum: ['account', 'category'], description: '映射类型' },
-      source: { type: 'string', description: '来源标识(alipay|wechat|jd)' },
+      source: { type: 'string', enum: [...IMPORT_SOURCE_KEYS], description: '来源标识(alipay|wechat|jd|csv)' },
       mappings: {
         type: 'array',
         description: '要保存的映射规则列表',
@@ -27,7 +31,7 @@ export const saveImportMappingTool: ToolDef = {
             // 通用条件字段
             payerContains: { type: 'string', description: '交易方名称正则过滤条件（可选），如 燃气|电力|汇通 匹配任一关键词' },
             descriptionContains: { type: 'string', description: '说明字段正则过滤条件（可选），如 燃气|电力|汇通 匹配任一关键词' },
-            recordType: { type: 'string', enum: ['INCOME', 'EXPENSE', 'TRANSFER', ''], description: '记录类型过滤（分类映射可选）' },
+            recordType: { type: 'string', enum: [...RECORD_TYPES, ''], description: '记录类型过滤（分类映射可选）' },
           },
         },
       },

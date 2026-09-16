@@ -6,6 +6,7 @@ import {
   generateEqualPrincipalPlan,
 } from '../../recurring.js'
 import { dateKey } from '../../../lib/date-time.js'
+import { LOAN_INTEREST_METHODS } from '@homibook/core'
 
 interface LoanPreviewArgs {
   total: number
@@ -27,7 +28,7 @@ export const loanPreviewTool: ToolDef = {
       annualRate: { type: 'number', description: '年利率（小数，如0.05表示5%）' },
       months: { type: 'number', description: '贷款期数（月）' },
       startDate: { type: 'string', description: '开始日期 YYYY-MM-DD' },
-      method: { type: 'string', enum: ['EQUAL_INSTALLMENT', 'EQUAL_PRINCIPAL'], description: '还款方式' },
+      method: { type: 'string', enum: [...LOAN_INTEREST_METHODS], description: '还款方式' },
     },
     required: ['total', 'annualRate', 'months', 'startDate', 'method'],
   },

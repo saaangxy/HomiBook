@@ -5,7 +5,7 @@ import { useTheme, alpha, semanticTypeColor } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { useChatStore, useSessionView } from '@/stores/chat';
 import { getToolDisplayName } from '@/services/chat';
-import { IMPORT_SOURCE_LABELS, RECORD_TYPE_LABELS, resolveToolCallStatus, type ToolCallEntry } from '@homibook/core';
+import { ACCOUNT_TYPE_LABELS, BUDGET_TYPE_LABELS, IMPORT_SOURCE_LABELS, RECORD_TYPE_LABELS, resolveToolCallStatus, type ToolCallEntry } from '@homibook/core';
 import { settingsApi } from '@/services/settings';
 import { MiniTable, computeColWidths } from './MiniTable';
 import { ImportPreviewCard } from './ImportPreviewCard';
@@ -61,10 +61,9 @@ function useCategoryLabels(): Map<string, string> {
   return labels;
 }
 
-const TOOL_ACCOUNT_TYPE_LABELS: Record<string, string> = {
-  BANK_DEBIT: '储蓄卡', CREDIT_CARD: '信用卡', ALIPAY: '支付宝', WECHAT: '微信',
-  INVESTMENT: '投资', CASH: '现金', RECHARGE_CARD: '充值卡', OTHER: '其他',
-};
+// 账户/预算类型标签单一来源 @homibook/core(此前本地手抄,与设置页文案漂移)
+const accountTypeLabel = (t?: string) => (ACCOUNT_TYPE_LABELS as Record<string, string>)[t ?? ''] || t || '-';
+const budgetTypeLabel = (t?: string) => (BUDGET_TYPE_LABELS as Record<string, string>)[t ?? ''] || t || '-';
 const typeLabel = (t?: string) => (RECORD_TYPE_LABELS as Record<string, string>)[t ?? ''] || t || '-';
 const typeSign = (t?: string) => (t === 'INCOME' ? '+' : t === 'EXPENSE' ? '-' : '');
 
@@ -311,7 +310,7 @@ export function ToolCard({ toolCall, bookId }: { toolCall: ToolCallEntry; bookId
                 <Text style={{ fontSize: 11.5, fontWeight: '600', color: colors.foreground }}>{rd.name || cat(rd.categoryCode)}</Text>
               </View>
               <Text variant="muted" style={{ fontSize: 10.5 }}>
-                {rd.type === 'FIXED' ? '固定' : '月度'} · {rd.year}年{rd.month ? `${rd.month}月` : '全年'} · 金额 {(rd.amount ?? 0).toFixed(2)}
+                {budgetTypeLabel(rd.type)} · {rd.year}年{rd.month ? `${rd.month}月` : '全年'} · 金额 {(rd.amount ?? 0).toFixed(2)}
               </Text>
             </View>
           ),
@@ -342,7 +341,7 @@ export function ToolCard({ toolCall, bookId }: { toolCall: ToolCallEntry; bookId
             <View style={{ marginTop: 4 }}>
               <MiniTable
                 columns={['名称', '类型', '周期', '金额', '已用', '剩余', '进度']}
-                rows={rd.budgets.map((b: any) => [b.name || cat(b.categoryCode), b.type === 'FIXED' ? '固定' : '月度', `${b.year}年${b.month ? `${b.month}月` : ''}`, (b.amount ?? 0).toFixed(2), (b.used ?? 0).toFixed(2), (b.remaining ?? 0).toFixed(2), `${b.percentage ?? 0}%`])}
+                rows={rd.budgets.map((b: any) => [b.name || cat(b.categoryCode), budgetTypeLabel(b.type), `${b.year}年${b.month ? `${b.month}月` : ''}`, (b.amount ?? 0).toFixed(2), (b.used ?? 0).toFixed(2), (b.remaining ?? 0).toFixed(2), `${b.percentage ?? 0}%`])}
                 maxHeight={220}
               />
             </View>
@@ -358,7 +357,7 @@ export function ToolCard({ toolCall, bookId }: { toolCall: ToolCallEntry; bookId
               <MiniTable
                 columns={['账户', '类型', '余额']}
                 aligns={['left', 'left', 'right']}
-                rows={rd.accounts.map((a: any) => [a.name, TOOL_ACCOUNT_TYPE_LABELS[a.type] || a.type, (a.balance ?? 0).toFixed(2)])}
+                rows={rd.accounts.map((a: any) => [a.name, accountTypeLabel(a.type), (a.balance ?? 0).toFixed(2)])}
                 maxHeight={220}
               />
             </View>

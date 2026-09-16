@@ -2,10 +2,11 @@ import { prisma } from '../../../app.js'
 import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 import { parseDayStart, parseDayEnd, dateKey } from '../../../lib/date-time.js'
+import { RECORD_TYPES, type RecordType } from '@homibook/core'
 
 interface QueryRecordsArgs {
   keyword?: string
-  type?: 'INCOME' | 'EXPENSE' | 'TRANSFER'
+  type?: RecordType
   categoryCode?: string
   accountId?: string
   startDate?: string
@@ -24,7 +25,7 @@ export const queryRecordsTool: ToolDef = {
     type: 'object',
     properties: {
       keyword: { type: 'string', description: '搜索关键词，匹配备注和交易方' },
-      type: { type: 'string', enum: ['INCOME', 'EXPENSE', 'TRANSFER'], description: '流水类型' },
+      type: { type: 'string', enum: [...RECORD_TYPES], description: '流水类型' },
       categoryCode: { type: 'string', description: '分类编码，如 餐饮、交通' },
       accountId: { type: 'string', description: '账户 ID' },
       startDate: { type: 'string', description: '开始日期，格式 YYYY-MM-DD' },

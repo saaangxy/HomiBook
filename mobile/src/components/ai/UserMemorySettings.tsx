@@ -4,13 +4,7 @@ import { useTheme } from '@/theme';
 import { memoryApi, type UserMemory } from '@/services/settings';
 import { Text } from '@/components/ui/Text';
 import { ConfirmSheet } from '@/components/chrome/ConfirmSheet';
-
-const MEMORY_TYPE_LABELS: Record<string, string> = {
-  habit: '习惯',
-  preference: '偏好',
-  rule: '规则',
-  fact: '事实',
-};
+import { MEMORY_TYPE_LABELS } from '@homibook/core';
 
 // 我的 AI 记忆(所有用户可见,对齐 web 设置页 AIMemorySettings):
 // 查看/编辑/删除 AI 自动保存的本人消费习惯与记账偏好

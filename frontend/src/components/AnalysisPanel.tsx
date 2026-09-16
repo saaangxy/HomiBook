@@ -21,7 +21,7 @@ import { adminApi, type AdminUser } from '@/api/admin'
 import { PieChart, Users, Wallet, X, List, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useChartTheme, type ChartTheme, generateChartColors } from '@/hooks/useChartTheme'
 import { RECORD_TYPE_HEX } from '@/lib/record-type'
-import { formatMoney } from '@homibook/core'
+import { STAT_GROUP_BYS, formatMoney } from '@homibook/core'
 
 const ANALYSIS_TYPES = [
   { value: 'EXPENSE', label: '支出分析', color: RECORD_TYPE_HEX.EXPENSE },
@@ -102,7 +102,7 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
   const { pieOptions, pieMaxHeight } = useMemo(() => {
     const options: Record<string, { option: EChartsOption; chartHeight: number } | null> = {}
     let maxH = 260 // 原始高度
-    for (const groupBy of ['category', 'ownerId', 'accountId'] as const) {
+    for (const groupBy of STAT_GROUP_BYS) {
       const rawData = groupData[groupBy] || []
       const data = rawData.map((d) => ({ name: d.label, value: d.amount })).sort((a, b) => b.value - a.value)
       if (data.length > 0) {
@@ -255,7 +255,7 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
           <div className="flex items-center justify-center py-12"><Spinner /></div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {(['category', 'ownerId', 'accountId'] as const).map((groupBy) => {
+            {STAT_GROUP_BYS.map((groupBy) => {
               const rawData = groupData[groupBy] || []
               const data = rawData.map((d) => ({ name: d.label, value: d.amount })).sort((a, b) => b.value - a.value)
               const isSelected = selected?.groupBy === groupBy

@@ -1,7 +1,6 @@
 import { z } from 'zod'
-
-export const BUDGET_TYPES = ['FIXED', 'FREE'] as const
-export type BudgetType = typeof BUDGET_TYPES[number]
+// 预算类型值域单一来源 @homibook/core
+import { BUDGET_TYPES } from '@homibook/core'
 
 export const createBudgetSchema = z.object({
   accountBookId: z.string().min(1).describe('账本ID'),

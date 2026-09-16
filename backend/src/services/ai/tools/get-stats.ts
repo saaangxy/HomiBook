@@ -2,6 +2,7 @@ import { prisma } from '../../../app.js'
 import { assertIsMember, retryable, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 import { parseDayStart, parseDayEnd, dayStart, dayEnd, dateKey, monthKey } from '../../../lib/date-time.js'
+import { RECORD_TYPES } from '@homibook/core'
 
 interface GetStatsArgs {
   startDate?: string
@@ -25,7 +26,7 @@ export const getStatsTool: ToolDef = {
       endDate: { type: 'string', description: '结束日期 YYYY-MM-DD，与 startDate 配合使用' },
       year: { type: 'number', description: '年份，默认当前年份' },
       month: { type: 'number', description: '月份 (1-12)，仅与 year 配合使用' },
-      type: { type: 'string', enum: ['INCOME', 'EXPENSE', 'TRANSFER'], description: '收支类型筛选' },
+      type: { type: 'string', enum: [...RECORD_TYPES], description: '收支类型筛选' },
       categoryCode: { type: 'string', description: '分类编码筛选' },
       groupBy: { type: 'string', enum: ['month', 'category', 'type', 'account'], description: '汇总维度，默认 month' },
     },

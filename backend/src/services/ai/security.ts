@@ -116,3 +116,15 @@ export async function assertIsMember(bookId: string, userId: string): Promise<vo
   })
   if (!member) throw Object.assign(new Error('无权访问该账本'), { statusCode: 403 })
 }
+
+/**
+ * 按归属读取用户的供应商配置。
+ *
+ * 必须走这个入口:直接 `findUnique({ where: { id } })` 只按主键取,会取到他人配置 ——
+ * AI 配置里的 simpleProviderConfigId 等字段来自客户端,一旦指向他人配置,
+ * 后续模型调用就会用别人的 apiKey 发请求(越权)。
+ */
+export async function loadUserProviderConfig(userId: string, configId: string | null | undefined) {
+  if (!configId) return null
+  return prisma.userProviderConfig.findFirst({ where: { id: configId, userId } })
+}
