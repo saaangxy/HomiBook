@@ -38,7 +38,20 @@
       ],
       "expo-secure-store",
       "expo-sharing",
-      "./plugins/with-android-tweaks"
+      "./plugins/with-android-tweaks",
+      [
+        "expo-share-intent",
+        {
+          "androidIntentFilters": [
+            "image/*",
+            "text/*"
+          ],
+          "androidMultiIntentFilters": [
+            "image/*"
+          ],
+          "disableIOS": true
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

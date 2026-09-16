@@ -61,9 +61,10 @@ export function AIAssistantModal() {
           <View style={{ alignItems: 'center', paddingTop: 10 }}>
             <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: colors.muted }} />
           </View>
-          {/* 聊天主体(条件挂载,避免与记一笔 AI 模式双实例常驻;标题/关闭由内嵌组件工具行提供) */}
+          {/* 聊天主体(条件挂载,避免与记一笔 AI 模式双实例常驻;标题/关闭由内嵌组件工具行提供)
+              shareIntake:全局弹窗独占消费系统分享带入的待发附件 */}
           <View style={{ flex: 1, paddingTop: 6 }}>
-            <AIAssistant onClose={closeAI} />
+            <AIAssistant onClose={closeAI} shareIntake />
           </View>
         </Animated.View>
       </KeyboardAvoidingView>

@@ -35,9 +35,11 @@ function timeAgo(iso: string): string {
 const QUICK_PROMPTS = ['本月花了多少？', '餐饮超预算了吗？', '帮我分析支出趋势'];
 
 // onClose:宿主为独立弹窗时提供关闭按钮(渲染在工具行右侧);嵌入 RecordModal 等容器时不传
-export function AIAssistant({ onClose }: { onClose?: () => void }) {
+// shareIntake:仅全局 AI 弹窗传 true —— 系统分享带入的草稿只由该实例消费
+// (记一笔的 AI 实例可能同时处于挂载状态,不参与消费以免把待发图片截走)
+export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; shareIntake?: boolean }) {
   const { colors } = useTheme();
-  const { currentLedger } = useUIShell();
+  const { currentLedger, pendingShare, consumePendingShare } = useUIShell();
   const bookId = currentLedger.id;
 
   const [input, setInput] = useState('');
@@ -70,6 +72,17 @@ export function AIAssistant({ onClose }: { onClose?: () => void }) {
     // 工具显示名称缓存(对齐 web loadToolNames)
     loadToolNames();
   }, [loadSessions]);
+
+  // 系统分享带入的聊天草稿:并入待发附件/输入框后清空(含登录后补传的暂存图片)
+  useEffect(() => {
+    if (!shareIntake || !pendingShare) return;
+    if (pendingShare.attachments.length > 0) {
+      setPendingImages((p) => [...p, ...pendingShare.attachments]);
+    }
+    const shareText = pendingShare.text;
+    if (shareText) setInput((prev) => (prev ? `${prev} ${shareText}` : shareText));
+    consumePendingShare();
+  }, [shareIntake, pendingShare, consumePendingShare]);
 
   // 切换会话时恢复自动跟随(新会话内容加载后滚到底部)
   useEffect(() => {

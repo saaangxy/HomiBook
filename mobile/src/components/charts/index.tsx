@@ -95,6 +95,41 @@ export function TipRow({ color, label, value }: { color: string; label: string; 
 // 自绘图表组件
 // ════════════════════════════════════════
 
+// ── 平滑折线(Catmull-Rom → 三次贝塞尔):转折处圆滑,并返回路径长度供描边动画使用 ──
+function smoothLine(pts: { x: number; y: number }[], tension = 0.2): { d: string; len: number } {
+  if (pts.length < 2) return { d: '', len: 1 };
+  let d = `M${pts[0].x},${pts[0].y}`;
+  // 每段贝塞尔: 起点 A / 控制点 B、C / 终点 D
+  const segs: { ax: number; ay: number; bx: number; by: number; cx: number; cy: number; dx: number; dy: number }[] = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] ?? pts[i];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[i + 2] ?? p2;
+    const bx = p1.x + (p2.x - p0.x) * tension;
+    const by = p1.y + (p2.y - p0.y) * tension;
+    const cx = p2.x - (p3.x - p1.x) * tension;
+    const cy = p2.y - (p3.y - p1.y) * tension;
+    d += ` C${bx},${by} ${cx},${cy} ${p2.x},${p2.y}`;
+    segs.push({ ax: p1.x, ay: p1.y, bx, by, cx, cy, dx: p2.x, dy: p2.y });
+  }
+  // 采样估算弧长(每段 10 等分):dasharray 长度需覆盖整条曲线,否则动画尾部画不满
+  let len = 0;
+  const S = 10;
+  for (const s of segs) {
+    let px = s.ax, py = s.ay;
+    for (let k = 1; k <= S; k++) {
+      const t = k / S, u = 1 - t;
+      const nx = u * u * u * s.ax + 3 * u * u * t * s.bx + 3 * u * t * t * s.cx + t * t * t * s.dx;
+      const ny = u * u * u * s.ay + 3 * u * u * t * s.by + 3 * u * t * t * s.cy + t * t * t * s.dy;
+      len += Math.hypot(nx - px, ny - py);
+      px = nx;
+      py = ny;
+    }
+  }
+  return { d, len: len || 1 };
+}
+
 // ── 图表过渡动画工具 ──
 const ANIM_DURATION = 550;
 
@@ -154,20 +189,16 @@ export function TripleLineChart({ income, expense, labels, height = CHART_H }: {
   const x = (i: number) => padL + (i / (n - 1)) * chartW;
   const y = (v: number) => padT + chartH - ((v - minVal) / range) * chartH;
   const net = income.map((v, i) => v - expense[i]);
-  // 折线长度估算(dasharray 揭示用); upto 为虚线已绘制的点数
-  const lineLen = (data: number[]) => {
-    let len = 0;
-    for (let i = 1; i < data.length; i++) len += Math.hypot(x(i) - x(i - 1), y(data[i]) - y(data[i - 1]));
-    return len || 1;
-  };
+  // upto 为结余虚线已绘制的点数
   const upto = Math.max(2, Math.ceil(n * progress));
 
+  // 平滑曲线:实线按弧长揭示,结余虚线逐点延伸
   const line = (data: number[], color: string, dashed = false) => {
-    const pts = (dashed ? data.slice(0, upto) : data).map((v, i) => `${x(i)},${y(v)}`).join(' ');
-    const len = lineLen(data);
+    const src = dashed ? data.slice(0, upto) : data;
+    const { d, len } = smoothLine(src.map((v, i) => ({ x: x(i), y: y(v) })));
     return (
-      <Polyline
-        points={pts} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round"
+      <Path
+        d={d} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round"
         strokeDasharray={dashed ? '4,3' : `${len * progress} ${len + 10}`}
       />
     );

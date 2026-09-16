@@ -17,11 +17,13 @@ import { CormorantGaramond_400Regular, CormorantGaramond_500Medium, CormorantGar
 import { Fredoka_400Regular, Fredoka_500Medium, Fredoka_600SemiBold } from '@expo-google-fonts/fredoka';
 import { BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue';
 import { DMSans_400Regular, DMSans_500Medium, DMSans_700Bold } from '@expo-google-fonts/dm-sans';
+import { ShareIntentProvider } from 'expo-share-intent';
 import { ThemeProvider, useTheme, getActivePalette, alpha } from '@/theme';
 import { AuthProvider, useAuth } from '@/stores/auth';
 import { LedgerProvider } from '@/stores/ledger';
 import { RecordsProvider } from '@/stores/records';
 import { UIShellProvider } from '@/components/chrome/chrome';
+import { ShareIntakeBridge } from '@/hooks/useShareIntake';
 import { Sidebar } from '@/components/chrome/Sidebar';
 import { LedgerModal } from '@/components/chrome/LedgerModal';
 import { RecordModal } from '@/components/chrome/RecordModal';
@@ -77,6 +79,8 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       {/* SafeAreaProvider 需置于最外层,initialWindowMetrics 保证首帧即拿到正确 insets,避免内容覆盖状态栏/底部导航 */}
       <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+        {/* 系统分享接收(Android):Provider 需位于其它 Provider 之前,见 expo-share-intent 文档 */}
+        <ShareIntentProvider>
         <ThemeProvider>
           <AuthProvider>
             <LedgerProvider>
@@ -88,12 +92,15 @@ export default function RootLayout() {
                 <LedgerModal />
                 <RecordModal />
                 <AIAssistantModal />
+                {/* 分享意图桥接:分享图片 → 上传 → 预置待发附件 → 打开 AI 助手 */}
+                <ShareIntakeBridge />
                 <ToastHost />
               </RecordsProvider>
               </UIShellProvider>
             </LedgerProvider>
           </AuthProvider>
         </ThemeProvider>
+        </ShareIntentProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

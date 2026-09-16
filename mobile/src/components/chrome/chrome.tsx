@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useIsFocused } from 'expo-router';
 import type { RecordItem } from '@/types';
+import type { PendingShare } from '@/services/share-inbox';
 import { useLedgerStore } from '@/stores/ledger';
 
 // UI 壳层:抽屉/弹窗开关(账本数据在 stores/ledger.tsx,这里转发以保持 useUIShell() 接口不变)
@@ -29,6 +30,10 @@ interface UIShellValue {
   aiOpen: boolean;
   openAI: () => void;
   closeAI: () => void;
+  /** 系统分享(Android)带入的聊天草稿:待发附件与预填文本,由 AIAssistant 消费后清空 */
+  pendingShare: PendingShare | null;
+  pushPendingShare: (share: PendingShare) => void;
+  consumePendingShare: () => void;
 }
 
 const UIShellContext = createContext<UIShellValue | null>(null);
@@ -53,6 +58,9 @@ const UISHELL_FALLBACK: UIShellValue = {
   aiOpen: false,
   openAI: () => {},
   closeAI: () => {},
+  pendingShare: null,
+  pushPendingShare: () => {},
+  consumePendingShare: () => {},
 };
 
 export function UIShellProvider({ children }: { children: ReactNode }) {
@@ -63,6 +71,7 @@ export function UIShellProvider({ children }: { children: ReactNode }) {
   const [recordOpen, setRecordOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<RecordItem | null>(null);
   const [aiOpen, setAiOpen] = useState(false);
+  const [pendingShare, setPendingShare] = useState<PendingShare | null>(null);
 
   const value = useMemo<UIShellValue>(
     () => ({
@@ -99,8 +108,15 @@ export function UIShellProvider({ children }: { children: ReactNode }) {
         setAiOpen(true);
       },
       closeAI: () => setAiOpen(false),
+      pendingShare,
+      // 合并而非覆盖:连续分享 / 收件箱补传时,不清掉已在队列里的待发附件
+      pushPendingShare: (share) => setPendingShare((prev) => ({
+        attachments: [...(prev?.attachments ?? []), ...share.attachments],
+        text: share.text ?? prev?.text,
+      })),
+      consumePendingShare: () => setPendingShare(null),
     }),
-    [ledger, sidebarOpen, ledgerOpen, recordOpen, editingRecord, aiOpen],
+    [ledger, sidebarOpen, ledgerOpen, recordOpen, editingRecord, aiOpen, pendingShare],
   );
 
   return (
