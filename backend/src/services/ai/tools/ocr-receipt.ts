@@ -4,6 +4,7 @@ import type { ToolDef } from './types.js'
 import { prisma } from '../../../app.js'
 import { assertIsMember } from '../security.js'
 import { createModel, DEFAULT_BASE_URLS, type ProviderType } from '../providers.js'
+import { detectImageFormat, VISION_MEDIA_TYPES, IMAGE_FORMAT_LABELS } from '../image-format.js'
 import { generateText } from 'ai'
 
 async function loadVisionConfig(userId: string) {
@@ -99,13 +100,16 @@ export const ocrReceiptTool: ToolDef = {
       ? categories.map(c => `- ${c.code} ${c.label}`).join('\n')
       : '无可用分类'
 
-    // 5. 检测图片类型
-    const ext = path.extname(attachment.originalFilename).toLowerCase()
-    const mediaTypeMap: Record<string, string> = {
-      '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
-      '.webp': 'image/webp', '.gif': 'image/gif', '.bmp': 'image/bmp',
+    // 5. 按文件内容判定图片真实格式(视觉模型不认扩展名,非 JPEG/PNG/GIF/WebP 会被直接拒绝)
+    const fmt = detectImageFormat(imageData)
+    const mediaType = VISION_MEDIA_TYPES[fmt]
+    if (!mediaType) {
+      return {
+        success: false,
+        error: `图片格式不支持（实际为 ${IMAGE_FORMAT_LABELS[fmt]}），视觉模型仅支持 JPEG/PNG/GIF/WebP，请转换后重试`,
+        retryable: false,
+      }
     }
-    const mediaType = mediaTypeMap[ext] || 'image/jpeg'
 
     // 6. 调用视觉模型识别
     try {

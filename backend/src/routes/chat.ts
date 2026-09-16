@@ -5,6 +5,8 @@ import path from 'path'
 import { prisma } from '../app.js'
 import { authenticate } from '../middleware/auth.js'
 import { createModel, ALL_PROVIDERS, DEFAULT_BASE_URLS, type ProviderType } from '../services/ai/providers.js'
+import { detectImageFormat, isImageComplete, getImageSize, VISION_MEDIA_TYPES, IMAGE_FORMAT_LABELS } from '../services/ai/image-format.js'
+import { needsTiling, fitOversizedImage, VISION_MAX_SIDE } from '../services/ai/image-tile.js'
 import { routeIntent, classifyWithKeywords } from '../services/ai/model-router.js'
 import { assertIsMember } from '../services/ai/security.js'
 import { logToolCall } from '../services/ai/audit.js'
@@ -69,25 +71,71 @@ function friendlyAIErrorMessage(err: unknown): string {
 }
 
 const IMAGE_EXT_RE = /\.(jpe?g|png|webp|gif|bmp)$/i
+/** 扩展名 → 声明 MIME(仅用于「扩展名与真实内容不一致」的告警,实际发送以内容判定为准) */
 const IMAGE_MEDIA_TYPES: Record<string, string> = {
   '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
   '.webp': 'image/webp', '.gif': 'image/gif', '.bmp': 'image/bmp',
 }
 
-/** 多模态主模型：把图片附件以 base64 注入最后一条用户消息（ai SDK 多模态 content 数组） */
-function injectImagesToLastUserMessage(messages: any[], imageAttachments: { url: string; originalFilename: string }[]): any[] {
+/**
+ * 多模态主模型：把图片附件以 base64 注入最后一条用户消息（ai SDK 多模态 content 数组）。
+ * 视觉模型按内容字节判定格式,故这里按魔数判定真实格式;非白名单格式不入上下文(会触发 400 且该错误
+ * 在历史重发时持续复现),改为追加一段文本说明,让模型/用户知道是哪张图、为什么不识别。
+ * 超出单边尺寸上限(手机长截图常见)的图片先纵向切片再发送,否则上游同样会报错且内容不可读。
+ */
+async function injectImagesToLastUserMessage(messages: any[], imageAttachments: { url: string; originalFilename: string }[]): Promise<any[]> {
   const msgs = [...messages]
   for (let i = msgs.length - 1; i >= 0; i--) {
     if (msgs[i].role !== 'user') continue
     const text = typeof msgs[i].content === 'string' ? msgs[i].content : ''
     const parts: any[] = [{ type: 'text', text }]
+    const unsupported: string[] = []
     for (const att of imageAttachments) {
       try {
         const filePath = path.join(process.cwd(), att.url.replace(/^\/api\//, ''))
-        if (!existsSync(filePath)) continue
+        if (!existsSync(filePath)) {
+          unsupported.push(`${att.originalFilename}（文件不存在）`)
+          continue
+        }
+        const buf = readFileSync(filePath)
+        const fmt = detectImageFormat(buf)
+        const mediaType = VISION_MEDIA_TYPES[fmt]
+        const size = mediaType ? getImageSize(fmt, buf) : null
+        // 无条件落日志:图片实际字节信息是排查上游报错的唯一依据(表头 hex 可反推真实格式)
+        console.log(`[多模态] 图片 ${att.originalFilename} | ${buf.length}B | ${size ? `${size.width}x${size.height}` : '尺寸未知'} | 表头 ${buf.subarray(0, 16).toString('hex')} | 判定格式 ${fmt}(${IMAGE_FORMAT_LABELS[fmt]}) | ${mediaType ? '发送' : '跳过'}`)
+        if (!mediaType) {
+          unsupported.push(`${att.originalFilename}（实际为 ${IMAGE_FORMAT_LABELS[fmt]}）`)
+          continue
+        }
+        if (!isImageComplete(fmt, buf)) {
+          console.warn(`[多模态] 跳过损坏/不完整的图片 ${att.originalFilename}(${buf.length}B, ${fmt} 缺少结束标记):上游解码会失败`)
+          unsupported.push(`${att.originalFilename}（文件不完整或已损坏）`)
+          continue
+        }
         const ext = path.extname(att.originalFilename).toLowerCase()
-        parts.push({ type: 'image', image: readFileSync(filePath).toString('base64'), mediaType: IMAGE_MEDIA_TYPES[ext] || 'image/jpeg' })
+        if (IMAGE_MEDIA_TYPES[ext] && IMAGE_MEDIA_TYPES[ext] !== mediaType) {
+          console.warn(`[多模态] ${att.originalFilename} 扩展名与内容不符(${IMAGE_MEDIA_TYPES[ext]} → ${mediaType}),按内容发送`)
+        }
+        // 超长截图:超过单边上限会被上游拒绝,且内容会被降采样到不可读,故切片/缩放后发送
+        if (size && needsTiling(size)) {
+          const images = await fitOversizedImage(buf, mediaType, size)
+          if (!images) {
+            unsupported.push(`${att.originalFilename}（${size.width}x${size.height} 超过单边 ${VISION_MAX_SIDE}px 上限,自动适配失败）`)
+            continue
+          }
+          console.log(`[多模态] ${att.originalFilename} 尺寸 ${size.width}x${size.height} 超限,已适配为 ${images.length} 张发送`)
+          for (const img of images) parts.push({ type: 'image', image: img, mediaType: 'image/jpeg' })
+          continue
+        }
+        parts.push({ type: 'image', image: buf.toString('base64'), mediaType })
       } catch { /* 单张图片读取失败时跳过，不影响其余图片 */ }
+    }
+    if (unsupported.length > 0) {
+      // 明确要求模型把原因转述给用户:图片被跳过时,聊天界面里也要能看到原因
+      parts.push({
+        type: 'text',
+        text: `[系统提示:以下图片无法识别,请在回复中明确告知用户原因 — ${unsupported.join('、')};当前视觉模型仅支持 JPEG/PNG/GIF/WebP 格式且单边不超过 ${VISION_MAX_SIDE}px,请处理后重新上传。这些图片已被跳过,不要凭空猜测图片内容]`,
+      })
     }
     msgs[i] = { ...msgs[i], content: parts }
     break
@@ -915,7 +963,7 @@ export async function chatRoutes(app: FastifyInstance) {
 
     // 多模态：压缩只处理纯文本，故在压缩后把图片 base64 注入最后一条用户消息
     const finalMessages = isMultimodalImage
-      ? injectImagesToLastUserMessage(compressed.messages, imageAttachments)
+      ? await injectImagesToLastUserMessage(compressed.messages, imageAttachments)
       : compressed.messages
 
     await streamAssistantResponse({

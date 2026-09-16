@@ -3,8 +3,8 @@ import { findSystemChrome } from './browser-config.js'
 
 let browser: Browser | null = null
 
-/** 获取共享浏览器实例（懒加载，复用连接） */
-async function getBrowser(): Promise<Browser> {
+/** 获取共享浏览器实例（懒加载，复用连接）；图片切片(image-tile)复用同一实例 */
+export async function getBrowser(): Promise<Browser> {
   if (browser && browser.connected) return browser
   const executablePath = findSystemChrome()
   browser = await puppeteer.launch({
