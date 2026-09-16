@@ -1,5 +1,5 @@
 import { prisma } from '../../../app.js'
-import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
+import { assertIsMember, checkEnums, retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 import {
   calcEqualInstallment,
@@ -10,6 +10,14 @@ import {
 } from '../../recurring.js'
 import { resolveAccountId } from './helpers.js'
 import { LOAN_INTEREST_METHODS, RECORD_TYPES, RECURRING_TYPES } from '@homibook/core'
+
+/** 入参枚举校验:流水类型/周期类型/还款方式非法值直接回报给模型。弹确认卡前与执行时共用 */
+const validateArgs = (args: any) =>
+  checkEnums({
+    type: [args.type, RECORD_TYPES],
+    recurringType: [args.recurringType, RECURRING_TYPES],
+    loanInterestMethod: [args.loanInterestMethod, LOAN_INTEREST_METHODS],
+  })
 
 export const createRecurringTool: ToolDef = {
   name: 'create_recurring',
@@ -41,8 +49,13 @@ export const createRecurringTool: ToolDef = {
     required: ['name', 'type', 'cron', 'accountId', 'recurringType'],
   },
   requireConfirm: true,
+  validateArgs,
 
   async execute(args: any, ctx: ToolContext): Promise<ToolResult> {
+    // 入参枚举校验(与弹确认卡前同一份规则)
+    const badEnum = validateArgs(args)
+    if (badEnum) return badEnum
+
     await assertIsMember(ctx.accountBookId, ctx.userId)
 
     if (!['INCOME', 'EXPENSE', 'TRANSFER'].includes(args.type)) {

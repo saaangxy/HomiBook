@@ -1,9 +1,21 @@
 import type { ToolDef, ToolContext } from './types.js'
 import { prisma } from '../../../app.js'
 import { IMPORT_SOURCE_DEFS, RECORD_TYPES } from '@homibook/core'
+import { checkEnumList, checkEnums } from '../security.js'
+
+/** 映射类型(本工具专属) */
+const MAPPING_TYPES = ['account', 'category'] as const
 
 // 来源取值以 core 的导入来源定义为唯一来源(避免各处硬编码漂移)
 const IMPORT_SOURCE_KEYS = IMPORT_SOURCE_DEFS.map((d) => d.key)
+
+/** 入参枚举校验:映射类型/来源/记录类型,非法值直接回报给模型(recordType 允许空串=不限类型)。弹确认卡前与执行时共用 */
+const validateArgs = (args: any) =>
+  checkEnums({
+    mappingType: [args.mappingType, MAPPING_TYPES],
+    source: [args.source, IMPORT_SOURCE_KEYS],
+  })
+  ?? checkEnumList('mappings[].recordType', (args.mappings ?? []).map((m: any) => m.recordType), [...RECORD_TYPES, ''])
 
 export const saveImportMappingTool: ToolDef = {
   name: 'save_import_mapping',
@@ -11,10 +23,11 @@ export const saveImportMappingTool: ToolDef = {
   promptHint: '仅在用户明确要求时调用，日常导入无需调用',
   description: '创建或更新导入映射规则（账户映射或分类映射）。保存后的规则会在后续导入时自动应用。应在用户确认映射建议后调用。',
   requireConfirm: true,
+  validateArgs,
   parameters: {
     type: 'object',
     properties: {
-      mappingType: { type: 'string', enum: ['account', 'category'], description: '映射类型' },
+      mappingType: { type: 'string', enum: [...MAPPING_TYPES], description: '映射类型' },
       source: { type: 'string', enum: [...IMPORT_SOURCE_KEYS], description: '来源标识(alipay|wechat|jd|csv)' },
       mappings: {
         type: 'array',
@@ -40,6 +53,10 @@ export const saveImportMappingTool: ToolDef = {
   },
 
   async execute(args: any, _ctx: ToolContext) {
+    // 入参枚举校验(与弹确认卡前同一份规则)
+    const badEnum = validateArgs(args)
+    if (badEnum) return badEnum
+
     const { mappingType, source, mappings } = args as {
       mappingType: 'account' | 'category'
       source: string

@@ -1,7 +1,8 @@
 import { prisma } from '../../../app.js'
-import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
+import { assertIsMember, checkEnums, retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 import { dayStartOf, parseDayStart, parseDayEnd, dateKey, monthKey } from '../../../lib/date-time.js'
+import { STAT_GRANULARITIES } from '@homibook/core'
 
 interface BalanceHistoryArgs {
   accountIds?: string
@@ -19,7 +20,7 @@ export const queryBalanceHistoryTool: ToolDef = {
     type: 'object',
     properties: {
       accountIds: { type: 'string', description: '账户 ID 列表，逗号分隔，不填则查询所有账户' },
-      granularity: { type: 'string', enum: ['daily', 'monthly'], description: '粒度：daily按日，monthly按月' },
+      granularity: { type: 'string', enum: [...STAT_GRANULARITIES], description: '粒度：daily按日，monthly按月' },
       dateFrom: { type: 'string', description: '开始日期 YYYY-MM-DD' },
       dateTo: { type: 'string', description: '结束日期 YYYY-MM-DD' },
     },
@@ -27,6 +28,10 @@ export const queryBalanceHistoryTool: ToolDef = {
   },
 
   async execute(args: BalanceHistoryArgs, ctx: ToolContext): Promise<ToolResult> {
+    // 入参枚举校验:非法粒度直接回报给模型
+    const badEnum = checkEnums({ granularity: [args.granularity, STAT_GRANULARITIES] })
+    if (badEnum) return badEnum
+
     await assertIsMember(ctx.accountBookId, ctx.userId)
 
     return retryable(async () => {

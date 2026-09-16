@@ -1,5 +1,5 @@
 import { prisma } from '../../../app.js'
-import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
+import { assertIsMember, checkEnums, retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 import { parseDayStart, parseDayEnd, dateKey } from '../../../lib/date-time.js'
 import { RECORD_TYPES, type RecordType } from '@homibook/core'
@@ -37,6 +37,10 @@ export const queryRecordsTool: ToolDef = {
   },
 
   async execute(args: QueryRecordsArgs, ctx: ToolContext): Promise<ToolResult> {
+    // 入参枚举校验:非法筛选类型直接回报给模型(否则会查空/查错)
+    const badEnum = checkEnums({ type: [args.type, RECORD_TYPES] })
+    if (badEnum) return badEnum
+
     await assertIsMember(ctx.accountBookId, ctx.userId)
 
     return retryable(async () => {

@@ -1,11 +1,14 @@
 import { prisma } from '../../../app.js'
-import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
+import { assertIsMember, checkEnums, retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 import { resolveAccountId } from './helpers.js'
 import { RECORD_TYPES, normalizeRecordType } from '@homibook/core'
 import { parseDayStart, dateKey } from '../../../lib/date-time.js'
 import fs from 'fs'
 import path from 'path'
+
+/** 入参枚举校验:非法类型直接回报给模型。弹确认卡前与执行时共用 */
+const validateArgs = (args: any) => checkEnums({ type: [args.type, RECORD_TYPES] })
 
 export const updateRecordTool: ToolDef = {
   name: 'update_record',
@@ -32,8 +35,13 @@ export const updateRecordTool: ToolDef = {
     required: ['recordId'],
   },
   requireConfirm: true,
+  validateArgs,
 
   async execute(args: any, ctx: ToolContext): Promise<ToolResult> {
+    // 入参枚举校验(与弹确认卡前同一份规则)
+    const badEnum = validateArgs(args)
+    if (badEnum) return badEnum
+
     const existing = await prisma.record.findUnique({ where: { id: args.recordId } })
     if (!existing) return { success: false, error: '记录不存在', retryable: false }
 

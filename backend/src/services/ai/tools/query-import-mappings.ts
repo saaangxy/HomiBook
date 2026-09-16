@@ -1,5 +1,10 @@
 import type { ToolDef, ToolContext } from './types.js'
 import { prisma } from '../../../app.js'
+import { checkEnums } from '../security.js'
+import { IMPORT_SOURCES } from '@homibook/core'
+
+/** 映射类型(本工具专属) */
+const MAPPING_TYPES = ['account', 'category'] as const
 
 export const queryImportMappingsTool: ToolDef = {
   name: 'query_import_mappings',
@@ -9,12 +14,19 @@ export const queryImportMappingsTool: ToolDef = {
   parameters: {
     type: 'object',
     properties: {
-      source: { type: 'string', description: '按来源筛选(alipay|wechat|jd)，不填返回全部来源的映射' },
-      mappingType: { type: 'string', enum: ['account', 'category'], description: '映射类型，不填返回两种' },
+      source: { type: 'string', enum: [...IMPORT_SOURCES], description: '按来源筛选(alipay|wechat|jd|csv)，不填返回全部来源的映射' },
+      mappingType: { type: 'string', enum: [...MAPPING_TYPES], description: '映射类型，不填返回两种' },
     },
   },
 
   async execute(args: any, _ctx: ToolContext) {
+    // 入参枚举校验:来源/映射类型非法值直接回报给模型(否则会静默返回全量结果)
+    const badEnum = checkEnums({
+      source: [args.source, IMPORT_SOURCES],
+      mappingType: [args.mappingType, MAPPING_TYPES],
+    })
+    if (badEnum) return badEnum
+
     const source = args.source || undefined
     const mappingType = args.mappingType || undefined
 

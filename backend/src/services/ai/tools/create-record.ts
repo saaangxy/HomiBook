@@ -1,9 +1,12 @@
 import { prisma } from '../../../app.js'
-import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
+import { assertIsMember, checkEnums, retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 import { resolveAccountId } from './helpers.js'
 import { parseDayStart, dateKey } from '../../../lib/date-time.js'
 import { RECORD_TYPES } from '@homibook/core'
+
+/** 入参枚举校验:非法类型直接回报给模型(否则会被归一化悄悄记成 EXPENSE)。弹确认卡前与执行时共用 */
+const validateArgs = (args: any) => checkEnums({ type: [args.type, RECORD_TYPES] })
 
 export const createRecordTool: ToolDef = {
   name: 'create_record',
@@ -28,8 +31,13 @@ export const createRecordTool: ToolDef = {
     required: ['type', 'amount', 'date', 'accountId'],
   },
   requireConfirm: true,
+  validateArgs,
 
   async execute(args: any, ctx: ToolContext): Promise<ToolResult> {
+    // 入参枚举校验(与弹确认卡前同一份规则,此处兜底客户端覆盖后的参数)
+    const badEnum = validateArgs(args)
+    if (badEnum) return badEnum
+
     await assertIsMember(ctx.accountBookId, ctx.userId)
 
     if (!['INCOME', 'EXPENSE', 'TRANSFER'].includes(args.type)) {

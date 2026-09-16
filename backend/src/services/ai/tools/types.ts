@@ -16,4 +16,11 @@ export interface ToolDef {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   execute: (args: any, ctx: ToolContext) => Promise<ToolResult>
   requireConfirm?: boolean
+  /**
+   * 入参校验(可选):返回非 null 时直接把该错误结果回传给模型。
+   * 用途:要求确认的工具在弹出确认卡之前先校验,避免非法入参让用户白确认一次;
+   * execute 内仍会调用一次兜底(执行前的最后一次闸门)。
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  validateArgs?: (args: any) => ToolResult | null
 }

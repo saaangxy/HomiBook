@@ -1,7 +1,14 @@
 import { prisma } from '../../../app.js'
-import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
+import { assertIsMember, checkEnums, retryable, desensitize, type ToolResult } from '../security.js'
 import { ACCOUNT_TYPES, ACCOUNT_VISIBILITIES, normalizeAccountType } from '@homibook/core'
 import type { ToolDef, ToolContext } from './types.js'
+
+/** 入参枚举校验:非法类型直接回报给模型(否则会被归一化悄悄记成 OTHER)。弹确认卡前与执行时共用 */
+const validateArgs = (args: any) =>
+  checkEnums({
+    type: [args.type, ACCOUNT_TYPES],
+    visibility: [args.visibility, ACCOUNT_VISIBILITIES],
+  })
 
 export const createAccountTool: ToolDef = {
   name: 'create_account',
@@ -22,8 +29,13 @@ export const createAccountTool: ToolDef = {
     required: ['name', 'type'],
   },
   requireConfirm: true,
+  validateArgs,
 
   async execute(args: any, ctx: ToolContext): Promise<ToolResult> {
+    // 入参枚举校验(与弹确认卡前同一份规则)
+    const badEnum = validateArgs(args)
+    if (badEnum) return badEnum
+
     await assertIsMember(ctx.accountBookId, ctx.userId)
 
     const initialBalance = args.initialBalance ?? 0

@@ -105,6 +105,43 @@ export async function retryable<T>(
   }
 }
 
+/**
+ * 校验工具入参里的枚举值,非法则返回可直接回传给 LLM 的错误结果。
+ *
+ * 为什么不用「静默归一化」:模型给出非法枚举(如 type="收入"、账户类型 "BANK")时,
+ * 归一化会把它悄悄改成默认值(EXPENSE / OTHER / FREE)再落库——用户看到的是记错账且无法察觉。
+ * 这里改为返回 retryable 错误,由 chat 路由把 error 文本作为工具结果回传,模型据此改用合法值重试。
+ *
+ * 约定:
+ * - 未传(undefined/null)不算非法,由各工具按「可选/必填」自行判断;
+ * - 传入数组时逐个校验;返回结果只包含第一个非法字段。
+ */
+export function checkEnums(fields: Record<string, [unknown, readonly string[]]>): ToolResult | null {
+  for (const [field, [value, allowed]] of Object.entries(fields)) {
+    if (value === undefined || value === null) continue
+    const values = Array.isArray(value) ? value : [value]
+    for (const item of values) {
+      if (typeof item === 'string' && allowed.includes(item)) continue
+      return {
+        success: false,
+        retryable: true,
+        error: `参数 ${field} 的值 ${JSON.stringify(item)} 非法。允许值: ${allowed.join(' / ')}。请改用允许值后重试。`,
+      }
+    }
+  }
+  return null
+}
+
+/** 校验数组入参中每一项的枚举值(带下标,便于模型定位),如 items[].type */
+export function checkEnumList(field: string, values: unknown, allowed: readonly string[]): ToolResult | null {
+  if (!Array.isArray(values)) return null
+  for (let i = 0; i < values.length; i++) {
+    const bad = checkEnums({ [`${field}[${i}]`]: [values[i], allowed] })
+    if (bad) return bad
+  }
+  return null
+}
+
 // 权限校验：用户必须是账本成员
 export async function assertIsMember(bookId: string, userId: string): Promise<void> {
   const book = await prisma.accountBook.findUnique({ where: { id: bookId } })

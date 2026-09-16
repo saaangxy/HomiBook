@@ -1,5 +1,5 @@
 import { prisma } from '../../../app.js'
-import { assertIsMember, retryable, type ToolResult } from '../security.js'
+import { assertIsMember, checkEnums, retryable, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 import { RECORD_TYPES } from '@homibook/core'
 
@@ -16,6 +16,10 @@ export const queryCategoriesTool: ToolDef = {
   },
 
   async execute(args: { type?: string }, ctx: ToolContext): Promise<ToolResult> {
+    // 入参枚举校验:非法分类类型直接回报给模型
+    const badEnum = checkEnums({ type: [args.type, RECORD_TYPES] })
+    if (badEnum) return badEnum
+
     await assertIsMember(ctx.accountBookId, ctx.userId)
 
     return retryable(async () => {

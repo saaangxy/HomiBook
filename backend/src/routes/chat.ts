@@ -254,6 +254,17 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
               if (entry) Object.assign(entry, { result, durationMs, status })
               return result
             }
+            // 入参枚举校验:非法值先回报给模型,不弹确认卡让用户白确认一次
+            // (自动确认分支直接走 execute,其中已有同一份校验)
+            const invalidArgs = tool.validateArgs?.(args)
+            if (invalidArgs) {
+              const durationMs = Date.now() - start
+              sendSSE('tool-result', { toolCallId, toolName: tool.name, result: invalidArgs, durationMs, status: 'error' })
+              logToolCall({ userId, sessionId, action: 'tool_call', toolName: tool.name, input: args, output: invalidArgs, durationMs, status: 'error' })
+              const entry = toolCallEntries.find(e => e.toolCallId === toolCallId)
+              if (entry) Object.assign(entry, { result: invalidArgs, durationMs, status: 'error' })
+              return invalidArgs
+            }
             const preview = await buildConfirmPreview(tool.name, args, accountBookId, userId)
             sendSSE('tool-confirm-required', { toolCallId, toolName: tool.name, preview })
             const entry = toolCallEntries.find(e => e.toolCallId === toolCallId)

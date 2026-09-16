@@ -1,9 +1,17 @@
 import { prisma } from '../../../app.js'
 import type { Prisma } from '../../../generated/sqlite/client.js'
-import { retryable, desensitize, type ToolResult } from '../security.js'
+import { checkEnums, retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 import { computeAccountBalance, assertCanManageAccount } from '../../account.js'
 import { ACCOUNT_STATUSES, ACCOUNT_TYPES, ACCOUNT_VISIBILITIES, normalizeAccountType } from '@homibook/core'
+
+/** 入参枚举校验:非法类型/可见性/状态直接回报给模型。弹确认卡前与执行时共用 */
+const validateArgs = (args: any) =>
+  checkEnums({
+    type: [args.type, ACCOUNT_TYPES],
+    visibility: [args.visibility, ACCOUNT_VISIBILITIES],
+    status: [args.status, ACCOUNT_STATUSES],
+  })
 
 export const updateAccountTool: ToolDef = {
   name: 'update_account',
@@ -25,8 +33,13 @@ export const updateAccountTool: ToolDef = {
     required: ['id'],
   },
   requireConfirm: true,
+  validateArgs,
 
   async execute(args: any, ctx: ToolContext): Promise<ToolResult> {
+    // 入参枚举校验(与弹确认卡前同一份规则)
+    const badEnum = validateArgs(args)
+    if (badEnum) return badEnum
+
     return retryable(async () => {
       const account = await assertCanManageAccount(args.id, ctx.userId)
       if (account.accountBookId !== ctx.accountBookId) {

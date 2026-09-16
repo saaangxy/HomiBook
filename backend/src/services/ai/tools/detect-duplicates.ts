@@ -1,6 +1,6 @@
 import { prisma } from '../../../app.js'
-import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
-import { buildDuplicateKey } from '@homibook/core'
+import { assertIsMember, checkEnums, retryable, desensitize, type ToolResult } from '../security.js'
+import { DEDUP_DATE_PRECISIONS, buildDuplicateKey } from '@homibook/core'
 import type { ToolDef, ToolContext } from './types.js'
 import { dateKey } from '../../../lib/date-time.js'
 
@@ -39,6 +39,10 @@ export const detectDuplicatesTool: ToolDef = {
   },
 
   async execute(args: DetectDuplicatesArgs, ctx: ToolContext): Promise<ToolResult> {
+    // 入参枚举校验:日期精度非法值直接回报给模型(null=忽略日期,视为未传故不校验)
+    const badEnum = checkEnums({ 'matchFields.date': [args.matchFields?.date, DEDUP_DATE_PRECISIONS] })
+    if (badEnum) return badEnum
+
     await assertIsMember(ctx.accountBookId, ctx.userId)
 
     return retryable(async () => {

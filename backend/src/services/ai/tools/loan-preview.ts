@@ -1,4 +1,4 @@
-import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
+import { assertIsMember, checkEnums, retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 import {
   calcEqualInstallment,
@@ -34,6 +34,10 @@ export const loanPreviewTool: ToolDef = {
   },
 
   async execute(args: LoanPreviewArgs, ctx: ToolContext): Promise<ToolResult> {
+    // 入参枚举校验:非法还款方式直接回报给模型
+    const badEnum = checkEnums({ method: [args.method, LOAN_INTEREST_METHODS] })
+    if (badEnum) return badEnum
+
     await assertIsMember(ctx.accountBookId, ctx.userId)
 
     return retryable(async () => {

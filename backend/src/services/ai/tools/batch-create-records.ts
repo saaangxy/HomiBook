@@ -1,5 +1,5 @@
 import { prisma } from '../../../app.js'
-import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
+import { assertIsMember, checkEnumList, retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 import { resolveAccountId } from './helpers.js'
 import { dateKey } from '../../../lib/date-time.js'
@@ -22,6 +22,10 @@ interface BatchCreateArgs {
   records: RecordInput[]
   attachmentIds?: string[]
 }
+
+/** 入参枚举校验:逐条校验类型,非法值直接回报给模型(带上条目下标)。弹确认卡前与执行时共用 */
+const validateArgs = (args: BatchCreateArgs) =>
+  checkEnumList('records[].type', (args.records ?? []).map((r) => r.type), RECORD_TYPES)
 
 export const batchCreateRecordsTool: ToolDef = {
   name: 'batch_create_records',
@@ -56,8 +60,13 @@ export const batchCreateRecordsTool: ToolDef = {
     required: ['records'],
   },
   requireConfirm: true,
+  validateArgs,
 
   async execute(args: BatchCreateArgs, ctx: ToolContext): Promise<ToolResult> {
+    // 入参枚举校验(与弹确认卡前同一份规则)
+    const badEnum = validateArgs(args)
+    if (badEnum) return badEnum
+
     await assertIsMember(ctx.accountBookId, ctx.userId)
 
     if (!args.records || !Array.isArray(args.records) || args.records.length === 0) {

@@ -1,6 +1,6 @@
 import type { ToolDef, ToolContext } from './types.js'
 import { prisma } from '../../../app.js'
-import { assertIsMember } from '../security.js'
+import { assertIsMember, checkEnumList, checkEnums } from '../security.js'
 import { parseAlipayCSV, parseWechatXlsx, parseJdCSV } from '../../import/parsers.js'
 import { applyAccountMappings, applyCategoryMappings, matchAccountByName, inferAccount, type ParsedRow } from '../../import/shared.js'
 import { createAccountsInTx, saveCategoryMappingsInTx, saveAccountMappingsInTx, AccountResolver, batchCreateRecordsInTx, refreshBalances } from '../../import/execute.js'
@@ -57,6 +57,14 @@ export const confirmImportTool: ToolDef = {
   },
 
   async execute(args: any, ctx: ToolContext) {
+    // 入参枚举校验:来源/账户处理动作/账户类型/记录类型,非法值直接回报给模型
+    const badEnum =
+      checkEnums({ source: [args.source, IMPORT_AI_SOURCES] })
+      ?? checkEnumList('accountResolutions[].action', (args.accountResolutions ?? []).map((r: any) => r.action), ['existing', 'create'] as const)
+      ?? checkEnumList('accountResolutions[].accountType', (args.accountResolutions ?? []).map((r: any) => r.accountType), ACCOUNT_TYPES)
+      ?? checkEnumList('categoryResolutions[].recordType', (args.categoryResolutions ?? []).map((r: any) => r.recordType), RECORD_TYPES)
+    if (badEnum) return badEnum
+
     await assertIsMember(ctx.accountBookId, ctx.userId)
     const { fileId, source, ownerId, accountResolutions, categoryResolutions, _execute } = args as {
       fileId: string

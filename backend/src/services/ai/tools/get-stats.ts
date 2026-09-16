@@ -1,5 +1,5 @@
 import { prisma } from '../../../app.js'
-import { assertIsMember, retryable, type ToolResult } from '../security.js'
+import { assertIsMember, checkEnums, retryable, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 import { parseDayStart, parseDayEnd, dayStart, dayEnd, dateKey, monthKey } from '../../../lib/date-time.js'
 import { RECORD_TYPES } from '@homibook/core'
@@ -13,6 +13,9 @@ interface GetStatsArgs {
   categoryCode?: string
   groupBy?: 'month' | 'category' | 'type' | 'account'
 }
+
+/** 汇总维度(本工具专属的对话粗粒度维度,与 /api/records/analysis 的 STAT_GROUP_BYS 不是同一集合) */
+const GROUP_BYS = ['month', 'category', 'type', 'account'] as const
 
 export const getStatsTool: ToolDef = {
   name: 'get_stats',
@@ -28,11 +31,18 @@ export const getStatsTool: ToolDef = {
       month: { type: 'number', description: '月份 (1-12)，仅与 year 配合使用' },
       type: { type: 'string', enum: [...RECORD_TYPES], description: '收支类型筛选' },
       categoryCode: { type: 'string', description: '分类编码筛选' },
-      groupBy: { type: 'string', enum: ['month', 'category', 'type', 'account'], description: '汇总维度，默认 month' },
+      groupBy: { type: 'string', enum: [...GROUP_BYS], description: '汇总维度，默认 month' },
     },
   },
 
   async execute(args: GetStatsArgs, ctx: ToolContext): Promise<ToolResult> {
+    // 入参枚举校验:收支类型/汇总维度非法值直接回报给模型
+    const badEnum = checkEnums({
+      type: [args.type, RECORD_TYPES],
+      groupBy: [args.groupBy, GROUP_BYS],
+    })
+    if (badEnum) return badEnum
+
     await assertIsMember(ctx.accountBookId, ctx.userId)
 
     return retryable(async () => {

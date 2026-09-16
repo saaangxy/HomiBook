@@ -1,5 +1,5 @@
 import { prisma } from '../../../app.js'
-import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
+import { assertIsMember, checkEnums, retryable, desensitize, type ToolResult } from '../security.js'
 import { BUDGET_TYPES, normalizeBudgetType, type BudgetType } from '@homibook/core'
 import type { ToolDef, ToolContext } from './types.js'
 
@@ -15,6 +15,9 @@ interface BatchCreateBudgetsArgs {
   endDate?: string
   remark?: string
 }
+
+/** 入参枚举校验:非法预算类型直接回报给模型。弹确认卡前与执行时共用 */
+const validateArgs = (args: BatchCreateBudgetsArgs) => checkEnums({ type: [args.type, BUDGET_TYPES] })
 
 export const batchCreateBudgetsTool: ToolDef = {
   name: 'batch_create_budgets',
@@ -38,8 +41,13 @@ export const batchCreateBudgetsTool: ToolDef = {
     required: ['name', 'type', 'amount', 'months', 'year'],
   },
   requireConfirm: true,
+  validateArgs,
 
   async execute(args: BatchCreateBudgetsArgs, ctx: ToolContext): Promise<ToolResult> {
+    // 入参枚举校验(与弹确认卡前同一份规则)
+    const badEnum = validateArgs(args)
+    if (badEnum) return badEnum
+
     await assertIsMember(ctx.accountBookId, ctx.userId)
 
     return retryable(async () => {

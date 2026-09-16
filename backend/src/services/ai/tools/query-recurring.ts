@@ -1,5 +1,5 @@
 import { prisma } from '../../../app.js'
-import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
+import { assertIsMember, checkEnums, retryable, desensitize, type ToolResult } from '../security.js'
 import { getNextTriggerTime } from '../../recurring.js'
 import type { ToolDef, ToolContext } from './types.js'
 import { RECURRING_TYPES, type RecurringType } from '@homibook/core'
@@ -23,6 +23,10 @@ export const queryRecurringTool: ToolDef = {
   },
 
   async execute(args: QueryRecurringArgs, ctx: ToolContext): Promise<ToolResult> {
+    // 入参枚举校验:非法筛选类型直接回报给模型
+    const badEnum = checkEnums({ type: [args.type, RECURRING_TYPES] })
+    if (badEnum) return badEnum
+
     await assertIsMember(ctx.accountBookId, ctx.userId)
 
     return retryable(async () => {

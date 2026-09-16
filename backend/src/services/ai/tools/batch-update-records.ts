@@ -1,5 +1,5 @@
 import { prisma } from '../../../app.js'
-import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
+import { assertIsMember, checkEnumList, retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 import { resolveAccountId } from './helpers.js'
 import { RECORD_TYPES, normalizeRecordType } from '@homibook/core'
@@ -17,6 +17,10 @@ interface UpdateInput {
   fromAccountId?: string
   toAccountId?: string
 }
+
+/** 入参枚举校验:逐条校验待改类型,非法值直接回报给模型(带上条目下标)。弹确认卡前与执行时共用 */
+const validateArgs = (args: { updates: UpdateInput[] }) =>
+  checkEnumList('updates[].type', (args.updates ?? []).map((u) => u.type), RECORD_TYPES)
 
 export const batchUpdateRecordsTool: ToolDef = {
   name: 'batch_update_records',
@@ -50,8 +54,13 @@ export const batchUpdateRecordsTool: ToolDef = {
     required: ['updates'],
   },
   requireConfirm: true,
+  validateArgs,
 
   async execute(args: { updates: UpdateInput[] }, ctx: ToolContext): Promise<ToolResult> {
+    // 入参枚举校验(与弹确认卡前同一份规则)
+    const badEnum = validateArgs(args)
+    if (badEnum) return badEnum
+
     await assertIsMember(ctx.accountBookId, ctx.userId)
 
     if (!args.updates || !Array.isArray(args.updates) || args.updates.length === 0) {

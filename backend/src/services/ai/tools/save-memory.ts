@@ -1,5 +1,5 @@
 import type { ToolDef, ToolContext } from './types.js'
-import type { ToolResult } from '../security.js'
+import { checkEnums, type ToolResult } from '../security.js'
 import { saveMemory } from '../memory.js'
 import { MEMORY_TYPES } from '@homibook/core'
 
@@ -25,6 +25,10 @@ export const saveMemoryTool: ToolDef = {
   },
 
   async execute(args: any, ctx: ToolContext): Promise<ToolResult> {
+    // 入参枚举校验:非法记忆类型直接回报给模型
+    const badEnum = checkEnums({ memoryType: [args.memoryType, MEMORY_TYPES] })
+    if (badEnum) return badEnum
+
     const { content, memoryType, importance, memoryId } = args as {
       content: string
       memoryType: 'habit' | 'preference' | 'rule' | 'fact'

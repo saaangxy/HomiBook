@@ -1,7 +1,10 @@
 import { prisma } from '../../../app.js'
-import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
+import { assertIsMember, checkEnums, retryable, desensitize, type ToolResult } from '../security.js'
 import { BUDGET_TYPES, normalizeBudgetType } from '@homibook/core'
 import type { ToolDef, ToolContext } from './types.js'
+
+/** 入参枚举校验:非法预算类型直接回报给模型(否则会被归一化悄悄记成 FREE)。弹确认卡前与执行时共用 */
+const validateArgs = (args: any) => checkEnums({ type: [args.type, BUDGET_TYPES] })
 
 export const setBudgetTool: ToolDef = {
   name: 'set_budget',
@@ -25,8 +28,13 @@ export const setBudgetTool: ToolDef = {
     required: ['name', 'type', 'year', 'month', 'amount'],
   },
   requireConfirm: true,
+  validateArgs,
 
   async execute(args: any, ctx: ToolContext): Promise<ToolResult> {
+    // 入参枚举校验(与弹确认卡前同一份规则)
+    const badEnum = validateArgs(args)
+    if (badEnum) return badEnum
+
     await assertIsMember(ctx.accountBookId, ctx.userId)
 
     return retryable(async () => {

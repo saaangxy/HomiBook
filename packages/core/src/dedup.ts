@@ -6,6 +6,9 @@ import type { RecordType } from './types/index.js';
 
 export type DedupDatePrecision = 'exact' | 'date' | null;
 
+/** 日期匹配精度可选值(null=忽略日期,不属于「可选值」故不在此列) */
+export const DEDUP_DATE_PRECISIONS = ['exact', 'date'] as const;
+
 export interface DedupMatchFields {
   /** 日期匹配精度:exact=精确到秒,date=同日,null=忽略 */
   date: DedupDatePrecision;
