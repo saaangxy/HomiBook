@@ -20,8 +20,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 
 /** 长文本字段清单：仅 MySQL/PostgreSQL 需要 @db.Text（新增长字段时在此追加） */
 const LONG_TEXT_FIELDS = {
-  ChatSession: ['summary'],
-  ChatMessage: ['content', 'toolCalls'],
+  ChatSession: ['summary', 'injectedContext'],
+  ChatMessage: ['content', 'toolCalls', 'usageJson'],
   UserMemory: ['content'],
   AgentAuditLog: ['input', 'output'],
   SystemConfig: ['value'],

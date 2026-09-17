@@ -34,7 +34,7 @@ export async function loadMemoriesForPrompt(userId: string, query: string, limit
   // 1. 查询 top-N 重要记忆
   const topMemories = await prisma.userMemory.findMany({
     where: { userId },
-    orderBy: [{ importance: 'desc' }, { lastAccessedAt: 'desc' }],
+    orderBy: [{ importance: 'desc' }, { updatedAt: 'desc' }, { id: 'asc' }],
     take: limit,
     select: { id: true, content: true, memoryType: true, importance: true },
   })
@@ -51,20 +51,22 @@ export async function loadMemoriesForPrompt(userId: string, query: string, limit
       ])
       const matched = await prisma.userMemory.findMany({
         where: { userId, OR: orConditions },
-        orderBy: [{ importance: 'desc' }, { lastAccessedAt: 'desc' }],
+        orderBy: [{ importance: 'desc' }, { updatedAt: 'desc' }, { id: 'asc' }],
         take: limit * 2,
         select: { id: true, content: true, memoryType: true, importance: true },
       })
       // 合并去重
       const seen = new Set(topMemories.map(m => m.id))
       const merged = [...topMemories, ...matched.filter(m => !seen.has(m.id))]
-        .sort((a, b) => b.importance - a.importance)
+        // id 兜底保证「同重要度 → 同顺序」:注入文本逐字节稳定是前缀缓存命中的前提
+        .sort((a, b) => b.importance - a.importance || a.id.localeCompare(b.id))
         .slice(0, limit)
       result = merged
     }
   }
 
-  // 3. 更新访问记录（修复原 searchMemories 未 await 的 bug）
+  // 3. 更新访问记录（统计/展示用）。注意:lastAccessedAt 只在被读取时变,
+  // 绝不能拿它排序 —— 否则同一批记忆的注入顺序每轮都不同,提示词前缀缓存会因此失效。
   if (result.length > 0) {
     await prisma.userMemory.updateMany({
       where: { id: { in: result.map(m => m.id) } },
@@ -84,7 +86,7 @@ export async function searchMemoriesByKeyword(userId: string, query: string, lim
     // 无关键词时返回 top 记忆
     return prisma.userMemory.findMany({
       where: { userId },
-      orderBy: [{ importance: 'desc' }, { lastAccessedAt: 'desc' }],
+      orderBy: [{ importance: 'desc' }, { updatedAt: 'desc' }, { id: 'asc' }],
       take: limit,
       select: { id: true, content: true, memoryType: true, importance: true },
     })
@@ -96,7 +98,7 @@ export async function searchMemoriesByKeyword(userId: string, query: string, lim
   ])
   const memories = await prisma.userMemory.findMany({
     where: { userId, OR: orConditions },
-    orderBy: [{ importance: 'desc' }, { lastAccessedAt: 'desc' }],
+    orderBy: [{ importance: 'desc' }, { updatedAt: 'desc' }, { id: 'asc' }],
     take: limit,
     select: { id: true, content: true, memoryType: true, importance: true },
   })

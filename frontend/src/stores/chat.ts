@@ -18,6 +18,37 @@ import { useBookStore } from './book'
 // 权威定义在 @homibook/core(与 mobile 共享),此处 re-export 供组件引用
 export type { Message, MessageBlock, SuggestionOption, ToolCallEntry }
 
+// ── 流式增量刷新调度 ──
+// SSE 的每个 text/reasoning delta 都直接写 store → 整棵消息树(含全部历史 Markdown)重渲染一次;
+// 实测每秒可达上百帧,除了白白烧 CPU,还会让消息区布局持续位移:
+//   mousedown/mouseup 落到不同元素上 → click 目标变成共同祖先 → 卡片/按钮「点不动」。
+// 对策:① 同一窗口内的文本增量合并为一次提交;② 按住聊天区域期间暂停刷新,松手补一次。
+const DELTA_FLUSH_MS = 50
+
+type DeltaEvent =
+  | Extract<SSEEvent, { type: 'text-delta' }>
+  | Extract<SSEEvent, { type: 'reasoning-delta' }>
+
+function isDeltaEvent(event: SSEEvent): event is DeltaEvent {
+  return event.type === 'text-delta' || event.type === 'reasoning-delta'
+}
+
+/** 活跃流的补刷函数(暂停解除时立即执行,不再等窗口) */
+const pendingFlushers = new Set<() => void>()
+let streamPaused = false
+
+/** 按住聊天区域(消息列表/输入区工具行)期间暂停流式刷新 / 松手恢复并补刷 */
+export function setStreamPaused(paused: boolean) {
+  if (streamPaused === paused) return
+  streamPaused = paused
+  if (paused || pendingFlushers.size === 0) return
+  // 延后一个事件循环再补刷:避免在按压释放的同一 tick 里重排 DOM,干扰 click 判定
+  setTimeout(() => {
+    if (streamPaused) return
+    for (const flush of [...pendingFlushers]) flush()
+  }, 0)
+}
+
 export interface ChatSession {
   id: string
   title: string
@@ -131,6 +162,8 @@ type SSEStreamContext = {
   sid: string
   assistantMsgId: string
   parentMsgId?: string
+  /** 本轮用户消息的本地句柄(context-injected 落点:流式期间它尚未落库,无法按 DB id 匹配) */
+  userMsgId?: string
   shouldGenerateTitle?: boolean
   get: GetState
   set: SetState
@@ -166,25 +199,50 @@ function makeSSEHandler(
     }
   }
 
+  // 增量缓冲:delta 先入队,窗口到期(或结构性事件到达)时合批提交一次(见文件头「流式增量刷新调度」)
+  const bufferedDeltas: DeltaEvent[] = []
+  let flushTimer: ReturnType<typeof setTimeout> | null = null
+
+  const flushDeltas = () => {
+    if (flushTimer) {
+      clearTimeout(flushTimer)
+      flushTimer = null
+    }
+    if (bufferedDeltas.length === 0) return
+    // 按序重放:合并窗口不改变 processTextDelta 的语义(同函数同序,共享 thinkState/idCounter)
+    const batch = bufferedDeltas.splice(0, bufferedDeltas.length)
+    updateMsg((msg) => {
+      const blocks = [...msg.blocks]
+      for (const delta of batch) {
+        if (delta.type === 'text-delta') {
+          ctx.thinkState.value = processTextDelta(delta.delta, ctx.thinkState.value, blocks, ctx.blockIdCounter)
+        } else {
+          // DeepSeek 等推理模型的思考内容:渲染为 thinking 块
+          appendThinkingToBlocks(blocks, delta.delta, ctx.blockIdCounter)
+        }
+      }
+      return { ...msg, blocks }
+    })
+  }
+  pendingFlushers.add(flushDeltas)
+
+  const scheduleFlush = () => {
+    if (streamPaused || flushTimer) return
+    flushTimer = setTimeout(() => {
+      flushTimer = null
+      if (!streamPaused) flushDeltas()
+    }, DELTA_FLUSH_MS)
+  }
+
   const handleEvent = (event: SSEEvent) => {
+    if (isDeltaEvent(event)) {
+      bufferedDeltas.push(event)
+      scheduleFlush()
+      return
+    }
+    // 结构性事件(工具调用/结束/错误)不能等窗口:先落地缓冲文本,再按序处理
+    flushDeltas()
     switch (event.type) {
-      case 'text-delta':
-        updateMsg((msg) => {
-          const blocks = [...msg.blocks]
-          ctx.thinkState.value = processTextDelta(event.delta, ctx.thinkState.value, blocks, ctx.blockIdCounter)
-          return { ...msg, blocks }
-        })
-        break
-
-      case 'reasoning-delta':
-        // DeepSeek 等推理模型的思考内容:渲染为 thinking 块
-        updateMsg((msg) => {
-          const blocks = [...msg.blocks]
-          appendThinkingToBlocks(blocks, event.delta, ctx.blockIdCounter)
-          return { ...msg, blocks }
-        })
-        break
-
       case 'tool-call':
         updateMsg((msg) => ({
           ...msg,
@@ -264,6 +322,20 @@ function makeSSEHandler(
         }))
         break
 
+      case 'context-injected': {
+        // 本轮注入的上下文:挂到触发它的用户消息上(界面在用户消息下方展示「本轮注入了什么」)。
+        // 必须用本轮用户消息的本地句柄:此时它还没落库(dbId 要到 finish 才回传),
+        // 用 event.userMessageId(DB id)匹配不到任何本地消息 → 只能等刷新后从历史里读出来。
+        const targetId = ctx.userMsgId || event.userMessageId
+        if (targetId) {
+          ctx.get().updateStreamMessage(ctx.sid, targetId, (msg) => ({
+            ...msg,
+            injections: [...(msg.injections ?? []), event.injection],
+          }))
+        }
+        break
+      }
+
       case 'finish':
         updateMsg((msg) => {
           const usage = event.usage as Message['usage']
@@ -287,6 +359,8 @@ function makeSSEHandler(
   }
 
   const handleDone = () => {
+    flushDeltas() // 收尾前落地残余增量,避免丢字
+    pendingFlushers.delete(flushDeltas)
     updateMsg((msg) => ({ ...msg, isStreaming: false }))
     clearStreaming(ctx.set, ctx.sid)
 
@@ -553,6 +627,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
       sid, assistantMsgId,
       get, set,
       shouldGenerateTitle,
+      userMsgId: userMsg.id,
       thinkState: { value: { mode: 'text', pending: '' } },
       blockIdCounter: { value: 0 },
     }

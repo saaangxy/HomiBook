@@ -1,4 +1,4 @@
-import { consumeSSEStream, type ChatSSEEvent } from '@homibook/core';
+import { consumeSSEStream, type ChatInjection, type ChatSSEEvent } from '@homibook/core';
 import { http, getBaseUrl, getCredential, uploadFileNative } from './http';
 
 // AI 聊天数据访问层:会话/消息 CRUD、SSE 流式请求、消息附件上传、工具显示名称缓存。
@@ -31,6 +31,8 @@ export interface ChatMessage {
     totalTokens: number;
     cachedInputTokens?: number;
   };
+  /** 挂在用户消息上的上下文注入(日期/记忆/技能/附件清单) */
+  injections?: ChatInjection[];
 }
 
 export type SSEEvent = ChatSSEEvent;

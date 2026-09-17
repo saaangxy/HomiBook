@@ -402,7 +402,11 @@ export function ToolCard({ toolCall, bookId }: { toolCall: ToolCallEntry; bookId
   return (
     <View style={{ borderRadius: 12, borderWidth: 1, borderColor: alpha(color, 0.35), backgroundColor: alpha(color, 0.07), paddingHorizontal: 10, paddingVertical: 8, gap: 6 }}>
       {/* 可点击头部:状态图标 + 工具名 + 耗时 + 展开 */}
-      <Pressable onPress={() => setExpanded((v) => !v)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+      <Pressable
+        hitSlop={6}
+        onPress={() => setExpanded((v) => !v)}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
+      >
         {effectiveStatus === 'pending'
           ? <Loader2 size={14} color={color} />
           : <StatusIcon size={14} color={color} />}

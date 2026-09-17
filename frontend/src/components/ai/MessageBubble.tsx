@@ -4,10 +4,10 @@ import remarkGfm from 'remark-gfm'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
 import type { Message, MessageBlock } from '@/stores/chat'
-import { parseImportMessage } from '@homibook/core'
+import { parseImportMessage, type ChatInjection } from '@homibook/core'
 import { useAuthStore } from '@/stores/auth'
 import { ToolCallCard } from './ToolCallCard'
-import { Bot, Brain, ChevronDown, ChevronLeft, ChevronRight, Copy, FileSpreadsheet, RefreshCw, Pencil, Check, Loader2 } from 'lucide-react'
+import { Bot, Brain, ChevronDown, ChevronLeft, ChevronRight, Copy, FileSpreadsheet, RefreshCw, Pencil, Check, Loader2, Sparkles } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 
@@ -17,6 +17,61 @@ interface Props {
   onEditSubmit?: (msgId: string, newText: string) => void
   versions?: { id: string; label: string; isActive: boolean }[]
   onSwitchVersion?: (versionId: string) => void
+}
+
+/**
+ * 本轮上下文注入提示:告诉用户「这轮给模型补了什么上下文」(日期/记忆/技能/附件清单)。
+ * 这些内容为保持前缀缓存而只在有变化时追加注入、不进入对话正文,故单独折叠展示。
+ */
+function InjectChip({ injection }: { injection: ChatInjection }) {
+  const [open, setOpen] = useState(false)
+  const { date, memories, skills, hasAttachments, raw } = injection.summary
+  const parts = [
+    date ? `日期 ${date}` : '',
+    memories.length > 0 ? `${memories.length} 条记忆` : '',
+    skills.length > 0 ? skills.join('、') : '',
+    hasAttachments ? '附件清单' : '',
+  ].filter(Boolean)
+  if (parts.length === 0) return null
+
+  return (
+    <div className="border rounded-lg overflow-hidden text-xs max-w-full text-left">
+      <button
+        className="flex items-center gap-1.5 w-full px-2.5 py-1.5 text-muted-foreground hover:bg-muted/50 transition-colors"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <Sparkles size={12} />
+        <span className="truncate">本轮注入:{parts.join(' · ')}</span>
+        <ChevronDown size={12} className={cn('ml-auto shrink-0 transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div className="px-2.5 py-2 border-t space-y-1.5 text-muted-foreground break-words">
+          {date && <div>日期:{date}</div>}
+          {memories.length > 0 && (
+            <div>
+              <div className="text-foreground/70 font-medium">记忆</div>
+              <ul className="list-disc pl-4 space-y-0.5">
+                {memories.map((m, i) => <li key={i}>{m}</li>)}
+              </ul>
+            </div>
+          )}
+          {skills.length > 0 && (
+            <div>
+              <div className="text-foreground/70 font-medium">技能</div>
+              <ul className="list-disc pl-4 space-y-0.5">
+                {skills.map((s, i) => <li key={i}>{s}</li>)}
+              </ul>
+            </div>
+          )}
+          {hasAttachments && <div>含附件清单(attachmentId / 文件名)</div>}
+          <details>
+            <summary className="cursor-pointer select-none">原始注入文本</summary>
+            <pre className="mt-1 whitespace-pre-wrap break-words text-[10px] leading-relaxed">{raw}</pre>
+          </details>
+        </div>
+      )}
+    </div>
+  )
 }
 
 /** 获取消息的全部文本内容 */
@@ -214,6 +269,10 @@ export function MessageBubble({ message, onRetry, onEditSubmit, versions, onSwit
                 ))}
               </div>
             )}
+            {/* 上下文注入(日期/记忆/技能/附件清单):仅在此处展示,不属于对话正文 */}
+            {message.injections?.map((injection) => (
+              <InjectChip key={injection.id} injection={injection} />
+            ))}
           </>
         ) : (
           <div className="space-y-2 min-w-0 w-full">
@@ -293,7 +352,10 @@ export function MessageBubble({ message, onRetry, onEditSubmit, versions, onSwit
               <div className="text-xs text-muted-foreground/60">
                 Token: ↑{message.usage.inputTokens.toLocaleString()} + ↓{message.usage.outputTokens?.toLocaleString() ?? 0} = {message.usage.totalTokens?.toLocaleString() ?? 0}
                 {message.usage.cachedInputTokens != null && message.usage.cachedInputTokens > 0 && (
-                  <> | 缓存 {message.usage.cachedInputTokens.toLocaleString()}</>
+                  <>
+                    {' '}| 缓存命中 {message.usage.cachedInputTokens.toLocaleString()}
+                    （{Math.round((message.usage.cachedInputTokens / Math.max(message.usage.inputTokens, 1)) * 100)}%）
+                  </>
                 )}
               </div>
             )}

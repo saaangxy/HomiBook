@@ -28,7 +28,7 @@ export const saveImportMappingTool: ToolDef = {
     type: 'object',
     properties: {
       mappingType: { type: 'string', enum: [...MAPPING_TYPES], description: '映射类型' },
-      source: { type: 'string', enum: [...IMPORT_SOURCE_KEYS], description: '来源标识(alipay|wechat|jd|csv)' },
+      source: { type: 'string', enum: [...IMPORT_SOURCE_KEYS], description: '来源标识' },
       mappings: {
         type: 'array',
         description: '要保存的映射规则列表',
@@ -42,8 +42,8 @@ export const saveImportMappingTool: ToolDef = {
             sourceCategory: { type: 'string', description: '源分类名称（分类映射必填）' },
             targetCategoryCode: { type: 'string', description: '目标系统分类编码（分类映射必填）' },
             // 通用条件字段
-            payerContains: { type: 'string', description: '交易方名称正则过滤条件（可选），如 燃气|电力|汇通 匹配任一关键词' },
-            descriptionContains: { type: 'string', description: '说明字段正则过滤条件（可选），如 燃气|电力|汇通 匹配任一关键词' },
+            payerContains: { type: 'string', description: '交易方正则过滤条件（可选），如 燃气|电力 匹配任一关键词' },
+            descriptionContains: { type: 'string', description: '说明字段正则过滤条件（可选）' },
             recordType: { type: 'string', enum: [...RECORD_TYPES, ''], description: '记录类型过滤（分类映射可选）' },
           },
         },

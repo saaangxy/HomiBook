@@ -341,6 +341,7 @@ model ChatSession {
   title         String        @default("新对话")
   summary              String? @db.MediumText  // 已压缩旧消息的 LLM 摘要
   summaryUpToMessageId String?  // 摘要覆盖到的最后一条消息 ID
+  injectedContext String? @db.MediumText  // 上下文注入指纹(JSON:日期/已注入记忆id/技能名),只追加差量注入以保持前缀缓存
   modelProvider String        @default("deepseek")
   modelName     String        @default("deepseek-chat")
   status        String        @default("active")
@@ -366,6 +367,7 @@ model ChatMessage {
   reasoningContent String?  // DeepSeek 推理模型的 reason_content,多轮带 tools 时须回传
   toolCalls       String? @db.MediumText
   tokenCount      Int                      @default(0)
+  usageJson       String? @db.MediumText  // 原始 usage(含缓存命中量),用于观测前缀缓存命中率
   modelProvider   String?
   modelName       String?
   parentMessageId String?

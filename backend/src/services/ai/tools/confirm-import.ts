@@ -32,7 +32,7 @@ export const confirmImportTool: ToolDef = {
             action: { type: 'string', enum: ['existing', 'create'] },
             targetAccountId: { type: 'string' },
             targetAccountName: { type: 'string' },
-            accountType: { type: 'string', enum: [...ACCOUNT_TYPES], description: '新建账户的类型(BANK_DEBIT/CREDIT_CARD/ALIPAY/WECHAT/CASH/RECHARGE_CARD/INVESTMENT/OTHER)' },
+            accountType: { type: 'string', enum: [...ACCOUNT_TYPES], description: '新建账户的类型' },
           },
           required: ['sourceAccountName', 'action'],
         },

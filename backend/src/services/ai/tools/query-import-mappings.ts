@@ -14,7 +14,7 @@ export const queryImportMappingsTool: ToolDef = {
   parameters: {
     type: 'object',
     properties: {
-      source: { type: 'string', enum: [...IMPORT_SOURCES], description: '按来源筛选(alipay|wechat|jd|csv)，不填返回全部来源的映射' },
+      source: { type: 'string', enum: [...IMPORT_SOURCES], description: '按来源筛选，不填返回全部来源' },
       mappingType: { type: 'string', enum: [...MAPPING_TYPES], description: '映射类型，不填返回两种' },
     },
   },

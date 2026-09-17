@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useChatStore, useSessionView } from '@/stores/chat'
+import { setStreamPaused, useChatStore, useSessionView } from '@/stores/chat'
 import { useBookStore } from '@/stores/book'
 import { fetchSessions, fetchMessages, createSession, updateSession, deleteSession as deleteSessionApi } from '@/api/chat'
 import { loadToolNames } from '@/lib/tool-names'
@@ -117,6 +117,9 @@ export function ChatWindow() {
           parentMessageId: m.parentMessageId ?? undefined,
           // 恢复用户消息附件(服务端 URL,刷新/冷启动后仍可回显)
           ...(m.attachments?.length ? { attachments: m.attachments } : {}),
+          // 历史回显也带上用量与注入信息(此前只映射附件,刷新后 Token 行与注入提示会消失)
+          ...(m.usage ? { usage: m.usage } : {}),
+          ...(m.injections?.length ? { injections: m.injections } : {}),
         }
       })
       setSessionData(id, parsed.length > 0 ? parsed : [greetingMsg])
@@ -303,6 +306,19 @@ export function ChatWindow() {
     }
   }, [messages])
 
+  // 按住消息列表/输入区工具行期间暂停流式增量刷新(见 stores/chat 顶部「流式增量刷新调度」):
+  // 流式每 50ms 就会改变消息高度,DOM 位移会让 mousedown/mouseup 落在不同元素上 → click 丢失。
+  // 恢复挂在 window 上:指针可能在容器外抬起,只监听容器内的 pointerup 会导致永久暂停。
+  useEffect(() => {
+    const resume = () => setStreamPaused(false)
+    window.addEventListener('pointerup', resume)
+    window.addEventListener('pointercancel', resume)
+    return () => {
+      window.removeEventListener('pointerup', resume)
+      window.removeEventListener('pointercancel', resume)
+    }
+  }, [])
+
   return (
     <div className="flex h-[65vh] md:h-[600px] rounded-xl border bg-card overflow-hidden">
       {/* 桌面端左侧会话列表 */}
@@ -354,7 +370,7 @@ export function ChatWindow() {
         )}
         {/* 消息列表 */}
         <ScrollArea className="flex-1">
-          <div ref={scrollRef} className="p-4 space-y-4">
+          <div ref={scrollRef} className="p-4 space-y-4" onPointerDown={() => setStreamPaused(true)}>
             {messages.map((msg) => {
               // 检查当前消息所在位置的所有版本（同一 parentMessageId 的消息）
               const allVersions = msg.parentMessageId
@@ -435,8 +451,8 @@ export function ChatWindow() {
               className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0 resize-none px-4 py-3 min-h-[60px]"
               disabled={isCurrentStreaming || importing || uploadingImages}
             />
-            {/* 工具栏：工具按钮在左，发送在右 */}
-            <div className="flex items-center justify-between px-3 pb-2">
+            {/* 工具栏：工具按钮在左，发送在右（按住期间暂停流式刷新，避免按钮被 DOM 位移吞掉） */}
+            <div className="flex items-center justify-between px-3 pb-2" onPointerDown={() => setStreamPaused(true)}>
               <div className="flex items-center gap-1">
                 {/* 网络搜索开关 */}
                 <button

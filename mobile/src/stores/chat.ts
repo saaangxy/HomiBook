@@ -22,6 +22,38 @@ import {
 export type { Message, MessageBlock, ToolCallEntry };
 export type { SuggestionOption } from '@homibook/core';
 
+// ── 流式增量刷新调度 ──
+// SSE 的每个 text/reasoning delta 都直接写 store → AIAssistant 整棵树(含全部历史 Markdown)
+// 重渲染一次;实测每秒可达上百帧,Android/Hermes 的 JS 线程被打满后:
+//   1) 触摸事件排队/丢失 → 思考卡、工具卡、输入区按钮(停止/联网/图片/附件)点了没反应;
+//   2) 消息区布局持续变化 → 按压中途收到 ACTION_CANCEL → onPress 被吞(点很多次才展开一次)。
+// 对策:① 同一窗口内的文本增量合并为一次提交;② 手指按住消息列表期间暂停刷新,松手补一次。
+const DELTA_FLUSH_MS = 50;
+
+type DeltaEvent =
+  | Extract<SSEEvent, { type: 'text-delta' }>
+  | Extract<SSEEvent, { type: 'reasoning-delta' }>;
+
+function isDeltaEvent(event: SSEEvent): event is DeltaEvent {
+  return event.type === 'text-delta' || event.type === 'reasoning-delta';
+}
+
+/** 活跃流的补刷函数(暂停解除时立即执行,不再等窗口) */
+const pendingFlushers = new Set<() => void>();
+let streamPaused = false;
+
+/** 按住消息列表/输入区工具行期间暂停流式刷新 / 松手恢复并补刷(AIAssistant 触摸事件驱动) */
+export function setStreamPaused(paused: boolean) {
+  if (streamPaused === paused) return;
+  streamPaused = paused;
+  if (paused || pendingFlushers.size === 0) return;
+  // 延后一个事件循环再补刷:避免在按压释放的同一 tick 里重排布局,干扰 Pressable 的 onPress 判定
+  setTimeout(() => {
+    if (streamPaused) return;
+    for (const flush of [...pendingFlushers]) flush();
+  }, 0);
+}
+
 export interface ChatSession {
   id: string;
   title: string;
@@ -126,6 +158,8 @@ type SSEStreamContext = {
   sid: string;
   assistantMsgId: string;
   parentMsgId?: string;
+  /** 本轮用户消息的本地句柄(context-injected 落点:流式期间它尚未落库,无法按 DB id 匹配) */
+  userMsgId?: string;
   shouldGenerateTitle?: boolean;
   get: GetState;
   set: SetState;
@@ -155,23 +189,50 @@ function makeSSEHandler(ctx: SSEStreamContext, onFinish: (event: Extract<SSEEven
     }
   };
 
+  // 增量缓冲:delta 先入队,窗口到期(或结构性事件到达)时合批提交一次(见文件头「流式增量刷新调度」)
+  const bufferedDeltas: DeltaEvent[] = [];
+  let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const flushDeltas = () => {
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    }
+    if (bufferedDeltas.length === 0) return;
+    // 按序重放:合并窗口不改变 processTextDelta 的语义(同函数同序,共享 thinkState/idCounter)
+    const batch = bufferedDeltas.splice(0, bufferedDeltas.length);
+    updateMsg((msg) => {
+      const blocks = [...msg.blocks];
+      for (const delta of batch) {
+        if (delta.type === 'text-delta') {
+          ctx.thinkState.value = processTextDelta(delta.delta, ctx.thinkState.value, blocks, ctx.blockIdCounter);
+        } else {
+          // DeepSeek 等推理模型的思考内容:渲染为 thinking 块
+          appendThinkingToBlocks(blocks, delta.delta, ctx.blockIdCounter);
+        }
+      }
+      return { ...msg, blocks };
+    });
+  };
+  pendingFlushers.add(flushDeltas);
+
+  const scheduleFlush = () => {
+    if (streamPaused || flushTimer) return;
+    flushTimer = setTimeout(() => {
+      flushTimer = null;
+      if (!streamPaused) flushDeltas();
+    }, DELTA_FLUSH_MS);
+  };
+
   const handleEvent = (event: SSEEvent) => {
+    if (isDeltaEvent(event)) {
+      bufferedDeltas.push(event);
+      scheduleFlush();
+      return;
+    }
+    // 结构性事件(工具调用/结束/错误)不能等窗口:先落地缓冲文本,再按序处理
+    flushDeltas();
     switch (event.type) {
-      case 'text-delta':
-        updateMsg((msg) => {
-          const blocks = [...msg.blocks];
-          ctx.thinkState.value = processTextDelta(event.delta, ctx.thinkState.value, blocks, ctx.blockIdCounter);
-          return { ...msg, blocks };
-        });
-        break;
-      case 'reasoning-delta':
-        // DeepSeek 等推理模型的思考内容:渲染为 thinking 块
-        updateMsg((msg) => {
-          const blocks = [...msg.blocks];
-          appendThinkingToBlocks(blocks, event.delta, ctx.blockIdCounter);
-          return { ...msg, blocks };
-        });
-        break;
       case 'tool-call':
         updateMsg((msg) => ({
           ...msg,
@@ -246,6 +307,19 @@ function makeSSEHandler(ctx: SSEStreamContext, onFinish: (event: Extract<SSEEven
           ),
         }));
         break;
+      case 'context-injected': {
+        // 本轮注入的上下文:挂到触发它的用户消息上(界面在用户消息下方展示)。
+        // 必须用本轮用户消息的本地句柄:此时它还没落库(dbId 要到 finish 才回传),
+        // 用 event.userMessageId(DB id)匹配不到任何本地消息 → 只能等刷新后从历史里读出来。
+        const targetId = ctx.userMsgId || event.userMessageId;
+        if (targetId) {
+          ctx.get().updateStreamMessage(ctx.sid, targetId, (msg) => ({
+            ...msg,
+            injections: [...(msg.injections ?? []), event.injection],
+          }));
+        }
+        break;
+      }
       case 'finish':
         updateMsg((msg) => ({ ...msg, usage: event.usage as Message['usage'] }));
         onFinish(event);
@@ -265,6 +339,8 @@ function makeSSEHandler(ctx: SSEStreamContext, onFinish: (event: Extract<SSEEven
   };
 
   const handleDone = () => {
+    flushDeltas(); // 收尾前落地残余增量,避免丢字
+    pendingFlushers.delete(flushDeltas);
     clearStreaming(ctx.set, ctx.sid);
 
     const refreshSessions = () => {
@@ -481,6 +557,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
           // 恢复用户消息附件(服务端相对 URL,渲染时经 resolveFileUrl 转绝对地址)
           ...(m.attachments?.length ? { attachments: m.attachments } : {}),
           usage: m.role === 'assistant' ? m.usage : undefined,
+          ...(m.injections?.length ? { injections: m.injections } : {}),
         };
       });
       // 重建分支选择:同一父消息多个子分支时默认选中最后一条
@@ -575,6 +652,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
     const ctx: SSEStreamContext = {
       sid, assistantMsgId, get, set, shouldGenerateTitle,
+      userMsgId: userMsg.id,
       thinkState: { value: { mode: 'text', pending: '' } },
       blockIdCounter: { value: 0 },
     };

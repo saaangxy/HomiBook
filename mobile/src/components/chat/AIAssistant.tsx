@@ -7,14 +7,14 @@ import { Text } from '@/components/ui/Text';
 import { FormSheet } from '@/components/chrome/FormSheet';
 import { showToast } from '@/components/chrome/Toast';
 import { ImageLightbox, isImageUrl } from '@/components/ui/AttachmentViewer';
-import { useChatStore, useSessionView } from '@/stores/chat';
+import { setStreamPaused, useChatStore, useSessionView } from '@/stores/chat';
 import { useUIShell } from '@/components/chrome/chrome';
 import { uploadImage, loadToolNames } from '@/services/chat';
 import { uploadImportTempFile } from '@/services/import';
 import { DownloadModeSheet } from '@/components/chrome/DownloadModeSheet';
 import { downloadAttachment, resolveRemoteUrl, type DownloadMode } from '@/services/http';
 import type { Message, MessageBlock } from '@homibook/core';
-import {IMPORT_AI_SOURCES, IMPORT_SOURCE_LABELS, buildImportMessage, parseImportMessage } from '@homibook/core';
+import {IMPORT_AI_SOURCES, IMPORT_SOURCE_LABELS, buildImportMessage, parseImportMessage, type ChatInjection } from '@homibook/core';
 
 // AI 财务助手聊天主体(可嵌入:AI 弹窗 / 记一笔弹窗 AI tab)
 // 复刻 web 端 ChatWindow 能力:流式/Markdown/思考块/工具卡(确认·补充信息·切换账本)/小票上传/账单导入/联网搜索/重试/分支
@@ -53,6 +53,10 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
   const listRef = useRef<FlatList>(null);
   // 列表是否接近底部:仅接近底部时自动跟随滚动,用户上翻(查看历史/批量确认工具卡)时内容变化不再强制滚到底
   const isAtBottomRef = useRef(true);
+  // 手指是否按在列表上:按住期间绝不程序化滚动 —— Android 原生 ScrollView 在滚动时会抢走触摸响应,
+  // 使按下的卡片/按钮收不到 onPress。文本增量已由 setStreamPaused 冻结,但工具卡等结构性事件
+  // 仍会即时改变布局,故保留这层保护。
+  const userTouchingRef = useRef(false);
 
   const {
     sessions, currentSessionId, error,
@@ -95,11 +99,26 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
     isAtBottomRef.current = contentOffset.y + layoutMeasurement.height >= contentSize.height - 80;
   };
 
-  // 内容尺寸变化(含流式增量)时,若处于底部附近则平滑滚动到底部;用户已上翻则不打扰
+  // 内容尺寸变化(含流式增量)时跟随到底部;用户已上翻、或手指正按在列表上时不打扰
   const handleContentSizeChange = () => {
-    if (!isAtBottomRef.current) return;
-    listRef.current?.scrollToEnd({ animated: true });
+    if (userTouchingRef.current || !isAtBottomRef.current) return;
+    // 流式增量用瞬时滚动:持续运行的滚动动画会反复抢占手势,吞掉下游点击
+    listRef.current?.scrollToEnd({ animated: !isStreaming });
   };
+
+  // 手指按住消息列表:暂停流式增量刷新(布局彻底停止变化 → 按压不会被 ACTION_CANCEL 吞掉),
+  // 同时禁止程序化滚动;松手恢复并补刷一次。见 stores/chat.ts「流式增量刷新调度」
+  const handleListTouchStart = () => {
+    userTouchingRef.current = true;
+    setStreamPaused(true);
+  };
+  const handleListTouchEnd = () => {
+    userTouchingRef.current = false;
+    setStreamPaused(false);
+  };
+  // 输入区工具行同理会吞按压:按住期间暂停刷新,否则「停止/联网/图片/附件」点了没反应
+  const handleComposerTouchStart = () => setStreamPaused(true);
+  const handleComposerTouchEnd = () => setStreamPaused(false);
 
   // 发送指定文本(输入框发送与快捷指令直发共用)
   const sendText = (msg: string) => {
@@ -322,6 +341,10 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
                 {item.blocks.map((b) => renderBlock(b, true))}
               </View>
             </View>
+            {/* 本轮注入的上下文(日期/记忆/技能/附件清单):折叠展示,不属于对话正文 */}
+            {item.injections?.map((injection) => (
+              <InjectChip key={injection.id} injection={injection} />
+            ))}
           </View>
           {avatar('user')}
         </View>
@@ -415,6 +438,13 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
         onContentSizeChange={handleContentSizeChange}
         onScroll={handleScroll}
         scrollEventThrottle={100}
+        // 按压期间暂停自动滚动与流式刷新(见 handleListTouchStart 注释),否则工具卡/思考卡展开会被滚动手势吞掉。
+        // 拖拽/惯性滚动结束时兜底复位,避免手指移出列表导致标记卡住、后续不再自动跟随
+        onTouchStart={handleListTouchStart}
+        onTouchEnd={handleListTouchEnd}
+        onTouchCancel={handleListTouchEnd}
+        onScrollEndDrag={handleListTouchEnd}
+        onMomentumScrollEnd={handleListTouchEnd}
         ListEmptyComponent={
           <View style={{ alignItems: 'center', paddingTop: 48, paddingBottom: 24, gap: 8 }}>
             <View style={{ width: 58, height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center', backgroundColor: alpha(colors.primary, 0.1) }}>
@@ -486,7 +516,12 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
             style={{ minHeight: 34, maxHeight: 108, color: colors.foreground, fontSize: 14, lineHeight: 19, paddingHorizontal: 2, paddingVertical: 4 }}
             multiline
           />
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
+          <View
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}
+            onTouchStart={handleComposerTouchStart}
+            onTouchEnd={handleComposerTouchEnd}
+            onTouchCancel={handleComposerTouchEnd}
+          >
             <Pressable hitSlop={8} onPress={handlePickFile} style={composerBtn}>
               <ImagePlus size={17} color={colors.mutedForeground} />
             </Pressable>
@@ -644,14 +679,69 @@ function MarkdownBody({ content, inverted = false }: { content: string; inverted
   return <Markdown style={bodyStyle}>{content}</Markdown>;
 }
 
-// ── Token 消耗展示 ──
-function UsageBadge({ usage }: { usage?: { inputTokens: number; outputTokens: number; totalTokens: number } }) {
+// ── Token 消耗展示(含前缀缓存命中率) ──
+function UsageBadge({ usage }: { usage?: { inputTokens: number; outputTokens: number; totalTokens: number; cachedInputTokens?: number } }) {
   const { colors } = useTheme();
   if (!usage || usage.totalTokens == null) return null;
+  const cached = usage.cachedInputTokens ?? 0;
+  const rate = cached > 0 ? Math.round((cached / Math.max(usage.inputTokens, 1)) * 100) : 0;
   return (
     <Text style={{ fontSize: 10, color: colors.mutedForeground }}>
-      共 {usage.totalTokens} tokens
+      共 {usage.totalTokens} tokens{cached > 0 ? ` · 缓存命中 ${rate}%` : ''}
     </Text>
+  );
+}
+
+// ── 本轮上下文注入提示(折叠):日期/记忆/技能/附件清单 ──
+function InjectChip({ injection }: { injection: ChatInjection }) {
+  const { colors } = useTheme();
+  const [open, setOpen] = useState(false);
+  const { date, memories, skills, hasAttachments, raw } = injection.summary;
+  const parts = [
+    date ? `日期 ${date}` : '',
+    memories.length > 0 ? `${memories.length} 条记忆` : '',
+    skills.length > 0 ? skills.join('、') : '',
+    hasAttachments ? '附件清单' : '',
+  ].filter(Boolean);
+  if (parts.length === 0) return null;
+
+  return (
+    <View style={{ marginTop: 6, borderRadius: 10, borderWidth: 1, borderColor: colors.hairline, overflow: 'hidden' }}>
+      <Pressable
+        hitSlop={6}
+        onPress={() => setOpen((v) => !v)}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: colors.muted }}
+      >
+        <Sparkles size={12} color={colors.mutedForeground} />
+        <Text numberOfLines={1} style={{ flex: 1, fontSize: 11, color: colors.mutedForeground, fontWeight: '500' }}>
+          本轮注入:{parts.join(' · ')}
+        </Text>
+        <ChevronDown size={12} color={colors.mutedForeground} style={{ transform: [{ rotate: open ? '180deg' : '0deg' }] }} />
+      </Pressable>
+      {open && (
+        <View style={{ padding: 10, gap: 6, backgroundColor: alpha(colors.foreground, 0.03) }}>
+          {date ? <Text style={{ fontSize: 11, color: colors.mutedForeground }}>日期:{date}</Text> : null}
+          {memories.length > 0 ? (
+            <View style={{ gap: 2 }}>
+              <Text style={{ fontSize: 11, color: colors.mutedForeground, fontWeight: '600' }}>记忆</Text>
+              {memories.map((m, i) => (
+                <Text key={i} style={{ fontSize: 11, color: colors.mutedForeground, lineHeight: 16 }}>· {m}</Text>
+              ))}
+            </View>
+          ) : null}
+          {skills.length > 0 ? (
+            <View style={{ gap: 2 }}>
+              <Text style={{ fontSize: 11, color: colors.mutedForeground, fontWeight: '600' }}>技能</Text>
+              {skills.map((s, i) => (
+                <Text key={i} style={{ fontSize: 11, color: colors.mutedForeground, lineHeight: 16 }}>· {s}</Text>
+              ))}
+            </View>
+          ) : null}
+          {hasAttachments ? <Text style={{ fontSize: 11, color: colors.mutedForeground }}>含附件清单(attachmentId / 文件名)</Text> : null}
+          <Text style={{ fontSize: 10, color: colors.mutedForeground, lineHeight: 15 }}>{raw}</Text>
+        </View>
+      )}
+    </View>
   );
 }
 
@@ -659,9 +749,10 @@ function UsageBadge({ usage }: { usage?: { inputTokens: number; outputTokens: nu
 function ThinkingBlock({ block }: { block: Extract<MessageBlock, { type: 'thinking' }> }) {
   const { colors } = useTheme();
   const [open, setOpen] = useState(false);
+  const toggle = () => setOpen((v) => !v);
   return (
     <View style={{ borderRadius: 10, borderWidth: 1, borderColor: colors.hairline, overflow: 'hidden' }}>
-      <Pressable onPress={() => setOpen((v) => !v)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: colors.muted }}>
+      <Pressable hitSlop={6} onPress={toggle} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: colors.muted }}>
         <Brain size={12} color={colors.mutedForeground} />
         <Text style={{ fontSize: 11, color: colors.mutedForeground, fontWeight: '500' }}>思考过程</Text>
         <ChevronDown size={12} color={colors.mutedForeground} style={{ marginLeft: 'auto', transform: [{ rotate: open ? '180deg' : '0deg' }] }} />

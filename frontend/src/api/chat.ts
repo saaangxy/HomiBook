@@ -1,6 +1,5 @@
 import { api } from './http'
-import { consumeSSEStream } from '@homibook/core'
-import type { ChatSSEEvent } from '@homibook/core'
+import { consumeSSEStream, type ChatInjection, type ChatSSEEvent, type MessageUsage } from '@homibook/core'
 
 const BASE = '/api/chat'
 
@@ -24,6 +23,10 @@ export interface ChatMessage {
   createdAt: string
   /** 用户消息关联的附件(仅带附件的消息返回) */
   attachments?: { id: string; url: string; originalFilename: string }[]
+  /** 该轮模型用量(仅助手消息有;含缓存命中量) */
+  usage?: MessageUsage
+  /** 挂在用户消息上的上下文注入(日期/记忆/技能/附件清单) */
+  injections?: ChatInjection[]
 }
 
 export interface ProviderInfo {

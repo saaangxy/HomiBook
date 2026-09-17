@@ -13,14 +13,16 @@ import { logToolCall } from '../services/ai/audit.js'
 import { ALL_TOOLS, TOOL_GROUPS, storeImportOverrides, peekImportOverrides } from '../services/ai/tools/index.js'
 import { buildConfirmPreview } from '../services/ai/confirm-preview.js'
 import { sendMessageSchema, createSessionSchema, updateSessionSchema, confirmActionSchema, updateAIConfigSchema, createProviderConfigSchema, updateProviderConfigSchema } from '../schemas/chat.js'
-import { detectSkills, buildSkillsPrompt, extractUserMessageForSkills } from '../services/ai/skills/index.js'
+import { detectSkills } from '../services/ai/skills/index.js'
+import { INJECT_ROLE, buildAttachmentSection, foldInjections, persistInjectionIfChanged, summarizeInjection } from '../services/ai/context-inject.js'
+import { dedupeToolCalls, nextToolCallId } from '../services/ai/tool-call-id.js'
 import { loadMemoriesForPrompt, listMemories, deleteMemory, updateMemory } from '../services/ai/memory.js'
 import { estimateTokens } from '../services/ai/token-estimate.js'
 import { compressContext, computeHistoryBudget, stripThinkTags } from '../services/ai/context-compress.js'
 import { zSchema } from '../lib/schema-helpers.js'
 import { dateKey } from '../lib/date-time.js'
 import { z } from 'zod'
-import { MEMORY_TYPE_LABELS } from '@homibook/core'
+import type { ChatInjection } from '@homibook/core'
 
 declare module 'fastify' {
   interface FastifyContextConfig {
@@ -211,7 +213,8 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
       inputSchema: jsonSchema(tool.parameters as Record<string, unknown>),
       execute: async (args: any) => {
         const start = Date.now()
-        const toolCallId = `call_${tool.name}_${start}`
+        // id 必须唯一:并行调用同名工具时时间戳相同,重复 id 会让上游拒绝整个会话(见 tool-call-id.ts)
+        const toolCallId = nextToolCallId(tool.name)
         sendSSE('tool-call', { toolCallId, toolName: tool.name, args })
         toolCallEntries.push({ toolCallId, toolName: tool.name, args, status: 'pending', textOffset: fullText.length })
         activeToolCount++
@@ -390,6 +393,18 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
     }
 
     const usage = await result.usage
+    // usage 落库:含缓存命中量(cachedInputTokens / DeepSeek 的 prompt_cache_hit_tokens),
+    // 是判断前缀缓存是否命中的唯一依据(以前只发给前端,无法观测)
+    if (usage && msgState.dbId) {
+      const cachedTokens = Number((usage as { cachedInputTokens?: number }).cachedInputTokens ?? 0)
+      const inputTokens = Number((usage as { inputTokens?: number }).inputTokens ?? 0)
+      // 前缀缓存命中率是这套改造的唯一验收指标:命中越多说明提示词前缀越稳定
+      console.log(`[缓存] 输入 ${inputTokens} tokens,命中 ${cachedTokens} tokens${inputTokens > 0 ? `（${Math.round((cachedTokens / inputTokens) * 100)}%）` : ''}`)
+      await prisma.chatMessage.update({
+        where: { id: msgState.dbId },
+        data: { usageJson: JSON.stringify(usage) },
+      }).catch(() => {})
+    }
     sendSSE('finish', { usage, assistantMessageId: msgState.dbId, userMessageId: parentMessageId })
     return { assistantMessageId: msgState.dbId, usage }
   } catch (err: any) {
@@ -427,7 +442,7 @@ async function findPendingToolMessage(toolCallId: string, userId: string): Promi
   if (!message) return { success: false, status: 404, message: '确认已过期或不存在' }
 
   let toolCalls: any[]
-  try { toolCalls = JSON.parse(message.toolCalls || '[]') } catch { return { success: false, status: 404, message: '确认已过期或不存在' } }
+  try { toolCalls = dedupeToolCalls(JSON.parse(message.toolCalls || '[]')) } catch { return { success: false, status: 404, message: '确认已过期或不存在' } }
   const entry = toolCalls.find((tc: any) => tc.toolCallId === toolCallId)
   if (!entry) return { success: false, status: 404, message: '确认已过期或不存在' }
 
@@ -453,12 +468,17 @@ async function buildChatMessages(sessionId: string, pendingToolResults: { toolCa
   const pendingIds = new Set(pendingToolResults.map(p => p.toolCallId))
   const messages: any[] = []
   const messageIds: string[] = []
+  // 注入消息(role='inject')不进消息数组,只在最后折叠回它所属的用户消息
+  const injects: { parentMessageId: string | null; content: string }[] = []
   for (const msg of dbMessages) {
-    if (msg.role === 'user') {
+    if (msg.role === INJECT_ROLE) {
+      injects.push({ parentMessageId: msg.parentMessageId, content: msg.content })
+    } else if (msg.role === 'user') {
       messages.push({ role: 'user', content: msg.content })
       messageIds.push(msg.id)
     } else if (msg.role === 'assistant') {
-      const tcList = msg.toolCalls ? JSON.parse(msg.toolCalls) : []
+      // 去重:旧数据可能残留重复 tool_call_id(旧版 id 会撞号),重放时重复项会让上游拒绝整轮请求
+      const tcList: any[] = dedupeToolCalls<any>(msg.toolCalls ? JSON.parse(msg.toolCalls) : [])
       const contentParts: any[] = []
       if (msg.content) {
         const cleanText = stripThinkTags(msg.content)
@@ -501,7 +521,8 @@ async function buildChatMessages(sessionId: string, pendingToolResults: { toolCa
   if (pendingToolResults.length > 0) {
     messages.push({
       role: 'tool',
-      content: pendingToolResults.map(p => ({
+      // 同样按 id 去重:客户端 decisions 若重复提交同一 toolCallId,重复项会让上游拒绝整轮请求
+      content: dedupeToolCalls(pendingToolResults).map(p => ({
         type: 'tool-result',
         toolCallId: p.toolCallId,
         toolName: p.toolName,
@@ -510,6 +531,9 @@ async function buildChatMessages(sessionId: string, pendingToolResults: { toolCa
     })
     messageIds.push('') // pending tool result 无对应 DB 消息
   }
+
+  // 折叠规则与主消息流程一致(见 context-inject.ts 顶部说明)
+  foldInjections(messages, messageIds, injects)
 
   return { messages, messageIds }
 }
@@ -532,14 +556,8 @@ async function continueWithLLM(reply: any, sessionId: string, accountBookId: str
 
   const book = await prisma.accountBook.findUnique({ where: { id: accountBookId }, select: { name: true } })
   const bookName = book?.name || accountBookId
-  // 从历史中取最后一条用户消息做关键词匹配（修复原空查询 bug）
-  const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')
-  const memories = await loadMemoriesForPrompt(userId, lastUserMsg?.content || '', 5)
-  // 从对话历史中检测技能（导入流程跨多轮对话需要保留技能提示词）
-  const userMessageForSkills = extractUserMessageForSkills(messages)
-  const activeSkills = detectSkills(userMessageForSkills)
-  const skillsPrompt = buildSkillsPrompt(activeSkills)
-  const systemPrompt = buildSystemPrompt(prefs, accountBookId, bookName, memories, skillsPrompt, prefs.disabledTools)
+  // 系统提示词为纯静态:日期/记忆/技能已由本轮或之前的「注入消息」承载(续写场景不重复注入)
+  const systemPrompt = buildSystemPrompt(prefs, accountBookId, bookName, prefs.disabledTools)
 
   // 三级上下文压缩
   const maxTokens = activeConfig?.maxTokens ?? prefs.maxTokens
@@ -867,13 +885,13 @@ export async function chatRoutes(app: FastifyInstance) {
       historyIds.push(...chainIds)
     }
 
-    // 拼接附件信息到消息文本（供 AI 识别和技能检测）
-    const fullMessage = attachments.length > 0
-      ? message + '\n\n[附件信息]\n' + attachments.map(a => `attachmentId: ${a.id}\n文件名: ${a.originalFilename}`).join('\n')
-      : message
+    // 附件清单改走「注入消息」下发(以前只拼在请求文本里不落库,下一轮重放文本不同会在此处丢缓存)
+    const attachmentSection = buildAttachmentSection(attachments)
+    // 技能检测仍用「用户原文 + 附件信息」(导入/图片账单等技能靠其中的标记触发)
+    const fullMessage = attachmentSection ? `${message}\n\n${attachmentSection}` : message
 
-    // 发送给 AI 的消息包含附件信息（如 attachmentId），数据库只存用户原文
-    history.push({ role: 'user', content: fullMessage })
+    // 数据库只存用户原文;附件信息随后随注入消息折叠回这条消息
+    history.push({ role: 'user', content: message })
 
     // 保存用户消息（仅用户输入的文本，不含系统附加的附件信息）
     const userMsgDb = await prisma.chatMessage.create({
@@ -934,12 +952,38 @@ export async function chatRoutes(app: FastifyInstance) {
       effectiveDisabledTools = [...new Set([...effectiveDisabledTools, 'ocr_receipt'])]
     }
 
-    // 构建 system prompt（根据用户消息检测并注入技能提示词）
-    const skillsPrompt = buildSkillsPrompt(activeSkills, { multimodalImage: isMultimodalImage })
-    const systemPrompt = buildSystemPrompt(prefs, accountBookId, bookName, memories, skillsPrompt, effectiveDisabledTools)
+    // 上下文注入(日期/记忆/技能):只追加差量、落库为 inject 消息,再折叠回本轮用户消息。
+    // 这些内容以前拼在系统提示词里,一变就让其后整段历史缓存失效;现在变化只影响新追加的那一条。
+    const sessionState = await prisma.chatSession
+      .findUnique({ where: { id: session.id }, select: { injectedContext: true } })
+      .catch(() => null)
+    const injection = await persistInjectionIfChanged({
+      sessionId: session.id,
+      accountBookId,
+      userMessageId: userMsgDb.id,
+      currentState: sessionState?.injectedContext,
+      input: {
+        today: dateKey(new Date()),
+        memories,
+        skills: activeSkills.map((s) => ({ name: s.name, prompt: s.buildPrompt({ multimodalImage: isMultimodalImage }) })),
+        extraSections: attachmentSection ? [attachmentSection] : [],
+      },
+    })
+
+    // 系统提示词为纯静态(动态上下文已走注入消息)
+    const systemPrompt = buildSystemPrompt(prefs, accountBookId, bookName, effectiveDisabledTools)
 
     const messages = [...history]
     const messageIds = [...historyIds]
+    // 与 buildChatMessages 使用同一折叠规则,保证下一轮从 DB 重放时文本一致
+    const injects = await prisma.chatMessage
+      .findMany({
+        where: { sessionId: session.id, role: INJECT_ROLE },
+        orderBy: { createdAt: 'asc' },
+        select: { parentMessageId: true, content: true },
+      })
+      .catch(() => [])
+    foldInjections(messages, messageIds, injects)
 
     // 三级上下文压缩
     const maxTokens = activeConfig?.maxTokens ?? prefs.maxTokens
@@ -987,6 +1031,8 @@ export async function chatRoutes(app: FastifyInstance) {
       apiKey,
       baseURL,
       temperature: activeConfig?.temperature ?? prefs.temperature,
+      // 本轮注入实时回传:界面据此在用户消息下方显示「本轮注入了哪些记忆/技能」
+      initialSSEEvents: injection ? [{ event: 'context-injected', data: { userMessageId: userMsgDb.id, injection } }] : undefined,
       maxTokens,
       maxSteps: prefs.maxSteps,
       autoConfirmCreate: prefs.autoConfirmCreate,
@@ -1049,7 +1095,8 @@ export async function chatRoutes(app: FastifyInstance) {
 
     // 获取前几轮对话作为上下文
     const messages = await prisma.chatMessage.findMany({
-      where: { sessionId: id },
+      // 注入消息是系统上下文,不作为生成标题的素材
+      where: { sessionId: id, role: { not: INJECT_ROLE } },
       orderBy: { createdAt: 'asc' },
       take: 6,
       select: { role: true, content: true, toolCalls: true },
@@ -1124,6 +1171,16 @@ export async function chatRoutes(app: FastifyInstance) {
     return { success: true }
   })
 
+  /** 解析落库的 usage(历史脏数据/解析失败时忽略,不影响消息本身) */
+  const parseUsageJson = (raw: string | null): Record<string, unknown> | undefined => {
+    if (!raw) return undefined
+    try {
+      return JSON.parse(raw) as Record<string, unknown>
+    } catch {
+      return undefined
+    }
+  }
+
   // 获取会话消息
   app.get('/sessions/:id/messages', async (req, reply) => {
     const userId = (req as any).user.id as string
@@ -1133,9 +1190,11 @@ export async function chatRoutes(app: FastifyInstance) {
     if (!session || session.userId !== userId) return reply.status(404).send({ message: '会话不存在' })
 
     const messages = await prisma.chatMessage.findMany({
-      where: { sessionId: id },
+      // 注入消息(role='inject')是给模型看的上下文,不返回给界面
+      where: { sessionId: id, role: { not: INJECT_ROLE } },
       select: {
         id: true, role: true, content: true, reasoningContent: true, toolCalls: true, modelProvider: true, modelName: true, parentMessageId: true, createdAt: true,
+        usageJson: true,
         attachments: {
           orderBy: { createdAt: 'asc' },
           select: { attachment: { select: { id: true, path: true, originalFilename: true } } },
@@ -1143,14 +1202,40 @@ export async function chatRoutes(app: FastifyInstance) {
       },
       orderBy: { createdAt: 'asc' },
     })
+    // 上下文注入:按 parentMessageId 挂到对应的用户消息上(界面在用户消息下方展示「本轮注入了什么」)
+    const injections = await prisma.chatMessage.findMany({
+      where: { sessionId: id, role: INJECT_ROLE },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, content: true, parentMessageId: true, createdAt: true },
+    })
+    const injectionsByUserMessage = new Map<string, ChatInjection[]>()
+    for (const inj of injections) {
+      if (!inj.parentMessageId) continue
+      const item: ChatInjection = {
+        id: inj.id,
+        parentMessageId: inj.parentMessageId,
+        createdAt: inj.createdAt.toISOString(),
+        summary: summarizeInjection(inj.content),
+      }
+      const list = injectionsByUserMessage.get(inj.parentMessageId)
+      if (list) list.push(item)
+      else injectionsByUserMessage.set(inj.parentMessageId, [item])
+    }
+
     // 附件关联展平为 { id, url, originalFilename } 列表供前端回显
     return {
-      messages: messages.map(({ attachments, ...m }) => ({
-        ...m,
-        ...(attachments.length > 0 ? {
-          attachments: attachments.map(a => ({ id: a.attachment.id, url: a.attachment.path, originalFilename: a.attachment.originalFilename })),
-        } : {}),
-      })),
+      messages: messages.map(({ attachments, usageJson, ...m }) => {
+        const usage = parseUsageJson(usageJson)
+        const messageInjections = injectionsByUserMessage.get(m.id)
+        return {
+          ...m,
+          ...(usage ? { usage } : {}),
+          ...(messageInjections ? { injections: messageInjections } : {}),
+          ...(attachments.length > 0 ? {
+            attachments: attachments.map(a => ({ id: a.attachment.id, url: a.attachment.path, originalFilename: a.attachment.originalFilename })),
+          } : {}),
+        }
+      }),
     }
   })
 
@@ -1811,27 +1896,38 @@ function splitResultBatches(result: any, batchSize: number): any[] {
   return batches
 }
 
-// 系统提示词中的工具能力描述，从 ALL_TOOLS 动态生成，禁用时整行移除
+/**
+ * 系统提示词中的工具能力描述：按 TOOL_GROUPS 分组压成「一行一类」。
+ * 完整参数说明由 API 的 tools 参数(JSON Schema)承载，这里逐条展开等于把工具名和提示写两遍；
+ * 长提示(如导入的 mode 说明)留给各自 description，仅保留「需确认」这类影响调用决策的短提示。
+ */
 function buildToolPromptLines(disabledSet: Set<string>): string {
-  return ALL_TOOLS
-    .filter(t => !disabledSet.has(t.name))
-    .map(t => `- ${t.displayName} -> 调用 ${t.name}${t.promptHint ? `（${t.promptHint}）` : ''}`)
+  return TOOL_GROUPS
+    .map((group) => {
+      const items = group.tools
+        .filter(t => !disabledSet.has(t.name))
+        .map(t => {
+          const hint = t.promptHint
+          const short = hint && hint.includes('确认') ? '需确认' : hint && hint.length <= 8 ? hint : ''
+          return `${t.name} ${t.displayName}${short ? `(${short})` : ''}`
+        })
+      return items.length > 0 ? `- ${group.label}：${items.join('、')}` : ''
+    })
+    .filter(Boolean)
     .join('\n')
 }
 
-function buildSystemPrompt(prefs: any, bookId: string, bookName: string, memories: any[], skillsPrompt?: string, disabledTools: string[] = []): string {
-  const typeLabels = MEMORY_TYPE_LABELS
-  const memoryContext = memories.length > 0
-    ? `\n\n## 用户长期记忆（供参考）\n${memories.map((m: any, i: number) => `${i + 1}. [${typeLabels[m.memoryType] || '记忆'}] ${m.content}`).join('\n')}\n`
-    : ''
-
+/**
+ * 系统提示词:只放**静态**内容(身份 + 能力清单 + 核心规则 + 记忆管理说明)。
+ * 动态上下文(当前日期、长期记忆、技能提示词)走 services/ai/context-inject.ts,
+ * 以「追加注入消息」下发 —— 系统提示词因此在不同轮次间逐字节一致,
+ * 前缀缓存(DeepSeek 上下文缓存等)才能一直命中。改这个函数前先确认没有引入动态值。
+ */
+function buildSystemPrompt(prefs: any, bookId: string, bookName: string, disabledTools: string[] = []): string {
   const disabledSet = new Set(disabledTools)
   const capabilityLines = buildToolPromptLines(disabledSet)
 
-  let prompt = `你是 Homibook 家庭记账本的 AI 助手。当前操作的账本为「${bookName}」(ID: ${bookId})。本会话支持跨账本操作，用户可通过 switch_book 查看并切换账本。
-
-## 时间
-今天是${dateKey(new Date())}。
+  return `你是 Homibook 家庭记账本的 AI 助手。当前操作的账本为「${bookName}」(ID: ${bookId})。本会话支持跨账本操作，用户可通过 switch_book 查看并切换账本。
 
 ## 能力
 你可以通过调用函数工具来完成以下操作：
@@ -1873,11 +1969,4 @@ ${capabilityLines}
 - 当发现多条相似记忆时，用 save_memory（传入 memoryId）合并更新其中一条，再用 delete_memory 删除多余的
 - 当用户情况变化时（如换了工作、涨薪），更新对应记忆而非新建
 - 可用 list_memories 查看全部记忆，检查是否有过时或重复的需要清理`
-
-  // 注入技能提示词（如导入流水工作流），仅在功能触发时出现
-  if (skillsPrompt) {
-    prompt += '\n\n' + skillsPrompt
-  }
-  prompt += memoryContext
-  return prompt
 }
