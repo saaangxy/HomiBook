@@ -14,6 +14,9 @@ export { prisma, rawPrisma }
 export async function buildApp() {
   const app = Fastify({
     logger: true,
+    // 请求体上限:短信批量预览/导入一次可带数千条候选(每条约 250 字节),默认的 1MiB
+    // 会在几千条时直接 413。相比 multipart 的 512MB,这个 JSON 上限仍很保守
+    bodyLimit: 16 * 1024 * 1024,
   })
 
   // CORS

@@ -344,7 +344,7 @@ export const confirmImportTool: ToolDef = {
       await saveCategoryMappingsInTx(tx, source, newMappings)
       await saveAccountMappingsInTx(tx, source, newAccountMappings)
       const resolver = new AccountResolver(tx, accountMap, ctx.accountBookId)
-      const affectedAccounts = await batchCreateRecordsInTx(tx, ctx.accountBookId, effectiveOwnerId, records, idOrName => resolver.resolve(idOrName))
+      const { affectedAccounts } = await batchCreateRecordsInTx(tx, ctx.accountBookId, effectiveOwnerId, records, idOrName => resolver.resolve(idOrName))
       return { accountMap, accountsCreated, affectedAccounts }
     })
 

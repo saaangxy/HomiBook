@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Linking, Pressable, View } from 'react-native';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
-import { Brain, ChevronDown, ChevronRight, CircleUserRound, ExternalLink, Key, LogOut, Palette, Server, ServerCog, Smartphone, User } from 'lucide-react-native';
+import { Brain, ChevronDown, ChevronRight, CircleUserRound, ExternalLink, Key, LogOut, MessageSquareText, Palette, Server, ServerCog, Smartphone, User } from 'lucide-react-native';
 import { useTheme, alpha, haptics } from '@/theme';
 import { useAuth } from '@/stores/auth';
 import { Screen } from '@/components/Screen';
@@ -110,9 +110,23 @@ export default function SettingsScreen() {
           </Card>
         </FadeInView>
 
+        {/* ══ 记账(仅 Android:短信/通知记账的权限与说明) ══ */}
+        <GroupTitle title="记账" />
+        <FadeInView index={2}>
+          <Card className="px-0 py-2 mb-2 overflow-hidden">
+            <Row
+              icon={<MessageSquareText size={16} color={colors.primary} />}
+              label="短信记账"
+              right={<Text variant="muted" style={{ fontSize: 12 }}>仅 Android</Text>}
+              onPress={() => router.push('/sms-settings')}
+              last
+            />
+          </Card>
+        </FadeInView>
+
         {/* ══ AI 记忆(所有用户可见,对齐 web 设置页;默认折叠) ══ */}
         <GroupTitle title="AI 记忆" />
-        <FadeInView index={2}>
+        <FadeInView index={3}>
           <Card className="px-5 py-4 mb-2">
             <Pressable
               onPress={() => {
@@ -137,7 +151,7 @@ export default function SettingsScreen() {
 
         {/* ══ API Key(所有用户可见;默认折叠,展开时才挂载拉取) ══ */}
         <GroupTitle title="API Key" />
-        <FadeInView index={3}>
+        <FadeInView index={4}>
           <Card className="px-5 py-4 mb-2">
             <Pressable
               onPress={() => {
@@ -163,7 +177,7 @@ export default function SettingsScreen() {
         {isAdmin && (
           <>
             <GroupTitle title="服务器" />
-            <FadeInView index={4}>
+            <FadeInView index={5}>
               <Card className="px-0 py-2 mb-2 overflow-hidden">
                 <Row
                   icon={<ServerCog size={16} color={colors.primary} />}
@@ -179,7 +193,7 @@ export default function SettingsScreen() {
 
         {/* ══ 关于 ══ */}
         <GroupTitle title="关于" />
-        <FadeInView index={5}>
+        <FadeInView index={6}>
           <Card className="px-0 py-2 overflow-hidden">
             {aboutRows.map((row, i) => (
               <Row key={row.label} icon={row.icon} label={row.label} right={row.right} onPress={row.onPress} last={i === aboutRows.length - 1} />
@@ -188,7 +202,7 @@ export default function SettingsScreen() {
         </FadeInView>
 
         {/* 退出 */}
-        <FadeInView index={6}>
+        <FadeInView index={7}>
           <Pressable
             onPress={async () => {
               await logout();

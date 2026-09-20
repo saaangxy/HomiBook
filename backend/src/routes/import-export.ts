@@ -9,13 +9,8 @@ import { prisma } from '../app.js'
 import { authenticate, assertIsMember } from '../middleware/auth.js'
 import { zSchema } from '../lib/schema-helpers.js'
 import { dateKey } from '../lib/date-time.js'
-import {
-  matchAccountByName,
-  applyAccountMappings,
-  applyCategoryMappings,
-  inferAccount,
-  type ParsedRow,
-} from '../services/import/shared.js'
+import { applyAccountMappings, type ParsedRow } from '../services/import/shared.js'
+import { resolveImportAccounts, resolveImportCategories, toImportPreviewRow } from '../services/import/pipeline.js'
 import { ACCOUNT_TYPES, IMPORT_SOURCES, RECORD_TYPES, RECORD_TYPE_LABELS } from '@homibook/core'
 import {
   createAccountsInTx,
@@ -33,85 +28,6 @@ import {
   detectHeaderIndex,
   detectEncoding,
 } from '../services/import/parsers.js'
-
-// ======================== 账户匹配 & 分类映射 ========================
-
-async function resolveAccounts(bookId: string, rows: ParsedRow[], idMap?: Map<string, string | null>, ownerId?: string) {
-  // 收集所有唯一账户名
-  const accountNames = new Set<string>()
-  for (const r of rows) {
-    accountNames.add(r.accountName)
-    if (r.toAccountName) accountNames.add(r.toAccountName)
-  }
-
-  // 从映射中收集已预解析的 ID
-  const mappedCsvNameToId = new Map<string, string>()
-  if (idMap) {
-    for (const [csvName, id] of idMap) {
-      if (id) mappedCsvNameToId.set(csvName, id)
-    }
-  }
-
-  // 加载活跃账户（多成员账本下只匹配本人账户）
-  const namesToLookup = Array.from(accountNames).filter(n => !mappedCsvNameToId.has(n))
-  const allAccounts = await prisma.account.findMany({
-    where: { accountBookId: bookId, status: 'ACTIVE', ...(ownerId ? { ownerId } : {}) },
-    select: { id: true, name: true },
-  })
-
-  // 用包含匹配查找，记录多候选的账户
-  const nameToId = new Map<string, string>()
-  const nameMatched: Record<string, string> = {}
-  const candidatesMap = new Map<string, { id: string; name: string }[]>()
-  for (const name of namesToLookup) {
-    const result = matchAccountByName(name, allAccounts, ownerId)
-    if (result.matched) {
-      nameToId.set(name, result.id)
-      nameMatched[name] = result.name
-    } else if (result.ambiguous) {
-      candidatesMap.set(name, result.candidates)
-    }
-  }
-
-  // 未匹配的账户（含多候选的）
-  const unmatched: { csvName: string; suggestedType: string; suggestedName: string; bankName?: string; accountNo?: string; candidates?: { id: string; name: string }[] }[] = []
-  const seen = new Set<string>()
-
-  for (const name of accountNames) {
-    if (mappedCsvNameToId.has(name)) continue
-    if (nameToId.has(name)) continue
-    if (seen.has(name)) continue
-    seen.add(name)
-    const ambCandidates = candidatesMap.get(name)
-    const inferred = inferAccount(name)
-    if (inferred || ambCandidates) {
-      unmatched.push({
-        csvName: name,
-        suggestedType: inferred?.type || '',
-        suggestedName: inferred?.defaultName || name,
-        bankName: inferred?.bankName,
-        accountNo: inferred?.accountNo,
-        ...(ambCandidates ? { candidates: ambCandidates } : {}),
-      })
-    }
-  }
-
-  // 填充 accountId / toAccountId
-  for (const r of rows) {
-    r.accountId = mappedCsvNameToId.get(r.accountName) || nameToId.get(r.accountName) || null
-    if (r.toAccountName) {
-      r.toAccountId = mappedCsvNameToId.get(r.toAccountName) || nameToId.get(r.toAccountName) || null
-    }
-  }
-
-  return { unmatched, nameMatched }
-}
-
-async function resolveCategories(source: string, rows: ParsedRow[]) {
-  return applyCategoryMappings(source, rows)
-}
-
-// ======================== 路由 ========================
 
 // ======================== 路由 ========================
 
@@ -324,30 +240,17 @@ export async function importExportRoutes(app: FastifyInstance) {
     const { idMap: accountMappings, nameRecord: accountMappingNames } = await applyAccountMappings(source, parseResult.rows, accountBookId, undefined, payload.id)
 
     // 匹配账户（传入映射结果；只匹配本人账户）
-    const { unmatched: unmatchedAccounts, nameMatched: nameMatchedByContains } = await resolveAccounts(accountBookId, parseResult.rows, accountMappings, payload.id)
+    const { unmatched: unmatchedAccounts, nameMatched: nameMatchedByContains } = await resolveImportAccounts(accountBookId, parseResult.rows, accountMappings, payload.id)
 
     // 匹配分类
-    const { unmatched: unmatchedCategories, allDictItems } = await resolveCategories(source, parseResult.rows)
+    const { unmatched: unmatchedCategories, allDictItems } = await resolveImportCategories(source, parseResult.rows)
 
     // 分离正常记录和无法自动识别的记录
     const normalRecords = parseResult.rows.filter(r => r.type !== 'UNKNOWN')
     const unrecognizedRecords = parseResult.rows.filter(r => r.type === 'UNKNOWN')
 
-    const mapRow = (r: ParsedRow) => ({
-      date: r.date,
-      type: r.type,
-      amount: r.amount,
-      accountName: r.accountName,
-      accountId: r.accountId,
-      toAccountName: r.toAccountName,
-      toAccountId: r.toAccountId,
-      categoryCode: r.categoryCode,
-      mappedCategoryCode: r.mappedCategoryCode,
-      payer: r.payer,
-      remark: r.remark,
-      tags: r.tags,
-      rowIndex: r.rowIndex,
-    })
+    // 预览行形状与短信预览统一(见 services/import/pipeline.ts)
+    const mapRow = toImportPreviewRow
 
     return {
       records: normalRecords.map(mapRow),
@@ -384,13 +287,13 @@ export async function importExportRoutes(app: FastifyInstance) {
 
     await assertIsMember(accountBookId, payload.id)
 
-    const { accountMap, accountsCreated, affectedAccounts } = await prisma.$transaction(async (tx) => {
+    const { accountMap, accountsCreated, affectedAccounts, createdIds } = await prisma.$transaction(async (tx) => {
       const { accountMap, accountsCreated } = await createAccountsInTx(tx, accountBookId, payload.id, accountCreations)
       await saveCategoryMappingsInTx(tx, source, newMappings)
       await saveAccountMappingsInTx(tx, source, newAccountMappings)
       const resolver = new AccountResolver(tx, accountMap, accountBookId)
-      const affectedAccounts = await batchCreateRecordsInTx(tx, accountBookId, payload.id, records, idOrName => resolver.resolve(idOrName))
-      return { accountMap, accountsCreated, affectedAccounts }
+      const { affectedAccounts, createdIds } = await batchCreateRecordsInTx(tx, accountBookId, payload.id, records, idOrName => resolver.resolve(idOrName))
+      return { accountMap, accountsCreated, affectedAccounts, createdIds }
     })
 
     await refreshBalances(affectedAccounts)
@@ -399,6 +302,8 @@ export async function importExportRoutes(app: FastifyInstance) {
       imported: records.length,
       accountsCreated,
       newAccountIds: Object.fromEntries(accountMap),
+      // 创建出的流水 id:客户端用于「撤销最近一次自动记账」等场景
+      ids: createdIds,
     }
   })
 

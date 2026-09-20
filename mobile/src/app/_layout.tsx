@@ -24,6 +24,8 @@ import { LedgerProvider } from '@/stores/ledger';
 import { RecordsProvider } from '@/stores/records';
 import { UIShellProvider } from '@/components/chrome/chrome';
 import { ShareIntakeBridge } from '@/hooks/useShareIntake';
+import { SmsAutoBookkeepingBridge } from '@/hooks/useSmsAutoBookkeeping';
+import { NotificationIntakeBridge } from '@/hooks/useNotificationIntake';
 import { Sidebar } from '@/components/chrome/Sidebar';
 import { LedgerModal } from '@/components/chrome/LedgerModal';
 import { RecordModal } from '@/components/chrome/RecordModal';
@@ -94,6 +96,10 @@ export default function RootLayout() {
                 <AIAssistantModal />
                 {/* 分享意图桥接:分享图片 → 上传 → 预置待发附件 → 打开 AI 助手 */}
                 <ShareIntakeBridge />
+                {/* 短信自动记账桥接:进入前台时静默入账(默认关闭,开关在 设置 → 记账 → 短信记账) */}
+                <SmsAutoBookkeepingBridge />
+                {/* 通知点击桥接:点「自动记账完成」通知 → 打开对应流水 */}
+                <NotificationIntakeBridge />
                 <ToastHost />
               </RecordsProvider>
               </UIShellProvider>

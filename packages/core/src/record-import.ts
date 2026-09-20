@@ -7,10 +7,16 @@ import type { RecordType } from './types/index.js';
 
 // ── 来源定义 ──
 
-export type ImportSource = 'alipay' | 'wechat' | 'jd' | 'csv';
+export type ImportSource = 'alipay' | 'wechat' | 'jd' | 'csv' | 'sms';
 
-/** 全部导入来源(运行时校验用,与 ImportSource 联合保持一致) */
-export const IMPORT_SOURCES = ['alipay', 'wechat', 'jd', 'csv'] as const;
+/**
+ * 短信导入来源:不经过文件上传与 parsers.ts,由移动端把本机预筛出的候选直接提交给「解析后」管线。
+ * 刻意不放进 IMPORT_SOURCE_DEFS(文件导入来源选择器),仅用于映射表 source 与展示标签。
+ */
+export const SMS_IMPORT_SOURCE = 'sms' as const;
+
+/** 全部导入来源(运行时校验用,与 ImportSource 联合保持一致;含非文件的短信来源) */
+export const IMPORT_SOURCES = ['alipay', 'wechat', 'jd', 'csv', SMS_IMPORT_SOURCE] as const;
 
 /**
  * AI 导入工具可识别的来源(不含 csv:csv 需手动配置列映射,走向导而非对话)。
@@ -44,9 +50,11 @@ export const IMPORT_SOURCE_DEFS: ImportSourceDef[] = [
 ];
 
 /** 来源 key → 展示标签(账单来源在消息/卡片中共用;键放宽为 string 便于动态来源名兜底) */
-export const IMPORT_SOURCE_LABELS: Record<string, string> = Object.fromEntries(
-  IMPORT_SOURCE_DEFS.map((d) => [d.key, d.label]),
-);
+export const IMPORT_SOURCE_LABELS: Record<string, string> = {
+  ...Object.fromEntries(IMPORT_SOURCE_DEFS.map((d) => [d.key, d.label])),
+  // 短信来源无文件上传步骤,不在 DEFS 中,但消息/卡片展示需要标签
+  [SMS_IMPORT_SOURCE]: '短信',
+};
 
 // ── 列映射字段定义 ──
 

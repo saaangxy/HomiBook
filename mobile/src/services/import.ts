@@ -24,6 +24,8 @@ export interface ParsedImportRow {
   remark?: string | null;
   tags?: string[];
   rowIndex?: number;
+  /** 服务端弱校验命中(同账户+同日+同金额+同方向已存在):提示用,不硬拦 */
+  possibleDuplicate?: boolean;
 }
 
 export interface UnmatchedAccount {
@@ -145,8 +147,8 @@ export function previewImport(
 
 // ── 确认导入 ──
 
-export async function confirmImport(payload: ImportConfirmPayload): Promise<{ imported: number; accountsCreated: number }> {
-  const res = await http.post<{ imported: number; accountsCreated: number }>('/api/records/import', payload);
+export async function confirmImport(payload: ImportConfirmPayload): Promise<{ imported: number; accountsCreated: number; ids?: string[] }> {
+  const res = await http.post<{ imported: number; accountsCreated: number; ids?: string[] }>('/api/records/import', payload);
   return res ?? { imported: 0, accountsCreated: 0 };
 }
 

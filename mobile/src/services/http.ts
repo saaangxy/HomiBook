@@ -86,7 +86,16 @@ export async function clearCredential(): Promise<void> {
 
 export interface RequestOptions {
   query?: Record<string, string | number | boolean | undefined>;
+  /**
+   * 超时(ms),默认 10s。
+   * 长耗时接口(如 AI 抽取:服务端要等模型返回)必须显式放大,否则会在模型还没返回时被本地掐断,
+   * 表现成「连接超时」这种误导性提示。
+   */
+  timeoutMs?: number;
 }
+
+/** 默认请求超时:普通接口(DB 查询量级)10s 足够 */
+const DEFAULT_TIMEOUT_MS = 10_000;
 
 /** 拼接 query 参数到 URL */
 function buildQuery(path: string, query?: RequestOptions['query']): string {
@@ -101,8 +110,15 @@ function buildQuery(path: string, query?: RequestOptions['query']): string {
 
 async function request<T>(method: string, path: string, body?: unknown, opts?: RequestOptions): Promise<T> {
   const cred = await getCredential();
+  const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 10000);
+  // 自己记标记:RN 的 fetch 被 abort 后不一定抛 AbortError(视实现可能抛 TypeError/Network request failed),
+  // 只认 e.name 会把「超时」误报成「无法连接服务器」,排查时南辕北辙
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
   try {
     const res = await fetch(`${currentBaseUrl}${buildQuery(path, opts?.query)}`, {
       method,
@@ -128,13 +144,24 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: R
       throw new ApiError(res.status, data?.message ?? `请求失败 (${res.status})`);
     }
     if (res.status === 204) return undefined as T;
-    return (await res.json()) as T;
+    // 2xx 但响应不是 JSON(如反向代理把 /api 指到了前端页面返回 index.html、或服务端版本过旧):
+    // 以前这里会掉进下面的兜底 catch 报「无法连接服务器」,把真实原因埋掉,故单独识别并给出可行动提示
+    const raw = await res.text().catch(() => '');
+    if (!raw) return undefined as T;
+    try {
+      return JSON.parse(raw) as T;
+    } catch {
+      throw new ApiError(
+        res.status,
+        `服务端返回的不是 JSON(HTTP ${res.status}):请确认服务端已更新到最新版本,且 /api 已正确转发到后端`,
+      );
+    }
   } catch (e) {
     if (e instanceof ApiError) throw e;
-    if (e instanceof Error && e.name === 'AbortError') {
+    if (timedOut || (e instanceof Error && e.name === 'AbortError')) {
       // 网络类失败即时轻提示(3s 节流);错误仍向上抛,由调用方处理 loading 状态
       notifyErrorOnce('网络异常,请检查网络后重试');
-      throw new ApiError(0, '连接超时,请检查服务器地址');
+      throw new ApiError(0, `请求超时(${Math.round(timeoutMs / 1000)}s),请检查服务器地址或稍后重试`);
     }
     notifyErrorOnce('网络异常,请检查网络后重试');
     throw new ApiError(0, '无法连接服务器,请检查网络与地址');

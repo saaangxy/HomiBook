@@ -16,7 +16,11 @@
         "backgroundColor": "#fdf8ee",
         "foregroundImage": "./assets/images/android-icon-foreground.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.READ_SMS",
+        "android.permission.POST_NOTIFICATIONS"
+      ]
     },
     "web": {
       "output": "static",
@@ -39,6 +43,8 @@
       "expo-secure-store",
       "expo-sharing",
       "./plugins/with-android-tweaks",
+      "./plugins/with-notification-listener",
+      "expo-notifications",
       [
         "expo-share-intent",
         {

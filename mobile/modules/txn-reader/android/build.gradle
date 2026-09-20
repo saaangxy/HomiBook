@@ -1,0 +1,23 @@
+apply plugin: 'com.android.library'
+
+group = 'expo.modules.txnreader'
+version = '0.1.0'
+
+def expoModulesCorePlugin = new File(project(":expo-modules-core").projectDir.absolutePath, "ExpoModulesCorePlugin.gradle")
+apply from: expoModulesCorePlugin
+applyKotlinExpoModulesCorePlugin()
+useCoreDependencies()
+useExpoPublishing()
+// 继承 expo-modules-core 的 compileSdk/minSdk/targetSdk,避免在模块里硬编码 SDK 版本随 Expo 升级漂移
+useDefaultAndroidSdkVersions()
+
+android {
+  namespace "expo.modules.txnreader"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+  }
+  lintOptions {
+    abortOnError false
+  }
+}

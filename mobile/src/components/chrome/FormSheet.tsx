@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from 'react';
-import { BackHandler, KeyboardAvoidingView, Pressable, StyleSheet, View } from 'react-native';
+import { BackHandler, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, {
   FadeIn,
   FadeInDown,
@@ -21,14 +21,23 @@ interface FormSheetProps {
   onSave?: () => void;
   saveLabel?: string;
   saveLoading?: boolean;
+  /**
+   * 内容可能超过一屏时开启:给内容区加高度上限并内部滚动。
+   * 底部弹窗高度跟着内容长,内容过高会一路顶到状态栏/通知栏;长内容(详情、多字段表单)务必开启。
+   * 默认关闭 —— 短表单不需要多包一层 ScrollView。
+   */
+  scrollBody?: boolean;
   children: ReactNode;
 }
 
 // 底部表单弹窗 v2:主题化圆角/阴影 + 把手区下滑关闭手势(阈值 80px 或速度 800)
-export function FormSheet({ visible, title, onClose, onSave, saveLabel = '保存', saveLoading, children }: FormSheetProps) {
+export function FormSheet({ visible, title, onClose, onSave, saveLabel = '保存', saveLoading, scrollBody = false, children }: FormSheetProps) {
   const { colors, palette } = useTheme();
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
   const translateY = useSharedValue(0);
+  // 内容区高度上限:整屏 − 顶部安全区 − 底部安全区 − (把手/标题/保存按钮/内边距 ≈ 240)
+  const maxBodyHeight = Math.max(180, windowHeight - insets.top - insets.bottom - 240);
 
   // 打开时复位位移 + 出现触感
   useEffect(() => {
@@ -85,6 +94,8 @@ export function FormSheet({ visible, title, onClose, onSave, saveLabel = '保存
               borderTopRightRadius: palette.radius.sheet,
               paddingHorizontal: 20,
               paddingBottom: Math.max(insets.bottom + 12, 24),
+              // 兜底:即便内容区未开滚动,整张弹窗也不越过状态栏
+              maxHeight: windowHeight - insets.top - 8,
             },
           ]}
         >
@@ -102,7 +113,16 @@ export function FormSheet({ visible, title, onClose, onSave, saveLabel = '保存
               </View>
             </View>
           </GestureDetector>
-          {children}
+          {scrollBody ? (
+            <ScrollView
+              style={{ maxHeight: maxBodyHeight }}
+              keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled
+              showsVerticalScrollIndicator={false}
+            >
+              {children}
+            </ScrollView>
+          ) : children}
           {onSave && (
             <View style={{ marginTop: 16 }}>
               <Button title={saveLabel} onPress={onSave} loading={saveLoading} />

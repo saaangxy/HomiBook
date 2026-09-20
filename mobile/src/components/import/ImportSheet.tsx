@@ -127,12 +127,21 @@ interface ImportSheetProps {
   onClose: () => void;
   bookId: string;
   dictCodes: DictEntry[];
+  /**
+   * 预置预览(短信等无文件来源):传入后直接进入「预览处理」步骤,
+   * 跳过 来源/上传/列映射 三步;source 也由它固定(如 'sms')。
+   * 关闭时由调用方清空,下次打开会重新应用。
+   */
+  presetPreview?: { source: string; preview: ImportPreviewResult } | null;
+  /** 导入成功回调(短信页据此把已导入的候选移出列表) */
+  onImported?: (result: { imported: number; accountsCreated: number }) => void;
 }
 
 // 流水导入向导(复刻 web ImportDialog):来源 → 上传 → (CSV 列映射) → 预览处理 → 确认 → 结果
-export function ImportSheet({ visible, onClose, bookId, dictCodes }: ImportSheetProps) {
+export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview, onImported }: ImportSheetProps) {
   const { colors, palette } = useTheme();
   const { accounts } = useRecords();
+  const isPreset = !!presetPreview;
 
   const [step, setStep] = useState<Step>('source');
   const [source, setSource] = useState<ImportSource>('alipay');
@@ -335,6 +344,14 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes }: ImportSheet
     setUnrecognizedRes({});
   };
 
+  // 预置预览(短信路径):打开即落到「预览处理」步骤(与文件向导共用同一套预览/确认 UI)
+  useEffect(() => {
+    if (!visible || !presetPreview) return;
+    setSource(presetPreview.source as ImportSource);
+    applyPreview(presetPreview.preview);
+    setStep('preview');
+  }, [visible, presetPreview]);
+
   // 切换归属人后:已选的已有账户/新建账户归属切换到该归属人名下
   const handleOwnerChange = (ownerId: string) => {
     setSelectedOwnerId(ownerId);
@@ -514,6 +531,7 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes }: ImportSheet
       setStep('result');
       haptics.success();
       notifyPageRefresh();
+      onImported?.(result);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -1124,7 +1142,7 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes }: ImportSheet
 
         {/* 底部按钮 */}
         <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
-          {step !== 'source' && step !== 'result' ? (
+          {!isPreset && step !== 'source' && step !== 'result' ? (
             <Pressable
               onPress={() => {
                 setError('');
@@ -1316,12 +1334,20 @@ function RecordPreviewRow({ r }: { r: ParsedImportRow }) {
           {r.accountName || '-'}
           {r.payer ? ` · ${r.payer}` : ''}
         </Text>
-        <Text variant="muted" style={{ fontSize: 10, marginTop: 1 }} numberOfLines={1}>
-          {r.date.replace('T', ' ').slice(0, 16)}
-          {r.categoryCode ? ` · ${r.categoryCode}` : ''}
-          {r.mappedCategoryCode ? ` → ${r.mappedCategoryCode}` : ''}
-          {r.remark ? ` · ${r.remark}` : ''}
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 1 }}>
+          {/* 弱校验命中(同账户+同日+同金额+同方向已存在):提示用,不硬拦 */}
+          {r.possibleDuplicate ? (
+            <View style={{ paddingHorizontal: 5, paddingVertical: 0.5, borderRadius: 5, backgroundColor: alpha('#f59e0b', 0.15) }}>
+              <Text style={{ fontSize: 9.5, color: '#f59e0b' }}>疑似重复</Text>
+            </View>
+          ) : null}
+          <Text variant="muted" style={{ fontSize: 10 }} numberOfLines={1}>
+            {r.date.replace('T', ' ').slice(0, 16)}
+            {r.categoryCode ? ` · ${r.categoryCode}` : ''}
+            {r.mappedCategoryCode ? ` → ${r.mappedCategoryCode}` : ''}
+            {r.remark ? ` · ${r.remark}` : ''}
+          </Text>
+        </View>
       </View>
       <Text style={{ fontSize: 12, fontWeight: '600', fontVariant: ['tabular-nums'], color: semanticTypeColor(colors, r.type) }}>
         {r.type === 'EXPENSE' ? '-' : r.type === 'INCOME' ? '+' : ''}{r.amount.toFixed(2)}

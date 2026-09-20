@@ -41,3 +41,8 @@ example
 # generated native folders
 /ios
 /android
+
+# 本地 Expo Module(mobile/modules/*/):源码需提交,只忽略其构建产物。
+# 注意上面的 /android、/ios 带前导斜杠只作用于 mobile/ 根级,不会误伤模块源码目录
+modules/*/android/build/
+modules/*/ios/build/

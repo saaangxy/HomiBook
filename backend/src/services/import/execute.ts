@@ -190,8 +190,10 @@ export async function batchCreateRecordsInTx(
   ownerId: string,
   records: ImportRecord[],
   resolveAccount: (idOrName: string) => Promise<string>,
-): Promise<Set<string>> {
+): Promise<{ affectedAccounts: Set<string>; createdIds: string[] }> {
   const affectedAccounts = new Set<string>()
+  // 创建出的流水 id:供调用方回传(自动记账的「撤销最近一批」需要)
+  const createdIds: string[] = []
   const batchSize = 100
 
   for (let i = 0; i < records.length; i += batchSize) {
@@ -224,10 +226,11 @@ export async function batchCreateRecordsInTx(
       }
     })
 
-    await Promise.all(createData.map((d: any) => tx.record.create({ data: d })))
+    const created = await Promise.all(createData.map((d: any) => tx.record.create({ data: d, select: { id: true } })))
+    for (const row of created) createdIds.push(row.id)
   }
 
-  return affectedAccounts
+  return { affectedAccounts, createdIds }
 }
 
 // ---- 刷新账户余额 ----
