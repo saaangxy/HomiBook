@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Dimensions, Image, Modal, Pressable, ScrollView, View } from 'react-native';
 import { Download, FileText, X } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { DownloadModeSheet } from '@/components/chrome/DownloadModeSheet';
@@ -44,6 +45,7 @@ export function ImageLightbox({ images, initialIndex = 0, onClose }: {
   onClose: () => void;
 }) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const width = Dimensions.get('window').width;
   const [index, setIndex] = useState(initialIndex);
   const [downloading, setDownloading] = useState(false);
@@ -74,10 +76,10 @@ export function ImageLightbox({ images, initialIndex = 0, onClose }: {
   };
 
   return (
-    <Modal transparent visible animationType="fade" onRequestClose={onClose}>
+    <Modal transparent visible animationType="fade" onRequestClose={onClose} statusBarTranslucent navigationBarTranslucent>
       <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.95)' }}>
-        {/* 顶部工具栏 */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 }}>
+        {/* 顶部工具栏(Modal 覆盖状态栏区域,需自行避让) */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: insets.top + 12, paddingBottom: 8 }}>
           <Text style={{ color: '#fff', fontSize: 13 }}>{index + 1} / {images.length}</Text>
           <View style={{ flex: 1 }} />
           <Pressable hitSlop={8} onPress={handleDownload} disabled={downloading} style={{ padding: 6, marginRight: 14 }}>
@@ -119,6 +121,7 @@ export function AttachmentViewer({ visible, attachments, onClose }: {
   onClose: () => void;
 }) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const [previewIdx, setPreviewIdx] = useState<number | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   // 待保存附件(先弹保存方式选择)
@@ -170,9 +173,9 @@ export function AttachmentViewer({ visible, attachments, onClose }: {
 
   return (
     <>
-      <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
+      <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose} statusBarTranslucent navigationBarTranslucent>
         <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' }} onPress={onClose} />
-        <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 18, paddingBottom: 28, maxHeight: '72%' }}>
+        <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 18, paddingBottom: Math.max(insets.bottom + 12, 24), maxHeight: '72%' }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, marginBottom: 14 }}>
             <Text style={{ fontSize: 16, fontWeight: '700', flex: 1 }}>查看附件 ({attachments.length})</Text>
             <Pressable hitSlop={10} onPress={onClose}>
@@ -209,13 +212,15 @@ export function AttachmentViewer({ visible, attachments, onClose }: {
         </View>
         {/* 下载失败轻提示(就地渲染,见 InlineErrorToast 注释) */}
         {dlError ? <InlineErrorToast error={dlError} onExpire={() => setDlError('')} /> : null}
+        {/* 保存方式选择(保存到设备/系统分享):必须与「查看附件」同处 Modal 内 ——
+            FormSheet 是主 window 绝对定位覆盖层,若留在 Modal 外会被 Modal 原生窗口盖住并拦截触摸
+            (表现为点了没反应),且 absoluteFill 会相对列表行定位导致面板错位溢出 */}
+        <DownloadModeSheet visible={!!dlTarget} title="保存附件" onMode={runDownload} onClose={() => setDlTarget(null)} />
       </Modal>
       {/* 全屏预览层(位于网格之上) */}
       {previewIdx !== null && imageUrls.length > 0 && (
         <ImageLightbox images={imageUrls} initialIndex={Math.max(previewIdx, 0)} onClose={() => setPreviewIdx(null)} />
       )}
-      {/* 保存方式选择(保存到设备/系统分享) */}
-      <DownloadModeSheet visible={!!dlTarget} title="保存附件" onMode={runDownload} onClose={() => setDlTarget(null)} />
     </>
   );
 }
