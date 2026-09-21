@@ -58,17 +58,35 @@ export interface DedupKeyRecord {
   ownerId: string;
 }
 
+/**
+ * 格式化为**本地时间**的日期 / 分钟片段(与 `backend/src/lib/date-time.ts` 的本地日口径一致)。
+ *
+ * 不能用 `toISOString()` 截断:它是 UTC ——
+ * 实测(UTC+8)本地 02-10 21:22 与 02-11 05:22 的 UTC 日同为 02-10,会被误判成「同一天」;
+ * 反过来本地同一天但跨了 UTC 午夜的两条(如 07:00 与 23:00)又会漏判。
+ */
+function localStamp(date: Date | string, precision: 'minute' | 'date'): string {
+  const d = date instanceof Date ? date : new Date(date);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const day = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return precision === 'date' ? day : `${day}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 /** 按 matchFields 顺序构造分组 key(与解析严格对应) */
 export function buildDuplicateKey(r: DedupKeyRecord, f: DedupMatchFields): string {
   const parts: string[] = [];
 
   if (f.date) {
-    // ISO 是 UTC:秒 / 分 / 日三种精度都按同一基准截断,前后端与展示口径一致
-    const iso = r.date instanceof Date ? r.date.toISOString() : new Date(r.date).toISOString();
-    if (f.date === 'exact') parts.push(iso);
-    // 同一分钟:两条记录常因相差几秒而躲过「精确」,同一天又太宽 —— 分钟正好卡住「同一笔」
-    else if (f.date === 'minute') parts.push(iso.slice(0, 16));
-    else parts.push(iso.slice(0, 10));
+    if (f.date === 'exact') {
+      // 精确到秒:完整时间戳用 ISO(UTC) 表示最稳,与时区无关
+      parts.push(r.date instanceof Date ? r.date.toISOString() : new Date(r.date).toISOString());
+    } else if (f.date === 'minute') {
+      // 同一分钟:两条记录常因相差几秒而躲过「精确」,同一天又太宽 —— 分钟正好卡住「同一笔」
+      parts.push(localStamp(r.date, 'minute'));
+    } else {
+      // 同日:按**本地**日期比较(见 localStamp 注释)
+      parts.push(localStamp(r.date, 'date'));
+    }
   }
 
   if (f.type) parts.push(r.type);
@@ -94,7 +112,13 @@ export function parseDuplicateGroupKey(key: string, fields: DedupMatchFields, op
   const parts = key.split('||');
   const labels: string[] = [];
   let idx = 0;
-  const fmt = opts?.formatDateTime ?? ((iso: string) => iso.replace('T', ' ').slice(0, 19));
+  // 缺省按**本地时间**格式化(「精确」精度的 key 存的是 ISO/UTC,直接截断会显示 UTC 时间)
+  const fmt = opts?.formatDateTime ?? ((iso: string) => {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso.replace('T', ' ').slice(0, 19);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  });
 
   if (fields.date) {
     const val = parts[idx++];

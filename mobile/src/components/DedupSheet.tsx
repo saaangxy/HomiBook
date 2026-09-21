@@ -34,9 +34,12 @@ import type { RecordItem } from '@/types';
 
 const TYPE_LABEL = DEDUP_TYPE_LABELS;
 
-/** 格式化 ISO 日期为 YYYY-MM-DD HH:mm:ss */
+/** ISO(UTC) → **本地**时间 YYYY-MM-DD HH:mm:ss(直接截 ISO 会显示 UTC 时间,与 web 端 dayjs 的口径不一致) */
 function fmtDate(iso: string): string {
-  return (iso || '').replace('T', ' ').slice(0, 19);
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return (iso || '').replace('T', ' ').slice(0, 19);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
 /** 冲突选择里「不填」的哨兵值(chip 的 value 必须是字符串) */

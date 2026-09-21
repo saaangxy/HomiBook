@@ -23,6 +23,16 @@ const rec: DedupKeyRecord = {
   ownerId: 'owner1',
 };
 
+/**
+ * 用**本地时间**构造的记录:断言「同日 / 同分钟」时必须用它 ——
+ * 这两种精度按本地时区截断,拿 UTC ISO 断言会在换时区(CI/容器)后挂掉。
+ */
+const localRec = (over: Partial<DedupKeyRecord> = {}): DedupKeyRecord => ({
+  ...rec,
+  date: new Date(2024, 0, 15, 2, 30, 0),
+  ...over,
+});
+
 const ALL_ON: DedupMatchFields = {
   date: 'exact',
   type: true,
@@ -51,14 +61,41 @@ describe('buildDuplicateKey · 分钟精度', () => {
   });
 
   it('组 key 展示为 YYYY-MM-DD HH:mm(不带秒与 T)', () => {
-    const key = buildDuplicateKey(at('2024-01-15T02:30:05.000Z'), MINUTE);
+    const key = buildDuplicateKey(localRec({ date: new Date(2024, 0, 15, 2, 30, 5) }), MINUTE);
     expect(parseDuplicateGroupKey(key, MINUTE)[0]).toBe('日期: 2024-01-15 02:30');
+  });
+});
+
+// ── 回归:日期精度必须按**本地时间**比较(2026-09-21 修) ──
+describe('buildDuplicateKey · 日期精度按本地时间', () => {
+  const f: DedupMatchFields = { ...DEFAULT_DEDUP_MATCH_FIELDS, date: 'date' };
+  /** 本地时间构造(换时区也成立) */
+  const at = (d: number, h: number, mi: number) => localRec({ date: new Date(2026, 1, d, h, mi, 0) });
+
+  it('跨本地午夜的两条(本地相差 8 小时)→ 不同日', () => {
+    // 实测问题:本地 02-10 21:22 与 02-11 05:22 在 UTC 下同属 02-10,被判为同一组
+    expect(buildDuplicateKey(at(10, 21, 22), f)).not.toBe(buildDuplicateKey(at(11, 5, 22), f));
+  });
+
+  it('同一本地日的凌晨与深夜 → 同日(不受 UTC 午夜影响)', () => {
+    expect(buildDuplicateKey(at(10, 7, 0), f)).toBe(buildDuplicateKey(at(10, 23, 0), f));
+  });
+
+  it('key 里的日期与展示的日期都是本地日期', () => {
+    const key = buildDuplicateKey(at(11, 5, 22), f);
+    expect(key.startsWith('2026-02-11||')).toBe(true);
+    expect(parseDuplicateGroupKey(key, f)[0]).toBe('日期: 2026-02-11');
+  });
+
+  it('同分钟精度同样按本地时间(跨本地午夜不算同一分钟)', () => {
+    const mf: DedupMatchFields = { ...f, date: 'minute' };
+    expect(buildDuplicateKey(at(10, 23, 59), mf)).not.toBe(buildDuplicateKey(at(11, 0, 0), mf));
   });
 });
 
 describe('buildDuplicateKey', () => {
   it('默认字段(date 默认「同分钟」,ownerId 关闭)', () => {
-    expect(buildDuplicateKey(rec, DEFAULT_DEDUP_MATCH_FIELDS)).toBe(
+    expect(buildDuplicateKey(localRec(), DEFAULT_DEDUP_MATCH_FIELDS)).toBe(
       '2024-01-15T02:30||EXPENSE||acc1||张三||12.50',
     );
   });
@@ -102,7 +139,7 @@ describe('buildDuplicateKey', () => {
 
 describe('parseDuplicateGroupKey', () => {
   it('默认字段 roundtrip:标签顺序与字段一致', () => {
-    const key = buildDuplicateKey(rec, DEFAULT_DEDUP_MATCH_FIELDS);
+    const key = buildDuplicateKey(localRec(), DEFAULT_DEDUP_MATCH_FIELDS);
     expect(parseDuplicateGroupKey(key, DEFAULT_DEDUP_MATCH_FIELDS)).toEqual([
       '日期: 2024-01-15 02:30',
       '类型: 支出',
@@ -122,8 +159,8 @@ describe('parseDuplicateGroupKey', () => {
     expect(labels).toContain('归属人: 张三');
   });
 
-  it('精确日期默认格式化为 YYYY-MM-DD HH:mm:ss', () => {
-    const labels = parseDuplicateGroupKey(buildDuplicateKey(rec, ALL_ON), ALL_ON);
+  it('精确日期默认按本地时间格式化为 YYYY-MM-DD HH:mm:ss', () => {
+    const labels = parseDuplicateGroupKey(buildDuplicateKey(localRec(), ALL_ON), ALL_ON);
     expect(labels[0]).toBe('日期: 2024-01-15 02:30:00');
   });
 
