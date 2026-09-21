@@ -1,3 +1,4 @@
+import { errorMessage } from '@/lib/error'
 import { useState, useEffect, useCallback } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import {
@@ -152,7 +153,7 @@ export function AccountsPage() {
       setCreateOpen(false)
       resetForm()
       loadAccounts()
-    } catch (e: any) { setFormError(e.message) }
+    } catch (e) { setFormError(errorMessage(e)) }
     finally { setSubmitting(false) }
   }
 
@@ -172,7 +173,7 @@ export function AccountsPage() {
       setEditAccount(null)
       resetForm()
       loadAccounts()
-    } catch (e: any) { setFormError(e.message) }
+    } catch (e) { setFormError(errorMessage(e)) }
     finally { setSubmitting(false) }
   }
 
@@ -199,7 +200,7 @@ export function AccountsPage() {
       setAdjustError('')
       setSubmitting(false)
       loadAccounts()
-    } catch (e: any) { setAdjustError(e.message); setSubmitting(false) }
+    } catch (e) { setAdjustError(errorMessage(e)); setSubmitting(false) }
   }
 
   const handleDelete = async () => {
@@ -208,7 +209,7 @@ export function AccountsPage() {
       await accountApi.delete(deleteTarget.id)
       setDeleteTarget(null)
       loadAccounts()
-    } catch (e: any) { setError(e.message) }
+    } catch (e) { setError(errorMessage(e)) }
   }
 
   const handleToggleStatus = async (account: AccountItem) => {
@@ -216,7 +217,7 @@ export function AccountsPage() {
     try {
       await accountApi.update(account.id, { status: newStatus } as any)
       loadAccounts()
-    } catch (e: any) { setError(e.message) }
+    } catch (e) { setError(errorMessage(e)) }
   }
 
   const openEdit = (account: AccountItem) => {

@@ -1,3 +1,4 @@
+import { errorMessage } from '@/lib/error'
 import { useState, useRef, useEffect } from 'react'
 import {
   Dialog,
@@ -237,8 +238,8 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
         setTypeMapping(autoDetectTypeMapping(typeVals) as Record<string, string>)
       }
       setStep('columnMapping')
-    } catch (e: any) {
-      setError(e.message)
+    } catch (e) {
+      setError(errorMessage(e))
     } finally {
       setLoading(false)
     }
@@ -295,8 +296,8 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
       setRemovedKeys({})
 
       setStep('preview')
-    } catch (e: any) {
-      setError(e.message)
+    } catch (e) {
+      setError(errorMessage(e))
     } finally {
       setLoading(false)
     }
@@ -341,8 +342,8 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
       setUnrecognizedResolutions(unresRes)
 
       setStep('preview')
-    } catch (e: any) {
-      setError(e.message)
+    } catch (e) {
+      setError(errorMessage(e))
     } finally {
       setLoading(false)
     }
@@ -554,8 +555,8 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
 
       setImportResult({ imported: result.imported, accountsCreated: result.accountsCreated })
       setStep('result')
-    } catch (e: any) {
-      setError(e.message)
+    } catch (e) {
+      setError(errorMessage(e))
     } finally {
       setLoading(false)
     }
@@ -755,8 +756,8 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                         setCsvTypeValues(typeVals)
                         setTypeMapping(autoDetectTypeMapping(typeVals) as Record<string, string>)
                       }
-                    } catch (e: any) {
-                      setError(e.message)
+                    } catch (e) {
+                      setError(errorMessage(e))
                     } finally {
                       setLoading(false)
                     }

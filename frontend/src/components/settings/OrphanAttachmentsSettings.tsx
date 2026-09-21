@@ -1,3 +1,4 @@
+import { errorMessage } from '@/lib/error'
 import { useState } from 'react'
 import {
   AccordionContent,
@@ -38,8 +39,8 @@ export function OrphanAttachmentsSettings() {
       const items = await settingsApi.getOrphanAttachments()
       const files = items.filter((i) => i.fileExists).length
       setOrphansResult({ count: items.length, files })
-    } catch (e: any) {
-      setOrphansError(e.message)
+    } catch (e) {
+      setOrphansError(errorMessage(e))
     } finally {
       setOrphansLoading(false)
     }
@@ -54,8 +55,8 @@ export function OrphanAttachmentsSettings() {
       const result = await settingsApi.cleanOrphanAttachments()
       setCleanResult({ deletedFiles: result.deletedFiles, deletedRecords: result.deletedRecords })
       setOrphansResult(null)
-    } catch (e: any) {
-      setOrphansError(e.message)
+    } catch (e) {
+      setOrphansError(errorMessage(e))
     } finally {
       setOrphansCleaning(false)
     }

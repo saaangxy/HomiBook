@@ -6,7 +6,7 @@ import { dateKey } from '../../../lib/date-time.js'
 
 interface DetectDuplicatesArgs {
   matchFields: {
-    date: 'exact' | 'date' | null
+    date: 'exact' | 'minute' | 'date' | null
     type: boolean
     accountId: boolean
     payer: boolean
@@ -26,7 +26,7 @@ export const detectDuplicatesTool: ToolDef = {
         type: 'object',
         description: '匹配规则',
         properties: {
-          date: { type: 'string', enum: ['exact', 'date', null], description: '日期匹配：exact=精确到秒，date=按天，null=忽略' },
+          date: { type: 'string', enum: ['exact', 'minute', 'date', null], description: '日期匹配：exact=精确到秒，minute=同一分钟，date=按天，null=忽略' },
           type: { type: 'boolean', description: '是否匹配交易类型' },
           accountId: { type: 'boolean', description: '是否匹配账户' },
           payer: { type: 'boolean', description: '是否匹配交易方' },

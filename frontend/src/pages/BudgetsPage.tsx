@@ -1,3 +1,4 @@
+import { errorMessage } from '@/lib/error'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import {
@@ -154,8 +155,8 @@ export function BudgetsPage() {
     try {
       const data = await budgetApi.listFixed({ bookId: currentBookId, year, month })
       setFixedBudgets(data)
-    } catch (e: any) {
-      setError(e.message || '加载固定预算失败')
+    } catch (e) {
+      setError(errorMessage(e, '加载固定预算失败'))
     }
   }, [currentBookId, year, month])
 
@@ -168,8 +169,8 @@ export function BudgetsPage() {
         endDate: freeEndDate || undefined,
       })
       setFreeBudgets(data)
-    } catch (e: any) {
-      setError(e.message || '加载自由预算失败')
+    } catch (e) {
+      setError(errorMessage(e, '加载自由预算失败'))
     }
   }, [currentBookId, freeStartDate, freeEndDate])
 
@@ -261,8 +262,8 @@ export function BudgetsPage() {
       setDialogOpen(false)
       loadFixedBudgets()
       loadFreeBudgets()
-} catch (e: any) {
-      setFormError(e.message || '保存失败')
+} catch (e) {
+      setFormError(errorMessage(e, '保存失败'))
     } finally {
       setFormSaving(false)
     }
@@ -359,8 +360,8 @@ export function BudgetsPage() {
       setSelectedIds(new Set())
       loadFixedBudgets()
       loadFreeBudgets()
-} catch (e: any) {
-      setBatchEditError(e.message || '批量更新失败')
+} catch (e) {
+      setBatchEditError(errorMessage(e, '批量更新失败'))
     } finally {
       setBatchEditSaving(false)
     }

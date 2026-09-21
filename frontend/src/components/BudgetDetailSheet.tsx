@@ -1,3 +1,4 @@
+import { errorMessage } from '@/lib/error'
 import { useState, useEffect, useCallback } from 'react'
 import {
   Sheet,
@@ -228,8 +229,8 @@ export function BudgetDetailSheet({ budget, bookId, onClose }: Props) {
       })
       setRecords(result.records)
       setTotalPages(result.totalPages)
-    } catch (e: any) {
-      setRecordsError(e.message || '加载失败')
+    } catch (e) {
+      setRecordsError(errorMessage(e, '加载失败'))
     } finally {
       setRecordsLoading(false)
     }
@@ -286,8 +287,8 @@ export function BudgetDetailSheet({ budget, bookId, onClose }: Props) {
       )
 
       setStatsLoaded(true)
-    } catch (e: any) {
-      setStatsError(e.message || '加载统计失败')
+    } catch (e) {
+      setStatsError(errorMessage(e, '加载统计失败'))
     } finally {
       setStatsLoading(false)
     }

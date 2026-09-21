@@ -8,6 +8,7 @@ import type {
   BudgetItem as CoreBudget,
   BudgetType,
   DedupMatchFields,
+  DuplicateMergeChoice,
   MonthlyTrendPoint,
   RecordItem as CoreRecord,
   RecordSummary as CoreSummary,
@@ -293,6 +294,31 @@ export async function detectDuplicatesApi(bookId: string, matchFields: DedupMatc
 
 export async function batchDeleteRecordsApi(ids: string[]): Promise<void> {
   await http.post('/api/records/batch-delete', { ids });
+}
+
+/** 合并一组重复:keepId 是保留记录(组内最早一条),其余合并后被删除 */
+export interface MergeDuplicatesGroup {
+  keepId: string;
+  mergeIds: string[];
+  /** 冲突字段的用户选择;缺省 = 用保留记录的值(后端按 core 契约收敛) */
+  choices?: DuplicateMergeChoice;
+}
+
+/**
+ * 合并重复记录(可一次提交多组)。
+ * 后端会用同一份 matchFields 重算分组、按 core 的 planDuplicateMerge 收敛字段:
+ * 备注拼接、附件并集迁移、账户/分类冲突用 choices(缺省保留第一条)、方向不一致直接 400。
+ */
+export async function mergeDuplicatesApi(
+  bookId: string,
+  matchFields: DedupMatchFields,
+  groups: MergeDuplicatesGroup[],
+): Promise<{ mergedGroups: number; mergedRecords: number; keepIds: string[] }> {
+  const res = await http.post<{ mergedGroups: number; mergedRecords: number; keepIds: string[] }>(
+    '/api/records/merge-duplicates',
+    { bookId, matchFields, groups },
+  );
+  return res ?? { mergedGroups: 0, mergedRecords: 0, keepIds: [] };
 }
 
 export async function fetchMonthlyTrend(bookId: string, dateFrom?: string, dateTo?: string) {

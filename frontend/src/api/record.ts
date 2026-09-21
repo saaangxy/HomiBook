@@ -1,5 +1,5 @@
 import { api } from './http'
-import type { RecordSummary, RecordType } from '@homibook/core'
+import type { DedupMatchFields, DuplicateMergeChoice, RecordSummary, RecordType } from '@homibook/core'
 
 export { type RecordSummary, type RecordType }
 
@@ -130,8 +130,26 @@ export const recordApi = {
   batchDelete: (ids: string[]) =>
     api.post<{ success: boolean; deleted: number }>('/api/records/batch-delete', { ids }),
 
-  detectDuplicates: (bookId: string, matchFields: { date: 'exact' | 'date' | null; type: boolean; accountId: boolean; payer: boolean; amount: boolean }) =>
+  detectDuplicates: (bookId: string, matchFields: { date: 'exact' | 'minute' | 'date' | null; type: boolean; accountId: boolean; payer: boolean; amount: boolean }) =>
     api.post<{ groups: Array<{ key: string; count: number; records: RecordItem[] }>; totalDuplicates: number }>('/api/records/detect-duplicates', { bookId, matchFields }),
+
+  /**
+   * 合并重复记录(可一次提交多组)。keepId 为保留记录,choices 缺省 = 用保留记录的值。
+   * 服务端会用同一份 matchFields 重算分组,并按 core 的契约收敛字段(备注拼接、附件并集迁移)。
+   */
+  mergeDuplicates: (
+    bookId: string,
+    matchFields: DedupMatchFields,
+    groups: Array<{
+      keepId: string
+      mergeIds: string[]
+      choices?: DuplicateMergeChoice
+    }>,
+  ) =>
+    api.post<{ success: boolean; mergedGroups: number; mergedRecords: number; keepIds: string[] }>(
+      '/api/records/merge-duplicates',
+      { bookId, matchFields, groups },
+    ),
 
   clone: (id: string) =>
     api.post<RecordItem>(`/api/records/${id}/clone`, {}),

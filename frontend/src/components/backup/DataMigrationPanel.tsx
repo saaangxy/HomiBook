@@ -1,3 +1,4 @@
+import { errorMessage } from '@/lib/error'
 import { useEffect, useState } from 'react'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
@@ -133,8 +134,8 @@ export function DataMigrationPanel() {
       })
       setExportCounts(counts)
       toast.success(scope === 'full' ? '数据包已导出' : '附件包已导出')
-    } catch (e: any) {
-      toast.error(`导出失败：${e.message}`)
+    } catch (e) {
+      toast.error(`导出失败：${errorMessage(e)}`)
     } finally {
       setExporting(null)
     }
@@ -151,7 +152,7 @@ export function DataMigrationPanel() {
     backupApi
       .inspectBackup(file)
       .then(setInspectResult)
-      .catch((e: any) => setInspectError(e.message))
+      .catch((e) => setInspectError(errorMessage(e)))
       .finally(() => setInspecting(false))
   }
 
@@ -173,8 +174,8 @@ export function DataMigrationPanel() {
       } else {
         toast.success('附件导入完成')
       }
-    } catch (e: any) {
-      toast.error(`导入失败：${e.message}`)
+    } catch (e) {
+      toast.error(`导入失败：${errorMessage(e)}`)
     } finally {
       setImporting(false)
     }

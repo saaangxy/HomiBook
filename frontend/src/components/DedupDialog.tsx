@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -25,16 +25,25 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Spinner } from '@/components/ui/spinner'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Switch } from '@/components/ui/switch'
 import { recordApi, type RecordItem } from '@/api/record'
 import { accountApi, type AccountItem } from '@/api/account'
 import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
 import {
+  DEDUP_EMPTY_LABEL,
   DEFAULT_DEDUP_MATCH_FIELDS,
   DEDUP_TOGGLE_FIELDS,
   parseDuplicateGroupKey,
+  planDuplicateMerge,
   type DedupMatchFields,
+  type DuplicateMergeChoice,
+  type DuplicateMergeConflict,
+  type DuplicateMergeConflictField,
+  type DuplicateMergePlan,
+  type DuplicateMergeRecord,
 } from '@homibook/core'
 import { RECORD_TYPE_LABELS, RECORD_TYPE_TEXT_CLASS } from '@/lib/record-type'
+import { errorMessage } from '@/lib/error'
 import { CopyMinus, Check } from 'lucide-react'
 import dayjs from 'dayjs'
 
@@ -62,6 +71,25 @@ function parseGroupKey(key: string, fields: DedupMatchFields, accountDisplay: Ma
   })
 }
 
+/** 冲突选择里「不填」的哨兵值(Select 的 value 必须是字符串) */
+const EMPTY_CHIP = '__empty__'
+
+/** 流水 → core 的合并入参 */
+function toMergeRecord(r: RecordItem): DuplicateMergeRecord {
+  return {
+    id: r.id,
+    accountId: r.accountId,
+    fromAccountId: r.fromAccountId ?? null,
+    toAccountId: r.toAccountId ?? null,
+    categoryCode: r.categoryCode ?? null,
+    payer: r.payer ?? null,
+    remark: r.remark ?? null,
+    tags: r.tags ?? [],
+    attachments: r.attachments ?? [],
+    type: r.type,
+  }
+}
+
 export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDialogProps) {
   const [matchFields, setMatchFields] = useState<DedupMatchFields>(DEFAULT_DEDUP_MATCH_FIELDS)
 
@@ -69,11 +97,17 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
   const [totalDuplicates, setTotalDuplicates] = useState(0)
   const [detected, setDetected] = useState(false)
   const [detecting, setDetecting] = useState(false)
-  const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState('')
 
-  // 选中要删除的记录 ID
+  // 选中要处理的记录 ID(两种模式语义一致:勾选 = 该记录会被处理,切模式不动勾选)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+
+  // 处理方式(合并 / 删除)
+  const [mode, setMode] = useState<'merge' | 'delete'>('merge')
+  // 每组合并结果的编辑(keepId → 冲突选择 / 文本覆盖)
+  const [choices, setChoices] = useState<Record<string, DuplicateMergeChoice>>({})
+  // 合并与删除共用的「执行中」标记
+  const [running, setRunning] = useState(false)
 
   // 账户列表(用于组头标签显示"账户名 · 归属人")
   const [accounts, setAccounts] = useState<AccountItem[]>([])
@@ -110,8 +144,8 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
         }
       }
       setSelectedIds(toDelete)
-    } catch (e: any) {
-      setError(e.message)
+    } catch (e) {
+      setError(errorMessage(e, '检测失败'))
     } finally {
       setDetecting(false)
     }
@@ -140,18 +174,121 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
     })
   }
 
-  const handleDelete = async () => {
-    if (selectedIds.size === 0) return
-    setDeleting(true)
+  const doDelete = async () => {
+    setRunning(true)
     setError('')
     try {
       await recordApi.batchDelete(Array.from(selectedIds))
       onOpenChange(false)
       onComplete()
-    } catch (e: any) {
-      setError(e.message)
+    } catch (e) {
+      setError(errorMessage(e, '删除失败'))
     } finally {
-      setDeleting(false)
+      setRunning(false)
+    }
+  }
+
+  // ── 合并预演 ──
+  // 处理单位:每组「第 1 条 + 该组被勾选的其余记录」(第 1 条永远是保留记录,不参与被并入)。
+  // 结果面板与提交走后端的是同一个 core 函数 → 所见即所做。
+  const mergePlans = useMemo(() => {
+    const out: { group: DuplicateGroup; plan: DuplicateMergePlan }[] = []
+    for (const g of groups) {
+      const keep = g.records[0]
+      const picked = g.records.slice(1).filter((r) => selectedIds.has(r.id))
+      if (picked.length === 0) continue
+      out.push({
+        group: g,
+        plan: planDuplicateMerge([toMergeRecord(keep), ...picked.map(toMergeRecord)], choices[keep.id]),
+      })
+    }
+    return out
+  }, [groups, selectedIds, choices])
+
+  const planOf = (group: DuplicateGroup) => mergePlans.find((p) => p.group === group)?.plan
+  const pendingMergeCount = mergePlans.reduce((sum, p) => sum + (p.plan.blocked ? 0 : p.plan.mergeIds.length), 0)
+  const blockedCount = mergePlans.filter((p) => p.plan.blocked).length
+
+  // 分组筛选(全部 / 无冲突 / 有冲突):**按整组判定,与勾选无关** ——
+  // 勾选决定「处理哪些」,筛选决定「先看哪些」,所以用全组记录算一次,而不是用当前勾选算。
+  // 「有冲突」= 账户/分类组内不一致(要选一个)或方向不一致(根本不能合),即"需要人工处理的组"。
+  const [groupFilter, setGroupFilter] = useState<'all' | 'clean' | 'conflict'>('all')
+  const groupInfo = useMemo(() => {
+    const map = new Map<DuplicateGroup, { dirty: boolean }>()
+    for (const g of groups) {
+      const plan = planDuplicateMerge(g.records.map(toMergeRecord))
+      map.set(g, { dirty: plan.conflicts.length > 0 || !!plan.blocked })
+    }
+    return map
+  }, [groups])
+  const cleanCount = groups.filter((g) => !groupInfo.get(g)?.dirty).length
+  const conflictCount = groups.length - cleanCount
+  const visibleGroups = groupFilter === 'all'
+    ? groups
+    : groups.filter((g) => (groupFilter === 'clean' ? !groupInfo.get(g)?.dirty : !!groupInfo.get(g)?.dirty))
+
+  const chipValue = (v: string | null | undefined) => (v == null ? EMPTY_CHIP : v)
+  // 取该字段的当前选择:**显式选过(含选「不填」= null)一律以选择为准** ——
+  // 不能用 `?? c.default` 兜底:null 会被判为「没选」而回退默认值,导致「不填」选不上
+  const mergeValueOf = (plan: DuplicateMergePlan, c: DuplicateMergeConflict) => {
+    const chosen = choices[plan.keepId]
+    if (chosen && c.field in chosen) return chosen[c.field] ?? null
+    return c.default
+  }
+  const setMergeChoice = (keepId: string, field: DuplicateMergeConflictField, v: string) => {
+    setChoices((prev) => ({ ...prev, [keepId]: { ...prev[keepId], [field]: v === EMPTY_CHIP ? null : v } }))
+  }
+  const setMergeText = (keepId: string, field: 'remarkText' | 'payerText', v: string) => {
+    setChoices((prev) => ({ ...prev, [keepId]: { ...prev[keepId], [field]: v } }))
+  }
+  const mergeOptionLabel = (v: string | null, field: DuplicateMergeConflictField) =>
+    v === null ? DEDUP_EMPTY_LABEL : field === 'accountId' ? (accountDisplay.get(v) ?? v) : v
+  const mergeOptionsOf = (c: DuplicateMergeConflict) => {
+    const options = c.options.map((o) => ({
+      value: chipValue(o.value),
+      label: `${mergeOptionLabel(o.value, c.field)} ×${o.count}`,
+    }))
+    // 分类可空:组内没人留空时也要能选「不填」
+    if (c.field === 'categoryCode' && !c.options.some((o) => o.value === null)) {
+      options.push({ value: EMPTY_CHIP, label: '不填' })
+    }
+    return options
+  }
+  const conflictOf = (plan: DuplicateMergePlan, field: DuplicateMergeConflictField) =>
+    plan.conflicts.find((c) => c.field === field)
+
+  const doMerge = async () => {
+    setRunning(true)
+    setError('')
+    try {
+      const targets = mergePlans.filter((p) => !p.plan.blocked)
+      await recordApi.mergeDuplicates(
+        bookId,
+        matchFields,
+        targets.map(({ group, plan }) => ({
+          keepId: plan.keepId,
+          mergeIds: plan.mergeIds,
+          choices: choices[group.records[0].id],
+        })),
+      )
+      onComplete()
+      setChoices({})
+      // 重新检测:合并后组会消失,列表与真实状态保持一致
+      await handleDetect()
+    } catch (e) {
+      setError(errorMessage(e, '合并失败'))
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  /** 底部按钮:按当前模式弹确认(web 用 window.confirm 之外的既有 ConfirmSheet 缺失,这里直接执行) */
+  const handleRun = () => {
+    if (running) return
+    if (mode === 'delete') {
+      if (selectedIds.size > 0) void doDelete()
+    } else if (pendingMergeCount > 0) {
+      void doMerge()
     }
   }
 
@@ -160,10 +297,13 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
     setTotalDuplicates(0)
     setDetected(false)
     setDetecting(false)
-    setDeleting(false)
+    setRunning(false)
     setError('')
     setSelectedIds(new Set())
     setMatchFields(DEFAULT_DEDUP_MATCH_FIELDS)
+    setMode('merge')
+    setChoices({})
+    setGroupFilter('all')
   }
 
   const handleClose = () => {
@@ -184,7 +324,8 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
+    <>
+      <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>去重检测</DialogTitle>
@@ -204,14 +345,16 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
             {/* 日期精度 */}
             <Select
               value={matchFields.date || 'ignore'}
-              onValueChange={(v) => setMatchFields(prev => ({ ...prev, date: (v === 'ignore' ? null : v as 'date' | 'exact') }))}
+              onValueChange={(v) => setMatchFields(prev => ({ ...prev, date: (v === 'ignore' ? null : v as 'exact' | 'minute' | 'date') }))}
             >
               <SelectTrigger className="h-8 text-xs w-28 bg-background">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent className="bg-card border-border">
-                <SelectItem value="date" className="text-xs">时间: 同日</SelectItem>
+                {/* 从严格到宽松:精确到秒常因两条记录差几秒漏判,同日又太宽,同分钟居中(与移动端一致) */}
                 <SelectItem value="exact" className="text-xs">时间: 精确</SelectItem>
+                <SelectItem value="minute" className="text-xs">时间: 同分钟</SelectItem>
+                <SelectItem value="date" className="text-xs">时间: 同日</SelectItem>
                 <SelectItem value="ignore" className="text-xs">时间: 忽略</SelectItem>
               </SelectContent>
             </Select>
@@ -258,28 +401,88 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
                 </div>
               ) : (
                 <>
+                  {/* 处理方式二选一(switch):勾选语义两模式一致(勾选 = 该记录会被处理),切模式不动勾选 */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`text-xs font-medium ${mode === 'merge' ? 'text-primary' : 'text-muted-foreground'}`}>
+                      合并重复
+                    </span>
+                    <Switch checked={mode === 'merge'} onCheckedChange={(v) => setMode(v ? 'merge' : 'delete')} />
+                    <span className={`text-xs font-medium ${mode === 'delete' ? 'text-[#ef4444]' : 'text-muted-foreground'}`}>
+                      删除重复
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {mode === 'merge'
+                        ? '勾选要并入的记录(默认每组除第 1 条外全选),每组保留最早一条;下方结果面板淡绿 = 自动收敛、淡红 = 需你确认'
+                        : '勾选要删除的记录(默认每组除第 1 条外全选),每组保留最早一条'}
+                    </span>
+                  </div>
+
                   {/* 摘要 */}
-                  <div className="flex items-center gap-2 text-sm">
+                  <div className="flex items-center gap-2 text-sm flex-wrap">
                     <Badge variant="secondary" className="text-xs">
                       共 {groups.length} 组重复
                     </Badge>
                     <Badge variant="secondary" className="text-xs">
-                      {totalDuplicates} 条可删除
+                      {totalDuplicates} 条重复
                     </Badge>
                     <Badge variant="secondary" className="text-xs">
-                      已选 {selectedIds.size} 条
+                      {mode === 'merge' ? `将合并 ${pendingMergeCount} 条` : `已选 ${selectedIds.size} 条`}
                     </Badge>
+                    {mode === 'merge' && blockedCount > 0 ? (
+                      <Badge variant="secondary" className="text-xs text-destructive">
+                        {blockedCount} 组方向不一致,不参与合并
+                      </Badge>
+                    ) : null}
+                  </div>
+
+                  {/* 分组筛选:先看需要拍板的组(计数按整组算,与勾选无关) */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {([
+                      ['all', '全部', groups.length],
+                      ['clean', '无冲突', cleanCount],
+                      ['conflict', '有冲突', conflictCount],
+                    ] as const).map(([key, label, count]) => {
+                      const on = groupFilter === key
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => setGroupFilter(key)}
+                          className={`h-7 px-3 rounded-full text-xs border transition-colors ${
+                            on
+                              ? 'bg-primary border-primary text-primary-foreground'
+                              : 'bg-background border-border text-muted-foreground hover:border-primary/30'
+                          }`}
+                        >
+                          {label} {count}
+                        </button>
+                      )
+                    })}
                   </div>
 
                   {/* 重复分组 */}
                   <div className="space-y-4">
-                    {groups.map((group, gi) => {
+                    {visibleGroups.length === 0 ? (
+                      <div className="py-8 text-center text-xs text-muted-foreground">当前筛选下没有分组</div>
+                    ) : null}
+                    {visibleGroups.map((group) => {
                       const groupIds = group.records.map(r => r.id)
                       const allSelected = groupIds.every(id => selectedIds.has(id))
                       const keyLabels = parseGroupKey(group.key, matchFields, accountDisplay, ownerNames)
+                      const groupPlan = planOf(group)
+                      const keepRec = group.records[0]
+                      const accountConflict = groupPlan ? conflictOf(groupPlan, 'accountId') : undefined
+                      const categoryConflict = groupPlan ? conflictOf(groupPlan, 'categoryCode') : undefined
+                      const accountValue = groupPlan?.patch.accountId ?? keepRec.accountId
+                      const categoryValue = groupPlan?.patch.categoryCode ?? keepRec.categoryCode ?? null
+                      const payerValue = choices[keepRec.id]?.payerText ?? groupPlan?.patch.payer ?? keepRec.payer ?? ''
+                      const remarkValue = choices[keepRec.id]?.remarkText ?? groupPlan?.remark ?? ''
+                      const tagsValue = groupPlan?.patch.tags ?? keepRec.tags ?? []
+                      const attachCount =
+                        (keepRec.attachments?.length ?? 0) +
+                        group.records.slice(1).filter(r => selectedIds.has(r.id)).reduce((n, r) => n + (r.attachments?.length ?? 0), 0)
 
                       return (
-                        <div key={gi} className="border rounded-lg overflow-hidden">
+                        <div key={group.key} className="border rounded-lg overflow-hidden">
                           {/* 组头 */}
                           <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 border-b">
                             <button
@@ -291,6 +494,11 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
                             <span className="text-xs text-muted-foreground">
                               {group.count} 条重复
                             </span>
+                            {mode === 'merge' && groupPlan ? (
+                              <span className="text-xs text-muted-foreground">
+                                {groupPlan.blocked ? '方向不一致,不合并' : `将并入 ${groupPlan.mergeIds.length} 条`}
+                              </span>
+                            ) : null}
                             <div className="flex items-center gap-1.5 ml-auto flex-wrap">
                               {keyLabels.map((label, i) => (
                                 <Badge key={i} variant="outline" className="text-[10px] py-0 px-1.5">
@@ -320,6 +528,8 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
                                   <TableHead className="text-xs py-1.5">金额</TableHead>
                                   <TableHead className="text-xs py-1.5">分类</TableHead>
                                   <TableHead className="text-xs py-1.5">备注</TableHead>
+                                  <TableHead className="text-xs py-1.5">标签</TableHead>
+                                  <TableHead className="text-xs py-1.5">附件</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
@@ -361,11 +571,128 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
                                     <TableCell className="text-xs py-1.5 text-muted-foreground max-w-[120px] truncate">
                                       {r.remark || '-'}
                                     </TableCell>
+                                    <TableCell className="text-xs py-1.5 text-muted-foreground max-w-[140px] truncate">
+                                      {r.tags?.length ? r.tags.join(' / ') : '-'}
+                                    </TableCell>
+                                    <TableCell className="text-xs py-1.5 text-muted-foreground">
+                                      {r.attachments?.length ? `${r.attachments.length} 个` : '-'}
+                                    </TableCell>
                                   </TableRow>
                                 ))}
                               </TableBody>
                             </Table>
                           </div>
+
+                          {/* 合并结果(内联可编辑,不再另弹窗):淡绿 = 自动收敛,淡红 = 组内不一致需确认 */}
+                          {mode === 'merge' ? (
+                            <div className="border-t bg-muted/40 px-3 py-2.5 space-y-1.5">
+                              {!groupPlan ? (
+                                <p className="text-[11px] text-muted-foreground">未勾选要并入的记录 — 本组不处理</p>
+                              ) : groupPlan.blocked ? (
+                                <p className="text-[11px] text-destructive">本组不参与合并:{groupPlan.blocked}</p>
+                              ) : (
+                                <>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-xs font-medium">合并结果(可编辑)</span>
+                                    <Badge variant="outline" className="text-[10px] py-0 px-1.5">
+                                      类型 {TYPE_LABELS[keepRec.type]}
+                                    </Badge>
+                                    <Badge variant="outline" className="text-[10px] py-0 px-1.5">
+                                      金额 {keepRec.amount.toFixed(2)}
+                                    </Badge>
+                                    <Badge variant="outline" className="text-[10px] py-0 px-1.5">
+                                      日期 {dayjs(keepRec.date).format('YYYY-MM-DD HH:mm:ss')}
+                                    </Badge>
+                                  </div>
+
+                                  {/* 账户:组内不一致 → 淡红 + 选择;否则淡绿 */}
+                                  <div className={`rounded px-2 py-1.5 ${accountConflict ? 'bg-[#ef4444]/10' : 'bg-[#22c55e]/10'}`}>
+                                    <div className="text-[10px] text-muted-foreground mb-1">
+                                      账户{accountConflict ? ' · 组内不一致,请选择' : ''}
+                                    </div>
+                                    {accountConflict ? (
+                                      <Select
+                                        value={chipValue(mergeValueOf(groupPlan, accountConflict))}
+                                        onValueChange={(v) => setMergeChoice(groupPlan.keepId, 'accountId', v)}
+                                      >
+                                        <SelectTrigger className="h-7 text-xs bg-background">
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent className="bg-card border-border">
+                                          {mergeOptionsOf(accountConflict).map((o) => (
+                                            <SelectItem key={o.value} value={o.value} className="text-xs">
+                                              {o.label}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    ) : (
+                                      <div className="text-xs">{mergeOptionLabel(accountValue, 'accountId')}</div>
+                                    )}
+                                  </div>
+
+                                  {/* 分类:同上,可空 → 可显式选「不填」 */}
+                                  <div className={`rounded px-2 py-1.5 ${categoryConflict ? 'bg-[#ef4444]/10' : 'bg-[#22c55e]/10'}`}>
+                                    <div className="text-[10px] text-muted-foreground mb-1">
+                                      分类{categoryConflict ? ' · 组内不一致,请选择' : ''}
+                                    </div>
+                                    {categoryConflict ? (
+                                      <Select
+                                        value={chipValue(mergeValueOf(groupPlan, categoryConflict))}
+                                        onValueChange={(v) => setMergeChoice(groupPlan.keepId, 'categoryCode', v)}
+                                      >
+                                        <SelectTrigger className="h-7 text-xs bg-background">
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent className="bg-card border-border">
+                                          {mergeOptionsOf(categoryConflict).map((o) => (
+                                            <SelectItem key={o.value} value={o.value} className="text-xs">
+                                              {o.label}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    ) : (
+                                      <div className="text-xs">{categoryValue ?? DEDUP_EMPTY_LABEL}</div>
+                                    )}
+                                  </div>
+
+                                  <div className="rounded px-2 py-1.5 bg-[#22c55e]/10">
+                                    <div className="text-[10px] text-muted-foreground mb-1">交易方</div>
+                                    <input
+                                      value={payerValue}
+                                      onChange={(e) => setMergeText(groupPlan.keepId, 'payerText', e.target.value)}
+                                      placeholder="可不填"
+                                      className="h-7 w-full rounded border border-border bg-background px-2 text-xs"
+                                    />
+                                  </div>
+
+                                  <div className="rounded px-2 py-1.5 bg-[#22c55e]/10">
+                                    <div className="text-[10px] text-muted-foreground mb-1">备注(默认拼接,可改)</div>
+                                    <input
+                                      value={remarkValue}
+                                      onChange={(e) => setMergeText(groupPlan.keepId, 'remarkText', e.target.value)}
+                                      placeholder="可不填"
+                                      className="h-7 w-full rounded border border-border bg-background px-2 text-xs"
+                                    />
+                                  </div>
+
+                                  <div className="rounded px-2 py-1.5 bg-[#22c55e]/10">
+                                    <div className="text-[10px] text-muted-foreground mb-1">标签 / 附件(自动并集)</div>
+                                    <div className="text-xs">
+                                      标签 {tagsValue.length > 0 ? tagsValue.join(' / ') : '无'} · 附件 {attachCount} 个
+                                    </div>
+                                  </div>
+
+                                  {groupPlan.autoFilled.length > 0 ? (
+                                    <p className="text-[10px] text-muted-foreground">
+                                      自动:{groupPlan.autoFilled.map((f) => f.detail).join(';')}
+                                    </p>
+                                  ) : null}
+                                </>
+                              )}
+                            </div>
+                          ) : null}
                         </div>
                       )
                     })}
@@ -377,20 +704,31 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={handleClose} disabled={deleting}>
+          <Button variant="outline" onClick={handleClose} disabled={running}>
             取消
           </Button>
           {detected && groups.length > 0 && (
             <Button
-              className="bg-[#ef4444] hover:bg-[#dc2626] text-white"
-              onClick={handleDelete}
-              disabled={selectedIds.size === 0 || deleting}
+              className={
+                mode === 'delete'
+                  ? 'bg-[#ef4444] hover:bg-[#dc2626] text-white'
+                  : 'bg-primary hover:bg-primary/90 text-primary-foreground'
+              }
+              onClick={handleRun}
+              disabled={running || (mode === 'delete' ? selectedIds.size === 0 : pendingMergeCount === 0)}
             >
-              {deleting ? '删除中...' : `删除选中 (${selectedIds.size})`}
+              {running
+                ? mode === 'delete'
+                  ? '删除中...'
+                  : '合并中...'
+                : mode === 'delete'
+                  ? `删除 (${selectedIds.size})`
+                  : `合并 (${pendingMergeCount})`}
             </Button>
           )}
         </DialogFooter>
       </DialogContent>
-    </Dialog>
+      </Dialog>
+    </>
   )
 }

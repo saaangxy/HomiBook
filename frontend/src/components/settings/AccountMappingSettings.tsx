@@ -1,3 +1,4 @@
+import { errorMessage } from '@/lib/error'
 import { useState, useEffect, useCallback } from 'react'
 import {
   AccordionContent,
@@ -69,8 +70,8 @@ export function AccountMappingSettings() {
     try {
       const result = await importExportApi.getAccountMappings(source)
       setAccountMappings(result.mappings)
-    } catch (e: any) {
-      setAccountMappingsError(e.message)
+    } catch (e) {
+      setAccountMappingsError(errorMessage(e))
     } finally {
       setAccountMappingsLoading(false)
     }
@@ -108,8 +109,8 @@ export function AccountMappingSettings() {
       setAccountMappingEditTarget(null)
       resetAccountMappingForm()
       loadAccountMappings(accountMappingSource)
-    } catch (e: any) {
-      setAccountMappingFormError(e.message)
+    } catch (e) {
+      setAccountMappingFormError(errorMessage(e))
     } finally {
       setAccountMappingSubmitting(false)
     }
@@ -122,8 +123,8 @@ export function AccountMappingSettings() {
       toast.success('账户映射已删除')
       setAccountMappingDeleteTarget(null)
       loadAccountMappings(accountMappingSource)
-    } catch (e: any) {
-      setAccountMappingsError(e.message)
+    } catch (e) {
+      setAccountMappingsError(errorMessage(e))
     }
   }
 

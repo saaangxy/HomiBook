@@ -1,3 +1,4 @@
+import { errorMessage } from '@/lib/error'
 import { useState, useEffect, useCallback } from 'react'
 import {
   AccordionContent,
@@ -60,8 +61,8 @@ export function ApiKeyManagement() {
     setApiKeysError('')
     try {
       setApiKeys(await apikeyApi.list())
-    } catch (e: any) {
-      setApiKeysError(e.message)
+    } catch (e) {
+      setApiKeysError(errorMessage(e))
     } finally {
       setApiKeysLoading(false)
     }
@@ -82,8 +83,8 @@ export function ApiKeyManagement() {
       setCreateApiKeyOpen(false)
       resetApiKeyForm()
       loadApiKeys()
-    } catch (e: any) {
-      setApiKeyFormError(e.message)
+    } catch (e) {
+      setApiKeyFormError(errorMessage(e))
     } finally {
       setApiKeySubmitting(false)
     }
@@ -96,8 +97,8 @@ export function ApiKeyManagement() {
       toast.success('API Key 已删除')
       setDeleteApiKeyTarget(null)
       loadApiKeys()
-    } catch (e: any) {
-      setApiKeysError(e.message)
+    } catch (e) {
+      setApiKeysError(errorMessage(e))
     }
   }
 

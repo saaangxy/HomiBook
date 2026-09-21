@@ -13,7 +13,8 @@ import {
 } from '../schemas/record.js'
 import {z} from 'zod'
 import {zSchema} from '../lib/schema-helpers.js'
-import {buildDuplicateKey, normalizeRecordType} from '@homibook/core'
+import {buildDuplicateKey, normalizeRecordType, planDuplicateMerge, DEDUP_DATE_PRECISIONS} from '@homibook/core'
+import type {DedupMatchFields, DuplicateMergePatch, DuplicateMergeRecord} from '@homibook/core'
 import path from 'path'
 import fs from 'fs'
 import {randomUUID} from 'crypto'
@@ -27,6 +28,48 @@ const RECORD_INCLUDE = {
     owner: {select: {id: true, nickname: true, username: true, email: true}},
     recordAttachments: {select: {id: true, path: true, originalFilename: true}},
 } as const
+
+/**
+ * 去重匹配字段:detect-duplicates 与 merge-duplicates 共用同一份(字段漂移会让「检测出来的组」和「合并时校验的组」对不上)。
+ * 值域取自 core,别在这里手抄枚举。
+ */
+const dedupMatchFieldsSchema = z.object({
+    date: z.enum(DEDUP_DATE_PRECISIONS).nullable(),
+    type: z.boolean(),
+    accountId: z.boolean(),
+    payer: z.boolean(),
+    amount: z.boolean(),
+    ownerId: z.boolean(),
+})
+
+/** 单次合并请求的组数上限(前端分片提交;再大单事务会太重) */
+const MAX_MERGE_GROUPS = 200
+
+/** 合并选择:账户 / 分类的值必须是组内真实出现过的(server 逐项校验);文本字段由用户负责,只限长 */
+const mergeChoicesSchema = z.object({
+    accountId: z.string().nullable().optional(),
+    categoryCode: z.string().nullable().optional(),
+    remarkFrom: z.string().optional(),
+    // 「合并结果」面板里直接编辑的文本字段(备注拼接结果、交易方):自由文本,不走「必须是组内值」的校验
+    remarkText: z.string().max(500).optional(),
+    payerText: z.string().max(200).optional(),
+})
+
+/** prisma 记录 → core 的合并入参(tags 在库里是 JSON 字符串) */
+function toMergeRecord(r: any): DuplicateMergeRecord {
+    return {
+        id: r.id,
+        accountId: r.accountId,
+        fromAccountId: r.fromAccountId,
+        toAccountId: r.toAccountId,
+        categoryCode: r.categoryCode,
+        payer: r.payer,
+        remark: r.remark,
+        tags: JSON.parse(r.tags || '[]') as string[],
+        attachments: r.recordAttachments,
+        type: r.type,
+    }
+}
 
 export async function recordRoutes(app: FastifyInstance) {
     app.addHook('onRequest', authenticate)
@@ -771,21 +814,14 @@ export async function recordRoutes(app: FastifyInstance) {
             tags: ['记录'],
             body: zSchema(z.object({
                 bookId: z.string().min(1),
-                matchFields: z.object({
-                    date: z.enum(['exact', 'date']).nullable(),
-                    type: z.boolean(),
-                    accountId: z.boolean(),
-                    payer: z.boolean(),
-                    amount: z.boolean(),
-                    ownerId: z.boolean(),
-                }),
+                matchFields: dedupMatchFieldsSchema,
             })),
         },
     }, async (req, reply) => {
         const {bookId, matchFields} = req.body as {
             bookId: string
             matchFields: {
-                date: 'exact' | 'date' | null;
+                date: 'exact' | 'minute' | 'date' | null;
                 type: boolean;
                 accountId: boolean;
                 payer: boolean;
@@ -828,6 +864,151 @@ export async function recordRoutes(app: FastifyInstance) {
         const totalDuplicates = duplicateGroups.reduce((sum, g) => sum + g.count - 1, 0)
 
         return {groups: duplicateGroups, totalDuplicates}
+    })
+
+    // 合并重复记录(字段级收敛,一次可提交多组)
+    //
+    // 服务端**不信任客户端的组划分**:用同一份 matchFields 重算分组 key,要求组内完全一致;
+    // 再用 core 的 planDuplicateMerge 算真正要写回保留记录的字段(choices 必须是组内真实出现过的值)。
+    // 附件只改关联(recordId → 保留记录),文件不删不复制 —— 合并的全部意义就是别丢信息。
+    app.post('/merge-duplicates', {
+        schema: {
+            description: '合并重复记录:字段收敛到保留记录(组内最早一条),删除其余;支持一次提交多组',
+            tags: ['记录'],
+            body: zSchema(z.object({
+                bookId: z.string().min(1),
+                matchFields: dedupMatchFieldsSchema,
+                groups: z.array(z.object({
+                    keepId: z.string().min(1),
+                    mergeIds: z.array(z.string().min(1)).min(1),
+                    choices: mergeChoicesSchema.optional(),
+                })).min(1).max(MAX_MERGE_GROUPS),
+            })),
+        },
+    }, async (req, reply) => {
+        const {bookId, matchFields, groups} = req.body as {
+            bookId: string
+            matchFields: DedupMatchFields
+            groups: {
+                keepId: string
+                mergeIds: string[]
+                choices?: {
+                    accountId?: string | null
+                    categoryCode?: string | null
+                    remarkFrom?: string
+                    remarkText?: string
+                    payerText?: string
+                }
+            }[]
+        }
+        const userId = (req as any).user.id as string
+
+        try {
+            await assertIsMember(bookId, userId)
+        } catch (e: any) {
+            return reply.status(e.statusCode || 403).send({message: e.message})
+        }
+
+        // 组内 / 组间 id 交叉检查:一条记录只能被合并一次,保留记录不能同时是待删除记录
+        const seen = new Set<string>()
+        for (const g of groups) {
+            if (g.mergeIds.includes(g.keepId)) {
+                return reply.status(400).send({message: '保留记录不能同时出现在待删除记录里'})
+            }
+            for (const id of [g.keepId, ...g.mergeIds]) {
+                if (seen.has(id)) return reply.status(400).send({message: `记录 ${id} 出现在多个重复组里`})
+                seen.add(id)
+            }
+        }
+
+        const records = await prisma.record.findMany({
+            where: {id: {in: [...seen]}, accountBookId: bookId},
+            include: RECORD_INCLUDE,
+        })
+        if (records.length !== seen.size) {
+            return reply.status(400).send({message: '部分记录不存在,或不属于该账本'})
+        }
+        const byId = new Map(records.map(r => [r.id, r]))
+
+        const merged: {
+            keepId: string
+            mergeIds: string[]
+            patch: DuplicateMergePatch
+            attachmentSourceIds: string[]
+        }[] = []
+
+        for (const g of groups) {
+            // 顺序即语义:keepId 是保留记录,mergeIds 按传入顺序参与备注拼接
+            const ordered = [byId.get(g.keepId)!, ...g.mergeIds.map(id => byId.get(id)!)]
+            const mergeRecords = ordered.map(toMergeRecord)
+
+            // 用同一份 matchFields 重算分组 key:客户端就算塞了不相干的记录也过不了
+            const key = buildDuplicateKey(ordered[0], matchFields)
+            const drifted = ordered.find(r => buildDuplicateKey(r, matchFields) !== key)
+            if (drifted) {
+                return reply.status(400).send({message: `记录 ${drifted.id} 与保留记录不是同一重复组(分组字段不一致)`})
+            }
+
+            // choices 校验:非空值必须是组内出现过的值(core 会静默回退,这里显式拒绝,避免「以为改了其实没改」)
+            const chosen = g.choices
+            if (chosen?.accountId != null && !mergeRecords.some(r => r.accountId === chosen.accountId)) {
+                return reply.status(400).send({message: '所选账户不在该重复组内'})
+            }
+            if (chosen?.categoryCode != null && !mergeRecords.some(r => r.categoryCode === chosen.categoryCode)) {
+                return reply.status(400).send({message: '所选分类不在该重复组内'})
+            }
+            if (chosen?.remarkFrom && !mergeRecords.some(r => r.id === chosen.remarkFrom)) {
+                return reply.status(400).send({message: '指定的备注来源记录不在该重复组内'})
+            }
+
+            const plan = planDuplicateMerge(mergeRecords, chosen)
+            if (plan.blocked) return reply.status(400).send({message: plan.blocked})
+            merged.push({
+                keepId: plan.keepId,
+                mergeIds: plan.mergeIds,
+                patch: plan.patch,
+                attachmentSourceIds: plan.attachmentSourceIds,
+            })
+        }
+
+        // 一个事务写完:迁移附件 → 更新保留记录 → 删除其余。顺序不能反(附件要先落到保留记录上)
+        const ops: any[] = []
+        for (const m of merged) {
+            if (m.attachmentSourceIds.length > 0) {
+                ops.push(prisma.recordAttachment.updateMany({
+                    where: {recordId: {in: m.attachmentSourceIds}},
+                    data: {recordId: m.keepId},
+                }))
+            }
+            const {tags, ...rest} = m.patch
+            ops.push(prisma.record.update({
+                where: {id: m.keepId},
+                data: {...rest, ...(tags ? {tags: JSON.stringify(tags)} : {})},
+            }))
+            ops.push(prisma.record.deleteMany({where: {id: {in: m.mergeIds}}}))
+        }
+        await prisma.$transaction(ops)
+
+        // 余额重算:被合并的记录离开了原账户,保留记录也可能换了账户
+        const affectedAccounts = new Set<string>()
+        for (const r of records) {
+            affectedAccounts.add(r.accountId)
+            if (r.fromAccountId) affectedAccounts.add(r.fromAccountId)
+            if (r.toAccountId) affectedAccounts.add(r.toAccountId)
+        }
+        for (const m of merged) {
+            if (m.patch.accountId) affectedAccounts.add(m.patch.accountId)
+        }
+        for (const accId of affectedAccounts) {
+            await refreshAccountBalance(accId)
+        }
+
+        return {
+            success: true,
+            mergedGroups: merged.length,
+            mergedRecords: merged.reduce((sum, m) => sum + m.mergeIds.length, 0),
+            keepIds: merged.map(m => m.keepId),
+        }
     })
 
     // 批量删除

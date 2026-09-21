@@ -1,3 +1,4 @@
+import { errorMessage } from '@/lib/error'
 import { useEffect, useState } from 'react'
 import dayjs from 'dayjs'
 import { X, Download, Upload } from 'lucide-react'
@@ -128,7 +129,7 @@ export function RecordFormDialog({ open, editRecord, currentBookId, accounts, mu
       })
       onClose()
       onSaved(false)
-    } catch (e: any) { setFormError(e.message) }
+    } catch (e) { setFormError(errorMessage(e)) }
     finally { setSubmitting(false) }
   }
 
@@ -153,7 +154,7 @@ export function RecordFormDialog({ open, editRecord, currentBookId, accounts, mu
       })
       onClose()
       onSaved(true)
-    } catch (e: any) { setFormError(e.message) }
+    } catch (e) { setFormError(errorMessage(e)) }
     finally { setSubmitting(false) }
   }
 

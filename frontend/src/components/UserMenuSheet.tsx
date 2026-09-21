@@ -1,3 +1,4 @@
+import { errorMessage } from '@/lib/error'
 import { useState, type ReactNode } from 'react'
 import { useAuthStore } from '@/stores/auth'
 import { authApi } from '@/api/auth'
@@ -53,9 +54,9 @@ function ProfileDialog({
       useAuthStore.getState().updateUser(updated)
       setMsg('')
       toast.success('保存成功')
-    } catch (e: any) {
+    } catch (e) {
       setIsError(true)
-      setMsg(e.message)
+      setMsg(errorMessage(e))
     } finally {
       setSaving(false)
     }
@@ -164,9 +165,9 @@ function PasswordDialog({
       setCurrentPassword('')
       setNewPassword('')
       setConfirmPassword('')
-    } catch (e: any) {
+    } catch (e) {
       setIsError(true)
-      setMsg(e.message)
+      setMsg(errorMessage(e))
     } finally {
       setChanging(false)
     }

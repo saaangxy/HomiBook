@@ -1,3 +1,4 @@
+import { errorMessage } from '@/lib/error'
 import { useState, useEffect, useCallback } from 'react'
 import {
   AccordionContent,
@@ -96,8 +97,8 @@ export function DictionaryManagement() {
       setAddOpen(false)
       resetForm()
       loadDict(dictTab)
-    } catch (e: any) {
-      setFormError(e.message)
+    } catch (e) {
+      setFormError(errorMessage(e))
     } finally {
       setSubmitting(false)
     }
@@ -119,8 +120,8 @@ export function DictionaryManagement() {
       setEditTarget(null)
       resetForm()
       loadDict(dictTab)
-    } catch (e: any) {
-      setFormError(e.message)
+    } catch (e) {
+      setFormError(errorMessage(e))
     } finally {
       setSubmitting(false)
     }
@@ -134,8 +135,8 @@ export function DictionaryManagement() {
       toast.success('字典项已删除')
       setDeleteTarget(null)
       loadDict(dictTab)
-    } catch (e: any) {
-      setDictError(e.message)
+    } catch (e) {
+      setDictError(errorMessage(e))
     }
   }
 

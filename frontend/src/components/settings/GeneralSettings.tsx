@@ -1,3 +1,4 @@
+import { errorMessage } from '@/lib/error'
 import { useState, useEffect } from 'react'
 import {
   AccordionContent,
@@ -78,8 +79,8 @@ export function GeneralSettings() {
     try {
       const result = await holidayApi.sync()
       toast.success(`同步完成，导入了 ${result.imported} 条节假日数据`)
-    } catch (e: any) {
-      toast.error(`同步失败：${e.message}`)
+    } catch (e) {
+      toast.error(`同步失败：${errorMessage(e)}`)
     } finally {
       setSyncingHolidays(false)
     }
@@ -92,8 +93,8 @@ export function GeneralSettings() {
     try {
       await settingsApi.updateConfig({ registrationOpen, defaultCurrency, amountHighlightThreshold, holidayApiUrl, defaultTheme, jwtExpiresIn, auditLogRetentionDays })
       toast.success('配置已保存')
-    } catch (e: any) {
-      setConfigError(e.message)
+    } catch (e) {
+      setConfigError(errorMessage(e))
     } finally {
       setConfigSaving(false)
     }

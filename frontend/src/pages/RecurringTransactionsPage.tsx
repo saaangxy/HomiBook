@@ -1,3 +1,4 @@
+import { errorMessage } from '@/lib/error'
 import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -92,7 +93,7 @@ export function RecurringTransactionsPage() {
       ])
       setList(listData)
       setAccounts(accData)
-    } catch (e: any) { setError(e.message) }
+    } catch (e) { setError(errorMessage(e)) }
     finally { setLoading(false) }
   }
 
@@ -174,7 +175,7 @@ export function RecurringTransactionsPage() {
         method: formLoanMethod,
       })
       setLoanPreview(preview)
-    } catch (e: any) { setFormError(e.message) }
+    } catch (e) { setFormError(errorMessage(e)) }
     finally { setPreviewLoading(false) }
   }
 
@@ -264,7 +265,7 @@ export function RecurringTransactionsPage() {
       setDialogOpen(false)
       resetForm()
       loadData()
-    } catch (e: any) { setFormError(e.message) }
+    } catch (e) { setFormError(errorMessage(e)) }
     finally { setSubmitting(false) }
   }
 
@@ -274,14 +275,14 @@ export function RecurringTransactionsPage() {
       await recurringApi.delete(deleteTarget.id)
       setDeleteTarget(null)
       loadData()
-    } catch (e: any) { setError(e.message) }
+    } catch (e) { setError(errorMessage(e)) }
   }
 
   const handleToggle = async (rt: RecurringTransaction) => {
     try {
       await recurringApi.toggle(rt.id)
       loadData()
-    } catch (e: any) { setError(e.message) }
+    } catch (e) { setError(errorMessage(e)) }
   }
 
   const getCategoryGroup = (type: string) => {

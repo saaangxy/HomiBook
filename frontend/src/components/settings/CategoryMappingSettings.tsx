@@ -1,3 +1,4 @@
+import { errorMessage } from '@/lib/error'
 import { useState, useEffect, useCallback } from 'react'
 import {
   AccordionContent,
@@ -71,8 +72,8 @@ export function CategoryMappingSettings() {
     try {
       const result = await importExportApi.getMappings(source)
       setMappings(result.mappings)
-    } catch (e: any) {
-      setMappingsError(e.message)
+    } catch (e) {
+      setMappingsError(errorMessage(e))
     } finally {
       setMappingsLoading(false)
     }
@@ -109,8 +110,8 @@ export function CategoryMappingSettings() {
       setMappingNewRecordType('__all__')
       setMappingNewTargetCode('')
       loadMappings(mappingSource)
-    } catch (e: any) {
-      setMappingFormError(e.message)
+    } catch (e) {
+      setMappingFormError(errorMessage(e))
     } finally {
       setMappingSubmitting(false)
     }
@@ -124,8 +125,8 @@ export function CategoryMappingSettings() {
       toast.success('分类映射已删除')
       setMappingDeleteTarget(null)
       loadMappings(mappingSource)
-    } catch (e: any) {
-      setMappingsError(e.message)
+    } catch (e) {
+      setMappingsError(errorMessage(e))
     }
   }
 

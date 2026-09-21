@@ -1,3 +1,4 @@
+import { errorMessage } from '@/lib/error'
 import { useState, useEffect, useCallback } from 'react'
 import { RECORD_TYPE_LABELS as TYPE_LABELS, RECORD_TYPE_TEXT_CLASS } from '@/lib/record-type'
 import { RecordFormDialog } from '@/components/records/RecordFormDialog'
@@ -277,8 +278,8 @@ export function RecordsPage() {
       })
       setRecords(res.records)
       setTotal(res.total)
-    } catch (e: any) {
-      setError(e.message)
+    } catch (e) {
+      setError(errorMessage(e))
     } finally {
       setLoading(false)
     }
@@ -336,7 +337,7 @@ export function RecordsPage() {
       loadRecords()
       loadSummary()
       loadAccounts()
-    } catch (e: any) { setError(e.message) }
+    } catch (e) { setError(errorMessage(e)) }
   }
 
   const handleBatchDelete = async () => {
@@ -348,7 +349,7 @@ export function RecordsPage() {
       loadRecords()
       loadSummary()
       loadAccounts()
-    } catch (e: any) { setError(e.message) }
+    } catch (e) { setError(errorMessage(e)) }
   }
 
 
@@ -381,7 +382,7 @@ export function RecordsPage() {
       loadRecords()
       loadSummary()
       loadAccounts()
-    } catch (e: any) { setError(e.message) }
+    } catch (e) { setError(errorMessage(e)) }
   }
 
   // 编辑模式辅助函数
@@ -421,7 +422,7 @@ export function RecordsPage() {
       loadRecords()
       loadSummary()
       loadAccounts()
-    } catch (e: any) { setError(e.message) }
+    } catch (e) { setError(errorMessage(e)) }
     finally { setSavingEdits(false) }
   }
 
@@ -444,7 +445,7 @@ export function RecordsPage() {
     if (filters.amountTo) params.amountTo = filters.amountTo
     if (filters.remark) params.remark = filters.remark
     if (filters.tags.length > 0) params.tags = filters.tags.join(',')
-    importExportApi.exportCsv(params).catch(e => setError(e.message))
+    importExportApi.exportCsv(params).catch(e => setError(errorMessage(e)))
   }
 
   // 空状态

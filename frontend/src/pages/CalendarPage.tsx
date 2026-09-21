@@ -1,3 +1,4 @@
+import { errorMessage } from '@/lib/error'
 import { useState, useEffect, useCallback } from 'react'
 import { RECORD_TYPE_LABELS as TYPE_LABELS, RECORD_TYPE_TEXT_CLASS, RECORD_TYPE_BG_CLASS } from '@/lib/record-type'
 import { Card, CardContent } from '@/components/ui/card'
@@ -261,8 +262,8 @@ export function CalendarPage() {
       loadDayRecords()
       loadCalendar()
       loadAccounts()
-    } catch (e: any) {
-      setFormError(e.message)
+    } catch (e) {
+      setFormError(errorMessage(e))
     } finally {
       setSubmitting(false)
     }

@@ -1,3 +1,4 @@
+import { errorMessage } from '@/lib/error'
 import { useEffect, useState } from 'react'
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
@@ -105,7 +106,7 @@ export function BatchEditDialog({ open, selectedIds, records, currentBookId, acc
       await recordApi.batchUpdate(selectedIds, data)
       onClose()
       onDone()
-    } catch (e: any) { setBatchError(e.message) }
+    } catch (e) { setBatchError(errorMessage(e)) }
     finally { setSubmitting(false) }
   }
 

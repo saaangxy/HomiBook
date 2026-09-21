@@ -1,3 +1,4 @@
+import { errorMessage } from '@/lib/error'
 import { useState, useEffect, useCallback } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import {
@@ -90,7 +91,7 @@ export function BooksPage() {
       setCreateOpen(false)
       setCreateName('')
       setCreateError('')
-    } catch (e: any) { setCreateError(e.message || '创建失败') }
+    } catch (e) { setCreateError(errorMessage(e, '创建失败')) }
     finally { setCreating(false) }
   }
 
@@ -100,7 +101,7 @@ export function BooksPage() {
       const result = await bookApi.lookupCode(joinCode.trim().toUpperCase())
       setJoinLookup(result)
       setJoinStep('confirm')
-    } catch (e: any) { setJoinError(e.message || '分享码无效') }
+    } catch (e) { setJoinError(errorMessage(e, '分享码无效')) }
   }
 
   const handleJoin = async () => {
@@ -113,7 +114,7 @@ export function BooksPage() {
       setJoinStep('input')
       setJoinCode('')
       setJoinLookup(null)
-    } catch (e: any) { setJoinError(e.message || '加入失败') }
+    } catch (e) { setJoinError(errorMessage(e, '加入失败')) }
     finally { setJoining(false) }
   }
 
@@ -153,13 +154,13 @@ export function BooksPage() {
       setAddEmail('')
       await refreshMembers()
       await fetchBooks()
-    } catch (e: any) { setAddError(e.message || '添加失败') }
+    } catch (e) { setAddError(errorMessage(e, '添加失败')) }
   }
 
   const handleRemoveMember = async (member: BookMember) => {
     if (!manageBook) return
     try { await bookApi.removeMember(manageBook.id, member.id); await refreshMembers(); await fetchBooks() }
-    catch (e: any) { setError(e.message) }
+    catch (e) { setError(errorMessage(e)) }
   }
 
   const handleToggleMemberRole = async (member: BookMember) => {
@@ -168,7 +169,7 @@ export function BooksPage() {
       const newRole = member.role === 'admin' ? 'member' : 'admin'
       await bookApi.updateMemberRole(manageBook.id, member.id, newRole)
       await refreshMembers()
-    } catch (e: any) { setError(e.message) }
+    } catch (e) { setError(errorMessage(e)) }
   }
 
   const handleGenerateCode = async () => {
@@ -178,7 +179,7 @@ export function BooksPage() {
       await bookApi.generateShareCode(manageBook.id, hours)
       setExpireHours('')
       await refreshShareCodes()
-    } catch (e: any) { setError(e.message) }
+    } catch (e) { setError(errorMessage(e)) }
   }
 
   const handleDelete = async () => {
@@ -190,7 +191,7 @@ export function BooksPage() {
       setDeleteOpen(false)
       setDeleteBook(null)
       setDeleteInput('')
-    } catch (e: any) { setError(e.message) }
+    } catch (e) { setError(errorMessage(e)) }
     finally { setDeleting(false) }
   }
 
@@ -284,7 +285,7 @@ export function BooksPage() {
                               const m = await bookApi.listMembers(book.id)
                               const self = m.find((m) => m.userId === currentUser?.id)
                               if (self) { await bookApi.removeMember(book.id, self.id); await fetchBooks() }
-                            } catch (e: any) { setError(e.message) }
+                            } catch (e) { setError(errorMessage(e)) }
                             setConfirmAction(null)
                           },
                         })}
@@ -527,7 +528,7 @@ export function BooksPage() {
                             onClick={async () => {
                               if (!manageBook) return
                               try { await bookApi.deleteShareCode(manageBook.id, sc.id); await refreshShareCodes() }
-                              catch (e: any) { setError(e.message) }
+                              catch (e) { setError(errorMessage(e)) }
                             }}
                             className="text-xs border-[#7f1d1d] bg-[#ef4444]/10 text-[#ef4444] rounded-md"
                           >

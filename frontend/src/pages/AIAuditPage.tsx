@@ -1,3 +1,4 @@
+import { errorMessage } from '@/lib/error'
 import { useState, useEffect } from 'react'
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
@@ -188,8 +189,8 @@ export function AIAuditPage() {
       setItems(result.items)
       setTotal(result.total)
       setPage(result.page)
-    } catch (e: any) {
-      setError(e.message || '加载失败')
+    } catch (e) {
+      setError(errorMessage(e, '加载失败'))
     } finally {
       setLoading(false)
     }
