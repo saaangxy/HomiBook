@@ -135,8 +135,8 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
   interface CategoryResolution { id: string; sourceCategory: string; type: string; targetCode: string; save: boolean; payerContains: string; descriptionContains: string }
   const [categoryResolutions, setCategoryResolutions] = useState<CategoryResolution[]>([])
 
-  // 未识别记录解析
-  type UnrecognizedResolution = { type: string; accountId: string; categoryCode: string }
+  // 未识别记录解析(toAccountId 仅在类型为「转账」时使用)
+  type UnrecognizedResolution = { type: string; accountId: string; categoryCode: string; toAccountId: string }
   const [unrecognizedResolutions, setUnrecognizedResolutions] = useState<Record<number, UnrecognizedResolution>>({})
 
   // 分类弹出框
@@ -176,7 +176,7 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
     // 未识别记录
     const unresRes: Record<number, UnrecognizedResolution> = {}
     for (const r of data.unrecognizedRecords || []) {
-      unresRes[r.rowIndex] = { type: '', accountId: r.accountId || accounts[0]?.id || '', categoryCode: r.mappedCategoryCode || r.categoryCode || '' }
+      unresRes[r.rowIndex] = { type: '', accountId: r.accountId || accounts[0]?.id || '', toAccountId: r.toAccountId || '', categoryCode: r.mappedCategoryCode || r.categoryCode || '' }
     }
     setUnrecognizedResolutions(unresRes)
   }, [])
@@ -189,7 +189,8 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
   const unresolvedCatCount = categoryResolutions.filter(cr => !cr.targetCode).length
   const unresolvedUnrecCount = unrecognizedRecords.filter(r => {
     const res = unrecognizedResolutions[r.rowIndex]
-    return !res?.type || !res?.accountId
+    // 转账未选转入账户同样算「待处理」(与确认时跳过的口径一致)
+    return !res?.type || !res?.accountId || (res.type === 'TRANSFER' && !res.toAccountId)
   }).length
 
   const allRecords = [...records, ...unrecognizedRecords]
@@ -524,8 +525,9 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
             <p className="text-muted-foreground text-xs">无未识别记录</p>
           ) : (
             unrecognizedRecords.map(r => {
-              const res = unrecognizedResolutions[r.rowIndex] || { type: '', accountId: '', categoryCode: '' }
-              const isResolved = res.type && res.accountId
+              const res = unrecognizedResolutions[r.rowIndex] || { type: '', accountId: '', categoryCode: '', toAccountId: '' }
+              // 转账还要有转入账户才算设置完成
+              const isResolved = !!res.type && !!res.accountId && (res.type !== 'TRANSFER' || !!res.toAccountId)
               const updateRes = (patch: Partial<UnrecognizedResolution>) =>
                 setUnrecognizedResolutions(prev => ({ ...prev, [r.rowIndex]: { ...res, ...patch } }))
 
@@ -552,13 +554,25 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
                   </Select>
                   <Select value={res.accountId || '__none__'} onValueChange={(v) => updateRes({ accountId: v === '__none__' ? '' : v })}>
                     <SelectTrigger className="h-7 text-[10px] w-28">
-                      <SelectValue placeholder="账户" />
+                      <SelectValue placeholder={res.type === 'TRANSFER' ? '转出账户' : '账户'} />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__none__" className="text-xs">-</SelectItem>
                       {accounts.map(a => <SelectItem key={a.id} value={a.id} className="text-xs">{a.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
+                  {/* 转账必须指定转入账户(否则会落成没有收款方的转账);候选排除已选的转出账户 */}
+                  {res.type === 'TRANSFER' ? (
+                    <Select value={res.toAccountId || '__none__'} onValueChange={(v) => updateRes({ toAccountId: v === '__none__' ? '' : v })}>
+                      <SelectTrigger className="h-7 text-[10px] w-28">
+                        <SelectValue placeholder="转入账户" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__" className="text-xs">-</SelectItem>
+                        {accounts.filter(a => a.id !== res.accountId).map(a => <SelectItem key={a.id} value={a.id} className="text-xs">{a.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  ) : null}
                   <Select value={res.categoryCode || '__none__'} onValueChange={(v) => updateRes({ categoryCode: v === '__none__' ? '' : v })}>
                     <SelectTrigger className="h-7 text-[10px] w-28">
                       <SelectValue placeholder="分类" />
@@ -626,15 +640,17 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
                   if (userCategoryResolutions.length > 0) overrides.categoryResolutions = userCategoryResolutions
 
                   // 构建未识别记录的手动指定
-                  const userUnrecognizedResolutions: { rowIndex: number; type: string; accountId: string; categoryCode: string }[] = []
+                  const userUnrecognizedResolutions: { rowIndex: number; type: string; accountId: string; categoryCode: string; toAccountId?: string }[] = []
                   for (const r of unrecognizedRecords) {
                     const res = unrecognizedResolutions[r.rowIndex]
-                    if (res?.type && res?.accountId) {
+                    // 转账必须指定转入账户,否则该行仍算未设置(跳过)
+                    if (res?.type && res?.accountId && (res.type !== 'TRANSFER' || !!res.toAccountId)) {
                       userUnrecognizedResolutions.push({
                         rowIndex: r.rowIndex,
                         type: res.type,
                         accountId: res.accountId,
                         categoryCode: res.categoryCode || '',
+                        toAccountId: res.type === 'TRANSFER' ? res.toAccountId : undefined,
                       })
                     }
                   }

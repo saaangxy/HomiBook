@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, ScrollView, Switch, TextInput, View } from 'react-native';
-import { AlertTriangle, CheckCircle2, ChevronDown, Copy, FileSpreadsheet, Search, Trash2, HelpCircle, Loader2, MessageSquareMore, Wrench, XCircle } from 'lucide-react-native';
-import { useTheme, alpha, semanticTypeColor } from '@/theme';
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
+import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import { AlertTriangle, CheckCircle2, ChevronDown, Copy, FileSpreadsheet, Search, Trash2, HelpCircle, Loader2, MessageSquareMore, Wrench, X, XCircle } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTheme, alpha, motion, semanticTypeColor, sheetShadow } from '@/theme';
 import { Text } from '@/components/ui/Text';
-import { FormSheet } from '@/components/chrome/FormSheet';
 import { useChatStore } from '@/stores/chat';
 import { getToolDisplayName } from '@/services/chat';
 import { accountLabel, isMultiOwnerAccounts } from '@/lib/account';
@@ -47,11 +48,20 @@ const IMPORT_GROUP_HEADING: Record<string, string> = {
   transaction_category_transfer: '转账分类',
 };
 
+/** ISO(UTC) → **本地** YYYY-MM-DD HH:mm(直接截串会显示 UTC 时间,与记录列表口径不一致) */
+function formatLocalMinute(value: string): string {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return (value || '').replace('T', ' ').slice(0, 16);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 // 分类字典项(与 web ImportPreviewData.allDictItems 同构)
 interface ImportDictEntry { code: string; label: string; group: string }
 
 export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntry; bookId: string }) {
-  const { colors } = useTheme();
+  const { colors, palette } = useTheme();
+  const insets = useSafeAreaInsets();
   const { confirmAndContinue } = useChatStore();
   const [tab, setTab] = useState<'records' | 'accounts' | 'categories' | 'unrec'>('records');
   const [submitted, setSubmitted] = useState(false);
@@ -62,9 +72,9 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
   interface CategoryResolution { id: string; sourceCategory: string; type: string; targetCode: string; save: boolean; payerContains: string; descriptionContains: string }
   const [categoryRes, setCategoryRes] = useState<CategoryResolution[]>([]);
   // 未识别记录的手动指定
-  const [unrecRes, setUnrecRes] = useState<Record<number, { type: string; accountId: string; categoryCode: string }>>({});
+  const [unrecRes, setUnrecRes] = useState<Record<number, { type: string; accountId: string; categoryCode: string; toAccountId: string }>>({});
   // 底部选择弹窗(FormSheet)
-  const [picker, setPicker] = useState<null | { kind: 'acct-existing' | 'acct-type' | 'cat-target' | 'unrec-type' | 'unrec-acct' | 'unrec-cat'; key: string; type?: string }>(null);
+  const [picker, setPicker] = useState<null | { kind: 'acct-existing' | 'acct-type' | 'cat-target' | 'unrec-type' | 'unrec-acct' | 'unrec-toacct' | 'unrec-cat'; key: string; type?: string }>(null);
   const [catSearch, setCatSearch] = useState('');
 
   const data = (toolCall.result as any)?.data ?? toolCall.result ?? {};
@@ -97,9 +107,9 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
         })),
     );
 
-    const unres: Record<number, { type: string; accountId: string; categoryCode: string }> = {};
+    const unres: Record<number, { type: string; accountId: string; categoryCode: string; toAccountId: string }> = {};
     for (const r of unrec) {
-      unres[r.rowIndex] = { type: '', accountId: r.accountId || accounts[0]?.id || '', categoryCode: r.mappedCategoryCode || r.categoryCode || '' };
+      unres[r.rowIndex] = { type: '', accountId: r.accountId || accounts[0]?.id || '', toAccountId: r.toAccountId || '', categoryCode: r.mappedCategoryCode || r.categoryCode || '' };
     }
     setUnrecRes(unres);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -114,7 +124,8 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
   const unresolvedCatCount = categoryRes.filter((cr) => !cr.targetCode).length;
   const unresolvedUnrecCount = unrec.filter((r) => {
     const res = unrecRes[r.rowIndex];
-    return !res?.type || !res?.accountId;
+    // 转账未选转入账户同样算「待处理」(与确认时跳过的口径一致)
+    return !res?.type || !res?.accountId || (res.type === 'TRANSFER' && !res.toAccountId);
   }).length;
 
   const allRecords = [...records, ...unrec];
@@ -150,6 +161,7 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
     : picker?.kind === 'cat-target' ? '选择目标分类'
     : picker?.kind === 'unrec-type' ? '记录类型'
     : picker?.kind === 'unrec-acct' ? '选择账户'
+    : picker?.kind === 'unrec-toacct' ? '选择转入账户'
     : '选择分类';
   const pickerOptions: { value: string; label: string }[] = (() => {
     if (!picker) return [];
@@ -157,10 +169,20 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
       const ua = unmatchedAccounts.find((u) => u.csvName === picker.key);
       return (ua?.candidates?.length ? ua.candidates : accounts).map((a: any) => ({ value: a.id, label: accountLabel(a, multiOwnerAccounts) }));
     }
-    if (picker.kind === 'acct-type' || picker.kind === 'unrec-type') {
+    if (picker.kind === 'acct-type') {
       return Object.entries(ACCOUNT_TYPE_LABELS).map(([k, v]) => ({ value: k, label: v as string }));
     }
+    // 未识别记录的「记录类型」是收支类型(收入/支出/转账),不是账户类型;
+    // 也不能用 IMPORT_TYPE_LABELS —— 它带「未知」,那是给列表展示 UNKNOWN 用的,选它会把 UNKNOWN 当方向提交
+    if (picker.kind === 'unrec-type') {
+      return Object.entries(RECORD_TYPE_LABELS).map(([k, v]) => ({ value: k, label: v as string }));
+    }
     if (picker.kind === 'unrec-acct') return accounts.map((a) => ({ value: a.id, label: accountLabel(a, multiOwnerAccounts) }));
+    if (picker.kind === 'unrec-toacct') {
+      // 转入账户:排除已选的转出账户(转账两端不能是同一个账户)
+      const from = unrecRes[Number(picker.key)]?.accountId;
+      return accounts.filter((a) => a.id !== from).map((a) => ({ value: a.id, label: accountLabel(a, multiOwnerAccounts) }));
+    }
     if (picker.kind === 'unrec-cat') {
       const res = unrecRes[Number(picker.key)];
       const items = res?.type ? dictItems.filter((d) => d.group === IMPORT_TYPE_TO_GROUP[res.type]) : dictItems;
@@ -174,6 +196,7 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
     if (picker.kind === 'acct-type') return (accountRes[picker.key] as any)?.type;
     if (picker.kind === 'unrec-type') return unrecRes[Number(picker.key)]?.type;
     if (picker.kind === 'unrec-acct') return unrecRes[Number(picker.key)]?.accountId;
+    if (picker.kind === 'unrec-toacct') return unrecRes[Number(picker.key)]?.toAccountId;
     if (picker.kind === 'unrec-cat') return unrecRes[Number(picker.key)]?.categoryCode;
     return undefined;
   })();
@@ -183,6 +206,7 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
     else if (picker.kind === 'acct-type') setAccountRes((p) => ({ ...p, [picker.key]: { ...(p[picker.key] as any), action: 'create', type: v } }));
     else if (picker.kind === 'unrec-type') setUnrecRes((p) => ({ ...p, [Number(picker.key)]: { ...p[Number(picker.key)], type: v, categoryCode: '' } }));
     else if (picker.kind === 'unrec-acct') setUnrecRes((p) => ({ ...p, [Number(picker.key)]: { ...p[Number(picker.key)], accountId: v } }));
+    else if (picker.kind === 'unrec-toacct') setUnrecRes((p) => ({ ...p, [Number(picker.key)]: { ...p[Number(picker.key)], toAccountId: v } }));
     else if (picker.kind === 'unrec-cat') setUnrecRes((p) => ({ ...p, [Number(picker.key)]: { ...p[Number(picker.key)], categoryCode: v } }));
     setPicker(null);
   };
@@ -210,8 +234,18 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
     if (userCats.length > 0) overrides.categoryResolutions = userCats;
     const userUnrec = unrec.filter((r) => {
       const res = unrecRes[r.rowIndex];
-      return res?.type && res?.accountId;
-    }).map((r) => ({ rowIndex: r.rowIndex, type: unrecRes[r.rowIndex].type, accountId: unrecRes[r.rowIndex].accountId, categoryCode: unrecRes[r.rowIndex].categoryCode || '' }));
+      // 转账必须指定转入账户,否则该行仍算未设置(跳过)
+      return res?.type && res?.accountId && (res.type !== 'TRANSFER' || !!res.toAccountId);
+    }).map((r) => {
+      const res = unrecRes[r.rowIndex];
+      return {
+        rowIndex: r.rowIndex,
+        type: res.type,
+        accountId: res.accountId,
+        categoryCode: res.categoryCode || '',
+        toAccountId: res.type === 'TRANSFER' ? res.toAccountId : undefined,
+      };
+    });
     if (userUnrec.length > 0) overrides.unrecognizedResolutions = userUnrec;
 
     try {
@@ -385,33 +419,63 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
             <Text style={{ fontSize: 11.5, color: colors.mutedForeground }}>无未识别记录</Text>
           ) : (
             unrec.map((r) => {
-              const res = unrecRes[r.rowIndex] ?? { type: '', accountId: '', categoryCode: '' };
-              const resolved = !!res.type && !!res.accountId;
+              const res = unrecRes[r.rowIndex] ?? { type: '', accountId: '', categoryCode: '', toAccountId: '' };
+              // 转账还要有转入账户才算设置完成(否则该行会被跳过)
+              const resolved = !!res.type && !!res.accountId && (res.type !== 'TRANSFER' || !!res.toAccountId);
+              const isTransfer = res.type === 'TRANSFER';
+              const typeLabel = IMPORT_TYPE_LABELS[res.type] ?? '类型';
+              const fromAccount = accounts.find((x) => x.id === res.accountId);
+              const fromLabel = fromAccount ? accountLabel(fromAccount, multiOwnerAccounts) : isTransfer ? '转出账户' : '账户';
+              const toAccount = accounts.find((x) => x.id === res.toAccountId);
+              const toLabel = toAccount ? `转入 → ${accountLabel(toAccount, multiOwnerAccounts)}` : '转入账户';
+              const catLabel = dictItems.find((d) => d.code === res.categoryCode)?.label ?? '分类';
+              // 一个选择器按钮(kind 决定打开哪个 sheet)
+              const pickBtn = (kind: 'unrec-type' | 'unrec-acct' | 'unrec-toacct' | 'unrec-cat', label: string, filled: boolean) => (
+                <Pressable onPress={() => setPicker({ kind, key: String(r.rowIndex) })} style={{ ...selectBtnStyle, flex: 1 }}>
+                  <Text style={{ fontSize: 10.5, color: filled ? colors.foreground : colors.mutedForeground }} numberOfLines={1}>{label}</Text>
+                  <ChevronDown size={10} color={colors.mutedForeground} />
+                </Pressable>
+              );
               return (
-                <View key={r.rowIndex} style={{ borderRadius: 10, borderWidth: 1, padding: 8, gap: 6, borderColor: resolved ? alpha('#22c55e', 0.3) : '#fb923c', backgroundColor: resolved ? alpha('#22c55e', 0.05) : alpha('#fb923c', 0.08) }}>
+                <View key={r.rowIndex} style={{ borderRadius: 10, borderWidth: 1, padding: 10, gap: 7, borderColor: resolved ? alpha('#22c55e', 0.3) : '#fb923c', backgroundColor: resolved ? alpha('#22c55e', 0.05) : alpha('#fb923c', 0.08) }}>
+                  {/* 第一行:金额 + 本地时间 + 状态徽标;第二行:账户/交易方/备注(原来全挤一行会被裁) */}
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={{ fontSize: 10.5 }}>{r.date}</Text>
-                    <Text style={{ fontSize: 10.5, fontWeight: '600', fontVariant: ['tabular-nums'] }}>{(r.amount ?? 0).toFixed(2)}</Text>
-                    <Text style={{ flex: 1, fontSize: 10.5, color: colors.mutedForeground }} numberOfLines={1}>{r.accountName}{r.remark ? ` · ${r.remark}` : ''}</Text>
-                    {resolved ? <CheckCircle2 size={12} color="#22c55e" /> : <Text style={{ fontSize: 9.5, color: '#fb923c' }}>未设置</Text>}
+                    <Text style={{ fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'] }}>{(r.amount ?? 0).toFixed(2)}</Text>
+                    <Text style={{ fontSize: 10.5, color: colors.mutedForeground }}>{formatLocalMinute(r.date)}</Text>
+                    <View style={{ flex: 1 }} />
+                    {resolved ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, backgroundColor: alpha('#22c55e', 0.15) }}>
+                        <CheckCircle2 size={10} color="#22c55e" />
+                        <Text style={{ fontSize: 9.5, fontWeight: '600', color: '#22c55e' }}>已设置</Text>
+                      </View>
+                    ) : (
+                      <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, backgroundColor: alpha('#fb923c', 0.18) }}>
+                        <Text style={{ fontSize: 9.5, fontWeight: '600', color: '#fb923c' }}>未设置</Text>
+                      </View>
+                    )}
                   </View>
-                  <View style={{ flexDirection: 'row', gap: 6 }}>
-                    <Pressable onPress={() => setPicker({ kind: 'unrec-type', key: String(r.rowIndex) })} style={selectBtnStyle}>
-                      <Text style={{ fontSize: 10.5, color: res.type ? colors.foreground : colors.mutedForeground }} numberOfLines={1}>{IMPORT_TYPE_LABELS[res.type] ?? '类型'}</Text>
-                      <ChevronDown size={10} color={colors.mutedForeground} />
-                    </Pressable>
-                    <Pressable onPress={() => setPicker({ kind: 'unrec-acct', key: String(r.rowIndex) })} style={selectBtnStyle}>
-                      <Text style={{ fontSize: 10.5, color: res.accountId ? colors.foreground : colors.mutedForeground }} numberOfLines={1}>{(() => {
-                        const a = accounts.find((x) => x.id === res.accountId);
-                        return a ? accountLabel(a, multiOwnerAccounts) : '账户';
-                      })()}</Text>
-                      <ChevronDown size={10} color={colors.mutedForeground} />
-                    </Pressable>
-                    <Pressable onPress={() => setPicker({ kind: 'unrec-cat', key: String(r.rowIndex) })} style={selectBtnStyle}>
-                      <Text style={{ fontSize: 10.5, color: res.categoryCode ? colors.foreground : colors.mutedForeground }} numberOfLines={1}>{dictItems.find((d) => d.code === res.categoryCode)?.label ?? '分类'}</Text>
-                      <ChevronDown size={10} color={colors.mutedForeground} />
-                    </Pressable>
-                  </View>
+                  <Text style={{ fontSize: 10.5, color: colors.mutedForeground }} numberOfLines={1}>
+                    {[r.accountName, r.payer, r.remark].filter(Boolean).join(' · ') || '—'}
+                  </Text>
+                  {/* 选择器顺序:类型 → 转出账户 → 转入账户 → 分类;转账共 4 项,拆两行避免挤成一团 */}
+                  {isTransfer ? (
+                    <>
+                      <View style={{ flexDirection: 'row', gap: 6 }}>
+                        {pickBtn('unrec-type', typeLabel, !!res.type)}
+                        {pickBtn('unrec-acct', fromLabel, !!res.accountId)}
+                      </View>
+                      <View style={{ flexDirection: 'row', gap: 6 }}>
+                        {pickBtn('unrec-toacct', toLabel, !!res.toAccountId)}
+                        {pickBtn('unrec-cat', catLabel, !!res.categoryCode)}
+                      </View>
+                    </>
+                  ) : (
+                    <View style={{ flexDirection: 'row', gap: 6 }}>
+                      {pickBtn('unrec-type', typeLabel, !!res.type)}
+                      {pickBtn('unrec-acct', fromLabel, !!res.accountId)}
+                      {pickBtn('unrec-cat', catLabel, !!res.categoryCode)}
+                    </View>
+                  )}
                 </View>
               );
             })
@@ -441,48 +505,86 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
         </View>
       )}
 
-      {/* 底部选择弹窗 */}
-      <FormSheet visible={picker !== null} title={pickerTitle} onClose={() => setPicker(null)}>
-        <View style={{ maxHeight: 420 }}>
-          {/* 目标分类:带搜索 + 分组 */}
-          {picker?.kind === 'cat-target' ? (
-            <View style={{ gap: 8 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.muted, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7 }}>
-                <Search size={13} color={colors.mutedForeground} />
-                <TextInput value={catSearch} onChangeText={setCatSearch} placeholder="搜索分类..." placeholderTextColor={colors.mutedForeground} style={{ flex: 1, fontSize: 12.5, color: colors.foreground, padding: 0 }} />
-              </View>
-              <ScrollView style={{ maxHeight: 340 }} keyboardShouldPersistTaps="handled">
-                {[...groupedDict(picker.type ?? '').entries()].map(([group, items]) => (
-                  <View key={group}>
-                    <Text style={{ fontSize: 10, color: colors.mutedForeground, paddingHorizontal: 4, paddingVertical: 4, fontWeight: '600' }}>{IMPORT_GROUP_HEADING[group] ?? group}</Text>
-                    {items.map((d) => (
-                      <Pressable key={d.code} onPress={() => { const p = picker; setCategoryRes((prev) => prev.map((e) => (e.id === p.key ? { ...e, targetCode: d.code } : e))); setPicker(null); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 6, paddingVertical: 9 }}>
-                        <CheckCircle2 size={13} color={categoryRes.find((e) => e.id === picker.key)?.targetCode === d.code ? '#22c55e' : 'transparent'} />
-                        <Text style={{ fontSize: 13 }}>{d.label}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                ))}
-                {filteredDict(picker.type ?? '').length === 0 && (
-                  <Text style={{ fontSize: 12, color: colors.mutedForeground, textAlign: 'center', paddingVertical: 16 }}>无匹配结果</Text>
-                )}
-              </ScrollView>
+      {/* 底部选择弹窗:必须用 RN Modal —— FormSheet 是相对**父容器**的覆盖层,
+          挂在卡片里只占卡片宽度(长账户名被截断、背景卡片还会透出来)。
+          嵌套在卡片内的弹窗一律走这个模式(与 TagPicker / OptionModal 一致)。 */}
+      <Modal
+        visible={picker !== null}
+        transparent
+        animationType="none"
+        statusBarTranslucent
+        navigationBarTranslucent
+        onRequestClose={() => setPicker(null)}
+      >
+        <KeyboardAvoidingView style={{ flex: 1, justifyContent: 'flex-end' }} behavior="padding">
+          <Animated.View entering={FadeIn.duration(180)} style={StyleSheet.absoluteFill}>
+            <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={() => setPicker(null)} />
+          </Animated.View>
+          <Animated.View
+            entering={FadeInDown.duration(motion.duration.base).easing(motion.easing)}
+            style={[
+              sheetShadow(palette),
+              {
+                backgroundColor: colors.card,
+                borderTopLeftRadius: palette.radius.sheet,
+                borderTopRightRadius: palette.radius.sheet,
+                paddingHorizontal: 20,
+                paddingTop: 10,
+                paddingBottom: Math.max(insets.bottom + 12, 24),
+                maxHeight: '72%',
+              },
+            ]}
+          >
+            <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: colors.muted, alignSelf: 'center', marginBottom: 10 }} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+              <Text style={{ flex: 1, fontSize: 15, fontWeight: '700' }}>{pickerTitle}</Text>
+              <Pressable onPress={() => setPicker(null)} hitSlop={10} style={{ padding: 4 }}>
+                <X size={18} color={colors.mutedForeground} />
+              </Pressable>
             </View>
-          ) : (
-            <ScrollView style={{ maxHeight: 340 }} keyboardShouldPersistTaps="handled">
-              {pickerOptions.map((o) => (
-                <Pressable key={o.value} onPress={() => onPickerSelect(o.value)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 11 }}>
-                  <CheckCircle2 size={13} color={pickerValue === o.value ? '#22c55e' : 'transparent'} />
-                  <Text style={{ flex: 1, fontSize: 13 }}>{o.label}</Text>
-                </Pressable>
-              ))}
-              {pickerOptions.length === 0 && (
-                <Text style={{ fontSize: 12, color: colors.mutedForeground, textAlign: 'center', paddingVertical: 16 }}>无可选项</Text>
+
+            <View style={{ maxHeight: 420 }}>
+              {/* 目标分类:带搜索 + 分组 */}
+              {picker?.kind === 'cat-target' ? (
+                <View style={{ gap: 8 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.muted, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7 }}>
+                    <Search size={13} color={colors.mutedForeground} />
+                    <TextInput value={catSearch} onChangeText={setCatSearch} placeholder="搜索分类..." placeholderTextColor={colors.mutedForeground} style={{ flex: 1, fontSize: 12.5, color: colors.foreground, padding: 0 }} />
+                  </View>
+                  <ScrollView style={{ maxHeight: 340 }} keyboardShouldPersistTaps="handled">
+                    {[...groupedDict(picker.type ?? '').entries()].map(([group, items]) => (
+                      <View key={group}>
+                        <Text style={{ fontSize: 10, color: colors.mutedForeground, paddingHorizontal: 4, paddingVertical: 4, fontWeight: '600' }}>{IMPORT_GROUP_HEADING[group] ?? group}</Text>
+                        {items.map((d) => (
+                          <Pressable key={d.code} onPress={() => { const p = picker; setCategoryRes((prev) => prev.map((e) => (e.id === p.key ? { ...e, targetCode: d.code } : e))); setPicker(null); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 6, paddingVertical: 12 }}>
+                            <CheckCircle2 size={14} color={categoryRes.find((e) => e.id === picker.key)?.targetCode === d.code ? '#22c55e' : 'transparent'} />
+                            <Text style={{ fontSize: 14 }}>{d.label}</Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    ))}
+                    {filteredDict(picker.type ?? '').length === 0 && (
+                      <Text style={{ fontSize: 12, color: colors.mutedForeground, textAlign: 'center', paddingVertical: 16 }}>无匹配结果</Text>
+                    )}
+                  </ScrollView>
+                </View>
+              ) : (
+                <ScrollView style={{ maxHeight: 340 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                  {pickerOptions.map((o) => (
+                    <Pressable key={o.value} onPress={() => onPickerSelect(o.value)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 13 }}>
+                      <CheckCircle2 size={14} color={pickerValue === o.value ? '#22c55e' : 'transparent'} />
+                      <Text style={{ flex: 1, fontSize: 14 }} numberOfLines={2}>{o.label}</Text>
+                    </Pressable>
+                  ))}
+                  {pickerOptions.length === 0 && (
+                    <Text style={{ fontSize: 12, color: colors.mutedForeground, textAlign: 'center', paddingVertical: 16 }}>无可选项</Text>
+                  )}
+                </ScrollView>
               )}
-            </ScrollView>
-          )}
-        </View>
-      </FormSheet>
+            </View>
+          </Animated.View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }

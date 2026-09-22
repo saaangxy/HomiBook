@@ -129,6 +129,8 @@ export const confirmImportTool: ToolDef = {
           // 归一化:该类型来自客户端提交的人工指定,非法值直接落库会让各端渲染崩溃
           r.type = normalizeRecordType(unres.type)
           r.accountId = unres.accountId || null
+          // 转账必须带转入账户:execute 里 toAccountId 为 null 会落成没有收款方的转账
+          if (r.type === 'TRANSFER') r.toAccountId = unres.toAccountId || null
           if (unres.categoryCode) r.mappedCategoryCode = unres.categoryCode
         }
       }

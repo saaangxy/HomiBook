@@ -153,7 +153,8 @@ export const ALL_TOOLS: ToolDef[] = TOOL_GROUPS.flatMap(g => g.tools)
 interface UserImportOverrides {
   accountResolutions?: { sourceAccountName: string; action: 'existing' | 'create'; targetAccountId?: string; targetAccountName?: string; accountType?: string }[]
   categoryResolutions?: { sourceCategory: string; targetCategoryCode: string; recordType?: string; payerContains?: string; descriptionContains?: string }[]
-  unrecognizedResolutions?: { rowIndex: number; type: string; accountId: string; categoryCode: string }[]
+  /** 未识别记录的人工指定;type 为 TRANSFER 时必须带 toAccountId(转入账户),否则会落成没有收款方的转账 */
+  unrecognizedResolutions?: { rowIndex: number; type: string; accountId: string; categoryCode: string; toAccountId?: string }[]
   ownerId?: string
 }
 

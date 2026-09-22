@@ -74,6 +74,14 @@ const GROUP_HEADING: Record<string, string> = {
   transaction_category_transfer: '转账分类',
 }
 
+/** 剥掉确认页展示字段(_accountName / _toAccountName):只给记录列表看,不进提交给后端的 payload */
+function toPayloadRecord<T extends object>(r: T): Omit<T, '_accountName' | '_toAccountName'> {
+  const out = { ...r } as Record<string, unknown>
+  delete out._accountName
+  delete out._toAccountName
+  return out as Omit<T, '_accountName' | '_toAccountName'>
+}
+
 function TrucCell({ text, maxW = 'max-w-[100px]', className = '' }: { text: string | null | undefined; maxW?: string; className?: string }) {
   const display = text || '-'
   return (
@@ -120,7 +128,8 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
 
   // 无法自动识别的记录（不计收支未知类型）
   const [unrecognizedRecords, setUnrecognizedRecords] = useState<ParsedImportRow[]>([])
-  const [unrecognizedResolutions, setUnrecognizedResolutions] = useState<Record<number, { type: string; accountId: string; categoryCode: string }>>({})
+  // toAccountId(转入账户)仅在类型为「转账」时使用
+  const [unrecognizedResolutions, setUnrecognizedResolutions] = useState<Record<number, { type: string; accountId: string; categoryCode: string; toAccountId: string }>>({})
 
   // 结果
   const [importResult, setImportResult] = useState<{ imported: number; accountsCreated: number } | null>(null)
@@ -279,9 +288,9 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
       setCategoryResolutions(initCategoryResolutions)
 
       // 初始化无法识别记录的处理
-      const initUnrecognizedResolutions: Record<number, { type: string; accountId: string; categoryCode: string }> = {}
+      const initUnrecognizedResolutions: Record<number, { type: string; accountId: string; categoryCode: string; toAccountId: string }> = {}
       for (const r of result.unrecognizedRecords) {
-        initUnrecognizedResolutions[r.rowIndex] = { type: '', accountId: '', categoryCode: '' }
+        initUnrecognizedResolutions[r.rowIndex] = { type: '', accountId: '', categoryCode: '', toAccountId: '' }
       }
       setUnrecognizedResolutions(initUnrecognizedResolutions)
 
@@ -331,11 +340,13 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
 
       // 初始化无法识别的记录
       setUnrecognizedRecords(result.unrecognizedRecords || [])
-      const unresRes: Record<number, { type: string; accountId: string; categoryCode: string }> = {}
+      const unresRes: Record<number, { type: string; accountId: string; categoryCode: string; toAccountId: string }> = {}
       for (const r of result.unrecognizedRecords || []) {
         unresRes[r.rowIndex] = {
           type: '',
           accountId: r.accountId || accounts[0]?.id || '',
+          // 后端已解析出的转入账户预填(转账行)
+          toAccountId: r.toAccountId || '',
           categoryCode: r.mappedCategoryCode || r.categoryCode || '',
         }
       }
@@ -495,10 +506,18 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
       }
     })
 
+    // 未识别行的账户是用户在预览页现选的,ID → 展示名要单独解析
+    const unrecognizedAccountName = (id?: string) => {
+      if (!id) return undefined
+      const a = accounts.find(x => x.id === id)
+      return a ? accountLabel(a, multiOwnerAccounts) : id
+    }
+
     const resolvedUnrecognized = unrecognizedRecords
       .filter(r => {
         const res = unrecognizedResolutions[r.rowIndex]
-        return res?.type && res?.accountId
+        // 转账必须指定转入账户,否则该行仍算未设置(跳过)
+        return res?.type && res?.accountId && (res.type !== 'TRANSFER' || !!res.toAccountId)
       })
       .map(r => {
         const res = unrecognizedResolutions[r.rowIndex]
@@ -507,12 +526,16 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
           type: res.type,
           amount: r.amount,
           accountId: res.accountId,
-          toAccountId: undefined as string | undefined,
+          toAccountId: res.type === 'TRANSFER' ? res.toAccountId : undefined,
           categoryCode: res.categoryCode || r.mappedCategoryCode || r.categoryCode || null,
           payer: r.payer,
           remark: r.remark,
           tags: r.tags,
           ownerId: selectedOwnerId === '__self__' ? undefined : (selectedOwnerId || undefined),
+          // 确认页的记录列表按 _accountName / _toAccountName 展示账户列;
+          // 不在这里解析成名称,转账行的「账户 / 目标账户」会显示成「-」(提交前会被剥掉)
+          _accountName: unrecognizedAccountName(res.accountId),
+          _toAccountName: res.type === 'TRANSFER' ? unrecognizedAccountName(res.toAccountId) : undefined,
         }
       })
 
@@ -542,7 +565,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
     setError('')
     try {
       const { accountCreations, newMappings, newAccountMappings, records, resolvedUnrecognized } = buildImportData()
-      const allRecords = [...records.map(({ _accountName, _toAccountName, ...r }) => r), ...resolvedUnrecognized]
+      const allRecords = [...records, ...resolvedUnrecognized].map(toPayloadRecord)
 
       const result = await importExportApi.import({
         accountBookId: bookId,
@@ -1209,14 +1232,15 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                     需手动处理的记录 ({unrecognizedRecords.length})
                   </p>
                   <p className="text-xs text-muted-foreground mb-2">
-                    以下记录无法自动识别类型，请手动设置类型、账户和分类后导入。未设置的记录将被跳过。
+                    以下记录无法自动识别类型，请手动设置类型、账户和分类后导入；类型选「转账」时还需指定转入账户。未设置的记录将被跳过。
                   </p>
                   <div className="space-y-2 max-h-64 overflow-y-auto">
                     {unrecognizedRecords.map(r => {
                       const res = unrecognizedResolutions[r.rowIndex]
-                      const isResolved = !!(res?.type && res?.accountId)
+                      // 转账还要有转入账户才算设置完成
+                      const isResolved = !!res?.type && !!res?.accountId && (res.type !== 'TRANSFER' || !!res.toAccountId)
                       const updateRes = (patch: Partial<typeof res>) => {
-                        const cur = unrecognizedResolutions[r.rowIndex] || { type: '', accountId: '', categoryCode: '' }
+                        const cur = unrecognizedResolutions[r.rowIndex] || { type: '', accountId: '', categoryCode: '', toAccountId: '' }
                         setUnrecognizedResolutions({ ...unrecognizedResolutions, [r.rowIndex]: { ...cur, ...patch } })
                       }
                       // 按类型筛选可选分类
@@ -1244,7 +1268,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                           </Select>
                           <Select value={res?.accountId || ''} onValueChange={(v) => updateRes({ accountId: v })}>
                             <SelectTrigger className="h-8 text-xs w-28 shrink-0 bg-background">
-                              <SelectValue placeholder="选择账户" />
+                              <SelectValue placeholder={res?.type === 'TRANSFER' ? '转出账户' : '选择账户'} />
                             </SelectTrigger>
                             <SelectContent className="bg-card border-border max-h-48">
                               {ownerPool.map(a => (
@@ -1252,6 +1276,19 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                               ))}
                             </SelectContent>
                           </Select>
+                          {/* 转账必须指定转入账户(否则会落成没有收款方的转账);候选排除已选的转出账户 */}
+                          {res?.type === 'TRANSFER' ? (
+                            <Select value={res?.toAccountId || ''} onValueChange={(v) => updateRes({ toAccountId: v })}>
+                              <SelectTrigger className="h-8 text-xs w-28 shrink-0 bg-background">
+                                <SelectValue placeholder="转入账户" />
+                              </SelectTrigger>
+                              <SelectContent className="bg-card border-border max-h-48">
+                                {ownerPool.filter(a => a.id !== res?.accountId).map(a => (
+                                  <SelectItem key={a.id} value={a.id} className="text-xs">{accountLabel(a, multiOwnerAccounts)}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : null}
                           <Select value={res?.categoryCode || ''} onValueChange={(v) => updateRes({ categoryCode: v })}>
                             <SelectTrigger className="h-8 text-xs w-32 shrink-0 bg-background">
                               <SelectValue placeholder="选择分类" />
@@ -1424,7 +1461,10 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
               <Button
                 className="bg-primary hover:bg-primary/90 text-primary-foreground"
                 onClick={() => { setFilterType(''); setFilterCategory(''); setFilterAccount(''); setStep('confirm') }}
-                disabled={previewRecords.length === 0 && unrecognizedRecords.filter(r => unrecognizedResolutions[r.rowIndex]?.type && unrecognizedResolutions[r.rowIndex]?.accountId).length === 0}
+                disabled={previewRecords.length === 0 && unrecognizedRecords.filter(r => {
+                  const res = unrecognizedResolutions[r.rowIndex]
+                  return !!res?.type && !!res?.accountId && (res.type !== 'TRANSFER' || !!res.toAccountId)
+                }).length === 0}
               >
                 下一步：确认导入
                 <ArrowRight size={16} />

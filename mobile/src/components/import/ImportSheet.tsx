@@ -156,7 +156,7 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
   const [headerRow, setHeaderRow] = useState<string>('');
   const [columnMapping, setColumnMapping] = useState<Partial<Record<ImportColumnField, string>>>({});
   const [typeMapping, setTypeMapping] = useState<Record<string, string>>({});
-  const [picker, setPicker] = useState<{ kind: 'column' | 'type-value' | 'acct-type' | 'account' | 'category' | 'owner' | 'unrec-type' | 'unrec-acct' | 'unrec-cat' | 'owner-confirm' | 'prev-type' | 'prev-cat' | 'prev-acct'; key?: string } | null>(null);
+  const [picker, setPicker] = useState<{ kind: 'column' | 'type-value' | 'acct-type' | 'account' | 'category' | 'owner' | 'unrec-type' | 'unrec-acct' | 'unrec-toacct' | 'unrec-cat' | 'owner-confirm' | 'prev-type' | 'prev-cat' | 'prev-acct'; key?: string } | null>(null);
 
   // 预览结果
   const [preview, setPreview] = useState<ImportPreviewResult | null>(null);
@@ -168,7 +168,8 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
   const [confirmShowAll, setConfirmShowAll] = useState(false);
   const [accountRes, setAccountRes] = useState<Record<string, AccountResolution>>({});
   const [categoryRes, setCategoryRes] = useState<Record<string, CategoryResolution>>({});
-  const [unrecognizedRes, setUnrecognizedRes] = useState<Record<number, { type: string; accountId: string; categoryCode: string }>>({});
+  // toAccountId(转入账户)仅在类型为「转账」时使用
+  const [unrecognizedRes, setUnrecognizedRes] = useState<Record<number, { type: string; accountId: string; categoryCode: string; toAccountId: string }>>({});
 
   // 确认导入
   const [selectedOwnerId, setSelectedOwnerId] = useState('__self__');
@@ -453,14 +454,23 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
         tags: r.tags ?? [],
         ownerId: selectedOwnerId === '__self__' ? undefined : selectedOwnerId,
         _accountName: r.accountName,
+        _toAccountName: r.toAccountName,
       };
     });
+
+    // 未识别行的账户是用户在预览页现选的,ID → 展示名要单独解析
+    const unrecognizedAccountName = (id?: string) => {
+      if (!id) return undefined;
+      const a = accounts.find((x) => x.id === id);
+      return a ? accountLabel(a, multiOwnerAccounts) : id;
+    };
 
     // 未识别记录(已设置类型+账户的)
     const resolvedUnrecognized = (preview?.unrecognizedRecords ?? [])
       .filter((r) => {
         const res = unrecognizedRes[r.rowIndex ?? -1];
-        return res?.type && res?.accountId;
+        // 转账必须指定转入账户,否则该行仍算未设置(跳过)
+        return res?.type && res?.accountId && (res.type !== 'TRANSFER' || !!res.toAccountId);
       })
       .map((r) => {
         const res = unrecognizedRes[r.rowIndex ?? -1];
@@ -469,11 +479,14 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
           type: res.type,
           amount: r.amount,
           accountId: res.accountId,
+          toAccountId: res.type === 'TRANSFER' ? res.toAccountId : undefined,
           categoryCode: res.categoryCode || r.mappedCategoryCode || r.categoryCode || null,
           payer: r.payer ?? undefined,
           remark: r.remark ?? undefined,
           ownerId: selectedOwnerId === '__self__' ? undefined : selectedOwnerId,
-          _accountName: r.accountName,
+          // 确认页记录列表展示用;不在这里解析成名称,转账行会显示成解析出来的旧账户名(或「-」)
+          _accountName: unrecognizedAccountName(res.accountId),
+          _toAccountName: res.type === 'TRANSFER' ? unrecognizedAccountName(res.toAccountId) : undefined,
         };
       });
 
@@ -509,14 +522,15 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
       payload: {
         accountBookId: bookId,
         source,
-        records: allRecords.map(({ _accountName, ...r }) => r),
+        // _accountName / _toAccountName 只用于确认页展示,提交前剥离
+        records: allRecords.map(({ _accountName, _toAccountName, ...r }) => r),
         accountCreations,
         newMappings,
         newAccountMappings: Array.from(accountMappingSet.values()),
       },
       allCount: records.length + resolvedUnrecognized.length,
       // 展示用列表(带账户名,同预览行渲染)
-      displayRecords: allRecords.map(({ _accountName, ...r }) => ({ ...r, accountName: _accountName })),
+      displayRecords: allRecords.map(({ _accountName, _toAccountName, ...r }) => ({ ...r, accountName: _accountName, toAccountName: _toAccountName })),
     };
   };
 
@@ -566,6 +580,11 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
     if (picker.kind === 'unrec-acct') {
       return ownerPool.map((a) => ({ value: a.id, label: accountLabel(a, multiOwnerAccounts) }));
     }
+    if (picker.kind === 'unrec-toacct') {
+      // 转入账户:排除已选的转出账户(转账两端不能是同一个账户)
+      const from = picker.key !== undefined ? unrecognizedRes[Number(picker.key)]?.accountId : undefined;
+      return ownerPool.filter((a) => a.id !== from).map((a) => ({ value: a.id, label: accountLabel(a, multiOwnerAccounts) }));
+    }
     if (picker.kind === 'unrec-cat') {
       const res = picker.key ? unrecognizedRes[Number(picker.key)] : undefined;
       const group = res?.type ? TYPE_TO_GROUP[res.type] : null;
@@ -614,6 +633,8 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
       setUnrecognizedRes((p) => ({ ...p, [Number(key)]: { ...p[Number(key)], type: value, categoryCode: '' } }));
     } else if (picker.kind === 'unrec-acct' && key !== undefined) {
       setUnrecognizedRes((p) => ({ ...p, [Number(key)]: { ...p[Number(key)], accountId: value } }));
+    } else if (picker.kind === 'unrec-toacct' && key !== undefined) {
+      setUnrecognizedRes((p) => ({ ...p, [Number(key)]: { ...p[Number(key)], toAccountId: value } }));
     } else if (picker.kind === 'unrec-cat' && key !== undefined) {
       setUnrecognizedRes((p) => ({ ...p, [Number(key)]: { ...p[Number(key)], categoryCode: value } }));
     } else if (picker.kind === 'owner') {
@@ -635,6 +656,7 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
     : picker?.kind === 'category' ? '选择目标分类'
     : picker?.kind === 'unrec-type' ? '记录类型'
     : picker?.kind === 'unrec-acct' ? '选择账户'
+    : picker?.kind === 'unrec-toacct' ? '选择转入账户'
     : picker?.kind === 'unrec-cat' ? '选择分类'
     : picker?.kind === 'prev-type' ? '按类型筛选'
     : picker?.kind === 'prev-cat' ? '按原始分类筛选'
@@ -1024,11 +1046,29 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
                     需手动处理的记录 ({preview.unrecognizedRecords.length})
                   </Text>
                   <Text variant="muted" style={{ fontSize: 11, marginBottom: 8 }}>
-                    无法自动识别类型,请设置类型/账户/分类;未设置的将被跳过
+                    无法自动识别类型,请设置类型/账户/分类;类型选「转账」时还需指定转入账户。未设置的将被跳过
                   </Text>
                   {preview.unrecognizedRecords.map((r) => {
                     const res = unrecognizedRes[r.rowIndex ?? -1];
-                    const isResolved = !!(res?.type && res?.accountId);
+                    // 转账还要有转入账户才算设置完成(否则该行会被跳过)
+                    const isResolved = !!res?.type && !!res?.accountId && (res.type !== 'TRANSFER' || !!res.toAccountId);
+                    const isTransfer = res?.type === 'TRANSFER';
+                    const typeLabel = res?.type ? IMPORT_TYPE_LABELS[res.type as keyof typeof IMPORT_TYPE_LABELS] ?? res.type : '类型';
+                    const fromAccount = accounts.find((x) => x.id === res?.accountId);
+                    const fromLabel = fromAccount ? accountLabel(fromAccount, multiOwnerAccounts) : isTransfer ? '转出账户' : '账户';
+                    const toAccount = accounts.find((x) => x.id === res?.toAccountId);
+                    const toLabel = toAccount ? `转入 → ${accountLabel(toAccount, multiOwnerAccounts)}` : '转入账户';
+                    const catLabel = allDictItems.find((d) => d.code === res?.categoryCode)?.label ?? '分类';
+                    // 一个选择器按钮(kind 决定打开哪个 picker);类型按钮不参与等分,与原有视觉一致
+                    const pickBtn = (kind: 'unrec-type' | 'unrec-acct' | 'unrec-toacct' | 'unrec-cat', label: string, filled: boolean, grow = true) => (
+                      <Pressable
+                        onPress={() => setPicker({ kind, key: String(r.rowIndex) })}
+                        style={grow ? { ...pickerBtnStyle, flex: 1 } : pickerBtnStyle}
+                      >
+                        <Text style={{ fontSize: 11, color: filled ? colors.foreground : colors.mutedForeground }} numberOfLines={1}>{label}</Text>
+                        <ChevronDown size={10} color={colors.mutedForeground} />
+                      </Pressable>
+                    );
                     return (
                       <View
                         key={r.rowIndex}
@@ -1046,29 +1086,25 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
                           {r.accountName ? <Text variant="muted" style={{ fontSize: 11 }} numberOfLines={1}>{r.accountName}</Text> : null}
                           {r.payer ? <Text variant="muted" style={{ fontSize: 11, marginLeft: 'auto' }} numberOfLines={1}>{r.payer}</Text> : null}
                         </View>
-                        <View style={{ flexDirection: 'row', gap: 6 }}>
-                          <Pressable onPress={() => setPicker({ kind: 'unrec-type', key: String(r.rowIndex) })} style={{ ...pickerBtnStyle }}>
-                            <Text style={{ fontSize: 11, color: res?.type ? colors.foreground : colors.mutedForeground }} numberOfLines={1}>
-                              {res?.type ? IMPORT_TYPE_LABELS[res.type as keyof typeof IMPORT_TYPE_LABELS] ?? res.type : '类型'}
-                            </Text>
-                            <ChevronDown size={10} color={colors.mutedForeground} />
-                          </Pressable>
-                          <Pressable onPress={() => setPicker({ kind: 'unrec-acct', key: String(r.rowIndex) })} style={{ ...pickerBtnStyle, flex: 1 }}>
-                            <Text style={{ fontSize: 11, color: res?.accountId ? colors.foreground : colors.mutedForeground }} numberOfLines={1}>
-                              {(() => {
-                                const a = accounts.find((x) => x.id === res?.accountId);
-                                return a ? accountLabel(a, multiOwnerAccounts) : '账户';
-                              })()}
-                            </Text>
-                            <ChevronDown size={10} color={colors.mutedForeground} />
-                          </Pressable>
-                          <Pressable onPress={() => setPicker({ kind: 'unrec-cat', key: String(r.rowIndex) })} style={{ ...pickerBtnStyle, flex: 1 }}>
-                            <Text style={{ fontSize: 11, color: res?.categoryCode ? colors.foreground : colors.mutedForeground }} numberOfLines={1}>
-                              {allDictItems.find((d) => d.code === res?.categoryCode)?.label ?? '分类'}
-                            </Text>
-                            <ChevronDown size={10} color={colors.mutedForeground} />
-                          </Pressable>
-                        </View>
+                        {/* 选择器顺序:类型 → 转出账户 → 转入账户 → 分类;转账共 4 项,拆两行避免挤成一团 */}
+                        {isTransfer ? (
+                          <>
+                            <View style={{ flexDirection: 'row', gap: 6, marginBottom: 6 }}>
+                              {pickBtn('unrec-type', typeLabel, !!res?.type, false)}
+                              {pickBtn('unrec-acct', fromLabel, !!res?.accountId)}
+                            </View>
+                            <View style={{ flexDirection: 'row', gap: 6 }}>
+                              {pickBtn('unrec-toacct', toLabel, !!res?.toAccountId)}
+                              {pickBtn('unrec-cat', catLabel, !!res?.categoryCode)}
+                            </View>
+                          </>
+                        ) : (
+                          <View style={{ flexDirection: 'row', gap: 6 }}>
+                            {pickBtn('unrec-type', typeLabel, !!res?.type, false)}
+                            {pickBtn('unrec-acct', fromLabel, !!res?.accountId)}
+                            {pickBtn('unrec-cat', catLabel, !!res?.categoryCode)}
+                          </View>
+                        )}
                       </View>
                     );
                   })}
@@ -1332,6 +1368,7 @@ function RecordPreviewRow({ r }: { r: ParsedImportRow }) {
       <View style={{ flex: 1 }}>
         <Text style={{ fontSize: 12 }} numberOfLines={1}>
           {r.accountName || '-'}
+          {r.toAccountName ? ` → ${r.toAccountName}` : ''}
           {r.payer ? ` · ${r.payer}` : ''}
         </Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 1 }}>
