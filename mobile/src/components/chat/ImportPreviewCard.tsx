@@ -1,12 +1,11 @@
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
+import {useEffect, useState} from 'react';
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
-import { AlertTriangle, CheckCircle2, ChevronDown, Copy, FileSpreadsheet, Search, Trash2, HelpCircle, Loader2, MessageSquareMore, Wrench, X, XCircle } from 'lucide-react-native';
+import { CheckCircle2, ChevronDown, Copy, FileSpreadsheet, Search, Trash2, X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, alpha, motion, semanticTypeColor, sheetShadow } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { useChatStore } from '@/stores/chat';
-import { getToolDisplayName } from '@/services/chat';
 import { accountLabel, isMultiOwnerAccounts } from '@/lib/account';
 import { MiniTable } from './MiniTable';
 import { ACCOUNT_TYPE_LABELS, RECORD_TYPE_LABELS, TYPE_TO_GROUP, IMPORT_SOURCE_LABELS, initAccountResolutions, unresolvedAccountCount, type AccountResolution, type ToolCallEntry } from '@homibook/core';

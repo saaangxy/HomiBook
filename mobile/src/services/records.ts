@@ -467,7 +467,7 @@ export async function batchCreateBudgetApi(
 }
 
 /** 复制预算:把 sourceYear/sourceMonth 的预算复制到 targetMonths */
-export async function copyBudgetApi(bookId: string, data: { sourceYear: number; sourceMonth: number; targetMonths: Array<{ year: number; month: number }> }): Promise<void> {
+export async function copyBudgetApi(bookId: string, data: { sourceYear: number; sourceMonth: number; targetMonths: { year: number; month: number }[] }): Promise<void> {
   await http.post('/api/budgets/copy', { ...data, accountBookId: bookId });
 }
 

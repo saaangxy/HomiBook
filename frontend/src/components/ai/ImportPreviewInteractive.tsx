@@ -665,8 +665,8 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
                 }
                 // 成功：保持 submitted 标记，按钮禁用+spinner，防止重复点击
                 // 后端返回 confirmed:true 后，isConfirmed 切换为「已确认」并移除按钮
-              } catch (err: any) {
-                setConfirmError(err?.message || '确认请求失败')
+              } catch (err) {
+                setConfirmError(err instanceof Error ? err.message : '确认请求失败')
                 clearSubmitted(toolCallId) // 出错复位，允许重试
               }
             }}

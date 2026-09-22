@@ -8,7 +8,7 @@ import { ChipSelect } from '@/components/ui/ChipSelect';
 import { notifyPageRefresh } from '@/components/chrome/chrome';
 import { useRecords } from '@/stores/records';
 import { useAuth } from '@/stores/auth';
-import { accountLabel, isMultiOwnerAccounts } from '@/lib/account';
+import { accountLabel } from '@/lib/account';
 import { fetchBookMembers } from '@/services/records';
 import {
   analyzeImportCsv,
@@ -671,8 +671,6 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
     confirm: '导入 · 确认',
     result: '导入 · 完成',
   };
-
-  const fieldLabel = (key: string) => IMPORT_COLUMN_FIELDS.find((f) => f.key === key)?.label ?? key;
 
   return (
     <>

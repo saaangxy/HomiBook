@@ -74,6 +74,29 @@ const GROUP_HEADING: Record<string, string> = {
   transaction_category_transfer: '转账分类',
 }
 
+/** 确认页记录行的公共形状:导入记录 + 未识别记录合并展示(_accountName / _toAccountName 为展示字段) */
+interface ConfirmRow {
+  date: string
+  type: string
+  amount: number
+  accountId?: string | null
+  toAccountId?: string | null
+  categoryCode?: string | null
+  payer?: string | null
+  remark?: string | null
+  tags?: string[]
+  ownerId?: string | null
+  _accountName?: string | null
+  _toAccountName?: string | null
+}
+
+/** 未映射分类行:后端返回的 UnmatchedCategory 与「手动添加」项(带 id)的公共形状 */
+interface UnmatchedCategoryRow {
+  id?: number
+  sourceCategory: string
+  types: string[]
+}
+
 /** 剥掉确认页展示字段(_accountName / _toAccountName):只给记录列表看,不进提交给后端的 payload */
 function toPayloadRecord<T extends object>(r: T): Omit<T, '_accountName' | '_toAccountName'> {
   const out = { ...r } as Record<string, unknown>
@@ -1070,8 +1093,8 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
 
               {/* 未映射分类 */}
               {(unmatchedCategories.length > 0 || extraUnmatched.length > 0) && (() => {
-                // 合并并过滤
-                const allUnmatched = [
+                // 合并并过滤(手动添加项带 id,两者取公共形状)
+                const allUnmatched: UnmatchedCategoryRow[] = [
                   ...unmatchedCategories.filter(uc => !removedKeys[uc.sourceCategory]),
                   ...extraUnmatched.filter(eu => !removedKeys[`e${eu.id}`]),
                 ]
@@ -1102,7 +1125,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                         </Badge>
                         <div className="space-y-2">
                           {items.map(uc => {
-                            const extraId = (uc as any).id as number | undefined
+                            const extraId = uc.id
                             const compositeKey = extraId ? `${uc.sourceCategory}::${type}::e${extraId}` : `${uc.sourceCategory}::${type}`
                             const cr = categoryResolutions[compositeKey]
                             const selectedItem = allDictItems.find(d => d.code === cr?.targetCode)
@@ -1563,7 +1586,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
 
                   {/* 全部记录预览 */}
                   {(() => {
-                    const allRecords = [...records, ...resolvedUnrecognized] as any[]
+                    const allRecords: ConfirmRow[] = [...records, ...resolvedUnrecognized]
                     const cfTypes = [...new Set(allRecords.map(r => r.type))]
                     const cfCategories = [...new Set(allRecords.map(r => r.categoryCode).filter(Boolean))] as string[]
                     const cfAccounts = [...new Set(allRecords.map(r => r._accountName).filter(Boolean))] as string[]
@@ -1657,7 +1680,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                               </TableRow>
                             </TableHeader>
                             <TableBody>
-                              {filteredConfirm.map((r: any, i: number) => (
+                              {filteredConfirm.map((r, i) => (
                                 <TableRow key={i} className="hover:bg-accent/50">
                                   <TableCell className="text-xs py-2 whitespace-nowrap">
                                     {dayjs(r.date).format('YYYY-MM-DD HH:mm:ss')}
