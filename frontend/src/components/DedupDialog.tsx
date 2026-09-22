@@ -420,27 +420,48 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
 
             {scopeOpen && (
               <div className="border-t px-3 py-2.5 space-y-2.5">
-                {/* 时间范围(按本地日,含首尾当天) */}
-                {([
-                  ['起始日', filters.dateFrom, (v: string | null) => setFilters(prev => ({ ...prev, dateFrom: v }))],
-                  ['结束日', filters.dateTo, (v: string | null) => setFilters(prev => ({ ...prev, dateTo: v }))],
-                ] as [string, string | null, (v: string | null) => void][]).map(([label, value, set]) => (
-                  <div key={label} className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground w-10 shrink-0">{label}</span>
+                {/* 时间范围(按本地日,含首尾当天;起始日与结束日同一行) */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs text-muted-foreground shrink-0">起始日</span>
                     <div className="w-32 shrink-0">
-                      <DatePicker compact value={value || ''} onChange={(v) => set(v || null)} />
+                      <DatePicker
+                        compact
+                        value={filters.dateFrom || ''}
+                        onChange={(v) => setFilters(prev => ({ ...prev, dateFrom: v || null }))}
+                      />
                     </div>
-                    {value ? (
+                    {filters.dateFrom ? (
                       <button
                         type="button"
-                        onClick={() => set(null)}
+                        onClick={() => setFilters(prev => ({ ...prev, dateFrom: null }))}
                         className="shrink-0 text-muted-foreground hover:text-foreground"
                       >
                         <X size={14} />
                       </button>
                     ) : null}
                   </div>
-                ))}
+                  <span className="text-xs text-muted-foreground shrink-0">~</span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs text-muted-foreground shrink-0">结束日</span>
+                    <div className="w-32 shrink-0">
+                      <DatePicker
+                        compact
+                        value={filters.dateTo || ''}
+                        onChange={(v) => setFilters(prev => ({ ...prev, dateTo: v || null }))}
+                      />
+                    </div>
+                    {filters.dateTo ? (
+                      <button
+                        type="button"
+                        onClick={() => setFilters(prev => ({ ...prev, dateTo: null }))}
+                        className="shrink-0 text-muted-foreground hover:text-foreground"
+                      >
+                        <X size={14} />
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
                 <p className="text-[10px] text-muted-foreground">时间按本地日,含首尾当天</p>
 
                 {/* 类型 */}
