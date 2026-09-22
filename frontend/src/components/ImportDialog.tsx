@@ -196,6 +196,8 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
   const [headerRow, setHeaderRow] = useState<number | undefined>(undefined)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+  // 拖拽文件到上传框时的高亮
+  const [dragOver, setDragOver] = useState(false)
 
   // 加载当前账本成员
   useEffect(() => {
@@ -247,9 +249,28 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
     onOpenChange(false)
   }
 
+  /** 选择 / 拖拽共用:先按来源校验扩展名,再落到同一个 file 状态 */
+  const acceptFile = (f: File | undefined) => {
+    if (!f) return
+    const okExt = source === 'wechat' ? /\.xlsx?$/i : /\.csv$/i
+    if (!okExt.test(f.name)) {
+      setError(`请选择 ${source === 'wechat' ? '.xlsx' : '.csv'} 文件`)
+      return
+    }
+    setError('')
+    setFile(f)
+  }
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0]
-    if (f) setFile(f)
+    acceptFile(e.target.files?.[0])
+    // 清空以便重选同一文件(校验不通过后重选时不会再触发 change)
+    e.target.value = ''
+  }
+
+  const handleFileDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setDragOver(false)
+    acceptFile(e.dataTransfer.files?.[0])
   }
 
   // CSV 文件分析（第一步上传）
@@ -701,8 +722,17 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
               />
               <div
                 onClick={() => fileInputRef.current?.click()}
+                onDragOver={(e) => {
+                  e.preventDefault()
+                  e.dataTransfer.dropEffect = 'copy'
+                  setDragOver(true)
+                }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={handleFileDrop}
                 className={`border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-colors ${
-                  file ? 'border-primary/50 bg-primary/5' : 'border-border hover:border-primary/30 hover:bg-muted/50'
+                  dragOver
+                    ? 'border-primary bg-primary/10'
+                    : file ? 'border-primary/50 bg-primary/5' : 'border-border hover:border-primary/30 hover:bg-muted/50'
                 }`}
               >
                 {file ? (
@@ -724,7 +754,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                 ) : (
                   <div className="flex flex-col items-center gap-2">
                     <Upload size={32} className="text-muted-foreground" />
-                    <p className="text-sm font-medium">点击选择 {source === 'wechat' ? 'Excel' : 'CSV'} 文件</p>
+                    <p className="text-sm font-medium">点击选择或拖拽 {source === 'wechat' ? 'Excel' : 'CSV'} 文件到此处</p>
                     <p className="text-xs text-muted-foreground">支持 {source === 'wechat' ? '.xlsx' : '.csv'} 格式，最大 10MB</p>
                   </div>
                 )}

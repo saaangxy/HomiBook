@@ -55,20 +55,64 @@ export function ChatWindow() {
   // ---- 小票图片上传 ----
   const [pendingImages, setPendingImages] = useState<{ file: File; preview: string }[]>([])
   const [uploadingImages, setUploadingImages] = useState(false)
+  // 拖拽图片到聊天框时的整块高亮
+  const [dragOver, setDragOver] = useState(false)
   const imageInputRef = useRef<HTMLInputElement>(null)
 
   // ---- 网络搜索开关 ----
   const [webSearchEnabled, setWebSearchEnabled] = useState(true)
 
+  /** 统一的「加入待发送图片」入口:选择文件 / 粘贴 / 拖拽共用(只收图片,其余静默忽略) */
+  const addImageFiles = (files: File[]) => {
+    const images = files.filter((f) => f.type.startsWith('image/'))
+    if (images.length === 0) return
+    setPendingImages((prev) => [
+      ...prev,
+      ...images.map((file) => ({ file, preview: URL.createObjectURL(file) })),
+    ])
+  }
+
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || [])
-    if (!files.length) return
-    const newImages = files.map((file) => ({
-      file,
-      preview: URL.createObjectURL(file),
-    }))
-    setPendingImages((prev) => [...prev, ...newImages])
+    addImageFiles(Array.from(e.target.files || []))
     if (imageInputRef.current) imageInputRef.current.value = ''
+  }
+
+  /** 粘贴图片(截图直接 Ctrl+V) */
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const dt = e.clipboardData
+    if (!dt) return
+    // files 与 items 指向**同一批**文件,不能相加(会一张变两张);只有 files 为空时才回退 items
+    const fromFiles = Array.from(dt.files || [])
+    const files = fromFiles.length > 0
+      ? fromFiles
+      : Array.from(dt.items || [])
+        .filter((it) => it.kind === 'file')
+        .map((it) => it.getAsFile())
+        .filter((f): f is File => !!f)
+    const images = files.filter((f) => f.type.startsWith('image/'))
+    if (images.length === 0) return // 纯文本粘贴走默认行为
+    e.preventDefault() // 有图就别把剪贴板里的文本也塞进输入框
+    addImageFiles(images)
+  }
+
+  /** 拖拽图片到聊天框(整个窗口都是放置区) */
+  const handleDragOver = (e: React.DragEvent) => {
+    if (!currentBookId || isCurrentStreaming) return
+    if (!Array.from(e.dataTransfer?.types || []).includes('Files')) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+    setDragOver(true)
+  }
+  const handleDragLeave = (e: React.DragEvent) => {
+    // 进入子元素同样会触发 dragleave:只有真正离开容器才收起提示
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return
+    setDragOver(false)
+  }
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setDragOver(false)
+    if (!currentBookId || isCurrentStreaming) return
+    addImageFiles(Array.from(e.dataTransfer?.files || []))
   }
 
   const removeImage = (index: number) => {
@@ -320,7 +364,21 @@ export function ChatWindow() {
   }, [])
 
   return (
-    <div className="flex h-[65vh] md:h-[600px] rounded-xl border bg-card overflow-hidden">
+    <div
+      className="relative flex h-[65vh] md:h-[600px] rounded-xl border bg-card overflow-hidden"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {/* 拖拽图片到聊天框:整块高亮提示(pointer-events-none 让 drop 仍落在容器上) */}
+      {dragOver && (
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-primary bg-primary/10">
+          <div className="flex items-center gap-2 rounded-lg bg-card px-3 py-1.5 text-sm font-medium shadow-sm">
+            <ImageIcon size={16} className="text-primary" />
+            松开即可添加图片
+          </div>
+        </div>
+      )}
       {/* 桌面端左侧会话列表 */}
       {!isMobile && (
         <div className="w-52 border-r shrink-0">
@@ -446,7 +504,8 @@ export function ChatWindow() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="输入消息... (Enter 发送，Shift+Enter 换行)"
+              onPaste={handlePaste}
+              placeholder="输入消息... (Enter 发送，Shift+Enter 换行，可直接粘贴图片)"
               rows={2}
               className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0 resize-none px-4 py-3 min-h-[60px]"
               disabled={isCurrentStreaming || importing || uploadingImages}
@@ -475,7 +534,7 @@ export function ChatWindow() {
                   variant="ghost"
                   className="h-7 w-7 text-muted-foreground hover:text-foreground"
                   disabled={!currentBookId || importing || uploadingImages}
-                  title="上传图片"
+                  title="上传图片(也可直接粘贴或拖拽)"
                   onClick={() => imageInputRef.current?.click()}
                 >
                   <ImageIcon size={16} />
