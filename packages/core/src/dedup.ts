@@ -2,7 +2,7 @@
  * 流水去重 —— 纯 TS,三端共享(backend detect-duplicates / web DedupDialog / mobile DedupSheet)。
  * 分组 key 的字段顺序(日期 → 类型 → 账户 → 交易方 → 金额 → 归属人)与解析必须一致。
  */
-import type { RecordType } from './types/index.js';
+import { RECORD_TYPES, type RecordType } from './types/index.js';
 
 export type DedupDatePrecision = 'exact' | 'minute' | 'date' | null;
 
@@ -144,6 +144,98 @@ export function parseDuplicateGroupKey(key: string, fields: DedupMatchFields, op
   }
 
   return labels;
+}
+
+// ── 检测范围筛选 ──
+//
+// 与 DedupMatchFields 的分工:**matchFields 决定「怎么算同一笔」(分组 key),scope 决定「在哪些流水里找」**。
+// 两者独立 —— 筛选只减少参与分组的流水,不改变任何判定逻辑,因此「检测出来的组」与「合并时校验的组」仍然一致。
+// 日期一律按**本地日**比较(与 buildDuplicateKey 同口径,直接截 ISO 会得到 UTC 日)。
+
+/** 去重检测的范围筛选:只把命中的流水拿去做分组 */
+export interface DedupScopeFilter {
+  /** 起始日(含,按本地日);'YYYY-MM-DD' 或 ISO 串,null = 不限 */
+  dateFrom: string | null;
+  /** 结束日(含,按本地日,含当天一整天);null = 不限 */
+  dateTo: string | null;
+  /** 参与检测的方向;空数组 = 不限 */
+  types: RecordType[];
+  /** 金额下限(含,**按绝对值**);null = 不限 */
+  amountMin: number | null;
+  /** 金额上限(含,**按绝对值**);null = 不限 */
+  amountMax: number | null;
+}
+
+export const DEDUP_SCOPE_DEFAULT: DedupScopeFilter = {
+  dateFrom: null,
+  dateTo: null,
+  types: [],
+  amountMin: null,
+  amountMax: null,
+};
+
+/** 取日期串的**本地日**部分('YYYY-MM-DD');非日期串返回 null */
+function toDayKey(value: string | null | undefined): string | null {
+  const text = (value ?? '').trim();
+  const m = /^(\d{4}-\d{2}-\d{2})/.exec(text);
+  return m ? m[1] : null;
+}
+
+function toScopeAmount(value: number | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.abs(n) : null;
+}
+
+/**
+ * 归一化范围筛选(三端入口共用):补默认值、日期截到日、金额取绝对值且保证 min ≤ max、types 去重保序。
+ * 传 null / undefined 直接得到「不限」。
+ */
+export function normalizeDedupScopeFilter(input?: Partial<DedupScopeFilter> | null): DedupScopeFilter {
+  const types = [...new Set((input?.types ?? []).filter((t): t is RecordType => (RECORD_TYPES as readonly string[]).includes(t)))];
+  const a = toScopeAmount(input?.amountMin);
+  const b = toScopeAmount(input?.amountMax);
+  return {
+    dateFrom: toDayKey(input?.dateFrom),
+    dateTo: toDayKey(input?.dateTo),
+    types,
+    amountMin: a !== null && b !== null ? Math.min(a, b) : a,
+    amountMax: a !== null && b !== null ? Math.max(a, b) : b,
+  };
+}
+
+/** 是否设了任一范围条件(UI 折叠态提示 / 判断要不要传参) */
+export function hasDedupScopeFilter(f?: Partial<DedupScopeFilter> | null): boolean {
+  const n = normalizeDedupScopeFilter(f);
+  return !!(n.dateFrom || n.dateTo || n.types.length > 0 || n.amountMin !== null || n.amountMax !== null);
+}
+
+/**
+ * 单条流水是否在检测范围内(纯函数)。
+ * 日期按**本地日**比较;金额按**绝对值**(流水金额恒为正,方向由 type 表达)。
+ */
+export function matchesDedupScope(r: DedupKeyRecord, f?: Partial<DedupScopeFilter> | null): boolean {
+  const n = normalizeDedupScopeFilter(f);
+  if (n.dateFrom || n.dateTo) {
+    const day = localStamp(r.date, 'date');
+    if (n.dateFrom && day < n.dateFrom) return false;
+    if (n.dateTo && day > n.dateTo) return false;
+  }
+  if (n.types.length > 0 && !n.types.includes(r.type as RecordType)) return false;
+  const amount = Math.abs(Number(r.amount));
+  if (n.amountMin !== null && amount < n.amountMin) return false;
+  if (n.amountMax !== null && amount > n.amountMax) return false;
+  return true;
+}
+
+/** 折叠态摘要(如「时间 2026-06-01~2026-06-30 · 类型 支出/收入 · 金额 100~500」);未设条件返回 '' */
+export function summarizeDedupScopeFilter(f?: Partial<DedupScopeFilter> | null): string {
+  const n = normalizeDedupScopeFilter(f);
+  const parts: string[] = [];
+  if (n.dateFrom || n.dateTo) parts.push(`时间 ${n.dateFrom ?? '不限'}~${n.dateTo ?? '不限'}`);
+  if (n.types.length > 0) parts.push(`类型 ${n.types.map((t) => DEDUP_TYPE_LABELS[t]).join('/')}`);
+  if (n.amountMin !== null || n.amountMax !== null) parts.push(`金额 ${n.amountMin ?? '不限'}~${n.amountMax ?? '不限'}`);
+  return parts.join(' · ');
 }
 
 // ── 重复组合并 ──

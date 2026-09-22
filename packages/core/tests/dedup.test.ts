@@ -4,15 +4,20 @@ import {
   parseDuplicateGroupKey,
   DEFAULT_DEDUP_MATCH_FIELDS,
   DEDUP_EMPTY_PAYER,
+  DEDUP_SCOPE_DEFAULT,
   DUPLICATE_MERGE_REMARK_MAX,
   DUPLICATE_MERGE_TYPE_MISMATCH,
+  hasDedupScopeFilter,
+  matchesDedupScope,
   mergeDuplicateRemarks,
   mergeDuplicateTags,
+  normalizeDedupScopeFilter,
   planDuplicateMerge,
   planDuplicateMergeBatch,
+  summarizeDedupScopeFilter,
   summarizeDuplicateMerge,
-} from '../src/dedup.js';
-import type { DedupKeyRecord, DedupMatchFields, DuplicateMergeRecord } from '../src/dedup.js';
+} from '../src';
+import type { DedupKeyRecord, DedupMatchFields, DedupScopeFilter, DuplicateMergeRecord } from '../src/dedup.js';
 
 const rec: DedupKeyRecord = {
   date: '2024-01-15T02:30:00.000Z',
@@ -420,5 +425,135 @@ describe('planDuplicateMergeBatch', () => {
     const batch = planDuplicateMergeBatch([{ records: clean }, { records: [mergeRec('g'), mergeRec('h')] }]);
     expect(batch.needsReview).toBe(false);
     expect(batch.blocked).toEqual([]);
+  });
+});
+
+// ── 检测范围筛选 ──
+
+describe('normalizeDedupScopeFilter', () => {
+  it('空输入 → 全部不限', () => {
+    expect(normalizeDedupScopeFilter()).toEqual(DEDUP_SCOPE_DEFAULT);
+    expect(normalizeDedupScopeFilter(null)).toEqual(DEDUP_SCOPE_DEFAULT);
+    expect(hasDedupScopeFilter(null)).toBe(false);
+  });
+
+  it('日期截到**本地日**:ISO 串只取到日', () => {
+    expect(normalizeDedupScopeFilter({ dateFrom: '2026-06-01T13:20:00.000Z' }).dateFrom).toBe('2026-06-01');
+    expect(normalizeDedupScopeFilter({ dateTo: '2026-06-30' }).dateTo).toBe('2026-06-30');
+  });
+
+  it('非法日期串 → null(不炸)', () => {
+    expect(normalizeDedupScopeFilter({ dateFrom: '不是日期' }).dateFrom).toBeNull();
+    expect(normalizeDedupScopeFilter({ dateFrom: '  ' }).dateFrom).toBeNull();
+  });
+
+  it('金额取绝对值且 min ≤ max(用户上下限填反也照常工作)', () => {
+    const n = normalizeDedupScopeFilter({ amountMin: 500, amountMax: 100 });
+    expect(n.amountMin).toBe(100);
+    expect(n.amountMax).toBe(500);
+    expect(normalizeDedupScopeFilter({ amountMin: -100 }).amountMin).toBe(100);
+  });
+
+  it('非有限金额 → null', () => {
+    expect(normalizeDedupScopeFilter({ amountMin: Number.NaN }).amountMin).toBeNull();
+    expect(normalizeDedupScopeFilter({ amountMax: Number.POSITIVE_INFINITY }).amountMax).toBeNull();
+  });
+
+  it('types 去重保序并剔除非法值', () => {
+    expect(normalizeDedupScopeFilter({ types: ['EXPENSE', 'EXPENSE', 'OTHER'] as DedupScopeFilter['types'] }).types).toEqual(['EXPENSE']);
+    expect(normalizeDedupScopeFilter({ types: [] }).types).toEqual([]);
+  });
+
+  it('hasDedupScopeFilter:任一条件即为 true(0 是有效下限)', () => {
+    expect(hasDedupScopeFilter(normalizeDedupScopeFilter({ types: ['EXPENSE'] }))).toBe(true);
+    expect(hasDedupScopeFilter(normalizeDedupScopeFilter({ amountMin: 0 }))).toBe(true);
+    expect(hasDedupScopeFilter(normalizeDedupScopeFilter({ dateTo: '2026-06-30' }))).toBe(true);
+  });
+});
+
+describe('matchesDedupScope', () => {
+  /** 本地时间构造(换时区也成立) */
+  const at = (d: number, h = 12, mi = 0) => localRec({ date: new Date(2026, 5, d, h, mi, 0) });
+
+  it('未设条件 → 全部命中', () => {
+    expect(matchesDedupScope(at(1), null)).toBe(true);
+    expect(matchesDedupScope(at(1), DEDUP_SCOPE_DEFAULT)).toBe(true);
+  });
+
+  it('日期按**本地日**且含首尾整天(结束日 23:59 仍命中)', () => {
+    const f = normalizeDedupScopeFilter({ dateFrom: '2026-06-01', dateTo: '2026-06-30' });
+    expect(matchesDedupScope(at(1, 0, 0), f)).toBe(true);
+    expect(matchesDedupScope(at(30, 23, 59), f)).toBe(true);
+    expect(matchesDedupScope(at(31, 8, 0), f)).toBe(false);
+  });
+
+  it('只设起始日 / 只设结束日', () => {
+    // 注意月份是 0 基:new Date(2026, 5, 31) 会滚到 7 月 1 日,边界必须用合法日期
+    const jun30 = localRec({ date: new Date(2026, 5, 30, 12, 0, 0) });
+    const jul1 = localRec({ date: new Date(2026, 6, 1, 12, 0, 0) });
+    expect(matchesDedupScope(jun30, normalizeDedupScopeFilter({ dateFrom: '2026-07-01' }))).toBe(false);
+    expect(matchesDedupScope(jul1, normalizeDedupScopeFilter({ dateFrom: '2026-07-01' }))).toBe(true);
+    expect(matchesDedupScope(jun30, normalizeDedupScopeFilter({ dateTo: '2026-06-29' }))).toBe(false);
+    expect(matchesDedupScope(jun30, normalizeDedupScopeFilter({ dateTo: '2026-06-30' }))).toBe(true);
+  });
+
+  it('类型:空数组不限;单选 / 多选按成员判定', () => {
+    expect(matchesDedupScope(localRec({ type: 'INCOME' }), normalizeDedupScopeFilter({ types: [] }))).toBe(true);
+    const expenseOnly = normalizeDedupScopeFilter({ types: ['EXPENSE'] });
+    expect(matchesDedupScope(localRec({ type: 'EXPENSE' }), expenseOnly)).toBe(true);
+    expect(matchesDedupScope(localRec({ type: 'INCOME' }), expenseOnly)).toBe(false);
+    expect(matchesDedupScope(localRec({ type: 'TRANSFER' }), normalizeDedupScopeFilter({ types: ['EXPENSE', 'TRANSFER'] }))).toBe(true);
+  });
+
+  it('金额按绝对值比较(方向由 type 表达),上下限含等号', () => {
+    const f = normalizeDedupScopeFilter({ amountMin: 100, amountMax: 500 });
+    expect(matchesDedupScope(localRec({ amount: 100 }), f)).toBe(true);
+    expect(matchesDedupScope(localRec({ amount: 500 }), f)).toBe(true);
+    expect(matchesDedupScope(localRec({ amount: 99.99 }), f)).toBe(false);
+    expect(matchesDedupScope(localRec({ amount: -300 }), f)).toBe(true);
+  });
+
+  it('只设下限 / 只设上限', () => {
+    expect(matchesDedupScope(localRec({ amount: 50 }), normalizeDedupScopeFilter({ amountMin: 100 }))).toBe(false);
+    expect(matchesDedupScope(localRec({ amount: 5000 }), normalizeDedupScopeFilter({ amountMax: 100 }))).toBe(false);
+    expect(matchesDedupScope(localRec({ amount: 100 }), normalizeDedupScopeFilter({ amountMin: 0 }))).toBe(true);
+  });
+
+  it('多条件是与关系(全部满足才命中)', () => {
+    const f = normalizeDedupScopeFilter({ dateFrom: '2026-06-01', dateTo: '2026-06-30', types: ['EXPENSE'], amountMin: 100 });
+    expect(matchesDedupScope(localRec({ date: new Date(2026, 5, 10, 9, 0), type: 'EXPENSE', amount: 200 }), f)).toBe(true);
+    expect(matchesDedupScope(localRec({ date: new Date(2026, 5, 10, 9, 0), type: 'INCOME', amount: 200 }), f)).toBe(false);
+    expect(matchesDedupScope(localRec({ date: new Date(2026, 6, 10, 9, 0), type: 'EXPENSE', amount: 200 }), f)).toBe(false);
+    expect(matchesDedupScope(localRec({ date: new Date(2026, 5, 10, 9, 0), type: 'EXPENSE', amount: 50 }), f)).toBe(false);
+  });
+
+  it('筛选不改判定:命中集合内的分组 key 与不筛时一致', () => {
+    const f = normalizeDedupScopeFilter({ types: ['EXPENSE'] });
+    // 三条同一分钟(本会成为一组),筛选掉收入那条后,剩下的两条仍判定为同一组
+    const kept = [at(10), { ...at(10), type: 'INCOME' }, at(10)].filter((r) => matchesDedupScope(r, f));
+    expect(kept).toHaveLength(2);
+    expect(buildDuplicateKey(kept[0], DEFAULT_DEDUP_MATCH_FIELDS)).toBe(
+      buildDuplicateKey(kept[1], DEFAULT_DEDUP_MATCH_FIELDS),
+    );
+  });
+});
+
+describe('summarizeDedupScopeFilter', () => {
+  it('未设条件 → 空串', () => {
+    expect(summarizeDedupScopeFilter(null)).toBe('');
+    expect(summarizeDedupScopeFilter(DEDUP_SCOPE_DEFAULT)).toBe('');
+  });
+
+  it('单项给出可读文案', () => {
+    expect(summarizeDedupScopeFilter(normalizeDedupScopeFilter({ dateFrom: '2026-06-01', dateTo: '2026-06-30' })))
+      .toBe('时间 2026-06-01~2026-06-30');
+    expect(summarizeDedupScopeFilter(normalizeDedupScopeFilter({ types: ['EXPENSE', 'INCOME'] })))
+      .toBe('类型 支出/收入');
+    expect(summarizeDedupScopeFilter(normalizeDedupScopeFilter({ amountMin: 100 }))).toBe('金额 100~不限');
+  });
+
+  it('组合顺序固定:时间 · 类型 · 金额', () => {
+    const f = normalizeDedupScopeFilter({ amountMax: 500, types: ['EXPENSE'], dateFrom: '2026-06-01' });
+    expect(summarizeDedupScopeFilter(f)).toBe('时间 2026-06-01~不限 · 类型 支出 · 金额 不限~500');
   });
 });

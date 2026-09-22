@@ -26,16 +26,22 @@ import { Badge } from '@/components/ui/badge'
 import { Spinner } from '@/components/ui/spinner'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Switch } from '@/components/ui/switch'
+import { DatePicker } from '@/components/ui/date-picker'
 import { recordApi, type RecordItem } from '@/api/record'
 import { accountApi, type AccountItem } from '@/api/account'
 import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
 import {
   DEDUP_EMPTY_LABEL,
+  DEDUP_SCOPE_DEFAULT,
   DEFAULT_DEDUP_MATCH_FIELDS,
   DEDUP_TOGGLE_FIELDS,
+  RECORD_TYPES,
+  hasDedupScopeFilter,
   parseDuplicateGroupKey,
   planDuplicateMerge,
+  summarizeDedupScopeFilter,
   type DedupMatchFields,
+  type DedupScopeFilter,
   type DuplicateMergeChoice,
   type DuplicateMergeConflict,
   type DuplicateMergeConflictField,
@@ -44,7 +50,7 @@ import {
 } from '@homibook/core'
 import { RECORD_TYPE_LABELS, RECORD_TYPE_TEXT_CLASS } from '@/lib/record-type'
 import { errorMessage } from '@/lib/error'
-import { CopyMinus, Check } from 'lucide-react'
+import { CopyMinus, Check, ChevronDown, ChevronRight, X } from 'lucide-react'
 import dayjs from 'dayjs'
 
 interface DedupDialogProps {
@@ -63,6 +69,14 @@ interface DuplicateGroup {
 const TYPE_LABELS = RECORD_TYPE_LABELS
 const TYPE_COLORS = RECORD_TYPE_TEXT_CLASS
 
+/** 日期精度文案:下拉与「匹配条件」折叠摘要共用,避免两处漂移(从严格到宽松:精确到秒常因两条记录差几秒漏判,同日又太宽,同分钟居中) */
+const DATE_PRECISION_LABELS = {
+  exact: '时间: 精确',
+  minute: '时间: 同分钟',
+  date: '时间: 同日',
+  ignore: '时间: 忽略',
+} as const
+
 function parseGroupKey(key: string, fields: DedupMatchFields, accountDisplay: Map<string, string>, ownerNames: Map<string, string>): string[] {
   return parseDuplicateGroupKey(key, fields, {
     accountDisplay,
@@ -73,6 +87,14 @@ function parseGroupKey(key: string, fields: DedupMatchFields, accountDisplay: Ma
 
 /** 冲突选择里「不填」的哨兵值(Select 的 value 必须是字符串) */
 const EMPTY_CHIP = '__empty__'
+
+/** 金额区间用**文本**保存(直接存 number 会吞掉「1.」这类中间输入,小数点打不出来);空/非法 → null */
+function parseAmountText(text: string): number | null {
+  const t = text.trim()
+  if (!t) return null
+  const n = Number(t)
+  return Number.isFinite(n) ? n : null
+}
 
 /** 流水 → core 的合并入参 */
 function toMergeRecord(r: RecordItem): DuplicateMergeRecord {
@@ -92,6 +114,16 @@ function toMergeRecord(r: RecordItem): DuplicateMergeRecord {
 
 export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDialogProps) {
   const [matchFields, setMatchFields] = useState<DedupMatchFields>(DEFAULT_DEDUP_MATCH_FIELDS)
+  // 匹配条件默认展开;点「检测重复」后自动收起(给结果让位)
+  const [matchOpen, setMatchOpen] = useState(true)
+
+  // 检测**范围**筛选:与匹配条件独立 —— 先按范围缩小参与检测的流水,再按匹配字段分组
+  const [filters, setFilters] = useState<DedupScopeFilter>(DEDUP_SCOPE_DEFAULT)
+  // 筛选区默认展开(与匹配条件一致);点「检测重复」后自动收起
+  const [scopeOpen, setScopeOpen] = useState(true)
+  // 金额区间用文本保存,避免吞掉「1.」这类中间输入
+  const [amountMinText, setAmountMinText] = useState('')
+  const [amountMaxText, setAmountMaxText] = useState('')
 
   const [groups, setGroups] = useState<DuplicateGroup[]>([])
   const [totalDuplicates, setTotalDuplicates] = useState(0)
@@ -124,14 +156,29 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
     setMatchFields(prev => ({ ...prev, [key]: !prev[key] }))
   }
 
+  // 实际提交的范围筛选(金额从文本解析);归一化(日期取到日、金额换序)由 core 负责
+  const scope = useMemo<DedupScopeFilter>(() => ({
+    ...filters,
+    amountMin: parseAmountText(amountMinText),
+    amountMax: parseAmountText(amountMaxText),
+  }), [filters, amountMinText, amountMaxText])
+  const scopeSummary = summarizeDedupScopeFilter(scope)
+  const clearScope = () => {
+    setFilters(DEDUP_SCOPE_DEFAULT)
+    setAmountMinText('')
+    setAmountMaxText('')
+  }
+
   const handleDetect = async () => {
     setDetecting(true)
     setError('')
     setDetected(false)
     setGroups([])
     setSelectedIds(new Set())
+    setMatchOpen(false)
+    setScopeOpen(false)
     try {
-      const result = await recordApi.detectDuplicates(bookId, matchFields)
+      const result = await recordApi.detectDuplicates(bookId, matchFields, hasDedupScopeFilter(scope) ? scope : undefined)
       setGroups(result.groups)
       setTotalDuplicates(result.totalDuplicates)
       setDetected(true)
@@ -301,6 +348,9 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
     setError('')
     setSelectedIds(new Set())
     setMatchFields(DEFAULT_DEDUP_MATCH_FIELDS)
+    setMatchOpen(true)
+    clearScope()
+    setScopeOpen(true)
     setMode('merge')
     setChoices({})
     setGroupFilter('all')
@@ -314,6 +364,11 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
   // 至少需要一个匹配字段
   const activeFieldCount = DEDUP_TOGGLE_FIELDS.filter(f => matchFields[f.key]).length + (matchFields.date ? 1 : 0)
   const canDetect = activeFieldCount >= 1
+  // 「匹配条件」折叠态摘要:日期精度 + 已启用的匹配字段
+  const matchSummary = [
+    DATE_PRECISION_LABELS[matchFields.date ?? 'ignore'],
+    ...DEDUP_TOGGLE_FIELDS.filter(f => matchFields[f.key]).map(f => f.label),
+  ].join(' · ')
 
   // 归属人 id → 名称映射(从检测结果记录收集,避免额外拉取成员列表)
   const ownerNames = new Map<string, string>()
@@ -338,42 +393,167 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
             </Alert>
           )}
 
-          {/* 匹配字段选择 */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm text-muted-foreground mr-1">匹配条件:</span>
-
-            {/* 日期精度 */}
-            <Select
-              value={matchFields.date || 'ignore'}
-              onValueChange={(v) => setMatchFields(prev => ({ ...prev, date: (v === 'ignore' ? null : v as 'exact' | 'minute' | 'date') }))}
-            >
-              <SelectTrigger className="h-8 text-xs w-28 bg-background">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="bg-card border-border">
-                {/* 从严格到宽松:精确到秒常因两条记录差几秒漏判,同日又太宽,同分钟居中(与移动端一致) */}
-                <SelectItem value="exact" className="text-xs">时间: 精确</SelectItem>
-                <SelectItem value="minute" className="text-xs">时间: 同分钟</SelectItem>
-                <SelectItem value="date" className="text-xs">时间: 同日</SelectItem>
-                <SelectItem value="ignore" className="text-xs">时间: 忽略</SelectItem>
-              </SelectContent>
-            </Select>
-
-            {DEDUP_TOGGLE_FIELDS.map(f => (
+          {/* 筛选范围(可折叠,默认展开):限制「在哪些流水里找重复」,与「匹配条件」(怎么算同一笔)独立;点「检测重复」后自动收起 */}
+          <div className="border rounded-md">
+            <div className="flex items-center gap-1 px-2">
               <button
-                key={f.key}
-                onClick={() => toggleField(f.key)}
-                className={`h-8 px-3 rounded-md text-xs border transition-colors ${
-                  matchFields[f.key]
-                    ? 'bg-primary border-primary text-primary-foreground'
-                    : 'bg-background border-border text-muted-foreground hover:border-primary/30'
-                }`}
+                type="button"
+                onClick={() => setScopeOpen(v => !v)}
+                className="flex items-center gap-1.5 flex-1 py-1.5 text-left min-w-0"
               >
-                {f.label}
-                {matchFields[f.key] ? <Check size={12} className="inline ml-1" /> : null}
+                {scopeOpen ? (
+                  <ChevronDown size={14} className="text-muted-foreground shrink-0" />
+                ) : (
+                  <ChevronRight size={14} className="text-muted-foreground shrink-0" />
+                )}
+                <span className="text-xs font-medium shrink-0">筛选范围</span>
+                <span className="text-xs text-muted-foreground truncate">
+                  {scopeSummary || '不限(全部流水参与检测)'}
+                </span>
               </button>
-            ))}
+              {scopeSummary ? (
+                <button type="button" onClick={clearScope} className="text-xs text-primary hover:underline shrink-0">
+                  清空
+                </button>
+              ) : null}
+            </div>
 
+            {scopeOpen && (
+              <div className="border-t px-3 py-2.5 space-y-2.5">
+                {/* 时间范围(按本地日,含首尾当天) */}
+                {([
+                  ['起始日', filters.dateFrom, (v: string | null) => setFilters(prev => ({ ...prev, dateFrom: v }))],
+                  ['结束日', filters.dateTo, (v: string | null) => setFilters(prev => ({ ...prev, dateTo: v }))],
+                ] as [string, string | null, (v: string | null) => void][]).map(([label, value, set]) => (
+                  <div key={label} className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground w-10 shrink-0">{label}</span>
+                    <div className="w-32 shrink-0">
+                      <DatePicker compact value={value || ''} onChange={(v) => set(v || null)} />
+                    </div>
+                    {value ? (
+                      <button
+                        type="button"
+                        onClick={() => set(null)}
+                        className="shrink-0 text-muted-foreground hover:text-foreground"
+                      >
+                        <X size={14} />
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+                <p className="text-[10px] text-muted-foreground">时间按本地日,含首尾当天</p>
+
+                {/* 类型 */}
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">类型(不选 = 全部)</div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {RECORD_TYPES.map(t => {
+                      const on = filters.types.includes(t)
+                      return (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => setFilters(prev => ({
+                            ...prev,
+                            types: on ? prev.types.filter(x => x !== t) : [...prev.types, t],
+                          }))}
+                          className={`h-7 px-2.5 rounded-md text-xs border transition-colors ${
+                            on
+                              ? 'bg-primary border-primary text-primary-foreground'
+                              : 'bg-background border-border text-muted-foreground hover:border-primary/30'
+                          }`}
+                        >
+                          {TYPE_LABELS[t]}
+                          {on ? <Check size={12} className="inline ml-1" /> : null}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* 金额区间(按绝对值) */}
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">金额区间(按绝对值,留空 = 不限)</div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={amountMinText}
+                      onChange={(e) => setAmountMinText(e.target.value)}
+                      inputMode="decimal"
+                      placeholder="最小"
+                      className="h-8 w-28 rounded border border-border bg-background px-2 text-xs"
+                    />
+                    <span className="text-xs text-muted-foreground">~</span>
+                    <input
+                      value={amountMaxText}
+                      onChange={(e) => setAmountMaxText(e.target.value)}
+                      inputMode="decimal"
+                      placeholder="最大"
+                      className="h-8 w-28 rounded border border-border bg-background px-2 text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 匹配条件(可折叠):默认展开,点「检测重复」后自动收起给结果让位 */}
+          <div className="border rounded-md">
+            <div className="flex items-center gap-1 px-2">
+              <button
+                type="button"
+                onClick={() => setMatchOpen(v => !v)}
+                className="flex items-center gap-1.5 flex-1 py-1.5 text-left min-w-0"
+              >
+                {matchOpen ? (
+                  <ChevronDown size={14} className="text-muted-foreground shrink-0" />
+                ) : (
+                  <ChevronRight size={14} className="text-muted-foreground shrink-0" />
+                )}
+                <span className="text-xs font-medium shrink-0">匹配条件</span>
+                <span className="text-xs text-muted-foreground truncate">{matchSummary}</span>
+              </button>
+            </div>
+
+            {matchOpen && (
+              <div className="border-t px-3 py-2.5 space-y-2.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* 日期精度 */}
+                  <Select
+                    value={matchFields.date || 'ignore'}
+                    onValueChange={(v) => setMatchFields(prev => ({ ...prev, date: (v === 'ignore' ? null : v as 'exact' | 'minute' | 'date') }))}
+                  >
+                    <SelectTrigger className="h-8 text-xs w-28 bg-background">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-card border-border">
+                      <SelectItem value="exact" className="text-xs">{DATE_PRECISION_LABELS.exact}</SelectItem>
+                      <SelectItem value="minute" className="text-xs">{DATE_PRECISION_LABELS.minute}</SelectItem>
+                      <SelectItem value="date" className="text-xs">{DATE_PRECISION_LABELS.date}</SelectItem>
+                      <SelectItem value="ignore" className="text-xs">{DATE_PRECISION_LABELS.ignore}</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {DEDUP_TOGGLE_FIELDS.map(f => (
+                    <button
+                      key={f.key}
+                      onClick={() => toggleField(f.key)}
+                      className={`h-8 px-3 rounded-md text-xs border transition-colors ${
+                        matchFields[f.key]
+                          ? 'bg-primary border-primary text-primary-foreground'
+                          : 'bg-background border-border text-muted-foreground hover:border-primary/30'
+                      }`}
+                    >
+                      {f.label}
+                      {matchFields[f.key] ? <Check size={12} className="inline ml-1" /> : null}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-muted-foreground">至少选中一项</p>
+              </div>
+            )}
+          </div>
+
+          <div>
             <Button
               size="sm"
               className="h-8 text-xs bg-primary hover:bg-primary/90 text-primary-foreground"

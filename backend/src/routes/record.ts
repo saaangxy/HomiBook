@@ -13,8 +13,8 @@ import {
 } from '../schemas/record.js'
 import {z} from 'zod'
 import {zSchema} from '../lib/schema-helpers.js'
-import {buildDuplicateKey, normalizeRecordType, planDuplicateMerge, DEDUP_DATE_PRECISIONS} from '@homibook/core'
-import type {DedupMatchFields, DuplicateMergePatch, DuplicateMergeRecord} from '@homibook/core'
+import {buildDuplicateKey, normalizeRecordType, planDuplicateMerge, matchesDedupScope, DEDUP_DATE_PRECISIONS, RECORD_TYPES} from '@homibook/core'
+import type {DedupMatchFields, DedupScopeFilter, DuplicateMergePatch, DuplicateMergeRecord} from '@homibook/core'
 import path from 'path'
 import fs from 'fs'
 import {randomUUID} from 'crypto'
@@ -40,6 +40,19 @@ const dedupMatchFieldsSchema = z.object({
     payer: z.boolean(),
     amount: z.boolean(),
     ownerId: z.boolean(),
+})
+
+/**
+ * 检测**范围**筛选(可选):只把命中的流水拿去做分组 —— 与 matchFields(怎么算同一笔)独立。
+ * 判定逻辑在 core 的 matchesDedupScope(日期按本地日、金额按绝对值),服务端不另写一套。
+ * 值域取自 core,别在这里手抄枚举。
+ */
+const dedupScopeFilterSchema = z.object({
+    dateFrom: z.string().nullable().optional(),
+    dateTo: z.string().nullable().optional(),
+    types: z.array(z.enum(RECORD_TYPES)).optional(),
+    amountMin: z.number().nullable().optional(),
+    amountMax: z.number().nullable().optional(),
 })
 
 /** 单次合并请求的组数上限(前端分片提交;再大单事务会太重) */
@@ -815,10 +828,12 @@ export async function recordRoutes(app: FastifyInstance) {
             body: zSchema(z.object({
                 bookId: z.string().min(1),
                 matchFields: dedupMatchFieldsSchema,
+                // 检测范围筛选(可选):只把命中的流水拿去做分组
+                filters: dedupScopeFilterSchema.optional(),
             })),
         },
     }, async (req, reply) => {
-        const {bookId, matchFields} = req.body as {
+        const {bookId, matchFields, filters} = req.body as {
             bookId: string
             matchFields: {
                 date: 'exact' | 'minute' | 'date' | null;
@@ -828,6 +843,7 @@ export async function recordRoutes(app: FastifyInstance) {
                 amount: boolean;
                 ownerId: boolean;
             }
+            filters?: Partial<DedupScopeFilter>
         }
         const userId = (req as any).user.id as string
 
@@ -837,11 +853,15 @@ export async function recordRoutes(app: FastifyInstance) {
             return reply.status(e.statusCode || 403).send({message: e.message})
         }
 
-        const records = await prisma.record.findMany({
+        const allRecords = await prisma.record.findMany({
             where: {accountBookId: bookId},
             include: RECORD_INCLUDE,
             orderBy: {date: 'asc'},
         })
+
+        // 范围筛选:先按条件缩小参与检测的流水集合。
+        // 只影响「在哪些流水里找」,不改分组判定 —— 因此 merge-duplicates 的组校验不受影响。
+        const records = allRecords.filter(r => matchesDedupScope(r, filters))
 
         const groups = new Map<string, typeof records>()
 

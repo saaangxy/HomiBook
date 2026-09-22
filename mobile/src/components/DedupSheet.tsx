@@ -1,23 +1,29 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Switch, TextInput, View } from 'react-native';
-import { Check, CopyMinus } from 'lucide-react-native';
+import { Check, ChevronDown, ChevronRight, CopyMinus, X } from 'lucide-react-native';
 import { useTheme, alpha, haptics, semanticTypeColor } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { FormSheet } from '@/components/chrome/FormSheet';
 import { ConfirmSheet } from '@/components/chrome/ConfirmSheet';
 import { ChipSelect } from '@/components/ui/ChipSelect';
+import { DatePicker } from '@/components/ui/DatePicker';
 import { showToast } from '@/components/chrome/Toast';
 import { notifyPageRefresh } from '@/components/chrome/chrome';
 import { useRecords } from '@/stores/records';
 import { accountLabel, isMultiOwnerAccounts } from '@/lib/account';
 import {
   DEDUP_EMPTY_LABEL,
+  DEDUP_SCOPE_DEFAULT,
   DEFAULT_DEDUP_MATCH_FIELDS,
   DEDUP_TOGGLE_FIELDS,
   DEDUP_TYPE_LABELS,
+  RECORD_TYPES,
+  hasDedupScopeFilter,
   parseDuplicateGroupKey,
   planDuplicateMerge,
+  summarizeDedupScopeFilter,
   type DedupMatchFields,
+  type DedupScopeFilter,
   type DuplicateMergeChoice,
   type DuplicateMergeConflict,
   type DuplicateMergeConflictField,
@@ -34,6 +40,14 @@ import type { RecordItem } from '@/types';
 
 const TYPE_LABEL = DEDUP_TYPE_LABELS;
 
+/** 日期精度选项:选择器与「匹配条件」折叠摘要共用同一份文案,避免两处漂移 */
+const DATE_PRECISION_OPTIONS = [
+  { value: 'exact', label: '时间:精确' },
+  { value: 'minute', label: '时间:同分钟' },
+  { value: 'date', label: '时间:同日' },
+  { value: 'ignore', label: '时间:忽略' },
+];
+
 /** ISO(UTC) → **本地**时间 YYYY-MM-DD HH:mm:ss(直接截 ISO 会显示 UTC 时间,与 web 端 dayjs 的口径不一致) */
 function fmtDate(iso: string): string {
   const d = new Date(iso);
@@ -44,6 +58,14 @@ function fmtDate(iso: string): string {
 
 /** 冲突选择里「不填」的哨兵值(chip 的 value 必须是字符串) */
 const EMPTY_CHIP = '__empty__';
+
+/** 金额区间用**文本**保存(直接存 number 会吞掉「1.」这类中间输入,小数点打不出来);空/非法 → null */
+function parseAmountText(text: string): number | null {
+  const t = text.trim();
+  if (!t) return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}
 
 /**
  * 流水 → core 的合并入参。
@@ -77,6 +99,15 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
   const { accounts } = useRecords();
 
   const [matchFields, setMatchFields] = useState<DedupMatchFields>(DEFAULT_DEDUP_MATCH_FIELDS);
+  // 匹配条件默认展开;点「检测重复」后自动收起(给结果让位)
+  const [matchOpen, setMatchOpen] = useState(true);
+  // 检测**范围**筛选:与匹配条件独立 —— 先按范围缩小参与检测的流水,再按匹配字段分组
+  const [filters, setFilters] = useState<DedupScopeFilter>(DEDUP_SCOPE_DEFAULT);
+  // 筛选区默认展开(与匹配条件一致);点「检测重复」后自动收起
+  const [scopeOpen, setScopeOpen] = useState(true);
+  // 金额区间用文本保存,避免吞掉「1.」这类中间输入
+  const [amountMinText, setAmountMinText] = useState('');
+  const [amountMaxText, setAmountMaxText] = useState('');
   const [groups, setGroups] = useState<DuplicateGroup[]>([]);
   const [totalDuplicates, setTotalDuplicates] = useState(0);
   const [detected, setDetected] = useState(false);
@@ -102,6 +133,19 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
     }
   }
 
+  // 实际提交的范围筛选(金额从文本解析);归一化(日期取到日、金额换序)由 core 负责
+  const scope = useMemo<DedupScopeFilter>(() => ({
+    ...filters,
+    amountMin: parseAmountText(amountMinText),
+    amountMax: parseAmountText(amountMaxText),
+  }), [filters, amountMinText, amountMaxText]);
+  const scopeSummary = summarizeDedupScopeFilter(scope);
+  const clearScope = () => {
+    setFilters(DEDUP_SCOPE_DEFAULT);
+    setAmountMinText('');
+    setAmountMaxText('');
+  };
+
   const reset = () => {
     setGroups([]);
     setTotalDuplicates(0);
@@ -111,6 +155,9 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
     setError('');
     setSelectedIds(new Set());
     setMatchFields(DEFAULT_DEDUP_MATCH_FIELDS);
+    setMatchOpen(true);
+    clearScope();
+    setScopeOpen(true);
     setMode('merge');
     setChoices({});
     setGroupFilter('all');
@@ -128,8 +175,10 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
     setDetected(false);
     setGroups([]);
     setSelectedIds(new Set());
+    setMatchOpen(false);
+    setScopeOpen(false);
     try {
-      const result = await detectDuplicatesApi(bookId, matchFields);
+      const result = await detectDuplicatesApi(bookId, matchFields, hasDedupScopeFilter(scope) ? scope : undefined);
       setGroups(result.groups);
       setTotalDuplicates(result.totalDuplicates);
       setDetected(true);
@@ -192,6 +241,11 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
   };
 
   const activeFieldCount = DEDUP_TOGGLE_FIELDS.filter((f) => matchFields[f.key]).length + (matchFields.date ? 1 : 0);
+  // 「匹配条件」折叠态摘要:日期精度 + 已启用的匹配字段
+  const matchSummary = [
+    DATE_PRECISION_OPTIONS.find((o) => o.value === (matchFields.date ?? 'ignore'))?.label,
+    ...DEDUP_TOGGLE_FIELDS.filter((f) => matchFields[f.key]).map((f) => f.label),
+  ].filter(Boolean).join(' · ');
 
   // ── 合并预演 ──
   // 处理单位:每组「第 1 条 + 该组被勾选的其余记录」(第 1 条永远是保留记录,不参与被并入)。
@@ -321,6 +375,21 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
     backgroundColor: on ? alpha(colors.primary, 0.12) : colors.card,
   });
 
+  /** 筛选范围里的一行日期:值只保留到「日」(范围的时分秒无意义),清空按钮单独给 */
+  const dateRow = (label: string, value: string | null, onChange: (v: string | null) => void) => (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+      <Text variant="muted" style={{ fontSize: 11, width: 40 }}>{label}</Text>
+      <View style={{ flex: 1 }}>
+        <DatePicker value={value ? `${value}T00:00:00` : ''} onChange={(v) => onChange(v.slice(0, 10))} />
+      </View>
+      {value ? (
+        <Pressable onPress={() => onChange(null)} hitSlop={8}>
+          <X size={14} color={colors.mutedForeground} />
+        </Pressable>
+      ) : null}
+    </View>
+  );
+
   return (
     <>
       <FormSheet visible={visible} title="去重检测" onClose={handleClose}>
@@ -331,38 +400,140 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
           </View>
         ) : null}
 
-        {/* 匹配条件 */}
-        <Text variant="muted" style={{ fontSize: 12, marginBottom: 8 }}>匹配条件(至少一项)</Text>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
-          <ChipSelect
-            value={matchFields.date ?? 'ignore'}
-            onChange={(v) => setMatchFields((p) => ({ ...p, date: v === 'ignore' ? null : (v as 'exact' | 'minute' | 'date') }))}
-            options={[
-              { value: 'exact', label: '时间:精确' },
-              { value: 'minute', label: '时间:同分钟' },
-              { value: 'date', label: '时间:同日' },
-              { value: 'ignore', label: '时间:忽略' },
-            ]}
-          />
-        </View>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-          {DEDUP_TOGGLE_FIELDS.map((f) => {
-            const on = matchFields[f.key];
-            return (
-              <Pressable
-                key={f.key}
-                onPress={() => {
-                  setMatchFields((p) => ({ ...p, [f.key]: !p[f.key] }));
-                  haptics.tap();
-                }}
-                style={toggleBtnStyle(on)}
-              >
-                <Text style={{ fontSize: 12, color: on ? colors.primary : colors.mutedForeground, fontWeight: on ? '600' : '400' }}>{f.label}</Text>
-                {on ? <Check size={12} color={colors.primary} /> : null}
+        {/* 筛选范围(可折叠,默认展开):限制「在哪些流水里找重复」,与「匹配条件」(怎么算同一笔)独立;点「检测重复」后自动收起 */}
+        <View style={{ marginBottom: 12 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Pressable
+              onPress={() => {
+                setScopeOpen((v) => !v);
+                haptics.tap();
+              }}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, paddingVertical: 6 }}
+            >
+              {scopeOpen ? (
+                <ChevronDown size={14} color={colors.mutedForeground} />
+              ) : (
+                <ChevronRight size={14} color={colors.mutedForeground} />
+              )}
+              <Text style={{ fontSize: 12, fontWeight: '600' }}>筛选范围</Text>
+              <Text variant="muted" numberOfLines={1} style={{ fontSize: 11, flex: 1 }}>
+                {scopeSummary || '不限(全部流水参与检测)'}
+              </Text>
+            </Pressable>
+            {scopeSummary ? (
+              <Pressable onPress={clearScope} hitSlop={8}>
+                <Text style={{ fontSize: 11, color: colors.primary }}>清空</Text>
               </Pressable>
-            );
-          })}
+            ) : null}
+          </View>
+
+          {scopeOpen ? (
+            <View style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 10, marginTop: 4 }}>
+              {dateRow('起始日', filters.dateFrom, (v) => setFilters((p) => ({ ...p, dateFrom: v })))}
+              {dateRow('结束日', filters.dateTo, (v) => setFilters((p) => ({ ...p, dateTo: v })))}
+              <Text variant="muted" style={{ fontSize: 10, marginBottom: 10 }}>时间按本地日,含首尾当天</Text>
+
+              <Text variant="muted" style={{ fontSize: 11, marginBottom: 6 }}>类型(不选 = 全部)</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+                {RECORD_TYPES.map((t) => {
+                  const on = filters.types.includes(t);
+                  return (
+                    <Pressable
+                      key={t}
+                      onPress={() => {
+                        setFilters((p) => ({
+                          ...p,
+                          types: on ? p.types.filter((x) => x !== t) : [...p.types, t],
+                        }));
+                        haptics.tap();
+                      }}
+                      style={toggleBtnStyle(on)}
+                    >
+                      <Text style={{ fontSize: 12, color: on ? colors.primary : colors.mutedForeground, fontWeight: on ? '600' : '400' }}>
+                        {TYPE_LABEL[t]}
+                      </Text>
+                      {on ? <Check size={12} color={colors.primary} /> : null}
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <Text variant="muted" style={{ fontSize: 11, marginBottom: 6 }}>金额区间(按绝对值,留空 = 不限)</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <TextInput
+                  value={amountMinText}
+                  onChangeText={setAmountMinText}
+                  keyboardType="decimal-pad"
+                  placeholder="最小"
+                  placeholderTextColor={colors.mutedForeground}
+                  style={{ flex: 1, fontSize: 12.5, color: colors.foreground, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6 }}
+                />
+                <Text variant="muted" style={{ fontSize: 12 }}>~</Text>
+                <TextInput
+                  value={amountMaxText}
+                  onChangeText={setAmountMaxText}
+                  keyboardType="decimal-pad"
+                  placeholder="最大"
+                  placeholderTextColor={colors.mutedForeground}
+                  style={{ flex: 1, fontSize: 12.5, color: colors.foreground, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6 }}
+                />
+              </View>
+            </View>
+          ) : null}
         </View>
+
+        {/* 匹配条件(可折叠):默认展开,点「检测重复」后自动收起给结果让位 */}
+        <View style={{ marginBottom: 12 }}>
+          <Pressable
+            onPress={() => {
+              setMatchOpen((v) => !v);
+              haptics.tap();
+            }}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6 }}
+          >
+            {matchOpen ? (
+              <ChevronDown size={14} color={colors.mutedForeground} />
+            ) : (
+              <ChevronRight size={14} color={colors.mutedForeground} />
+            )}
+            <Text style={{ fontSize: 12, fontWeight: '600' }}>匹配条件</Text>
+            <Text variant="muted" numberOfLines={1} style={{ fontSize: 11, flex: 1 }}>
+              {matchSummary || '未选择'}
+            </Text>
+          </Pressable>
+
+          {matchOpen ? (
+            <View style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 10, marginTop: 4 }}>
+              <View style={{ marginBottom: 10 }}>
+                <ChipSelect
+                  value={matchFields.date ?? 'ignore'}
+                  onChange={(v) => setMatchFields((p) => ({ ...p, date: v === 'ignore' ? null : (v as 'exact' | 'minute' | 'date') }))}
+                  options={DATE_PRECISION_OPTIONS}
+                />
+              </View>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+                {DEDUP_TOGGLE_FIELDS.map((f) => {
+                  const on = matchFields[f.key];
+                  return (
+                    <Pressable
+                      key={f.key}
+                      onPress={() => {
+                        setMatchFields((p) => ({ ...p, [f.key]: !p[f.key] }));
+                        haptics.tap();
+                      }}
+                      style={toggleBtnStyle(on)}
+                    >
+                      <Text style={{ fontSize: 12, color: on ? colors.primary : colors.mutedForeground, fontWeight: on ? '600' : '400' }}>{f.label}</Text>
+                      {on ? <Check size={12} color={colors.primary} /> : null}
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <Text variant="muted" style={{ fontSize: 10 }}>至少选中一项</Text>
+            </View>
+          ) : null}
+        </View>
+
         <Pressable
           onPress={handleDetect}
           disabled={activeFieldCount < 1 || detecting}

@@ -8,6 +8,7 @@ import type {
   BudgetItem as CoreBudget,
   BudgetType,
   DedupMatchFields,
+  DedupScopeFilter,
   DuplicateMergeChoice,
   MonthlyTrendPoint,
   RecordItem as CoreRecord,
@@ -287,8 +288,12 @@ export interface DuplicateGroup {
   records: RecordItem[];
 }
 
-export async function detectDuplicatesApi(bookId: string, matchFields: DedupMatchFields): Promise<{ groups: DuplicateGroup[]; totalDuplicates: number }> {
-  const res = await http.post<{ groups: DuplicateGroup[]; totalDuplicates: number }>('/api/records/detect-duplicates', { bookId, matchFields });
+export async function detectDuplicatesApi(
+  bookId: string,
+  matchFields: DedupMatchFields,
+  filters?: Partial<DedupScopeFilter>,
+): Promise<{ groups: DuplicateGroup[]; totalDuplicates: number }> {
+  const res = await http.post<{ groups: DuplicateGroup[]; totalDuplicates: number }>('/api/records/detect-duplicates', { bookId, matchFields, filters });
   return res ?? { groups: [], totalDuplicates: 0 };
 }
 
