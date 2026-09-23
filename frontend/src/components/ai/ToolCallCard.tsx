@@ -494,8 +494,10 @@ export function ToolCallCard({ toolCall }: Props) {
         </div>
       )}
 
-      {/* 批量确认计数器 */}
-      {(effectiveStatus === 'confirming' || effectiveStatus === 'suggesting' || effectiveStatus === 'switching') && <BatchIndicator toolCallId={toolCall.toolCallId} />}
+      {/* 批量确认计数器：导入预览/确认导入卡的状态是 success（不是 confirming），必须一并纳入，
+          否则「等待全部确认 · 剩余 N 个」永远不显示 */}
+      {(effectiveStatus === 'confirming' || effectiveStatus === 'suggesting' || effectiveStatus === 'switching'
+        || isInteractivePreview || isConfirmCard) && <BatchIndicator toolCallId={toolCall.toolCallId} />}
 
       {/* 确认按钮 —— 始终可见 */}
       {(effectiveStatus === 'confirming' || (isExpired && toolCall.preview)) && (

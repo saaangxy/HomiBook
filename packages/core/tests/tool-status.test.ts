@@ -140,12 +140,26 @@ describe('isAwaitingUserAction(同一条消息里是否还有等用户点的卡)
     expect(isAwaitingUserAction(receipt)).toBe(false);
   });
 
-  it('点过(decided)/ 已确认(confirmed)/ 状态不再是 success 的卡不再等', () => {
+  it('点过(decided)/ 已确认(confirmed)/ 状态不是成功态的卡不再等', () => {
     const base: Partial<ToolCallEntry> & Pick<ToolCallEntry, 'toolName'> =
       { toolName: 'preview_import', args: { mode: 'preview' }, status: 'success', result: { data: {} } };
     expect(isAwaitingUserAction(tc({ ...base, decided: true }))).toBe(false);
-    expect(isAwaitingUserAction(tc({ ...base, status: 'pending' }))).toBe(false);
+    expect(isAwaitingUserAction(tc({ ...base, status: 'error' }))).toBe(false);
     expect(isAwaitingUserAction(tc({ ...base, result: { data: { confirmed: true } } }))).toBe(false);
+  });
+
+  it('历史快照(原始 status=pending 但有 result)仍算等用户点 —— 判定必须按 UI 的真实状态', () => {
+    // 会话从历史加载时块的原始 status 可能仍是 pending，而 UI 用 resolveToolCallStatus 判成 success
+    // 并把卡片渲染出来。若读原始 status，这种卡会被漏掉 →「等待全部确认 · 剩余 N 个」永远不显示。
+    const snapshot = tc({ toolName: 'preview_import', args: { mode: 'preview' }, status: 'pending', result: { data: {} } });
+    expect(resolveToolCallStatus(snapshot).effectiveStatus).toBe('success');
+    expect(isAwaitingUserAction(snapshot)).toBe(true);
+  });
+
+  it('preview_import 没有 result 的历史快照 → 不渲染卡片，也不算等用户点', () => {
+    const expired = tc({ toolName: 'preview_import', args: { mode: 'preview' }, status: 'pending' });
+    expect(resolveToolCallStatus(expired).effectiveStatus).toBe('error');
+    expect(isAwaitingUserAction(expired)).toBe(false);
   });
 
   it('中间态(待确认/待选择/待选账本)仍算等用户操作', () => {

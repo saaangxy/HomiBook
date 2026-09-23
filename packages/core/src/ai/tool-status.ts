@@ -20,16 +20,20 @@ import type { ToolCallEntry } from '../types/index.js';
  *   - confirm_import 只有 mode='confirm_preview' 才渲染确认卡（执行完的 imported 回执不需要点）
  */
 export function isAwaitingUserAction(toolCall: ToolCallEntry): boolean {
-  if (toolCall.status === 'confirming' || toolCall.status === 'suggesting' || toolCall.status === 'switching') return true;
+  // 一律用 resolveToolCallStatus 的 effectiveStatus，**不要读原始 status**：
+  // 从历史加载的块原始 status 可能还是 'pending'，但带 result 时 UI 会按 success 渲染出卡片
+  // （见 ToolCallCard 的 showResult），读原始 status 会漏掉这些卡，「剩余 N 个」就永远不显示。
+  const { effectiveStatus } = resolveToolCallStatus(toolCall);
+  if (effectiveStatus === 'confirming' || effectiveStatus === 'suggesting' || effectiveStatus === 'switching') return true;
 
   const args = (toolCall.args ?? {}) as Record<string, unknown>;
   const data = (toolCall.result as { data?: { mode?: string; confirmed?: boolean } } | undefined)?.data;
-  const isCard = (toolCall.toolName === 'preview_import' && args.mode === 'preview')
+  const isCard = (toolCall.toolName === 'preview_import' && args.mode === 'preview' && toolCall.result != null)
     || (toolCall.toolName === 'confirm_import' && data?.mode === 'confirm_preview');
   if (!isCard) return false;
 
   // 点过（decided）/ 后端已回 confirmed 的卡不再拦
-  if (toolCall.status !== 'success' || toolCall.decided) return false;
+  if (effectiveStatus !== 'success' || toolCall.decided) return false;
   return data?.confirmed !== true;
 }
 

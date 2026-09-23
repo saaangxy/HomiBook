@@ -600,9 +600,10 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
           </div>
         )}
         {!isConfirmed ? (
+          <div className="flex items-center gap-2">
           <Button
             size="sm"
-            className="w-full text-xs"
+            className="flex-1 text-xs"
             disabled={submitted}
             onClick={async () => {
               if (!toolCallId) return
@@ -675,6 +676,21 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
             {submitted ? <Loader2 size={12} className="animate-spin mr-1" /> : null}
             {submitted ? '提交中...' : '确认无误，继续导入'}
           </Button>
+          {/* 取消这张账单：approved=false → 模型收到「用户拒绝了此操作」，不会为它调 confirm_import */}
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-xs shrink-0"
+            disabled={submitted}
+            onClick={() => {
+              if (!toolCallId) return
+              markSubmitted(toolCallId)
+              useChatStore.getState().confirmAndContinue(accountBookId, toolCallId, false)
+            }}
+          >
+            取消
+          </Button>
+          </div>
         ) : (
           <div className="flex items-center gap-2 text-xs text-[#22c55e]">
             <CheckCircle2 size={14} />

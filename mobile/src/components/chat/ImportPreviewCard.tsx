@@ -204,6 +204,19 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
     setPicker(null);
   };
 
+  /** 取消这张账单:approved=false → 模型收到「用户拒绝了此操作」,不会为它调 confirm_import */
+  const handleCancel = () => {
+    if (submitted) return;
+    setSubmitted(true);
+    setConfirmError('');
+    try {
+      confirmAndContinue(accountBookId, toolCall.toolCallId, false);
+    } catch (e: any) {
+      setConfirmError(e?.message || '请求失败');
+      setSubmitted(false);
+    }
+  };
+
   // ── 确认导入(构建 overrides 发起 confirm_import) ──
   const handleConfirm = () => {
     if (submitted) return;
@@ -483,14 +496,24 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
         </View>
       ) : null}
       {!isConfirmed ? (
-        <Pressable
-          onPress={handleConfirm}
-          disabled={submitted}
-          style={{ borderRadius: 10, paddingVertical: 9, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6, backgroundColor: colors.primary, opacity: submitted ? 0.6 : 1 }}
-        >
-          {submitted && <ActivityIndicator size="small" color={colors.primaryForeground} />}
-          <Text style={{ fontSize: 12.5, fontWeight: '600', color: colors.primaryForeground }}>{submitted ? '提交中...' : '确认无误，继续导入'}</Text>
-        </Pressable>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <Pressable
+            onPress={handleConfirm}
+            disabled={submitted}
+            style={{ flex: 1.6, borderRadius: 10, paddingVertical: 9, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6, backgroundColor: colors.primary, opacity: submitted ? 0.6 : 1 }}
+          >
+            {submitted && <ActivityIndicator size="small" color={colors.primaryForeground} />}
+            <Text style={{ fontSize: 12.5, fontWeight: '600', color: colors.primaryForeground }}>{submitted ? '提交中...' : '确认无误，继续导入'}</Text>
+          </Pressable>
+          {/* 取消:与确认同为这张卡的决定(web ImportPreviewInteractive 同款) */}
+          <Pressable
+            onPress={handleCancel}
+            disabled={submitted}
+            style={{ flex: 1, borderRadius: 10, paddingVertical: 9, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, opacity: submitted ? 0.6 : 1 }}
+          >
+            <Text style={{ fontSize: 12.5, color: colors.foreground }}>取消</Text>
+          </Pressable>
+        </View>
       ) : (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <CheckCircle2 size={14} color="#22c55e" />
