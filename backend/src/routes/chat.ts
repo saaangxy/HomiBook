@@ -466,6 +466,8 @@ async function buildChatMessages(sessionId: string, pendingToolResults: { toolCa
   })
 
   const pendingIds = new Set(pendingToolResults.map(p => p.toolCallId))
+  /** 已插到所属 assistant 消息后面的 pending 结果（其余走兜底追加） */
+  const placedPending = new Set<string>()
   const messages: any[] = []
   const messageIds: string[] = []
   // 注入消息(role='inject')不进消息数组,只在最后折叠回它所属的用户消息
@@ -479,6 +481,7 @@ async function buildChatMessages(sessionId: string, pendingToolResults: { toolCa
     } else if (msg.role === 'assistant') {
       // 去重:旧数据可能残留重复 tool_call_id(旧版 id 会撞号),重放时重复项会让上游拒绝整轮请求
       const tcList: any[] = dedupeToolCalls<any>(msg.toolCalls ? JSON.parse(msg.toolCalls) : [])
+      const tcIds = new Set(tcList.map((tc: any) => tc.toolCallId))
       const contentParts: any[] = []
       if (msg.content) {
         const cleanText = stripThinkTags(msg.content)
@@ -503,26 +506,40 @@ async function buildChatMessages(sessionId: string, pendingToolResults: { toolCa
       messages.push({ role: 'assistant', content: contentParts })
       messageIds.push(msg.id)
 
-      if (completedResults.length > 0) {
-        messages.push({
-          role: 'tool',
-          content: completedResults.map((tc: any) => ({
-            type: 'tool-result',
-            toolCallId: tc.toolCallId,
-            toolName: tc.toolName,
-            output: { type: 'json', value: tc.result },
-          })),
-        })
+      // 本次 decisions 的结果必须**紧跟它所属的 assistant 消息**，与已有结果合成同一条 tool 消息。
+      // 若像以前那样统一追加到消息数组末尾，一旦该 assistant 消息不是最后一条（多轮确认、或同消息里
+      // 已确认过另一张卡产生了续写消息），它的 tool 结果会被后续消息隔开，上游直接拒：
+      //   An assistant message with 'tool_calls' must be followed by tool messages responding to each 'tool_call_id'
+      const pendingHere = pendingToolResults.filter(p => tcIds.has(p.toolCallId))
+      const resultParts = [
+        ...completedResults.map((tc: any) => ({
+          type: 'tool-result',
+          toolCallId: tc.toolCallId,
+          toolName: tc.toolName,
+          output: { type: 'json', value: tc.result },
+        })),
+        // 同样按 id 去重:客户端 decisions 若重复提交同一 toolCallId,重复项会让上游拒绝整轮请求
+        ...dedupeToolCalls(pendingHere).map(p => ({
+          type: 'tool-result',
+          toolCallId: p.toolCallId,
+          toolName: p.toolName,
+          output: { type: 'json', value: p.result },
+        })),
+      ]
+      if (resultParts.length > 0) {
+        messages.push({ role: 'tool', content: resultParts })
         messageIds.push(msg.id) // tool 消息复用 assistant 的 ID
       }
+      for (const p of pendingHere) placedPending.add(p.toolCallId)
     }
   }
 
-  if (pendingToolResults.length > 0) {
+  // 兜底：找不到所属 assistant 消息的 pending 结果（理论不该发生）也要回传，否则同样会被上游拒
+  const leftoverPending = pendingToolResults.filter(p => !placedPending.has(p.toolCallId))
+  if (leftoverPending.length > 0) {
     messages.push({
       role: 'tool',
-      // 同样按 id 去重:客户端 decisions 若重复提交同一 toolCallId,重复项会让上游拒绝整轮请求
-      content: dedupeToolCalls(pendingToolResults).map(p => ({
+      content: dedupeToolCalls(leftoverPending).map(p => ({
         type: 'tool-result',
         toolCallId: p.toolCallId,
         toolName: p.toolName,
@@ -1273,10 +1290,11 @@ export async function chatRoutes(app: FastifyInstance) {
       }
 
       // 每个 decision 各自存储自己的导入覆盖数据（先存再执行，避免多工具并行时 data 串扰）
+      // key 用账单附件的 attachmentId（导入链路已统一到 attachmentId，不再有 fileId）
       const decData = data as Record<string, unknown> | undefined
-      if (decData?.fileId) {
-        const existing = peekImportOverrides(decData.fileId as string) || {}
-        storeImportOverrides(decData.fileId as string, {
+      if (decData?.attachmentId) {
+        const existing = peekImportOverrides(decData.attachmentId as string) || {}
+        storeImportOverrides(decData.attachmentId as string, {
           accountResolutions: (decData.accountResolutions ?? existing.accountResolutions) as any,
           categoryResolutions: (decData.categoryResolutions ?? existing.categoryResolutions) as any,
           unrecognizedResolutions: (decData.unrecognizedResolutions ?? existing.unrecognizedResolutions) as any,
@@ -1342,8 +1360,7 @@ export async function chatRoutes(app: FastifyInstance) {
       try {
         if (entry.toolName === 'preview_import') {
           const args = entry.args || {}
-          const fileId = args.fileId as string
-          const userOverrides = peekImportOverrides(fileId)
+          const userOverrides = peekImportOverrides(args.attachmentId as string)
           const mergedArgs = { ...args, accountResolutions: userOverrides?.accountResolutions ?? args.accountResolutions, categoryResolutions: userOverrides?.categoryResolutions ?? args.categoryResolutions }
           toolResult = await tool.execute(mergedArgs, ctx)
           const reData = toolResult.data || {}
@@ -1354,8 +1371,7 @@ export async function chatRoutes(app: FastifyInstance) {
           }
         } else if (entry.toolName === 'confirm_import') {
           const args = entry.args || {}
-          const fileId = args.fileId as string
-          const userOverrides = peekImportOverrides(fileId)
+          const userOverrides = peekImportOverrides(args.attachmentId as string)
           const mergedArgs: any = { ...args, _execute: true }
           if (userOverrides?.ownerId) mergedArgs.ownerId = userOverrides.ownerId
           toolResult = await tool.execute(mergedArgs, ctx)

@@ -27,6 +27,7 @@ import {
   parseCsvWithMapping,
   detectHeaderIndex,
   detectEncoding,
+  detectBillSource,
 } from '../services/import/parsers.js'
 
 // ======================== 路由 ========================
@@ -77,10 +78,12 @@ const importConfirmSchema = z.object({
 export async function importExportRoutes(app: FastifyInstance) {
   app.addHook('onRequest', authenticate)
 
-  // ===== 临时文件上传（供 AI 导入工具使用） =====
+  // ===== 导入账单上传（供 AI 导入工具使用） =====
+  // 与 /records/upload 一样产出**附件**(RecordAttachment):AI 侧只认 attachmentId,不再有 fileId。
+  // 磁盘名与 attachmentId 是两个 uuid,解析一律经 RecordAttachment.path(见 services/import/attachment-file.ts)。
   app.post('/import/upload', {
     schema: {
-      description: '上传导入文件到临时存储，返回 fileId 供 preview_import 工具使用',
+      description: '上传导入账单文件，落为附件并返回 attachmentId 供 preview_import / confirm_import 使用',
       tags: ['导入导出'],
       consumes: ['multipart/form-data'],
     },
@@ -93,12 +96,22 @@ export async function importExportRoutes(app: FastifyInstance) {
     const uploadDir = path.resolve('uploads')
     if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true })
 
-    const fileId = crypto.randomUUID()
     const ext = path.extname(data.filename) || '.tmp'
-    const filename = `${fileId}${ext}`
-    fs.writeFileSync(path.join(uploadDir, filename), buffer)
+    const diskName = `${crypto.randomUUID()}${ext}`
+    fs.writeFileSync(path.join(uploadDir, diskName), buffer)
 
-    return { fileId, filename: data.filename, size: buffer.length }
+    const attachment = await prisma.recordAttachment.create({
+      data: { path: `/api/uploads/${diskName}`, originalFilename: data.filename },
+    })
+
+    // detectedSource 与 preview_import 的自动识别用同一函数(detectBillSource),调用方可据此提示用户
+    return {
+      attachmentId: attachment.id,
+      url: `/api/uploads/${diskName}`,
+      filename: data.filename,
+      size: buffer.length,
+      detectedSource: detectBillSource(buffer, data.filename),
+    }
   })
 
   // ===== CSV 文件分析 =====

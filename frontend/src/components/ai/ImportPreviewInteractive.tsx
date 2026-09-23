@@ -109,7 +109,7 @@ interface Props {
   accountBookId: string
   toolCallId?: string
   aiArgs?: {
-    fileId?: string
+    attachmentId?: string
     accountResolutions?: AIAccountResolution[]
     categoryResolutions?: AICategoryResolution[]
   }
@@ -611,8 +611,9 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
               try {
                 if (toolCallId) {
                   const overrides: Record<string, unknown> = {}
-                  const fileId = aiArgs?.fileId
-                  if (fileId) overrides.fileId = fileId
+                  // 覆盖数据的 key = 账单附件的 attachmentId(后端 storeImportOverrides 按它取)
+                  const attachmentId = aiArgs?.attachmentId
+                  if (attachmentId) overrides.attachmentId = attachmentId
 
                   // 构建用户修改后的账户映射
                   const userAccountResolutions: { sourceAccountName: string; action: 'existing' | 'create'; targetAccountId?: string; targetAccountName?: string; accountType?: string }[] = []

@@ -149,6 +149,7 @@ export const ALL_TOOLS: ToolDef[] = TOOL_GROUPS.flatMap(g => g.tools)
 // ---- 用户导入覆盖数据存储 ----
 // 前端 ImportPreviewInteractive 组件中用户修改后的映射规则
 // 通过 confirmAction API 传入，由 confirm_import 消费
+// key = 账单附件的 attachmentId（曾用导入临时文件的 fileId，已统一为 attachmentId）
 
 interface UserImportOverrides {
   accountResolutions?: { sourceAccountName: string; action: 'existing' | 'create'; targetAccountId?: string; targetAccountName?: string; accountType?: string }[]
@@ -160,18 +161,18 @@ interface UserImportOverrides {
 
 const userImportOverrides = new Map<string, UserImportOverrides>()
 
-export function storeImportOverrides(fileId: string, data: UserImportOverrides) {
-  userImportOverrides.set(fileId, data)
+export function storeImportOverrides(attachmentId: string, data: UserImportOverrides) {
+  userImportOverrides.set(attachmentId, data)
 }
 
-export function consumeImportOverrides(fileId: string): UserImportOverrides | undefined {
-  const data = userImportOverrides.get(fileId)
-  userImportOverrides.delete(fileId)
+export function consumeImportOverrides(attachmentId: string): UserImportOverrides | undefined {
+  const data = userImportOverrides.get(attachmentId)
+  userImportOverrides.delete(attachmentId)
   return data
 }
 
-export function peekImportOverrides(fileId: string): UserImportOverrides | undefined {
-  return userImportOverrides.get(fileId)
+export function peekImportOverrides(attachmentId: string): UserImportOverrides | undefined {
+  return userImportOverrides.get(attachmentId)
 }
 
 // 生成 AI SDK 可用的工具定义列表

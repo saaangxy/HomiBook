@@ -130,7 +130,11 @@ export function MainLayout() {
   const pageTitle = currentPage?.label || '首页'
 
   return (
-    <SidebarProvider defaultOpen={true}>
+    // 外壳必须**有确定高度**:默认的 min-h-svh 是"至少一屏、可被内容撑高",
+    // 于是 main / 内容区 / 页面里的 flex-1、h-full 全部退化成按内容撑高 ——
+    // 首页 AI 聊天区就会被很长的会话列表顶成好几屏高。改为 h-svh + overflow-hidden:
+    // 高度链从外壳到聊天区都是确定的,超出的部分由内容区(overflow-auto)自己滚动。
+    <SidebarProvider defaultOpen={true} className="h-svh overflow-hidden">
       <Sidebar collapsible="icon">
         {/* Logo */}
         <SidebarHeader className="px-5 pt-5 pb-7 group-data-[collapsible=icon]:px-2 group-data-[collapsible=icon]:pt-4 group-data-[collapsible=icon]:pb-4">

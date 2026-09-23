@@ -5,6 +5,34 @@
  */
 import type { ToolCallEntry } from '../types/index.js';
 
+/**
+ * 该工具调用是否仍在等用户操作。
+ *
+ * 与「等待确认/选择」的状态区分开：preview_import / confirm_import 是 requireConfirm=false 的工具，
+ * 执行成功（status=success）但仍要用户点「确认导入」。若不把它们算作「未完成」，
+ * 用户只点同一轮里的其中一张卡就会立刻把 decisions 提交给后端，而那条 assistant 消息里
+ * 其它 tool_call 还没有 tool 结果，上游会拒：
+ *   An assistant message with 'tool_calls' must be followed by tool messages responding to each 'tool_call_id'
+ * 因此 web / mobile 的 decideTool 都靠这里判断「是否要等同一条消息里所有卡都点完」。
+ *
+ * **判定必须与 UI 真正渲染出的卡片一致**，否则会把没有按钮的块也算成「等用户点」而永远卡住：
+ *   - preview_import 只有 mode='preview' 才渲染交互卡（导入流程第一步的 mode='analyze' 是查询，直接返回数据）
+ *   - confirm_import 只有 mode='confirm_preview' 才渲染确认卡（执行完的 imported 回执不需要点）
+ */
+export function isAwaitingUserAction(toolCall: ToolCallEntry): boolean {
+  if (toolCall.status === 'confirming' || toolCall.status === 'suggesting' || toolCall.status === 'switching') return true;
+
+  const args = (toolCall.args ?? {}) as Record<string, unknown>;
+  const data = (toolCall.result as { data?: { mode?: string; confirmed?: boolean } } | undefined)?.data;
+  const isCard = (toolCall.toolName === 'preview_import' && args.mode === 'preview')
+    || (toolCall.toolName === 'confirm_import' && data?.mode === 'confirm_preview');
+  if (!isCard) return false;
+
+  // 点过（decided）/ 后端已回 confirmed 的卡不再拦
+  if (toolCall.status !== 'success' || toolCall.decided) return false;
+  return data?.confirmed !== true;
+}
+
 export interface ToolStatusResolution {
   effectiveStatus: ToolCallEntry['status'];
   /** suggest_options 推断出的建议内容(历史数据无 suggestion 字段时补齐) */

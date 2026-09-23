@@ -11,6 +11,7 @@ import {
   parseJdCSV,
   detectHeaderIndex,
   parseCsvWithMapping,
+  detectBillSource,
 } from '../src/services/import/parsers.js';
 
 // ============ 通用工具 ============
@@ -669,5 +670,55 @@ describe('parseCsvWithMapping', () => {
     );
     expect(r.rows).toHaveLength(0);
     expect(r.errors).toHaveLength(0);
+  });
+});
+
+// ============ 账单来源识别(聊天窗口拖文件时用) ============
+
+describe('detectBillSource', () => {
+  /** 造一个 xlsx buffer */
+  const xlsx = (rows: unknown[][]): Buffer => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Sheet1');
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+  };
+
+  it('支付宝 CSV:表头含「交易对方 / 商品说明」', () => {
+    const text = '标题,支付宝交易记录明细查询\n交易时间,交易分类,交易对方,对方账号,商品说明,收/支,金额,收/付款方式,交易状态,交易订单号,商家订单号,备注\n';
+    expect(detectBillSource(Buffer.from(text, 'utf8'), 'alipay.csv')).toBe('alipay');
+  });
+
+  it('京东 CSV:与支付宝同样是「交易时间,」开头,靠「商户名称 / 交易说明」区分', () => {
+    const text = '交易时间,商户名称,交易说明,收/支,金额,收/付款方式,交易状态,交易分类,交易订单号,商家订单号,备注\n';
+    expect(detectBillSource(Buffer.from(text, 'utf8'), 'jd.csv')).toBe('jd');
+  });
+
+  it('微信 xlsx:表头含「当前状态 / 交易单号」', () => {
+    const buf = xlsx([
+      ['微信支付账单明细'],
+      ['交易时间', '交易类型', '交易对方', '商品', '收/支', '金额(元)', '支付方式', '当前状态', '交易单号', '商户单号', '备注'],
+    ]);
+    expect(detectBillSource(buf, 'wechat.xlsx')).toBe('wechat');
+  });
+
+  it('GBK 编码的支付宝 CSV 也能识别', () => {
+    const text = '交易时间,交易分类,交易对方,商品说明,收/支,金额,收/付款方式\n';
+    expect(detectBillSource(iconv.encode(text, 'gbk'), 'alipay.csv')).toBe('alipay');
+  });
+
+  it('没有扩展名时按文件头判断(看 zip 头)', () => {
+    expect(detectBillSource(xlsx([['交易时间', '当前状态', '交易单号']]), 'noext')).toBe('wechat');
+  });
+
+  it('普通 CSV / 普通 Excel / 空 / 二进制 → null(按普通附件处理)', () => {
+    expect(detectBillSource(Buffer.from('日期,金额,类型\n2024-01-15,25,支出', 'utf8'), 'x.csv')).toBeNull();
+    expect(detectBillSource(xlsx([['姓名', '金额'], ['张三', 10]]), 'x.xlsx')).toBeNull();
+    expect(detectBillSource(Buffer.alloc(0), 'empty.csv')).toBeNull();
+    expect(detectBillSource(Buffer.from([0x00, 0x01, 0x02, 0x03, 0xff]), 'bin.dat')).toBeNull();
+  });
+
+  it('有「交易时间」表头但列都不认识 → null', () => {
+    expect(detectBillSource(Buffer.from('交易时间,自定义列A,自定义列B\n', 'utf8'), 'other.csv')).toBeNull();
+    expect(detectBillSource(xlsx([['交易时间', '自定义列A']]), 'other.xlsx')).toBeNull();
   });
 });

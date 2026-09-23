@@ -27,11 +27,21 @@ const MEMORY_HEADING = '以下是用户的长期记忆(供参考):'
 /** 附件清单段标记(格式约定集中在本模块,避免 chat.ts 与解析逻辑各写一份) */
 const ATTACHMENT_MARK = '[附件信息]'
 
+/**
+ * 附件清单末尾的说明:告诉模型 attachmentId 就是这些文件的**唯一标识**,图片识别/账单导入/流水关联都用它
+ * (两个上传入口都产出 RecordAttachment,导入链路已统一到 attachmentId,fileId 已废弃)。
+ *
+ * 措辞**刻意避开** import-transactions 的触发标记(即「请导入」):detectSkills 的入参是
+ * 「用户原文 + 本段」,这里出现该标记会让每条带附件的消息都激活导入技能。
+ */
+const ATTACHMENT_SCOPE_NOTE =
+  '说明:以上 attachmentId 是这些附件在系统里的唯一标识 —— 图片识别、账单导入、流水附件关联都用它;调用工具时直接引用,不要用文件名或其它 id。'
+
 /** 构造附件清单注入段(空数组返回空串,表示本轮不注入) */
 export function buildAttachmentSection(attachments: { id: string; originalFilename: string }[]): string {
   if (attachments.length === 0) return ''
   const lines = attachments.map((a) => `attachmentId: ${a.id}\n文件名: ${a.originalFilename}`)
-  return `${ATTACHMENT_MARK}\n${lines.join('\n')}`
+  return `${ATTACHMENT_MARK}\n${lines.join('\n')}\n${ATTACHMENT_SCOPE_NOTE}`
 }
 
 /**

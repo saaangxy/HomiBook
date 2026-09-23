@@ -1,23 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { buildImportMessage, parseImportMessage } from '../src/ai/import-message.js';
+import { buildImportMessage, parseImportMessage, IMPORT_MESSAGE_PREFIX } from '../src/ai/import-message.js';
 
 describe('buildImportMessage', () => {
-  it('已知来源使用展示标签', () => {
-    expect(buildImportMessage({ fileId: 'f123', source: 'alipay', fileName: '账单.csv' })).toBe(
-      '请导入支付宝账单文件\nfileId: f123\nsource: alipay\n文件名: 账单.csv',
-    );
+  it('只发一句自然语言请求:不再编码 fileId/source/文件名', () => {
+    const text = buildImportMessage({ source: 'alipay' });
+    expect(text).toBe('请导入支付宝账单文件');
+    // 带了元数据行就又会被当成 v1 协议渲染出文件卡片,而模型也会以为要抄 id
+    expect(text).not.toContain('fileId');
+    expect(text).not.toContain('source');
+    expect(parseImportMessage(text)).toBeNull();
   });
 
   it('未知来源回退原始 key', () => {
-    expect(buildImportMessage({ fileId: 'f1', source: 'bank', fileName: 'a.csv' })).toContain(
-      '请导入bank账单文件',
-    );
+    expect(buildImportMessage({ source: 'bank' })).toContain('请导入bank账单文件');
+  });
+
+  it('前缀常量与消息一致(后端技能检测靠它识别导入请求)', () => {
+    expect(buildImportMessage({ source: 'wechat' }).startsWith(IMPORT_MESSAGE_PREFIX)).toBe(true);
   });
 });
 
-describe('parseImportMessage', () => {
-  it('编码/解码 roundtrip:已知来源解码为展示标签', () => {
-    const text = buildImportMessage({ fileId: 'f123', source: 'alipay', fileName: '账单.csv' });
+describe('parseImportMessage(仅用于兼容旧会话里的 v1 协议)', () => {
+  it('解出元数据,来源映射为展示标签', () => {
+    const text = '请导入支付宝账单文件\nfileId: f123\nsource: alipay\n文件名: 账单.csv';
     expect(parseImportMessage(text)).toEqual({
       desc: '请导入支付宝账单文件',
       fileName: '账单.csv',
@@ -25,14 +30,10 @@ describe('parseImportMessage', () => {
     });
   });
 
-  it('未知来源 roundtrip:标签与 key 相同', () => {
-    const text = buildImportMessage({ fileId: 'f1', source: 'bank', fileName: 'a.csv' });
-    expect(parseImportMessage(text)).toEqual({ desc: '请导入bank账单文件', fileName: 'a.csv', source: 'bank' });
-  });
-
   it('非导入消息返回 null', () => {
     expect(parseImportMessage('普通聊天消息')).toBeNull();
     expect(parseImportMessage('')).toBeNull();
+    expect(parseImportMessage('请导入支付宝账单文件')).toBeNull();
     expect(parseImportMessage('请导入支付宝账单文件\nfileId: f123')).toBeNull();
   });
 
@@ -56,7 +57,7 @@ describe('parseImportMessage', () => {
   });
 
   it('尾部换行不影响解析', () => {
-    const text = buildImportMessage({ fileId: 'f1', source: 'jd', fileName: 'j.csv' }) + '\n';
+    const text = '请导入京东账单文件\nfileId: f1\nsource: jd\n文件名: j.csv\n';
     expect(parseImportMessage(text)?.fileName).toBe('j.csv');
   });
 });

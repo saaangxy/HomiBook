@@ -1,26 +1,24 @@
 import type { ToolDef, ToolContext } from './types.js'
 import { prisma } from '../../../app.js'
 import { assertIsMember, checkEnumList, checkEnums } from '../security.js'
-import { parseAlipayCSV, parseWechatXlsx, parseJdCSV } from '../../import/parsers.js'
-import { applyAccountMappings, applyCategoryMappings, matchAccountByName, inferAccount, type ParsedRow } from '../../import/shared.js'
 import { createAccountsInTx, saveCategoryMappingsInTx, saveAccountMappingsInTx, AccountResolver, batchCreateRecordsInTx, refreshBalances } from '../../import/execute.js'
+import { applyAccountMappings, applyCategoryMappings, matchAccountByName, inferAccount } from '../../import/shared.js'
 import { consumeImportOverrides, peekImportOverrides } from './index.js'
+import { IMPORT_FILE_MISSING, loadImportFile, parseImportFile } from '../../import/attachment-file.js'
 import { ACCOUNT_TYPES, ACCOUNT_TYPE_LABELS, IMPORT_AI_SOURCES, RECORD_TYPES, normalizeRecordType } from '@homibook/core'
-import fs from 'fs'
-import path from 'path'
 
 export const confirmImportTool: ToolDef = {
   name: 'confirm_import',
   displayName: '确认导入',
-  promptHint: '传入 fileId、source 和映射规则，一次性完成导入',
-  description: '确认导入账单数据。传入 fileId、source 和经过用户确认的映射规则，展示导入预览后可执行导入。',
+  promptHint: '传入账单附件的 attachmentId 和映射规则，一次性完成导入',
+  description: '确认导入账单数据。传入账单附件的 attachmentId 和经过用户确认的映射规则，展示导入预览后可执行导入。',
   // 工具自身已返回 confirm_preview 供前端展示富预览（ImportConfirmCard），无需通用确认卡片（避免双重确认）
   requireConfirm: false,
   parameters: {
     type: 'object',
     properties: {
-      fileId: { type: 'string', description: '上传文件后获得的 fileId' },
-      source: { type: 'string', enum: [...IMPORT_AI_SOURCES], description: '账单来源类型' },
+      attachmentId: { type: 'string', description: '账单**附件**的 id，取自本轮消息附件清单里的「attachmentId: xxx」(与 preview_import 传的是同一个)。不要传文件名或其它 id' },
+      source: { type: 'string', enum: [...IMPORT_AI_SOURCES], description: '账单来源类型；不传则服务端按文件内容自动识别(推荐不传)' },
       ownerId: { type: 'string', description: '记录归属人ID，不填默认本人' },
       accountResolutions: {
         type: 'array',
@@ -53,7 +51,7 @@ export const confirmImportTool: ToolDef = {
         },
       },
     },
-    required: ['fileId', 'source'],
+    required: ['attachmentId'],
   },
 
   async execute(args: any, ctx: ToolContext) {
@@ -66,9 +64,9 @@ export const confirmImportTool: ToolDef = {
     if (badEnum) return badEnum
 
     await assertIsMember(ctx.accountBookId, ctx.userId)
-    const { fileId, source, ownerId, accountResolutions, categoryResolutions, _execute } = args as {
-      fileId: string
-      source: 'alipay' | 'wechat' | 'jd'
+    const { attachmentId, source: sourceArg, ownerId, accountResolutions, categoryResolutions, _execute } = args as {
+      attachmentId: string
+      source?: 'alipay' | 'wechat' | 'jd'
       ownerId?: string
       accountResolutions?: { sourceAccountName: string; action: 'existing' | 'create'; targetAccountId?: string; targetAccountName?: string; accountType?: string }[]
       categoryResolutions?: { sourceCategory: string; targetCategoryCode: string; recordType?: string; payerContains?: string; descriptionContains?: string }[]
@@ -88,35 +86,19 @@ export const confirmImportTool: ToolDef = {
       }
     }
 
-    // 查找并解析文件
-    const uploadDir = path.resolve('uploads')
-    const files = fs.readdirSync(uploadDir)
-    const targetFile = files.find(f => f.startsWith(fileId))
-    if (!targetFile) {
-      return { success: false, error: '文件不存在或已过期，请重新上传', retryable: false }
-    }
+    // 账单文件 = 一个附件:按 attachmentId 取行、经 path 读盘
+    const file = await loadImportFile(attachmentId)
+    if (!file) return { success: false, error: IMPORT_FILE_MISSING, retryable: false }
 
-    const filePath = path.join(uploadDir, targetFile)
-    const buffer = fs.readFileSync(filePath)
-
-    let parseResult: { rows: ParsedRow[]; errors: string[] }
-    if (source === 'alipay') {
-      parseResult = parseAlipayCSV(buffer)
-    } else if (source === 'wechat') {
-      parseResult = parseWechatXlsx(buffer)
-    } else if (source === 'jd') {
-      parseResult = parseJdCSV(buffer)
-    } else {
-      return { success: false, error: `不支持的账单来源: ${source}`, retryable: false }
-    }
-
-    if (parseResult.rows.length === 0 && parseResult.errors.length > 0) {
-      return { success: false, error: parseResult.errors[0], retryable: false }
-    }
+    // 解析:与 preview_import 同一份逻辑(source 缺省/猜错时按文件内容识别)
+    const parsed = parseImportFile(file, sourceArg)
+    if (!parsed.ok) return { success: false, error: parsed.error, retryable: false }
+    const source = parsed.source
+    const parseResult = { rows: parsed.rows, errors: parsed.errors }
 
     // ---- 合并映射规则：用户覆盖 > LLM 参数 ----
     // Phase 1 (preview): peek 不删除，Phase 2 (execute) 才 consume 删除
-    const userOverrides = _execute ? consumeImportOverrides(fileId) : peekImportOverrides(fileId)
+    const userOverrides = _execute ? consumeImportOverrides(attachmentId) : peekImportOverrides(attachmentId)
     const effectiveAccountResolutions = userOverrides?.accountResolutions ?? accountResolutions
     const effectiveCategoryResolutions = userOverrides?.categoryResolutions ?? categoryResolutions
 
@@ -279,7 +261,7 @@ export const confirmImportTool: ToolDef = {
         data: {
           mode: 'confirm_preview',
           source,
-          fileId,
+          attachmentId,
           accountsToCreate: accountCreations.map(a => ({
             name: a.name,
             type: a.type,
@@ -352,10 +334,8 @@ export const confirmImportTool: ToolDef = {
 
     await refreshBalances(affectedAccounts)
 
-    // 清理临时文件
-    try {
-      fs.unlinkSync(filePath)
-    } catch { /* ignore */ }
+    // 注意:**不删文件** —— 账单文件现在就是一个聊天附件(消息里还挂着它的 chip),
+    // 删掉磁盘文件会让该附件变成坏链接。它已被 ChatMessageAttachment 引用,clean-orphans 也不会清它。
 
     return {
       success: true,

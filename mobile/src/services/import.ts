@@ -103,8 +103,11 @@ export function guessImportMime(fileName: string): string {
   return 'text/csv';
 }
 
-/** 上传账单文件到临时存储(AI 导入与手动导入共用) */
-export function uploadImportTempFile(fileUri: string, fileName: string): Promise<{ fileId: string; filename: string; size: number }> {
+/**
+ * 上传账单文件。服务端把它落成一个**附件**并返回 attachmentId —— AI 侧统一只认 attachmentId,不再有 fileId。
+ * url 用于本地回显该消息的附件 chip。
+ */
+export function uploadImportFile(fileUri: string, fileName: string): Promise<{ attachmentId: string; url: string; filename: string; size: number }> {
   return uploadFileNative(`${getBaseUrl()}/api/records/import/upload`, fileUri, guessImportMime(fileName));
 }
 

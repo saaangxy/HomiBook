@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { create } from 'zustand';
-import { buildActivePath, collectDescendantIds, parseContentIntoBlocks, processTextDelta, type DeltaState } from '@homibook/core';
+import { buildActivePath, collectDescendantIds, parseContentIntoBlocks, processTextDelta, isAwaitingUserAction, type DeltaState } from '@homibook/core';
 import type { Message, MessageBlock, ToolCallEntry } from '@homibook/core';
 import {
   confirmActionStream,
@@ -472,16 +472,18 @@ function decideTool(
             status: approved ? ('pending' as const) : ('error' as const),
             preview: undefined,
             decisionData: data,
+            decided: true,
             ...(approved ? {} : { result: { error: '用户拒绝了此操作' } as any }),
           }
         : b,
     ),
   }));
 
-  // 待决定块仍在 → 等待（confirming/suggesting/switching = 等待用户决定）
+  // 同一条 assistant 消息里还有等用户点的块 → 等待，全部点完再一次性提交 decisions。
+  // （只点其中一张就提交，会让该消息里其它 tool_call 缺 tool 结果，上游直接拒整轮请求）
   const updated = viewOf(get().sessionCache[sid] ?? EMPTY_SESSION);
   const updatedMsg = updated.messages.find((m) => m.id === parentId);
-  const awaiting = (updatedMsg?.blocks.filter((b) => b.type === 'tool-call' && (b.status === 'confirming' || b.status === 'suggesting' || b.status === 'switching')) || []) as Extract<MessageBlock, { type: 'tool-call' }>[];
+  const awaiting = (updatedMsg?.blocks.filter((b) => b.type === 'tool-call' && isAwaitingUserAction(b)) || []) as Extract<MessageBlock, { type: 'tool-call' }>[];
   if (awaiting.length > 0) return;
 
   // 全部决定，收集已决定块（pending=刚批准 / error=刚拒绝），各 decision 带自己的 decisionData

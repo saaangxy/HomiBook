@@ -1,11 +1,9 @@
 import type { ToolDef, ToolContext } from './types.js'
 import { prisma } from '../../../app.js'
 import { assertIsMember, checkEnumList, checkEnums } from '../security.js'
-import { parseAlipayCSV, parseWechatXlsx, parseJdCSV } from '../../import/parsers.js'
 import { applyAccountMappings, applyCategoryMappings, matchAccountByName, inferAccount, type ParsedRow } from '../../import/shared.js'
+import { IMPORT_FILE_MISSING, loadImportFile, parseImportFile } from '../../import/attachment-file.js'
 import { ACCOUNT_TYPES, IMPORT_AI_SOURCES, RECORD_TYPES } from '@homibook/core'
-import fs from 'fs'
-import path from 'path'
 
 export const previewImportTool: ToolDef = {
   name: 'preview_import',
@@ -16,8 +14,8 @@ export const previewImportTool: ToolDef = {
   parameters: {
     type: 'object',
     properties: {
-      fileId: { type: 'string', description: '上传文件后获得的 fileId' },
-      source: { type: 'string', enum: [...IMPORT_AI_SOURCES], description: '账单来源类型' },
+      attachmentId: { type: 'string', description: '账单**附件**的 id，取自本轮消息附件清单里的「attachmentId: xxx」(账单文件本身就是一个附件)。不要传文件名或其它 id' },
+      source: { type: 'string', enum: [...IMPORT_AI_SOURCES], description: '账单来源类型；不传则服务端按文件内容自动识别(推荐不传)' },
       mode: { type: 'string', enum: ['analyze', 'preview'], description: '模式：analyze=分析模式（默认），返回未匹配数据供 AI 分析，不展示交互卡片；preview=预览模式，展示交互卡片供用户确认' },
       accountResolutions: {
         type: 'array',
@@ -50,7 +48,7 @@ export const previewImportTool: ToolDef = {
         },
       },
     },
-    required: ['fileId', 'source'],
+    required: ['attachmentId'],
   },
 
   async execute(args: any, ctx: ToolContext) {
@@ -66,9 +64,9 @@ export const previewImportTool: ToolDef = {
     if (badEnum) return badEnum
 
     await assertIsMember(ctx.accountBookId, ctx.userId)
-    const { fileId, source, mode, accountResolutions, categoryResolutions } = args as {
-      fileId: string
-      source: 'alipay' | 'wechat' | 'jd'
+    const { attachmentId, source: sourceArg, mode, accountResolutions, categoryResolutions } = args as {
+      attachmentId: string
+      source?: 'alipay' | 'wechat' | 'jd'
       mode?: 'analyze' | 'preview'
       accountResolutions?: { sourceAccountName: string; action: 'existing' | 'create'; targetAccountId?: string; targetAccountName?: string; accountType?: string }[]
       categoryResolutions?: { sourceCategory: string; targetCategoryCode: string; recordType?: string; payerContains?: string; descriptionContains?: string }[]
@@ -76,32 +74,15 @@ export const previewImportTool: ToolDef = {
 
     const isAnalyzeMode = mode !== 'preview'
 
-    // 查找临时文件
-    const uploadDir = path.resolve('uploads')
-    const files = fs.readdirSync(uploadDir)
-    const targetFile = files.find(f => f.startsWith(fileId))
-    if (!targetFile) {
-      return { success: false, error: '文件不存在或已过期，请重新上传', retryable: false }
-    }
+    // 账单文件 = 一个附件:按 attachmentId 取行、经 path 读盘(attachmentId 与磁盘名是两个 uuid)
+    const file = await loadImportFile(attachmentId)
+    if (!file) return { success: false, error: IMPORT_FILE_MISSING, retryable: false }
 
-    const filePath = path.join(uploadDir, targetFile)
-    const buffer = fs.readFileSync(filePath)
-
-    // 解析
-    let parseResult: { rows: ParsedRow[]; errors: string[] }
-    if (source === 'alipay') {
-      parseResult = parseAlipayCSV(buffer)
-    } else if (source === 'wechat') {
-      parseResult = parseWechatXlsx(buffer)
-    } else if (source === 'jd') {
-      parseResult = parseJdCSV(buffer)
-    } else {
-      return { success: false, error: `不支持的账单来源: ${source}`, retryable: false }
-    }
-
-    if (parseResult.rows.length === 0 && parseResult.errors.length > 0) {
-      return { success: false, error: parseResult.errors[0], retryable: false }
-    }
+    // 解析:source 缺省、或按文件名猜错时,回退到按文件内容识别(见 parseImportFile)
+    const parsed = parseImportFile(file, sourceArg)
+    if (!parsed.ok) return { success: false, error: parsed.error, retryable: false }
+    const source = parsed.source
+    const parseResult = { rows: parsed.rows, errors: parsed.errors }
 
     // ---- 合并 DB 映射规则 + AI 映射规则（内存合并，不写 DB；只匹配本人账户）----
     const { idMap: accountMappings, nameRecord: accountMappingNames, newAccountCreations } = await applyAccountMappings(source, parseResult.rows, ctx.accountBookId, accountResolutions, ctx.userId)

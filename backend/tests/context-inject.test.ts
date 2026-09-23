@@ -7,6 +7,8 @@ import {
   summarizeInjection,
   type InjectedState,
 } from '../src/services/ai/context-inject.js'
+import { detectSkills } from '../src/services/ai/skills/index.js'
+import { IMPORT_MESSAGE_PREFIX } from '@homibook/core'
 
 // 上下文注入的核心不变量:没有差异就绝不写消息(前缀逐字节不变 = 前缀缓存命中)
 const EMPTY: InjectedState = { date: null, memoryIds: [], skills: [] }
@@ -112,6 +114,23 @@ describe('summarizeInjection(写入与解析成对维护)', () => {
     const summary = summarizeInjection(plan!.text)
     expect(summary.date).toBe('2026-09-17')
     expect(summary.hasAttachments).toBe(true)
+  })
+
+  it('附件段不会冒充「导入请求」标记(detectSkills 入参含本段)', () => {
+    const names = (text: string) => detectSkills(text).map((s) => s.name)
+
+    // csv 附件本身激活导入技能 —— 它的提示词负责「先问清是导入还是关联流水」,不会擅自导入
+    const csvSection = buildAttachmentSection([{ id: 'a1', originalFilename: '京东交易流水.csv' }])
+    expect(names(csvSection)).toContain('import-transactions')
+    // 但段内绝不能出现「请导入」这个显式请求标记:否则每条带附件的消息都会被当成用户明确要求导入
+    expect(csvSection).not.toContain(IMPORT_MESSAGE_PREFIX)
+
+    // 图片附件不进导入流程(图片记账技能负责它)
+    const imgSection = buildAttachmentSection([{ id: 'a2', originalFilename: '小票.png' }])
+    expect(names(imgSection)).not.toContain('import-transactions')
+
+    // 用户明说导入(无附件)也要激活
+    expect(names(`${IMPORT_MESSAGE_PREFIX}微信账单文件`)).toContain('import-transactions')
   })
 
   it('只注入记忆(未跨天)时日期为 null,记忆仍可解析', () => {

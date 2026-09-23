@@ -10,7 +10,7 @@ import { ImageLightbox, isImageUrl } from '@/components/ui/AttachmentViewer';
 import { setStreamPaused, useChatStore, useSessionView } from '@/stores/chat';
 import { useUIShell } from '@/components/chrome/chrome';
 import { uploadImage, loadToolNames } from '@/services/chat';
-import { uploadImportTempFile } from '@/services/import';
+import { uploadImportFile } from '@/services/import';
 import { DownloadModeSheet } from '@/components/chrome/DownloadModeSheet';
 import { downloadAttachment, resolveRemoteUrl, type DownloadMode } from '@/services/http';
 import type { Message, MessageBlock } from '@homibook/core';
@@ -59,7 +59,7 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
   const userTouchingRef = useRef(false);
 
   const {
-    sessions, currentSessionId, error,
+    sessions, currentSessionId,
     loadSessions, openSession, newSession, deleteSession,
     sendMessage, retryMessage, stopStreaming, selectBranch,
   } = useChatStore();
@@ -120,17 +120,19 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
   const handleComposerTouchStart = () => setStreamPaused(true);
   const handleComposerTouchEnd = () => setStreamPaused(false);
 
-  // 发送指定文本(输入框发送与快捷指令直发共用)
-  const sendText = (msg: string) => {
+  // 发送指定文本(输入框发送与快捷指令直发共用)。
+  // preset 是在别处上传好的附件(账单导入入口:文件先落成一个附件,再把 attachmentId 交给 AI)
+  const sendText = (msg: string, preset?: { id: string; url: string; originalFilename: string }[]) => {
     const hasPendingImages = pendingImages.length > 0;
-    if ((!msg && !hasPendingImages) || isStreaming || !bookId) return;
+    const hasPreset = !!preset?.length;
+    if ((!msg && !hasPendingImages && !hasPreset) || isStreaming || !bookId) return;
     haptics.tap();
     // 待发附件快照:ids 给后端,完整信息给本地回显
     const pending = [...pendingImages];
     setPendingImages([]);
-    const attachmentIds = pending.map((p) => p.id);
-    const localAttachments = hasPendingImages
-      ? pending.map((p) => ({ id: p.id, url: p.fullUrl, originalFilename: p.originalFilename }))
+    const attachmentIds = [...pending.map((p) => p.id), ...(preset ?? []).map((p) => p.id)];
+    const localAttachments = hasPendingImages || hasPreset
+      ? [...pending.map((p) => ({ id: p.id, url: p.fullUrl, originalFilename: p.originalFilename })), ...(preset ?? [])]
       : undefined;
     if (!currentSessionId) {
       newSession(bookId).then((s) => {
@@ -152,22 +154,24 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
     sendText(msg);
   };
 
-  // 选择并上传小票图片(仅图片,同 web 端 accept="image/*";流水附件上传才支持全部文件)
+  /** 选择并上传附件:不限类型(与 web 端回形针一致);图片按缩略图渲染,其余显示为文件条。
+   *  csv/excel 在这里只作普通附件 —— 要导入账单走「导入账单」入口,不在这里识别来源。 */
   const handlePickFile = async () => {
     try {
       const DocumentPicker = await import('expo-document-picker');
       const result = await DocumentPicker.getDocumentAsync({
         copyToCacheDirectory: true,
-        multiple: false,
-        type: 'image/*',
+        multiple: true,
       });
       if (result.canceled || !result.assets?.length) return;
-      const asset = result.assets[0];
-      const fileName = asset.name || 'attachment';
-      // 直接上传选择器返回的文件(File.upload 原生 IO 可读;复制到原名文件会触发权限限制)
-      // 注:后端 originalFilename 取 multipart filename(cache 随机 id + 原扩展名),本地回显用选择器原名
-      const up = await uploadImage(asset.uri, fileName, asset.mimeType || 'application/octet-stream');
-      setPendingImages((p) => [...p, { id: up.id, uri: resolveRemoteUrl(up.fullUrl || up.url), fullUrl: up.fullUrl || up.url, originalFilename: fileName }]);
+      // 可选多个(与 web input multiple 一致),逐个上传后一起进入待发送列表
+      for (const asset of result.assets) {
+        const fileName = asset.name || 'attachment';
+        // 直接上传选择器返回的文件(File.upload 原生 IO 可读;复制到原名文件会触发权限限制)
+        // 注:后端 originalFilename 取 multipart filename(cache 随机 id + 原扩展名),本地回显用选择器原名
+        const up = await uploadImage(asset.uri, fileName, asset.mimeType || 'application/octet-stream');
+        setPendingImages((p) => [...p, { id: up.id, uri: resolveRemoteUrl(up.fullUrl || up.url), fullUrl: up.fullUrl || up.url, originalFilename: fileName }]);
+      }
     } catch (e: any) {
       showToast(`上传失败: ${e?.message || '未知错误'}`);
     }
@@ -187,8 +191,8 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
     }
   };
 
-  // 账单导入(csv/excel):选来源 → 上传临时文件 → 自动发送含 fileId 的消息(与 web 端一致,
-  // AI 从消息中解析 fileId/source 并调用 preview_import 工具引导预览/确认)
+  // 账单导入(csv/excel):选来源 → 上传成附件 → 发送「请导入XX账单文件」+ 该附件(与 web 端一致)。
+  // 消息里不带任何 id:模型从附件清单(attachmentId + 文件名)取 id 调 preview_import 引导预览/确认。
   // 来源标签统一来自 core IMPORT_SOURCE_LABELS
 
   const handleImport = async (source: string) => {
@@ -208,10 +212,10 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
       if (result.canceled || !result.assets?.length) return;
       const asset = result.assets[0];
       const fileName = asset.name || '账单.csv';
-      const up = await uploadImportTempFile(asset.uri, fileName);
-      if (!up?.fileId) throw new Error('服务端未返回文件标识');
-      // 发送格式化消息(fileId 进文本,AI 解析后调用 preview_import)
-      sendText(buildImportMessage({ fileId: up.fileId, source, fileName: up.filename }));
+      const up = await uploadImportFile(asset.uri, fileName);
+      if (!up?.attachmentId) throw new Error('服务端未返回附件标识');
+      // 账单文件就是一个附件:连同 attachmentId 一起发出,AI 从附件清单取 id 调 preview_import
+      sendText(buildImportMessage({ source }), [{ id: up.attachmentId, url: up.url, originalFilename: up.filename }]);
     } catch (e: any) {
       showToast(`导入失败: ${e?.message || '未知错误'}`);
     }
@@ -303,44 +307,50 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
     if (isUser) {
       return (
         <View style={{ flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'flex-start', gap: 8, marginBottom: 14 }}>
-          <View style={{ maxWidth: '82%' }}>
+          {/* 列:气泡在上、附件在气泡**下方**(与 web MessageBubble 一致,不再塞进气泡内) */}
+          <View style={{ maxWidth: '82%', alignItems: 'flex-end', gap: 6 }}>
             {/* 用户气泡:主色,右上角收窄(web: rounded-2xl rounded-tr-md) */}
             <View style={[bubbleBase, { backgroundColor: colors.primary, borderTopRightRadius: 5 }]}>
               <View style={{ gap: 6 }}>
-                {item.attachments && item.attachments.length > 0 && (
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end' }}>
-                    {(() => {
-                      const atts = item.attachments!;
-                      const imgAtts = atts.filter((x) => isImageUrl(x.url));
-                      const imgUrls = imgAtts.map((x) => resolveRemoteUrl(x.url));
-                      return atts.map((a) => {
-                        // 非图片附件:文件名块,点击下载
-                        if (!isImageUrl(a.url)) {
-                          return (
-                            <Pressable
-                              key={a.id}
-                              onPress={() => handleDownloadAttachment(a.url, a.originalFilename)}
-                              style={{ width: 132, minHeight: 76, borderRadius: 8, backgroundColor: alpha(colors.foreground, 0.12), alignItems: 'center', justifyContent: 'center', gap: 4, paddingHorizontal: 6 }}
-                            >
-                              <FileText size={18} color={colors.foreground} />
-                              <Text numberOfLines={1} style={{ fontSize: 10.5, color: colors.foreground, maxWidth: '100%' }}>{a.originalFilename}</Text>
-                            </Pressable>
-                          );
-                        }
-                        // 图片附件:缩略图,点击进全屏预览(仅在图片集合内翻页)
-                        const idx = imgAtts.findIndex((x) => x.id === a.id);
-                        return (
-                          <Pressable key={a.id} onPress={() => setLightbox({ images: imgUrls, index: idx })}>
-                            <Image source={{ uri: resolveRemoteUrl(a.url) }} style={{ width: 116, height: 116, borderRadius: 8 }} />
-                          </Pressable>
-                        );
-                      });
-                    })()}
-                  </View>
-                )}
                 {item.blocks.map((b) => renderBlock(b, true))}
               </View>
             </View>
+            {item.attachments && item.attachments.length > 0 && (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end' }}>
+                {(() => {
+                  const atts = item.attachments!;
+                  const imgAtts = atts.filter((x) => isImageUrl(x.url));
+                  const imgUrls = imgAtts.map((x) => resolveRemoteUrl(x.url));
+                  return atts.map((a) => {
+                    // 非图片附件:文件条(对齐 web:边框 + 卡片底 + 图标方块 + 文件名 + 「附件」),点击下载
+                    if (!isImageUrl(a.url)) {
+                      return (
+                        <Pressable
+                          key={a.id}
+                          onPress={() => handleDownloadAttachment(a.url, a.originalFilename)}
+                          style={{ flexDirection: 'row', alignItems: 'center', gap: 8, maxWidth: 220, borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, paddingHorizontal: 10, paddingVertical: 8 }}
+                        >
+                          <View style={{ width: 28, height: 28, borderRadius: 6, backgroundColor: colors.muted, alignItems: 'center', justifyContent: 'center' }}>
+                            <FileText size={15} color={colors.mutedForeground} />
+                          </View>
+                          <View style={{ flexShrink: 1, minWidth: 0 }}>
+                            <Text numberOfLines={1} style={{ fontSize: 12, color: colors.foreground }}>{a.originalFilename}</Text>
+                            <Text style={{ fontSize: 10, color: colors.mutedForeground, marginTop: 1 }}>附件</Text>
+                          </View>
+                        </Pressable>
+                      );
+                    }
+                    // 图片附件:缩略图(web w-20),点击进全屏预览(仅在图片集合内翻页)
+                    const idx = imgAtts.findIndex((x) => x.id === a.id);
+                    return (
+                      <Pressable key={a.id} onPress={() => setLightbox({ images: imgUrls, index: idx })}>
+                        <Image source={{ uri: resolveRemoteUrl(a.url) }} style={{ width: 80, height: 80, borderRadius: 8, borderWidth: 1, borderColor: colors.border }} />
+                      </Pressable>
+                    );
+                  });
+                })()}
+              </View>
+            )}
             {/* 本轮注入的上下文(日期/记忆/技能/附件清单):折叠展示,不属于对话正文 */}
             {item.injections?.map((injection) => (
               <InjectChip key={injection.id} injection={injection} />
@@ -470,12 +480,6 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
           </View>
         }
       />
-      {error ? (
-        // 兜底截断:后端异常信息可能携带大段原始数据,只展示头部关键内容
-        <Text style={{ color: colors.expense, fontSize: 12, textAlign: 'center', paddingBottom: 4 }}>
-          {error.length > 200 ? `${error.slice(0, 200)}…` : error}
-        </Text>
-      ) : null}
 
       {/* 输入区(仿网页组合式输入框:文本框在上,工具行在下,发送靠右) */}
       <View style={{ paddingHorizontal: 12, paddingTop: 6, paddingBottom: 8, borderTopWidth: 1, borderTopColor: colors.hairline }}>

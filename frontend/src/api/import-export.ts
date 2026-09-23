@@ -1,4 +1,8 @@
 import { api } from './http'
+import { IMPORT_AI_SOURCES } from '@homibook/core'
+
+/** 服务端能自动识别的账单来源(AI 导入工具支持的三种,与 core 同源) */
+export type BillSource = (typeof IMPORT_AI_SOURCES)[number]
 
 // 预览导入 — 解析后的记录
 export interface ParsedImportRow {
@@ -94,7 +98,11 @@ export interface AccountMapping {
 }
 
 export const importExportApi = {
-  uploadTempFile: (file: File): Promise<{ fileId: string; filename: string; size: number }> =>
+  /**
+   * 上传账单文件。服务端把它落成一个**附件**并返回 attachmentId —— AI 侧统一只认 attachmentId,
+   * 不再有 fileId。detectedSource 由服务端按文件内容识别,认不出为 null。
+   */
+  uploadImportFile: (file: File): Promise<{ attachmentId: string; url: string; filename: string; size: number; detectedSource: BillSource | null }> =>
     api.uploadForm('/api/records/import/upload', file, {}),
 
   preview: (

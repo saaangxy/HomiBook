@@ -75,23 +75,24 @@ export function HomePage() {
   ]
 
   return (
-    <div className="space-y-6">
+    // h-full + flex 列:AI 聊天区 flex-1 占满视口剩余高度(内容区是 overflow-auto,撑不住时才滚动)
+    <div className="flex flex-col h-full min-h-0 gap-6">
       {/* 账本信息 */}
       {currentBook ? (
-        <div className="flex items-center gap-2.5 px-5 py-3 bg-card border border-border rounded-xl">
+        <div className="shrink-0 flex items-center gap-2.5 px-5 py-3 bg-card border border-border rounded-xl">
           <Book size={18} className="text-primary" />
           <span className="text-sm text-muted-foreground">当前账本：</span>
           <span className="text-sm font-semibold text-primary">{currentBook.name}</span>
         </div>
       ) : (
-        <div className="p-5 bg-card border border-border rounded-xl text-center text-sm text-muted-foreground">
+        <div className="shrink-0 p-5 bg-card border border-border rounded-xl text-center text-sm text-muted-foreground">
           请选择或创建账本开始记账
         </div>
       )}
 
       {/* 预算预警 */}
       {dangerBudgets.length > 0 && (
-        <Alert variant="destructive">
+        <Alert variant="destructive" className="shrink-0">
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription>
             {dangerBudgets.map((b) => b.name).join('、')} 已超预算
@@ -99,7 +100,7 @@ export function HomePage() {
         </Alert>
       )}
       {warnBudgets.filter((b) => !dangerBudgets.includes(b)).length > 0 && (
-        <Alert>
+        <Alert className="shrink-0">
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription>
             {warnBudgets.filter((b) => !dangerBudgets.includes(b)).map((b) => `${b.name}(${Math.round((b.actualAmount / b.amount) * 100)}%)`).join('、')} 即将超预算
@@ -109,7 +110,7 @@ export function HomePage() {
 
       {/* 统计卡片 */}
       {isMobile ? (
-        <div className="grid grid-cols-4 gap-2">
+        <div className="shrink-0 grid grid-cols-4 gap-2">
           {statCards.map((c) => (
             <Card key={c.label} className="bg-card border-border rounded-xl">
               <CardContent className="flex flex-col items-center gap-1 p-2 min-w-0">
@@ -127,7 +128,7 @@ export function HomePage() {
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-5">
+        <div className="shrink-0 grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-5">
           {statCards.map((c) => (
             <Card key={c.label} className="bg-card border-border rounded-2xl">
               <CardContent className="flex flex-row items-start gap-4 p-6">
@@ -148,14 +149,14 @@ export function HomePage() {
         </div>
       )}
 
-      {/* AI 聊天 */}
+      {/* AI 聊天:flex-1 吃掉「当前屏幕内」的剩余高度(外壳已是 h-svh,这里的高度是确定的) */}
       {currentBookId && aiEnabled && (
-        <div>
-          <h2 className="text-base font-semibold mb-3">AI 助手</h2>
+        <div className="flex-1 min-h-0 flex flex-col">
+          <h2 className="shrink-0 text-base font-semibold mb-3">AI 助手</h2>
           {aiConfigured ? (
             <ChatWindow />
           ) : (
-            <div className="p-5 bg-card border border-border rounded-xl text-center">
+            <div className="shrink-0 p-5 bg-card border border-border rounded-xl text-center">
               <Bot size={24} className="mx-auto mb-2 text-muted-foreground" />
               <p className="text-sm text-muted-foreground mb-3">AI 助手尚未配置模型，请先完成供应商配置</p>
               <Link to="/settings" className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline">

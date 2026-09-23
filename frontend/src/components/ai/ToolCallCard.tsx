@@ -3,7 +3,7 @@ import { markSubmitted, isSubmitted } from '@/lib/ai-submit'
 import { getToolDisplayName } from '@/lib/tool-names'
 import type { ToolCallEntry, SuggestionOption } from '@/stores/chat'
 import { useChatStore, useSessionView, getSessionView } from '@/stores/chat'
-import { ACCOUNT_TYPE_LABELS, BUDGET_TYPE_LABELS, resolveToolCallStatus } from '@homibook/core'
+import { ACCOUNT_TYPE_LABELS, BUDGET_TYPE_LABELS, resolveToolCallStatus, isAwaitingUserAction } from '@homibook/core'
 import { RECORD_TYPE_LABELS, RECORD_TYPE_TEXT_CLASS, RECORD_TYPE_BADGE_CLASS } from '@/lib/record-type'
 import { settingsApi } from '@/api/settings'
 import { useBookStore } from '@/stores/book'
@@ -956,9 +956,14 @@ function BatchIndicator({ toolCallId }: { toolCallId: string }) {
       b.type === 'tool-call' && b.toolCallId === toolCallId
     )
   )
-  // 待决定状态:confirming(待确认)/suggesting(待选择)/switching(待选账本)
-  const remaining = parentMsg?.blocks.filter(b => b.type === 'tool-call' && ['confirming', 'suggesting', 'switching'].includes(b.status)).length || 0
-  if (remaining <= 1) return null
+  // 待决定状态：confirming(待确认)/suggesting(待选择)/switching(待选账本)，
+  // 以及还没点过的导入预览/确认导入卡（口径与 store 的提交判断共用 isAwaitingUserAction）
+  const cards = (parentMsg?.blocks.filter(b => b.type === 'tool-call') || []) as ToolCallEntry[]
+  const remaining = cards.filter(b => isAwaitingUserAction(b)).length
+  // 同一条消息里有多张需要用户操作的卡时**始终**显示进度：否则点完第一张提示就消失
+  // （那时 decisions 还没提交，用户会以为按钮没反应）
+  const total = cards.filter(b => isAwaitingUserAction(b) || b.decided).length
+  if (remaining === 0 || total <= 1) return null
   return (
     <div className="flex items-center gap-1.5 text-xs text-amber-600 mt-1">
       <span>等待全部确认 · 剩余 {remaining} 个</span>

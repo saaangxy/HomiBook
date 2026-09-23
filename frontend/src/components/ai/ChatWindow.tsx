@@ -14,13 +14,17 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Send, StopCircle, Upload, Image as ImageIcon, X, Globe, Menu, Plus } from 'lucide-react'
+import { Send, StopCircle, Upload, Paperclip, FileText, X, Globe, Menu, Plus } from 'lucide-react'
 import { parseContentIntoBlocks, buildImportMessage } from '@homibook/core'
 import { type MessageBlock } from '@/stores/chat'
 import { useIsMobile } from '@/hooks/use-mobile'
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle,
 } from '@/components/ui/sheet'
+
+/** 单个附件体积上限(与导入向导文案里的 10MB 保持一致) */
+const MAX_ATTACH_MB = 10
+const MAX_ATTACH_BYTES = MAX_ATTACH_MB * 1024 * 1024
 
 export function ChatWindow() {
   const [input, setInput] = useState('')
@@ -29,7 +33,7 @@ export function ChatWindow() {
   const [sessionOpen, setSessionOpen] = useState(false)
 
   const {
-    sessions, currentSessionId, error,
+    sessions, currentSessionId,
     setSessions, setCurrentSession, sendMessage, retryMessage, selectBranch, stopStreaming,
     setSessionData, clearSessionData, hasCachedSession,
   } = useChatStore()
@@ -52,32 +56,44 @@ export function ChatWindow() {
   )
   const streamingSessionIds = streamingSessionIdsStr ? streamingSessionIdsStr.split(',') : []
 
-  // ---- 小票图片上传 ----
-  const [pendingImages, setPendingImages] = useState<{ file: File; preview: string }[]>([])
-  const [uploadingImages, setUploadingImages] = useState(false)
-  // 拖拽图片到聊天框时的整块高亮
+  // ---- 待发送附件(图片显示缩略图,其余显示文件名) ----
+  const [pendingFiles, setPendingFiles] = useState<{ file: File; preview?: string }[]>([])
+  const [uploadingFiles, setUploadingFiles] = useState(false)
+  // 拖拽文件到聊天框时的整块高亮
   const [dragOver, setDragOver] = useState(false)
-  const imageInputRef = useRef<HTMLInputElement>(null)
+  // 体积超限 / 上传失败等提示
+  const [attachError, setAttachError] = useState('')
+  const attachInputRef = useRef<HTMLInputElement>(null)
 
   // ---- 网络搜索开关 ----
   const [webSearchEnabled, setWebSearchEnabled] = useState(true)
 
-  /** 统一的「加入待发送图片」入口:选择文件 / 粘贴 / 拖拽共用(只收图片,其余静默忽略) */
-  const addImageFiles = (files: File[]) => {
-    const images = files.filter((f) => f.type.startsWith('image/'))
-    if (images.length === 0) return
-    setPendingImages((prev) => [
+  /**
+   * 统一的「加入待发送内容」入口:选择 / 粘贴 / 拖拽共用。
+   * 只做体积校验后挂进待发送列表 —— **不在这里发任何请求**(拖进来 ≠ 要发)。
+   * csv/excel 是不是账单,在点「发送」时才由服务端识别,见 handleSend。
+   */
+  const addFiles = (files: File[]) => {
+    if (files.length === 0) return
+    const oversized = files.filter((f) => f.size > MAX_ATTACH_BYTES)
+    const rest = files.filter((f) => f.size <= MAX_ATTACH_BYTES)
+    setAttachError(oversized.length > 0 ? `${oversized.map((f) => f.name).join('、')} 超过 ${MAX_ATTACH_MB}MB，已跳过` : '')
+    if (rest.length === 0) return
+    setPendingFiles((prev) => [
       ...prev,
-      ...images.map((file) => ({ file, preview: URL.createObjectURL(file) })),
+      ...rest.map((file) => ({
+        file,
+        preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined,
+      })),
     ])
   }
 
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    addImageFiles(Array.from(e.target.files || []))
-    if (imageInputRef.current) imageInputRef.current.value = ''
+  const handleAttachSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    addFiles(Array.from(e.target.files || []))
+    e.target.value = '' // 允许重复选同一文件
   }
 
-  /** 粘贴图片(截图直接 Ctrl+V) */
+  /** 粘贴(截图直接 Ctrl+V):只认图片,纯文本粘贴走默认行为 */
   const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const dt = e.clipboardData
     if (!dt) return
@@ -90,12 +106,12 @@ export function ChatWindow() {
         .map((it) => it.getAsFile())
         .filter((f): f is File => !!f)
     const images = files.filter((f) => f.type.startsWith('image/'))
-    if (images.length === 0) return // 纯文本粘贴走默认行为
+    if (images.length === 0) return
     e.preventDefault() // 有图就别把剪贴板里的文本也塞进输入框
-    addImageFiles(images)
+    addFiles(images)
   }
 
-  /** 拖拽图片到聊天框(整个窗口都是放置区) */
+  /** 拖拽文件到聊天框(整个窗口都是放置区) */
   const handleDragOver = (e: React.DragEvent) => {
     if (!currentBookId || isCurrentStreaming) return
     if (!Array.from(e.dataTransfer?.types || []).includes('Files')) return
@@ -112,12 +128,12 @@ export function ChatWindow() {
     e.preventDefault()
     setDragOver(false)
     if (!currentBookId || isCurrentStreaming) return
-    addImageFiles(Array.from(e.dataTransfer?.files || []))
+    addFiles(Array.from(e.dataTransfer?.files || []))
   }
 
-  const removeImage = (index: number) => {
-    setPendingImages((prev) => {
-      URL.revokeObjectURL(prev[index].preview)
+  const removeFile = (index: number) => {
+    setPendingFiles((prev) => {
+      if (prev[index]?.preview) URL.revokeObjectURL(prev[index].preview as string)
       return prev.filter((_, i) => i !== index)
     })
   }
@@ -209,9 +225,13 @@ export function ChatWindow() {
     }
   }
 
-  const handleSend = async (text?: string) => {
+  const handleSend = async (
+    text?: string,
+    preset?: { attachmentIds: string[]; attachments: { id: string; url: string; originalFilename: string }[] },
+  ) => {
     const msg = (text || input).trim()
-    if ((!msg && pendingImages.length === 0) || !currentBookId || isCurrentStreaming) return
+    const hasPreset = !!preset?.attachmentIds?.length
+    if ((!msg && pendingFiles.length === 0 && !hasPreset) || !currentBookId || isCurrentStreaming) return
     setInput('')
 
     // 向前找最后一个有 dbId 的消息，避免把临时 msg-* ID 当作 parentId 发给后端
@@ -220,24 +240,25 @@ export function ChatWindow() {
       if (messages[i].dbId) { parentId = messages[i].dbId; break }
     }
 
-    // 上传待发送的小票图片
-    let attachments: { id: string; url: string; originalFilename: string }[] | undefined
-    let attachmentIds: string[] | undefined
-    if (pendingImages.length > 0) {
-      setUploadingImages(true)
+    // 附件一律当普通附件发出(模型只对图片做视觉直读,其余进附件清单)。
+    // preset 是已经在别处上传好的附件(工具栏「导入账单」入口:账单文件先落成附件,再把 attachmentId 交给 AI)。
+    let attachments: { id: string; url: string; originalFilename: string }[] | undefined = preset?.attachments
+    let attachmentIds: string[] | undefined = preset?.attachmentIds
+    if (pendingFiles.length > 0) {
+      setUploadingFiles(true)
       try {
         const results = await Promise.all(
-          pendingImages.map((img) => recordApi.uploadAttachment(img.file)),
+          pendingFiles.map((it) => recordApi.uploadAttachment(it.file)),
         )
-        attachments = results.map((r) => ({ id: r.id, url: r.url, originalFilename: r.originalFilename }))
-        attachmentIds = results.map((r) => r.id)
+        attachments = [...(attachments ?? []), ...results.map((r) => ({ id: r.id, url: r.url, originalFilename: r.originalFilename }))]
+        attachmentIds = [...(attachmentIds ?? []), ...results.map((r) => r.id)]
         // 清理预览 URL
-        pendingImages.forEach((img) => URL.revokeObjectURL(img.preview))
-        setPendingImages([])
+        pendingFiles.forEach((it) => { if (it.preview) URL.revokeObjectURL(it.preview) })
+        setPendingFiles([])
       } catch {
         // 上传失败时仍发送消息（无附件）
       }
-      setUploadingImages(false)
+      setUploadingFiles(false)
     }
 
     if (!currentSessionId) {
@@ -325,9 +346,13 @@ export function ChatWindow() {
 
     setImporting(true)
     try {
-      const res = await importExportApi.uploadTempFile(file)
-      const src = pendingSourceRef.current
-      handleSend(buildImportMessage({ fileId: res.fileId, source: src, fileName: res.filename }))
+      const res = await importExportApi.uploadImportFile(file)
+      // 账单文件本身就是一个附件:把 attachmentId 一起发出去,AI 从附件清单取 id 调 preview_import。
+      // 消息里只留一句自然语言请求(见 core buildImportMessage),不再往文本里编码任何 id。
+      handleSend(buildImportMessage({ source: pendingSourceRef.current }), {
+        attachmentIds: [res.attachmentId],
+        attachments: [{ id: res.attachmentId, url: res.url, originalFilename: res.filename }],
+      })
     } catch {
       // ignore
     }
@@ -364,18 +389,20 @@ export function ChatWindow() {
   }, [])
 
   return (
+    // 高度交给父容器(flex-1 吃掉剩余空间)：不要设 min-h —— 有 overflow-hidden 的 flex 项
+    // 自动最小尺寸本就是 0，设了 min-h 反而会把页面撑出滚动条（撑满应当是"当前屏幕内"）
     <div
-      className="relative flex h-[65vh] md:h-[600px] rounded-xl border bg-card overflow-hidden"
+      className="relative flex flex-1 rounded-xl border bg-card overflow-hidden"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      {/* 拖拽图片到聊天框:整块高亮提示(pointer-events-none 让 drop 仍落在容器上) */}
+      {/* 拖拽文件到聊天框:整块高亮提示(pointer-events-none 让 drop 仍落在容器上) */}
       {dragOver && (
         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-primary bg-primary/10">
           <div className="flex items-center gap-2 rounded-lg bg-card px-3 py-1.5 text-sm font-medium shadow-sm">
-            <ImageIcon size={16} className="text-primary" />
-            松开即可添加图片
+            <Paperclip size={16} className="text-primary" />
+            松开即可添加附件
           </div>
         </div>
       )}
@@ -458,23 +485,30 @@ export function ChatWindow() {
                 </div>
               )
             })}
-            {error && (
-              <div className="text-center text-red-500 text-sm py-2">{error}</div>
-            )}
           </div>
         </ScrollArea>
 
         {/* 输入区：主流聊天布局（输入框在上，工具栏在下） */}
         <div className="border-t p-3">
-          {/* 已选图片预览 */}
-          {pendingImages.length > 0 && (
+          {/* 已选附件(图片显示缩略图,其余显示文件名) */}
+          {pendingFiles.length > 0 && (
             <div className="flex gap-2 mb-2 flex-wrap">
-              {pendingImages.map((img, i) => (
-                <div key={i} className="relative w-16 h-16 rounded-lg overflow-hidden border">
-                  <img src={img.preview} alt="" className="w-full h-full object-cover" />
+              {pendingFiles.map((item, i) => (
+                <div key={i} className="relative">
+                  {item.preview ? (
+                    <div className="w-16 h-16 rounded-lg overflow-hidden border">
+                      <img src={item.preview} alt="" className="w-full h-full object-cover" />
+                    </div>
+                  ) : (
+                    <div className="h-16 max-w-[168px] rounded-lg border bg-muted/40 px-2 flex items-center gap-1.5">
+                      <FileText size={14} className="text-muted-foreground shrink-0" />
+                      <span className="text-xs truncate" title={item.file.name}>{item.file.name}</span>
+                    </div>
+                  )}
                   <button
-                    className="absolute top-0 right-0 w-5 h-5 bg-black/60 rounded-bl-lg flex items-center justify-center"
-                    onClick={() => removeImage(i)}
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-black/70 flex items-center justify-center"
+                    onClick={() => removeFile(i)}
+                    title="移除"
                   >
                     <X size={12} className="text-white" />
                   </button>
@@ -482,7 +516,8 @@ export function ChatWindow() {
               ))}
             </div>
           )}
-          {/* 隐藏文件上传 */}
+          {attachError && <p className="text-xs text-red-500 mb-2">{attachError}</p>}
+          {/* 隐藏文件上传(工具栏「导入账单」下拉:用户已显式指定来源,选完即发起导入) */}
           <input
             ref={fileInputRef}
             type="file"
@@ -490,13 +525,13 @@ export function ChatWindow() {
             accept=".csv,.xls,.xlsx"
             onChange={handleFileChange}
           />
+          {/* 任意文件(不限制类型):一律作为普通附件发送,不做账单识别 */}
           <input
-            ref={imageInputRef}
+            ref={attachInputRef}
             type="file"
             className="hidden"
-            accept="image/*"
             multiple
-            onChange={handleImageSelect}
+            onChange={handleAttachSelect}
           />
           {/* 输入框区域 */}
           <div className="rounded-2xl border bg-background focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/20 transition-colors">
@@ -505,10 +540,10 @@ export function ChatWindow() {
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
-              placeholder="输入消息... (Enter 发送，Shift+Enter 换行，可直接粘贴图片)"
+              placeholder="输入消息... (Enter 发送，Shift+Enter 换行，可直接粘贴或拖拽文件)"
               rows={2}
               className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0 resize-none px-4 py-3 min-h-[60px]"
-              disabled={isCurrentStreaming || importing || uploadingImages}
+              disabled={isCurrentStreaming || importing || uploadingFiles}
             />
             {/* 工具栏：工具按钮在左，发送在右（按住期间暂停流式刷新，避免按钮被 DOM 位移吞掉） */}
             <div className="flex items-center justify-between px-3 pb-2" onPointerDown={() => setStreamPaused(true)}>
@@ -528,16 +563,16 @@ export function ChatWindow() {
                   <Globe size={13} />
                   联网搜索
                 </button>
-                {/* 上传小票 */}
+                {/* 上传附件(任意文件;csv/excel 自动识别是否账单) */}
                 <Button
                   size="icon"
                   variant="ghost"
                   className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                  disabled={!currentBookId || importing || uploadingImages}
-                  title="上传图片(也可直接粘贴或拖拽)"
-                  onClick={() => imageInputRef.current?.click()}
+                  disabled={!currentBookId || importing || uploadingFiles}
+                  title={`上传附件（${MAX_ATTACH_MB}MB 以内，也可直接粘贴或拖拽）`}
+                  onClick={() => attachInputRef.current?.click()}
                 >
-                  <ImageIcon size={16} />
+                  <Paperclip size={16} />
                 </Button>
                 {/* 导入账单 */}
                 <DropdownMenu>
@@ -563,7 +598,7 @@ export function ChatWindow() {
                   size="icon"
                   className="h-8 w-8 rounded-full"
                   onClick={() => handleSend()}
-                  disabled={(!input.trim() && pendingImages.length === 0) || !currentBookId || importing || uploadingImages}
+                  disabled={(!input.trim() && pendingFiles.length === 0) || !currentBookId || importing || uploadingFiles}
                   title="发送"
                 >
                   <Send size={15} />

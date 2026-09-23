@@ -11,14 +11,8 @@ import { MiniTable } from './MiniTable';
 import { ACCOUNT_TYPE_LABELS, RECORD_TYPE_LABELS, TYPE_TO_GROUP, IMPORT_SOURCE_LABELS, initAccountResolutions, unresolvedAccountCount, type AccountResolution, type ToolCallEntry } from '@homibook/core';
 
 // ── 导入预览交互卡(复刻 web ImportPreviewInteractive,UI 适配移动端)。从 AIAssistant.tsx 拆出 ──
-// ── 导入消息文件卡片:把"请导入XX账单文件/fileId/source/文件名"文本渲染为附件卡片 ──
-
-/** 解析导入消息文本(发送时为 AI 解析拼接的元数据行,渲染时转为文件卡片) */
-export function parseImportMeta(text: string): { desc: string; fileName: string; source: string } | null {
-  const m = text.match(/^([\s\S]*?)\s*\nfileId:\s*(\S+)\s*\nsource:\s*(\S+)\s*\n文件名:\s*(.+?)\s*$/);
-  if (!m) return null;
-  return { desc: m[1].trim(), fileName: m[4], source: IMPORT_SOURCE_LABELS[m[3] as keyof typeof IMPORT_SOURCE_LABELS] ?? m[3] };
-}
+// 注意:旧版导入消息(v1)的解析统一走 core 的 parseImportMessage(AIAssistant 里在渲染前调用),
+// 这里不再另存一份正则 —— 两份正则一起漂移过一次。
 
 /** 导入账单文件卡片(用户主色气泡内:白色半透明底) */
 export function ImportFileCard({ fileName, source }: { fileName: string; source: string }) {
@@ -216,7 +210,7 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
     setSubmitted(true);
     setConfirmError('');
     const overrides: Record<string, unknown> = {};
-    if (aiArgs.fileId) overrides.fileId = aiArgs.fileId;
+    if (aiArgs.attachmentId) overrides.attachmentId = aiArgs.attachmentId;
     const userAccounts = Object.entries(accountRes).map(([csvName, res]) =>
       res.action === 'existing'
         ? { sourceAccountName: csvName, action: 'existing', targetAccountId: res.accountId }

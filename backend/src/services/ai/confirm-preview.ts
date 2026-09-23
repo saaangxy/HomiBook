@@ -11,8 +11,7 @@ import {
   RECURRING_TYPE_LABELS,
 } from '@homibook/core'
 import { dateKey } from '../../lib/date-time.js'
-import fs from 'fs'
-import path from 'path'
+import { IMPORT_FILE_MISSING, loadImportFile, parseImportFile } from '../import/attachment-file.js'
 
 // ---- 类型定义 ----
 
@@ -620,55 +619,37 @@ async function buildSaveImportMappingPreview(args: any): Promise<string> {
 }
 
 async function buildConfirmImportPreview(args: any, accountBookId: string, userId?: string): Promise<string> {
-  const { fileId, source, accountResolutions, categoryResolutions } = args as {
-    fileId: string
-    source: 'alipay' | 'wechat' | 'jd'
+  const { attachmentId, source: sourceArg } = args as {
+    attachmentId: string
+    source?: 'alipay' | 'wechat' | 'jd'
     accountResolutions?: { sourceAccountName: string; action: 'existing' | 'create'; targetAccountId?: string; targetAccountName?: string; accountType?: string }[]
     categoryResolutions?: { sourceCategory: string; targetCategoryCode: string; recordType?: string; payerContains?: string; descriptionContains?: string }[]
   }
+  // 保留两份规则原文:下面统一映射逻辑仍按原参数名取用
+  const accountResolutions = args.accountResolutions
+  const categoryResolutions = args.categoryResolutions
 
-  const uploadDir = path.resolve('uploads')
-  let targetFile: string | undefined
-  try {
-    const files = fs.readdirSync(uploadDir)
-    targetFile = files.find(f => f.startsWith(fileId))
-  } catch {
-    targetFile = undefined
-  }
-  if (!targetFile) {
+  // 账单文件 = 一个附件(按 attachmentId 取行、经 path 读盘)
+  const file = await loadImportFile(attachmentId)
+  if (!file) {
     return JSON.stringify({
       type: 'generic',
-      title: '确认导入 - 文件不存在',
-      description: '文件可能已过期，请重新上传',
-      text: `fileId: ${fileId}`,
+      title: '确认导入 - 附件不存在',
+      description: IMPORT_FILE_MISSING,
+      text: `attachmentId: ${attachmentId}`,
     } satisfies ConfirmPreview)
   }
 
-  const filePath = path.join(uploadDir, targetFile)
-  const buffer = fs.readFileSync(filePath)
-
-  let parseResult: { rows: ParsedRow[]; errors: string[] }
-  if (source === 'alipay') {
-    parseResult = parseAlipayCSV(buffer)
-  } else if (source === 'wechat') {
-    parseResult = parseWechatXlsx(buffer)
-  } else if (source === 'jd') {
-    parseResult = parseJdCSV(buffer)
-  } else {
-    return JSON.stringify({
-      type: 'generic',
-      title: '确认导入 - 不支持的来源',
-      description: `不支持的账单来源: ${source}`,
-    } satisfies ConfirmPreview)
-  }
-
-  if (parseResult.rows.length === 0) {
+  const parsed = parseImportFile(file, sourceArg)
+  if (!parsed.ok) {
     return JSON.stringify({
       type: 'generic',
       title: '确认导入 - 无有效数据',
-      description: parseResult.errors[0] || '未解析到任何记录',
+      description: parsed.error,
     } satisfies ConfirmPreview)
   }
+  const parseResult = { rows: parsed.rows, errors: parsed.errors }
+  const source = parsed.source
 
   // 使用统一映射逻辑（与 preview_import / confirm_import 执行阶段一致；只匹配本人/指定归属人账户）
   await applyCategoryMappings(source, parseResult.rows, categoryResolutions)

@@ -1,7 +1,11 @@
 import { parse } from 'csv-parse/sync'
 import iconv from 'iconv-lite'
 import * as XLSX from 'xlsx'
+import { IMPORT_AI_SOURCES } from '@homibook/core'
 import type { ParsedRow } from './shared.js'
+
+/** 能自动识别来源的账单(与 AI 导入工具支持的来源同源,见 core IMPORT_AI_SOURCES) */
+export type BillSource = (typeof IMPORT_AI_SOURCES)[number]
 
 // ---- 通用工具 ----
 
@@ -15,6 +19,47 @@ function detectEncoding(buffer: Buffer): string {
     return 'utf8'
   } catch {
     return 'gbk'
+  }
+}
+
+/**
+ * 从**文件内容**识别账单来源(只认表头特征,不解析字段);认不出返回 null —— 调用方按普通附件处理。
+ *
+ * 支付宝 / 京东导出的都是 CSV,表头行都以「交易时间,」开头,靠其余列区分:
+ *   京东有「商户名称 / 交易说明」,支付宝有「交易对方 / 商品说明」。
+ * 微信导出的账单是 xlsx,认「当前状态 / 交易单号」这类微信专属列。
+ */
+export function detectBillSource(buffer: Buffer, filename = ''): BillSource | null {
+  try {
+    // xlsx 本质是 zip:看文件头比看扩展名可靠(拖进来的文件可能没有扩展名)
+    const isZip = buffer.length > 4 && buffer[0] === 0x50 && buffer[1] === 0x4b && buffer[2] === 0x03 && buffer[3] === 0x04
+    if (isZip || /\.xlsx?$/i.test(filename)) {
+      const workbook = XLSX.read(buffer, { type: 'buffer' })
+      const sheet = workbook.Sheets[workbook.SheetNames[0]]
+      if (!sheet) return null
+      const rows: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' })
+      // 表头在文件前若干行(前面是账单说明/汇总),不必扫全表
+      for (const row of rows.slice(0, 30)) {
+        const cells = row.map((c) => String(c).trim())
+        if (!cells.includes('交易时间')) continue
+        return cells.includes('当前状态') || cells.includes('交易单号') ? 'wechat' : null
+      }
+      return null
+    }
+
+    const encoding = detectEncoding(buffer)
+    const text = encoding === 'utf8' ? buffer.toString('utf8') : iconv.decode(buffer, 'gbk')
+    const headerLine = text
+      .split(/\r?\n/)
+      .find((l) => l.replace(/^\uFEFF/, '').trimStart().startsWith('交易时间,'))
+    if (!headerLine) return null
+    const cols = headerLine.split(',').map((s) => s.trim().replace(/^"|"$/g, ''))
+    if (cols.includes('商户名称') || cols.includes('交易说明')) return 'jd'
+    if (cols.includes('交易对方') || cols.includes('商品说明')) return 'alipay'
+    return null
+  } catch {
+    // 不是表格 / 文件损坏 / 加密:一律当普通文件
+    return null
   }
 }
 

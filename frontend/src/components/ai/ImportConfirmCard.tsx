@@ -44,7 +44,8 @@ interface Owner {
 interface ConfirmPreviewData {
   mode: 'confirm_preview'
   source: string
-  fileId: string
+  /** 账单附件的 id(导入链路统一用 attachmentId,旧字段 fileId 已废弃) */
+  attachmentId: string
   accountsToCreate: AccountToCreate[]
   records: ConfirmRecord[]
   stats: {
@@ -104,7 +105,7 @@ export function ImportConfirmCard({ data, toolCallId }: Props) {
   const handleConfirm = () => {
     markSubmitted(toolCallId)
     // 保持 submitted 标记，防止重复提交；导入完成 data 切换为 imported 结果后清除
-    useChatStore.getState().confirmAndContinue(data.accountBookId, toolCallId, true, { fileId: data.fileId, ownerId })
+    useChatStore.getState().confirmAndContinue(data.accountBookId, toolCallId, true, { attachmentId: data.attachmentId, ownerId })
   }
 
   const handleReject = () => {

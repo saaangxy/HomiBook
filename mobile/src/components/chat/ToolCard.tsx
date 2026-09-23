@@ -5,7 +5,7 @@ import { useTheme, alpha, semanticTypeColor } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { useChatStore, useSessionView } from '@/stores/chat';
 import { getToolDisplayName } from '@/services/chat';
-import { ACCOUNT_TYPE_LABELS, BUDGET_TYPE_LABELS, IMPORT_SOURCE_LABELS, RECORD_TYPE_LABELS, resolveToolCallStatus, type ToolCallEntry } from '@homibook/core';
+import { ACCOUNT_TYPE_LABELS, BUDGET_TYPE_LABELS, IMPORT_SOURCE_LABELS, RECORD_TYPE_LABELS, resolveToolCallStatus, isAwaitingUserAction, type ToolCallEntry } from '@homibook/core';
 import { settingsApi } from '@/services/settings';
 import { MiniTable, computeColWidths } from './MiniTable';
 import { ImportPreviewCard } from './ImportPreviewCard';
@@ -112,9 +112,15 @@ const STATUS_COLORS: Record<string, string> = {
 
 export function BatchIndicator({ toolCallId }: { toolCallId: string }) {
   const { messages } = useSessionView();
-  // 待决定状态:confirming(待确认)/suggesting(待选择)/switching(待选账本)
-  const remaining = messages.filter((m) => m.role === 'assistant').reduce((acc, m) => acc + m.blocks.filter((b) => b.type === 'tool-call' && ['confirming', 'suggesting', 'switching'].includes((b as ToolCallEntry).status)).length, 0);
-  if (remaining <= 1) return null;
+  // 只统计**同一条 assistant 消息**:decisions 是按消息提交的,跨消息计数会误导(web 同口径)
+  const parentMsg = messages.find((m) => m.role === 'assistant' && m.blocks.some((b) => b.type === 'tool-call' && b.toolCallId === toolCallId));
+  // 待决定状态:confirming(待确认)/suggesting(待选择)/switching(待选账本),以及还没点过的导入预览/确认导入卡
+  // (口径与 store 的提交判断共用 core 的 isAwaitingUserAction)
+  const cards = (parentMsg?.blocks.filter((b) => b.type === 'tool-call') || []) as ToolCallEntry[];
+  const remaining = cards.filter((b) => isAwaitingUserAction(b)).length;
+  // 同一条消息里有多张需要用户操作的卡时始终显示进度(点完第一张时 decisions 还没提交,需要提示)
+  const total = cards.filter((b) => isAwaitingUserAction(b) || b.decided).length;
+  if (remaining === 0 || total <= 1) return null;
   return <Text style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>等待全部确认 · 剩余 {remaining} 个</Text>;
 }
 
@@ -534,7 +540,7 @@ export function ToolCard({ toolCall, bookId }: { toolCall: ToolCallEntry; bookId
               />
             )}
             <View style={{ flexDirection: 'row', gap: 8 }}>
-              <Pressable onPress={() => confirmAndContinue(data.accountBookId || bookId, toolCall.toolCallId, true, { fileId: data.fileId, ownerId: confirmOwnerId || data.ownerId })} disabled={submitted} style={{ flex: 1.6, borderRadius: 10, paddingVertical: 8, alignItems: 'center', backgroundColor: colors.primary, flexDirection: 'row', justifyContent: 'center', gap: 6, opacity: submitted ? 0.6 : 1 }}>
+              <Pressable onPress={() => confirmAndContinue(data.accountBookId || bookId, toolCall.toolCallId, true, { attachmentId: data.attachmentId, ownerId: confirmOwnerId || data.ownerId })} disabled={submitted} style={{ flex: 1.6, borderRadius: 10, paddingVertical: 8, alignItems: 'center', backgroundColor: colors.primary, flexDirection: 'row', justifyContent: 'center', gap: 6, opacity: submitted ? 0.6 : 1 }}>
                 {submitted && <ActivityIndicator size="small" color="#fff" />}
                 <Text numberOfLines={1} style={{ color: '#fff', ...btnText }}>{submitted ? '提交中...' : `确认导入 ${data.stats?.totalRecords ?? 0} 条`}</Text>
               </Pressable>
@@ -556,8 +562,8 @@ export function ToolCard({ toolCall, bookId }: { toolCall: ToolCallEntry; bookId
         </View>
       )}
 
-      {/* 批量确认计数 */}
-      {effectiveStatus === 'confirming' && <BatchIndicator toolCallId={toolCall.toolCallId} />}
+      {/* 批量确认计数:普通确认卡 + 导入预览/确认导入卡(后两者点完所有卡才提交 decisions) */}
+      {(effectiveStatus === 'confirming' || isInteractivePreview || isConfirmCard) && <BatchIndicator toolCallId={toolCall.toolCallId} />}
 
       {/* 确认按钮(始终可见) */}
       {(effectiveStatus === 'confirming' || (isExpired && toolCall.preview)) && (

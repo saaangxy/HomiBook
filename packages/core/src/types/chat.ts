@@ -71,6 +71,12 @@ export interface ToolCallEntry {
   suggestion?: { questions: { question: string; field: string; options: (string | SuggestionOption)[]; allowCustom: boolean }[] };
   /** 用户决定时暂存的附加数据（多工具并行时随 decisions 一起提交，仅作用于本工具） */
   decisionData?: Record<string, unknown>;
+  /**
+   * 用户是否已对该工具调用做出决定（仅端内状态，不持久化）。
+   * 交互卡（preview_import / confirm_import）点击后 status 仍是 success，靠这个标记与
+   * 「还没点过」区分开 —— 见 isAwaitingUserAction。
+   */
+  decided?: boolean;
 }
 
 export interface SuggestionOption {

@@ -7,9 +7,17 @@ import type { Message, MessageBlock } from '@/stores/chat'
 import { parseImportMessage, type ChatInjection } from '@homibook/core'
 import { useAuthStore } from '@/stores/auth'
 import { ToolCallCard } from './ToolCallCard'
-import { Bot, Brain, ChevronDown, ChevronLeft, ChevronRight, Copy, FileSpreadsheet, RefreshCw, Pencil, Check, Loader2, Sparkles } from 'lucide-react'
+import { Bot, Brain, ChevronDown, ChevronLeft, ChevronRight, Copy, FileSpreadsheet, FileText, RefreshCw, Pencil, Check, Loader2, Sparkles } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
+
+/** 图片扩展名(与 RecordFormDialog / AttachmentViewer 同一份判定) */
+const IMAGE_EXT_RE = /\.(jpg|jpeg|png|gif|webp|bmp)$/i
+
+/** 附件是不是图片:原文件名与 URL 任一命中即按图片渲染 */
+function isImageAttachment(att: { url: string; originalFilename: string }): boolean {
+  return IMAGE_EXT_RE.test(att.originalFilename || '') || IMAGE_EXT_RE.test(att.url || '')
+}
 
 interface Props {
   message: Message
@@ -232,7 +240,8 @@ export function MessageBubble({ message, onRetry, onEditSubmit, versions, onSwit
             ) : (
               message.blocks.map((block) => {
                 if (block.type === 'text' && !block.content.trim()) return null
-                // 导入消息:fileId/source/文件名 元数据行渲染为文件卡片,仅保留描述文本
+                // 旧版导入消息(v1,把 fileId/source/文件名 编码在文本里)渲染为文件卡片,仅保留描述文本;
+                // 新版导入消息只含一句「请导入XX账单文件」,这里返回 null,按普通文本渲染,文件由 attachments 渲染
                 const importMeta = block.type === 'text' ? parseImportMessage(block.content) : null
                 return (
                 <div key={block.id} className="space-y-1.5 max-w-full">
@@ -255,17 +264,37 @@ export function MessageBubble({ message, onRetry, onEditSubmit, versions, onSwit
                 </div>
               )})
             )}
-            {/* 附件图片展示 */}
+            {/* 附件展示:图片给缩略图,其余(csv / Excel / pdf…)给文件条 ——
+                非图片当 <img> 渲染只会出坏图,这里按扩展名分流 */}
             {message.attachments && message.attachments.length > 0 && (
               <div className="flex gap-1.5 flex-wrap">
                 {message.attachments.map((att) => (
-                  <a key={att.id} href={att.url} target="_blank" rel="noopener noreferrer">
-                    <img
-                      src={att.url}
-                      alt={att.originalFilename}
-                      className="w-20 h-20 object-cover rounded-lg border hover:opacity-80 transition-opacity"
-                    />
-                  </a>
+                  isImageAttachment(att) ? (
+                    <a key={att.id} href={att.url} target="_blank" rel="noopener noreferrer" title={att.originalFilename}>
+                      <img
+                        src={att.url}
+                        alt={att.originalFilename}
+                        className="w-20 h-20 object-cover rounded-lg border hover:opacity-80 transition-opacity"
+                      />
+                    </a>
+                  ) : (
+                    <a
+                      key={att.id}
+                      href={att.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={att.originalFilename}
+                      className="flex items-center gap-2 max-w-[220px] rounded-lg border bg-card px-2.5 py-2 hover:bg-muted/50 transition-colors"
+                    >
+                      <span className="w-8 h-8 rounded-md bg-muted flex items-center justify-center shrink-0">
+                        <FileText size={15} className="text-muted-foreground" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-xs truncate">{att.originalFilename}</span>
+                        <span className="block text-[10px] text-muted-foreground">附件</span>
+                      </span>
+                    </a>
+                  )
                 ))}
               </div>
             )}

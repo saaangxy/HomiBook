@@ -9,6 +9,7 @@ import {
   type MessageBlock,
   type SuggestionOption,
   type ToolCallEntry,
+  isAwaitingUserAction,
 } from '@homibook/core'
 import type { SSEEvent } from '../api/chat'
 import { sendMessageStream, confirmActionStream } from '../api/chat'
@@ -490,7 +491,7 @@ export const useChatStore = create<ChatState>()((set, get) => {
     const parentId = parentMsg!.id
 
     // 标记当前块为已决定：批准 → pending（保留旧 result，避免 SSE tool-result 到达前被误判为"数据已过期"）
-    // 并暂存 decisionData，提交时各 decision 携带自己的 data
+    // 并暂存 decisionData，提交时各 decision 携带自己的 data；decided 让交互卡与"还没点过"区分开
     get().updateStreamMessage(sid, parentId, (msg) => ({
       ...msg,
       blocks: msg.blocks.map((b) =>
@@ -500,17 +501,19 @@ export const useChatStore = create<ChatState>()((set, get) => {
               status: approved ? 'pending' as const : 'error' as const,
               preview: undefined,
               decisionData: data,
+              decided: true,
               ...(approved ? {} : { result: { error: '用户拒绝了此操作' } as any }),
             }
           : b,
       ),
     }))
 
-    // 待决定块仍在 → 等待（confirming/suggesting/switching = 等待用户决定）
+    // 同一条 assistant 消息里还有等用户点的块 → 等待，全部点完再一次性提交 decisions。
+    // （只点其中一张就提交，会让该消息里其它 tool_call 缺 tool 结果，上游直接拒整轮请求）
     const updatedView = viewOf(get().sessionCache[sid] ?? EMPTY_SESSION)
     const updatedMsg = updatedView.messages.find(m => m.id === parentId)
     const awaiting = (updatedMsg?.blocks.filter(b =>
-      b.type === 'tool-call' && (b.status === 'confirming' || b.status === 'suggesting' || b.status === 'switching')
+      b.type === 'tool-call' && isAwaitingUserAction(b)
     ) || []) as Extract<MessageBlock, { type: 'tool-call' }>[]
     if (awaiting.length > 0) return
 

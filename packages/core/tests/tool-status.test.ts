@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveToolCallStatus } from '../src/ai/tool-status.js';
+import { isAwaitingUserAction, resolveToolCallStatus } from '../src/ai/tool-status.js';
 import type { ToolCallEntry } from '../src/types/index.js';
 
 /** 构造 ToolCallEntry,默认 pending 状态 */
@@ -116,5 +116,46 @@ describe('resolveToolCallStatus', () => {
     const r = resolveToolCallStatus(entry);
     expect(r.effectiveStatus).toBe('pending');
     expect(r.isExpired).toBe(false);
+  });
+});
+
+describe('isAwaitingUserAction(同一条消息里是否还有等用户点的卡)', () => {
+  it('preview_import 只有 mode=preview 才算等用户点', () => {
+    const preview = tc({ toolName: 'preview_import', args: { mode: 'preview' }, status: 'success', result: { data: {} } });
+    expect(isAwaitingUserAction(preview)).toBe(true);
+
+    // 导入流程第一步是 mode=analyze(查询),UI 不渲染卡片也没有按钮 ——
+    // 若把它算作「待点」,用户点完所有卡片也不会提交 decisions(实测踩过)
+    const analyze = tc({ toolName: 'preview_import', args: { mode: 'analyze' }, status: 'success', result: { data: {} } });
+    expect(isAwaitingUserAction(analyze)).toBe(false);
+    // args 缺失(旧数据)→ 不作为卡片拦住提交
+    expect(isAwaitingUserAction(tc({ toolName: 'preview_import', status: 'success', result: { data: {} } }))).toBe(false);
+  });
+
+  it('confirm_import 只有 confirm_preview 才算等用户点(执行完的回执不算)', () => {
+    const card = tc({ toolName: 'confirm_import', status: 'success', result: { data: { mode: 'confirm_preview' } } });
+    expect(isAwaitingUserAction(card)).toBe(true);
+
+    const receipt = tc({ toolName: 'confirm_import', status: 'success', result: { data: { imported: 12, accountsCreated: 0 } } });
+    expect(isAwaitingUserAction(receipt)).toBe(false);
+  });
+
+  it('点过(decided)/ 已确认(confirmed)/ 状态不再是 success 的卡不再等', () => {
+    const base: Partial<ToolCallEntry> & Pick<ToolCallEntry, 'toolName'> =
+      { toolName: 'preview_import', args: { mode: 'preview' }, status: 'success', result: { data: {} } };
+    expect(isAwaitingUserAction(tc({ ...base, decided: true }))).toBe(false);
+    expect(isAwaitingUserAction(tc({ ...base, status: 'pending' }))).toBe(false);
+    expect(isAwaitingUserAction(tc({ ...base, result: { data: { confirmed: true } } }))).toBe(false);
+  });
+
+  it('中间态(待确认/待选择/待选账本)仍算等用户操作', () => {
+    for (const status of ['confirming', 'suggesting', 'switching'] as const) {
+      expect(isAwaitingUserAction(tc({ toolName: 'create_record', status }))).toBe(true);
+    }
+  });
+
+  it('普通工具成功不算等用户点', () => {
+    expect(isAwaitingUserAction(tc({ toolName: 'query_accounts', status: 'success', result: { data: {} } }))).toBe(false);
+    expect(isAwaitingUserAction(tc({ toolName: 'create_record', status: 'success' }))).toBe(false);
   });
 });
