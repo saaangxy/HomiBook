@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -97,40 +97,18 @@ export function MessageBubble({ message, onRetry, onEditSubmit, versions, onSwit
   const isUser = message.role === 'user'
   const [openThinkBlocks, setOpenThinkBlocks] = useState<Set<string>>(new Set())
   const [copied, setCopied] = useState(false)
-  const manuallyClosed = useRef<Set<string>>(new Set())
   const [isEditing, setIsEditing] = useState(false)
   const [editText, setEditText] = useState('')
-
-  // 流式时自动展开最后一个 thinking block（用户手动关闭过的除外）
-  useEffect(() => {
-    if (message.isStreaming) {
-      const thinkingBlocks = message.blocks.filter(
-        (b): b is Extract<MessageBlock, { type: 'thinking' }> => b.type === 'thinking',
-      )
-      const lastThink = thinkingBlocks[thinkingBlocks.length - 1]
-      if (lastThink && !manuallyClosed.current.has(lastThink.id)) {
-        setOpenThinkBlocks((prev) => {
-          if (prev.has(lastThink.id)) return prev
-          return new Set([...prev, lastThink.id])
-        })
-      }
-    }
-  }, [message.blocks, message.isStreaming])
 
   const isStreaming = message.isStreaming
   const isEmpty = !isUser && isStreaming && message.blocks.length === 0
 
+  /** 思考过程**默认折叠**（流式期间也不自动展开）：展开与否只由用户点击决定，与移动端一致 */
   const toggleThink = (id: string) => {
     setOpenThinkBlocks((prev) => {
       const next = new Set(prev)
-      if (next.has(id)) {
-        next.delete(id)
-        // 记录用户手动关闭，流式期间不再自动展开
-        if (isStreaming) manuallyClosed.current.add(id)
-      } else {
-        next.add(id)
-        manuallyClosed.current.delete(id)
-      }
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
       return next
     })
   }
