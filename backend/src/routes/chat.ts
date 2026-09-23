@@ -178,7 +178,7 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
   const pendingState = { confirmations: [] as { toolCallId: string; toolName: string; args: any }[], suggestion: null as { toolCallId: string; questions: any[] } | null }
 
   const msgState = { dbId: null as string | null }
-  const saveMessageSnapshot = async () => {
+  const writeSnapshot = async () => {
     const toolCallsJson = toolCallEntries.length > 0 ? JSON.stringify(toolCallEntries) : null
     const snapData = {
       sessionId,
@@ -201,6 +201,21 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
       })
       if (created) msgState.dbId = created.id
     }
+  }
+  /**
+   * 快照**串行化**：AI SDK 会**并发**执行同一 step 内的多个工具调用（例如一次导入 4 张预览卡），
+   * 而每个工具执行内部都会 `await saveMessageSnapshot()`。并发进入时 `msgState.dbId` 都还是 null，
+   * 于是各自 `create` 一条 assistant 消息 —— 同一 parent 下出现多条**兄弟消息**（实测 createdAt 精确同毫秒）：
+   *   - 前端 buildActivePath 只取「最后一个子节点」，刷新后这条重复消息会把真正的分支整棵顶掉
+   *     （表现：消息消失、确认状态回滚、历史像没加载）；
+   *   - buildChatMessages 重放时会带上两份相同 tool_call 的消息，上游以 duplicate tool_call_id 拒整会话。
+   * 用一条 promise 链把写入排队，保证「先到的 create、后到的 update」。
+   */
+  let snapshotQueue: Promise<void> = Promise.resolve()
+  const saveMessageSnapshot = () => {
+    const next = snapshotQueue.then(writeSnapshot)
+    snapshotQueue = next.catch(() => {})
+    return next
   }
 
   // 构建 AI SDK 工具（过滤已禁用的工具）
