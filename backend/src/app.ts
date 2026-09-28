@@ -8,6 +8,7 @@ import scalar from '@scalar/fastify-api-reference'
 import path from 'path'
 import fs from 'fs'
 import { prisma, rawPrisma } from './lib/prisma.js'
+import { APP_VERSION } from './version.js'
 
 export { prisma, rawPrisma }
 
@@ -45,7 +46,8 @@ export async function buildApp() {
       info: {
         title: 'Homibook API',
         description: '家庭记账本 API 文档',
-        version: '1.0.0',
+        // 与 /api/version 同源(backend/package.json),避免两处版本号漂移
+        version: APP_VERSION,
       },
       servers: [{ url: 'http://localhost:3002' }],
     },
