@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { Paperclip } from 'lucide-react-native';
 import type { RecordItem } from '@/types';
@@ -15,7 +15,8 @@ interface RecordRowProps {
 
 // 流水卡片:商家/标题(粗体) + 类型|分类|账户(浅灰) + 备注(浅灰) + 右侧金额
 // 有附件时在标题旁显示回形针角标,点击直接弹出附件查看器(网格展示/预览/下载)
-export function RecordRow({ record, showDivider = false }: RecordRowProps) {
+// memo:流水列表 cell 内可能挂十几次,父级重渲染(筛选/汇总变化)时按 record 引用跳过
+export const RecordRow = memo(function RecordRow({ record, showDivider = false }: RecordRowProps) {
   const { colors } = useTheme();
   const [viewerOpen, setViewerOpen] = useState(false);
   const isIncome = record.type === 'INCOME';
@@ -67,8 +68,10 @@ export function RecordRow({ record, showDivider = false }: RecordRowProps) {
         </Text>
       </View>
       {showDivider && <View className="h-px mt-3" style={{ backgroundColor: colors.hairline }} />}
-      {/* 附件查看器:参考 web 端,网格展示 + 点击预览 + 单项下载 */}
-      <AttachmentViewer visible={viewerOpen} attachments={attachments} onClose={() => setViewerOpen(false)} />
+      {/* 附件查看器:参考 web 端,网格展示 + 点击预览 + 单项下载;无附件时不挂载(省一个视图) */}
+      {attCount > 0 && (
+        <AttachmentViewer visible={viewerOpen} attachments={attachments} onClose={() => setViewerOpen(false)} />
+      )}
     </View>
   );
-}
+});

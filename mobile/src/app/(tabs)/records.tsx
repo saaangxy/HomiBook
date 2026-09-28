@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Platform, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useIsFocused } from 'expo-router';
 import { ArrowUpRight, ArrowDownRight, ArrowLeftRight, SlidersHorizontal, X, Copy, Trash2, CopyMinus, FileUp, Download, Save, Share2, ChevronDown, ChevronUp } from 'lucide-react-native';
@@ -31,6 +31,61 @@ function samePage(a: RecordItem[], b: RecordItem[]): boolean {
   return a.length === b.length && a.every((x, i) => x.id === b[i].id);
 }
 
+/** 按 id 去重(保留首次出现顺序):同一 id 出现两次会让同一天的分组里出现重复 React key */
+function dedupeById(list: RecordItem[]): RecordItem[] {
+  const seen = new Set<string>();
+  return list.filter((r) => !seen.has(r.id) && (seen.add(r.id), true));
+}
+
+/** 追加下一页:剔除与现有列表重复的记录(并发触底/分页漂移都不会再产生重复 key) */
+function appendUnique(prev: RecordItem[], next: RecordItem[]): RecordItem[] {
+  const seen = new Set(prev.map((r) => r.id));
+  const add = next.filter((r) => !seen.has(r.id) && (seen.add(r.id), true));
+  return add.length === 0 ? prev : [...prev, ...add];
+}
+
+/**
+ * 单日流水卡(列表 cell)。
+ *
+ * 之前 renderItem 里内联渲染整日卡片 + 内联回调,每次父级重渲染(筛选/分页/汇总变化)
+ * 都会把可视区所有 cell 重新渲染一遍 —— 每条流水都带 SwipeRow 手势 + 附件查看器,
+ * 成本高,dev 下就报「VirtualizedList: large list that is slow to update」。
+ * 这里抽成 memo 组件 + 稳定回调:只要该日数据与回调没变就跳过整棵子树。
+ * 注:回调必须是稳定引用(useCallback),否则 memo 形同虚设。
+ */
+const DayCard = memo(function DayCard({ date, records, index, onClone, onDelete, onOpen }: {
+  date: string;
+  records: RecordItem[];
+  index: number;
+  onClone: (r: RecordItem) => void;
+  onDelete: (r: RecordItem) => void;
+  onOpen: (r: RecordItem) => void;
+}) {
+  const { colors } = useTheme();
+  return (
+    <FadeInView index={index}>
+      <Card className="px-5 py-4 mb-4">
+        <Text variant="muted" style={{ fontSize: 11, letterSpacing: 1, marginBottom: 12 }}>{date}</Text>
+        {records.map((r, i) => (
+          <View key={r.id}>
+            <SwipeRow
+              actions={[
+                { key: 'clone', label: '克隆', color: colors.transfer, icon: Copy, onPress: () => onClone(r) },
+                { key: 'del', label: '删除', color: colors.expense, icon: Trash2, onPress: () => onDelete(r) },
+              ]}
+            >
+              <Pressable onPress={() => onOpen(r)}>
+                <RecordRow record={r} />
+              </Pressable>
+            </SwipeRow>
+            {i < records.length - 1 && <View style={{ height: 14 }} />}
+          </View>
+        ))}
+      </Card>
+    </FadeInView>
+  );
+});
+
 // 流水管理:单行汇总条 + 高级筛选抽屉(FilterSheet) + 活跃条件胶囊 + 左滑克隆/删除 + 下拉刷新
 // 列表走后端分页(20 条/页);记一笔/编辑保存后由 RecordModal 触发静默重拉第一页
 export default function RecordsScreen() {
@@ -56,6 +111,13 @@ export default function RecordsScreen() {
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);           // 首屏/筛选切换(阻塞列表)
   const [loadingMore, setLoadingMore] = useState(false);  // 触底加载下一页(列表底部转圈)
+  /**
+   * 触底加载的**同步**护栏:state(loadingMore)更新是异步的,onEndReached 在同一 tick 连发两次时
+   * 两次都会读到 false → 同一页被拉两遍并 append → 同一 id 进同一日期分组 → React 报重复 key。
+   */
+  const loadingMoreRef = useRef(false);
+  /** 列表「代」:首页重拉(筛选/账本切换/下拉刷新)后自增,用于丢弃在途的旧分页响应 */
+  const listGenRef = useRef(0);
 
   // 后端查询条件(多选账户/分类后端仅支持单值,取唯一值传后端,其余客户端补过滤)
   const query = useMemo(() => {
@@ -78,11 +140,15 @@ export default function RecordsScreen() {
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!bookId) return;
+    // 首页重拉 → 换代:在途的 loadMore 响应回来后会被丢弃(否则会把旧语义的页追加进新列表)
+    const gen = ++listGenRef.current;
+    loadingMoreRef.current = false;
     if (!opts?.silent) setLoading(true);
     try {
       const r = await fetchRecordsPaged(bookId, { page: 1, pageSize: PAGE_SIZE, ...query });
-      // 静默刷新时内容未变则不动列表,保住滚动位置
-      setItems((prev) => (opts?.silent && samePage(prev, r.records) ? prev : r.records));
+      if (gen !== listGenRef.current) return; // 期间又发生了一次重拉,本次结果作废
+      // 静默刷新时内容未变则不动列表,保住滚动位置;否则按 id 去重后替换
+      setItems((prev) => (opts?.silent && samePage(prev, r.records) ? prev : dedupeById(r.records)));
       setPage(1);
       setTotalPages(Math.max(1, Math.ceil(r.total / PAGE_SIZE)));
       loadedKeyRef.current = filterKey;
@@ -99,16 +165,25 @@ export default function RecordsScreen() {
   }, [isFocused, bookId, filterKey, load]);
 
   const loadMore = useCallback(() => {
-    if (!bookId || loading || loadingMore || page >= totalPages) return;
+    // 同步 ref 判断:同一 tick 的重复 onEndReached 只有第一次能通过
+    if (!bookId || loading || loadingMoreRef.current || page >= totalPages) return;
+    loadingMoreRef.current = true;
     setLoadingMore(true);
-    fetchRecordsPaged(bookId, { page: page + 1, pageSize: PAGE_SIZE, ...query })
+    const gen = listGenRef.current;
+    const nextPage = page + 1;
+    fetchRecordsPaged(bookId, { page: nextPage, pageSize: PAGE_SIZE, ...query })
       .then((r) => {
-        setItems((prev) => [...prev, ...r.records]);
-        setPage((p) => p + 1);
+        // 期间发生首页重拉(筛选/下拉刷新)→ 该页已不属于当前列表,丢弃
+        if (gen !== listGenRef.current) return;
+        setItems((prev) => appendUnique(prev, r.records));
+        setPage((p) => Math.max(p, nextPage));
         setTotalPages(Math.max(1, Math.ceil(r.total / PAGE_SIZE)));
       })
-      .finally(() => setLoadingMore(false));
-  }, [bookId, loading, loadingMore, page, totalPages, query]);
+      .finally(() => {
+        loadingMoreRef.current = false;
+        setLoadingMore(false);
+      });
+  }, [bookId, loading, page, totalPages, query]);
 
   // 记一笔/编辑保存后由 RecordModal 直接触发:静默重拉第一页
   const reloadPage = useCallback(() => {
@@ -146,13 +221,22 @@ export default function RecordsScreen() {
 
   const catLabelMap = useMemo(() => Object.fromEntries(categories.map((x) => [x.code, x.label])), [categories]);
 
-  const onClone = (r: RecordItem) => {
+  // 列表 cell(DayCard)已 memo 化,以下回调必须保持稳定引用,否则 memo 形同虚设
+  const onClone = useCallback((r: RecordItem) => {
     cloneRecord(r).then(() => load({ silent: true }));
     haptics.success();
-  };
+  }, [cloneRecord, load]);
   // 删除需二次确认(自定义弹窗),确认后真正删除
   const [confirmRecord, setConfirmRecord] = useState<RecordItem | null>(null);
-  const onDelete = (r: RecordItem) => setConfirmRecord(r);
+  const onDelete = useCallback((r: RecordItem) => setConfirmRecord(r), []);
+  /** 打开流水详情(稳定引用) */
+  const onOpenRecord = useCallback((r: RecordItem) => { haptics.tap(); openRecord(r); }, [openRecord]);
+
+  // renderItem/keyExtractor 稳定化:滚动、加载下一页、汇总变化时不再整批重建 cell
+  const renderDay = useCallback(({ item: d, index }: { item: string; index: number }) => (
+    <DayCard date={d} records={groups[d]} index={index} onClone={onClone} onDelete={onDelete} onOpen={onOpenRecord} />
+  ), [groups, onClone, onDelete, onOpenRecord]);
+  const keyExtractorDate = useCallback((d: string) => d, []);
   const onConfirmDelete = () => {
     if (!confirmRecord) return;
     deleteRecord(confirmRecord.id);
@@ -364,29 +448,8 @@ export default function RecordsScreen() {
         ) : (
           <FlatList
             data={dates}
-            keyExtractor={(d) => d}
-            renderItem={({ item: d, index }) => (
-              <FadeInView index={index}>
-                <Card className="px-5 py-4 mb-4">
-                  <Text variant="muted" style={{ fontSize: 11, letterSpacing: 1, marginBottom: 12 }}>{d}</Text>
-                  {groups[d].map((r, i) => (
-                    <View key={r.id}>
-                      <SwipeRow
-                        actions={[
-                          { key: 'clone', label: '克隆', color: colors.transfer, icon: Copy, onPress: () => onClone(r) },
-                          { key: 'del', label: '删除', color: colors.expense, icon: Trash2, onPress: () => onDelete(r) },
-                        ]}
-                      >
-                        <Pressable onPress={() => { haptics.tap(); openRecord(r); }}>
-                          <RecordRow record={r} />
-                        </Pressable>
-                      </SwipeRow>
-                      {i < groups[d].length - 1 && <View style={{ height: 14 }} />}
-                    </View>
-                  ))}
-                </Card>
-              </FadeInView>
-            )}
+            keyExtractor={keyExtractorDate}
+            renderItem={renderDay}
             ListEmptyComponent={
               <EmptyState
                 icon="🧾"
@@ -409,9 +472,13 @@ export default function RecordsScreen() {
             onEndReachedThreshold={0.4}
             contentContainerStyle={{ paddingBottom: 40, flexGrow: 1 }}
             showsVerticalScrollIndicator={false}
-            initialNumToRender={6}
-            maxToRenderPerBatch={6}
-            windowSize={7}
+            // 渲染预算:每批更小 + 批间隔更长,把一轮渲染切成小块,避免滚动时出现 >500ms 长任务
+            initialNumToRender={5}
+            maxToRenderPerBatch={4}
+            updateCellsBatchingPeriod={80}
+            windowSize={5}
+            // Android:滚出屏幕的 cell 解除原生挂载(GestureDetector/Animated 视图多的列表收益明显)
+            removeClippedSubviews={Platform.OS === 'android'}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}
           />
         )}
