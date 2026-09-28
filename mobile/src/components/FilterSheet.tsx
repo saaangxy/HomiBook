@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { BackHandler, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTheme, alpha, haptics, sheetShadow, motion } from '@/theme';
+import { useTheme, alpha, haptics, sheetShadow } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { DatePicker } from '@/components/ui/DatePicker';
+import { useAppearProgress } from '@/components/ui/useAppearAnimation';
 import { useRecords } from '@/stores/records';
 import type { RecordItem, RecordType } from '@/types';
 import { accountLabel, isMultiOwnerAccounts } from '@/lib/account';
@@ -131,6 +132,14 @@ export function FilterSheet({ visible, initial, onApply, onClose }: FilterSheetP
     return () => sub.remove();
   }, [visible, onClose]);
 
+  // 入场动画(共享值驱动,替代 entering —— 见 useAppearAnimation.ts 顶部说明)
+  const appear = useAppearProgress({ active: visible });
+  const backdropAnim = useAnimatedStyle(() => ({ opacity: appear.value }));
+  const sheetAnim = useAnimatedStyle(() => ({
+    opacity: appear.value,
+    transform: [{ translateY: (1 - appear.value) * 24 }],
+  }));
+
   // 主 window 覆盖层(替代 RN Modal):Android 上 Modal 的独立 Dialog 窗口在
   // edge-to-edge 全屏设备上高度会被截断(底部缝隙),改用绝对定位覆盖层
   if (!visible) return null;
@@ -138,11 +147,10 @@ export function FilterSheet({ visible, initial, onApply, onClose }: FilterSheetP
   return (
     <View style={StyleSheet.absoluteFill}>
       <KeyboardAvoidingView style={{ flex: 1, justifyContent: 'flex-end' }} behavior="padding">
-        <Animated.View entering={FadeIn.duration(180)} style={StyleSheet.absoluteFill}>
+        <Animated.View style={[StyleSheet.absoluteFill, backdropAnim]}>
           <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={onClose} />
         </Animated.View>
         <Animated.View
-          entering={FadeInDown.duration(motion.duration.base).easing(motion.easing)}
           style={[
             sheetShadow(palette),
             {
@@ -154,6 +162,7 @@ export function FilterSheet({ visible, initial, onApply, onClose }: FilterSheetP
               paddingBottom: Math.max(insets.bottom + 12, 24),
               maxHeight: '85%',
             },
+            sheetAnim,
           ]}
         >
           <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: colors.muted, alignSelf: 'center', marginBottom: 10 }} />

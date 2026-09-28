@@ -19,6 +19,12 @@ export function RepaymentPlanTable({ plans }: Props) {
     return <p className="text-sm text-muted-foreground text-center py-4">暂无还款计划</p>
   }
 
+  // 待还利息 = 总利息 − 截至本期的利息累计(最后一期归零)。贷款预览与已生成计划共用同一算法。
+  // 用前缀和数组而不是渲染期累加变量:在渲染中改值会触发 react-hooks/immutability
+  const totalInterest = plans.reduce((s, p) => s + p.interest, 0)
+  const cumInterest = plans.reduce<number[]>((acc, p, i) => [...acc, (acc[i - 1] ?? 0) + p.interest], [])
+  const rows = plans.map((p, i) => ({ ...p, interestLeft: Math.max(0, totalInterest - cumInterest[i]) }))
+
   return (
     <div className="max-h-[400px] overflow-y-auto border border-border rounded-lg">
       <Table>
@@ -29,12 +35,13 @@ export function RepaymentPlanTable({ plans }: Props) {
             <TableHead className="text-xs text-right">月还款额</TableHead>
             <TableHead className="text-xs text-right">本金</TableHead>
             <TableHead className="text-xs text-right">利息</TableHead>
+            <TableHead className="text-xs text-right">待还利息</TableHead>
             <TableHead className="text-xs text-right">剩余本金</TableHead>
             <TableHead className="text-xs w-20">状态</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {plans.map((p) => (
+          {rows.map((p) => (
             <TableRow key={p.id || p.period}>
               <TableCell className="text-xs py-1.5">{p.period}</TableCell>
               <TableCell className="text-xs py-1.5">
@@ -43,6 +50,7 @@ export function RepaymentPlanTable({ plans }: Props) {
               <TableCell className="text-xs py-1.5 text-right">{formatMoney(p.totalPayment)}</TableCell>
               <TableCell className="text-xs py-1.5 text-right">{formatMoney(p.principal)}</TableCell>
               <TableCell className="text-xs py-1.5 text-right">{formatMoney(p.interest)}</TableCell>
+              <TableCell className="text-xs py-1.5 text-right">{formatMoney(p.interestLeft)}</TableCell>
               <TableCell className="text-xs py-1.5 text-right">{formatMoney(p.remainingPrincipal)}</TableCell>
               <TableCell className="py-1.5 whitespace-nowrap">
                 {(() => {

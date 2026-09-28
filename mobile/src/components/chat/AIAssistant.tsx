@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, BackHandler, FlatList, Image, NativeScrollEvent, NativeSyntheticEvent, Platform, Pressable, SectionList, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { SlideInLeft } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import Markdown from 'react-native-markdown-display';
 import { Bot, Brain, ChevronDown, FileText, FileUp, Globe, ImagePlus, List, Plus, RefreshCw, Send, Sparkles, StopCircle, Trash2, X } from 'lucide-react-native';
-import { useTheme, alpha, haptics, motion } from '@/theme';
+import { useTheme, alpha, haptics } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { LoadingState } from '@/components/ui/LoadingState';
+import { useAppearProgress } from '@/components/ui/useAppearAnimation';
 import { FormSheet } from '@/components/chrome/FormSheet';
 import { ConfirmSheet } from '@/components/chrome/ConfirmSheet';
 import { showToast } from '@/components/chrome/Toast';
@@ -52,6 +53,12 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
   const [sessionListOpen, setSessionListOpen] = useState(false);
   /** 待确认删除的会话:抽屉里的删除是危险操作,先弹确认再执行 */
   const [sessionToDelete, setSessionToDelete] = useState<ChatSession | null>(null);
+  // 会话列表抽屉入场(共享值驱动,替代 entering —— 见 useAppearAnimation.ts 顶部说明)
+  const drawerAppear = useAppearProgress({ active: sessionListOpen });
+  const drawerAnim = useAnimatedStyle(() => ({
+    opacity: drawerAppear.value,
+    transform: [{ translateX: -(1 - drawerAppear.value) * 48 }],
+  }));
   const insets = useSafeAreaInsets();
   // 导入弹窗(自定义来源选择,对齐 web DropdownMenu 的支付宝/微信/京东三选项)
   const [importSheetOpen, setImportSheetOpen] = useState(false);
@@ -619,8 +626,7 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
       {/* 会话列表:占满整个 AI 面板的抽屉(无遮罩 —— 它本身就是一页会话列表;X / 返回键 / 选中会话即关闭) */}
       {sessionListOpen && (
         <Animated.View
-          entering={SlideInLeft.duration(motion.duration.base).easing(motion.easing)}
-          style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: colors.card }}
+          style={[{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: colors.card }, drawerAnim]}
         >
           {/* 头部:标题 + 会话数 + 新建 + 关闭 */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.hairline }}>

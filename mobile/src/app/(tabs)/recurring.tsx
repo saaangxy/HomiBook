@@ -37,6 +37,40 @@ const TYPE_COLOR: Record<RecordType, 'income' | 'expense' | 'transfer'> = { INCO
 
 const fmtDateTime = (s?: string | null) => (s ? new Date(s).toLocaleString('zh-CN') : '-');
 
+/**
+ * 贷款列表摘要:总还款(本息合计 = 全部期次月供之和)与剩余本息(未还期次月供之和)。
+ * 与还款计划弹窗顶部的口径一致;无计划行(未生成计划)时回退本金口径,避免显示 0。
+ */
+function loanPlanSummary(t: { loanTotalAmount?: number | null; loanRemainingAmount?: number | null; repaymentPlans?: { totalPayment: number; status: string }[] }) {
+  let total = 0;
+  let remaining = 0;
+  for (const p of t.repaymentPlans ?? []) {
+    total += p.totalPayment;
+    if (p.status !== 'GENERATED') remaining += p.totalPayment;
+  }
+  return {
+    totalRepay: total || (t.loanTotalAmount ?? 0),
+    remainingRepay: total ? remaining : (t.loanRemainingAmount ?? 0),
+  };
+}
+
+/**
+ * 给还款计划行补上「待还利息」= 总利息 − 截至本期的利息累计(最后一期归零)。
+ * 贷款预览(全部未还)与已生成计划共用同一算法,保证两处口径一致。
+ */
+function withInterestLeft<T extends { interest: number }>(list: T[]): (T & { interestLeft: number })[] {
+  const total = list.reduce((s, p) => s + p.interest, 0);
+  let cum = 0;
+  return list.map((p) => {
+    cum += p.interest;
+    return { ...p, interestLeft: Math.max(0, total - cum) };
+  });
+}
+
+/** 还款计划表列宽(表头与行共用):表格横向滚动,列给足宽度,金额不再挤压换行 */
+const PLAN_COLS = { period: 34, due: 66, total: 64, principal: 62, interest: 62, interestLeft: 66, remaining: 70 } as const;
+const PLAN_TABLE_W = Object.values(PLAN_COLS).reduce((s, w) => s + w, 0);
+
 // 固定收支:对齐网页端完整新增/编辑 —— 周期/贷款两种类型、贷款预览与还款计划、全量表单字段
 export default function RecurringScreen() {
   const { colors } = useTheme();
@@ -94,6 +128,28 @@ export default function RecurringScreen() {
   // 还款计划查看
   const [planTarget, setPlanTarget] = useState<RecurringTransaction | null>(null);
   const [plans, setPlans] = useState<RepaymentPlan[]>([]);
+  /** 计划行 + 待还利息(表格与顶部汇总共用同一份计算) */
+  const planRows = useMemo(() => withInterestLeft(plans), [plans]);
+  /** 已还汇总:status=GENERATED 表示该期已生成流水,即已还 */
+  const planPaid = useMemo(() => plans.reduce((acc, p) => {
+    if (p.status === 'GENERATED') { acc.principal += p.principal; acc.interest += p.interest; }
+    return acc;
+  }, { principal: 0, interest: 0 }), [plans]);
+  /**
+   * 顶部「总额/剩余」按**本息合计**口径(而不是只算本金):
+   *   总额 = 全部期次月供之和 = 本金 + 利息;剩余 = 未还期次月供之和。
+   * 满足 总额 = 剩余 + 已还本金 + 已还利息。无计划行(未生成计划的老数据)时回退本金口径,避免显示 0。
+   */
+  const planTotals = useMemo(() => {
+    const sum = plans.reduce((acc, p) => ({
+      total: acc.total + p.totalPayment,
+      remaining: acc.remaining + (p.status === 'GENERATED' ? 0 : p.totalPayment),
+    }), { total: 0, remaining: 0 });
+    return {
+      total: sum.total || (planTarget?.loanTotalAmount ?? 0),
+      remaining: sum.total ? sum.remaining : (planTarget?.loanRemainingAmount ?? 0),
+    };
+  }, [plans, planTarget]);
   /** 正在拉取还款计划的那条(按钮转圈 + 防重复点) */
   const [planLoadingId, setPlanLoadingId] = useState<string | null>(null);
   /** 首屏/切账本的加载态;保存后的静默 reload 不置此态,避免闪 loading */
@@ -385,15 +441,17 @@ export default function RecurringScreen() {
 
   const isLoanCreate = recType === 'LOAN' && !editing;
 
-  // 还款计划行(期次/到期日/月供/本金/利息/剩余)—— 兼容预览与已生成计划两种数据
-  const planRow = (p: Pick<RepaymentPlan, 'period' | 'dueDate' | 'totalPayment' | 'principal' | 'interest' | 'remainingPrincipal'>) => (
+  // 还款计划行(期次/到期日/月供/本金/利息/待还利息/剩余)—— 兼容预览与已生成计划两种数据
+  // 列宽见 PLAN_COLS(表格横向滚动,列给足宽度);金额统一走 formatMoneyShort
+  const planRow = (p: Pick<RepaymentPlan, 'period' | 'dueDate' | 'totalPayment' | 'principal' | 'interest' | 'remainingPrincipal'> & { interestLeft?: number }) => (
     <View key={`${p.period}-${p.dueDate}`} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: colors.hairline }}>
-      <Text style={{ width: 34, fontSize: 11, color: colors.foreground }}>#{p.period}</Text>
-      <Text style={{ width: 72, fontSize: 11, color: colors.mutedForeground }}>{p.dueDate.slice(0, 10)}</Text>
-      <Text style={{ width: 58, fontSize: 11, color: colors.foreground, textAlign: 'right' }}>{formatMoneyShort(p.totalPayment)}</Text>
-      <Text style={{ width: 52, fontSize: 11, color: colors.primary, textAlign: 'right' }}>{formatMoneyShort(p.principal)}</Text>
-      <Text style={{ width: 52, fontSize: 11, color: colors.expense, textAlign: 'right' }}>{formatMoneyShort(p.interest)}</Text>
-      <Text style={{ flex: 1, fontSize: 11, color: colors.mutedForeground, textAlign: 'right' }}>{formatMoneyShort(p.remainingPrincipal)}</Text>
+      <Text numberOfLines={1} style={{ width: PLAN_COLS.period, fontSize: 11, color: colors.foreground }}>#{p.period}</Text>
+      <Text numberOfLines={1} style={{ width: PLAN_COLS.due, fontSize: 11, color: colors.mutedForeground }}>{p.dueDate.slice(0, 10)}</Text>
+      <Text numberOfLines={1} style={{ width: PLAN_COLS.total, fontSize: 11, color: colors.foreground, textAlign: 'right' }}>{formatMoneyShort(p.totalPayment)}</Text>
+      <Text numberOfLines={1} style={{ width: PLAN_COLS.principal, fontSize: 11, color: colors.primary, textAlign: 'right' }}>{formatMoneyShort(p.principal)}</Text>
+      <Text numberOfLines={1} style={{ width: PLAN_COLS.interest, fontSize: 11, color: colors.expense, textAlign: 'right' }}>{formatMoneyShort(p.interest)}</Text>
+      <Text numberOfLines={1} style={{ width: PLAN_COLS.interestLeft, fontSize: 11, color: colors.expense, textAlign: 'right' }}>{formatMoneyShort(p.interestLeft ?? 0)}</Text>
+      <Text numberOfLines={1} style={{ width: PLAN_COLS.remaining, fontSize: 11, color: colors.mutedForeground, textAlign: 'right' }}>{formatMoneyShort(p.remainingPrincipal)}</Text>
     </View>
   );
 
@@ -420,6 +478,8 @@ export default function RecurringScreen() {
             items.map((t, i) => {
               const Icon = TYPE_ICON[t.type];
               const color = colors[TYPE_COLOR[t.type]];
+              // 贷款摘要(总还款/剩余本息):仅 LOAN 时计算(非贷款是空数组循环,开销可忽略)
+              const loanSum = t.recurringType === 'LOAN' ? loanPlanSummary(t) : null;
               return (
                 <FadeInView key={t.id} index={i}>
                   <Card className="px-5 py-4 mb-3" onPress={() => openEdit(t)}>
@@ -450,9 +510,9 @@ export default function RecurringScreen() {
                         </Text>
                       )}
                     </View>
-                    {t.recurringType === 'LOAN' && !!t.loanTotalAmount && (
+                    {loanSum && !!t.loanTotalAmount && (
                       <Text variant="muted" style={{ fontSize: 11, marginTop: 8 }}>
-                        总额 {formatMoney(t.loanTotalAmount)} · 剩余 {formatMoney(t.loanRemainingAmount ?? 0)} · {t.loanTermMonths}期 · 利率{t.loanInterestRate ?? 0}%
+                        贷款总额 {formatMoney(t.loanTotalAmount)} · 总还款 {formatMoney(loanSum.totalRepay)} · 利率{t.loanInterestRate ?? 0}% · 剩余(本息) {formatMoney(loanSum.remainingRepay)} · {t.loanTermMonths}期
                       </Text>
                     )}
                     <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10 }}>
@@ -638,16 +698,20 @@ export default function RecurringScreen() {
                           将立即生成 {loanPreview.plan.filter((p) => new Date(p.dueDate) <= new Date()).length} 期历史流水
                         </Text>
                       )}
-                      <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 180, marginTop: 8 }} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                        <View style={{ flexDirection: 'row', paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: colors.hairline }}>
-                          <Text style={{ width: 34, fontSize: 10, color: colors.mutedForeground }}>期次</Text>
-                          <Text style={{ width: 72, fontSize: 10, color: colors.mutedForeground }}>到期日</Text>
-                          <Text style={{ width: 58, fontSize: 10, color: colors.mutedForeground, textAlign: 'right' }}>月供</Text>
-                          <Text style={{ width: 52, fontSize: 10, color: colors.mutedForeground, textAlign: 'right' }}>本金</Text>
-                          <Text style={{ width: 52, fontSize: 10, color: colors.mutedForeground, textAlign: 'right' }}>利息</Text>
-                          <Text style={{ flex: 1, fontSize: 10, color: colors.mutedForeground, textAlign: 'right' }}>剩余</Text>
-                        </View>
-                        {loanPreview.plan.map(planRow)}
+                      {/* 预览表同样横向滚动(列宽见 PLAN_COLS),纵向滚动 nestedScrollEnabled 交给内层 */}
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                        <ScrollView showsVerticalScrollIndicator={false} style={{ width: PLAN_TABLE_W, maxHeight: 180 }} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                          <View style={{ flexDirection: 'row', paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: colors.hairline }}>
+                            <Text numberOfLines={1} style={{ width: PLAN_COLS.period, fontSize: 10, color: colors.mutedForeground }}>期次</Text>
+                            <Text numberOfLines={1} style={{ width: PLAN_COLS.due, fontSize: 10, color: colors.mutedForeground }}>到期日</Text>
+                            <Text numberOfLines={1} style={{ width: PLAN_COLS.total, fontSize: 10, color: colors.mutedForeground, textAlign: 'right' }}>月供</Text>
+                            <Text numberOfLines={1} style={{ width: PLAN_COLS.principal, fontSize: 10, color: colors.mutedForeground, textAlign: 'right' }}>本金</Text>
+                            <Text numberOfLines={1} style={{ width: PLAN_COLS.interest, fontSize: 10, color: colors.mutedForeground, textAlign: 'right' }}>利息</Text>
+                            <Text numberOfLines={1} style={{ width: PLAN_COLS.interestLeft, fontSize: 10, color: colors.mutedForeground, textAlign: 'right' }}>待还利息</Text>
+                            <Text numberOfLines={1} style={{ width: PLAN_COLS.remaining, fontSize: 10, color: colors.mutedForeground, textAlign: 'right' }}>剩余</Text>
+                          </View>
+                          {withInterestLeft(loanPreview.plan).map((p) => planRow(p))}
+                        </ScrollView>
                       </ScrollView>
                     </>
                   )}
@@ -677,39 +741,43 @@ export default function RecurringScreen() {
         </ScrollView>
       </FormSheet>
 
-      {/* 还款计划查看(数据在 openPlan 里已取好;行数可达数百,用 FlatList 虚拟化,避免展开瞬间整块渲染) */}
+      {/* 还款计划查看(数据在 openPlan 里已取好)。纵向 FlatList 虚拟化(行数可达数百),外层横向滚动让 7 列都给足宽度;
+          顶部汇总固定不随表格横向滚,只有表格左右滑 */}
       <FormSheet visible={!!planTarget} title={`还款计划 · ${planTarget?.name ?? ''}`} onClose={() => setPlanTarget(null)}>
         {planTarget && (
-          <FlatList
-            data={plans}
-            keyExtractor={(p) => `${p.period}-${p.dueDate}`}
-            renderItem={({ item }) => planRow(item)}
-            style={{ maxHeight: 420 }}
-            showsVerticalScrollIndicator={false}
-            initialNumToRender={12}
-            windowSize={7}
-            ListHeaderComponent={
-              <View>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 10 }}>
-                  <Text style={{ fontSize: 12, color: colors.mutedForeground }}>总额 <Text style={{ fontWeight: '600', color: colors.foreground }}>{formatMoney(planTarget.loanTotalAmount ?? 0)}</Text></Text>
-                  <Text style={{ fontSize: 12, color: colors.mutedForeground }}>剩余 <Text style={{ fontWeight: '600', color: colors.foreground }}>{formatMoney(planTarget.loanRemainingAmount ?? 0)}</Text></Text>
-                  <Text style={{ fontSize: 12, color: colors.mutedForeground }}>方式 <Text style={{ fontWeight: '600', color: colors.foreground }}>{(METHOD_LABELS as Record<string, string>)[planTarget.loanInterestMethod ?? ''] ?? '-'}</Text></Text>
-                  <Text style={{ fontSize: 12, color: colors.mutedForeground }}>利率 <Text style={{ fontWeight: '600', color: colors.foreground }}>{planTarget.loanInterestRate ?? 0}%</Text></Text>
-                </View>
-                {plans.length > 0 && (
+          <View>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 10 }}>
+              <Text style={{ fontSize: 12, color: colors.mutedForeground }}>总额 <Text style={{ fontWeight: '600', color: colors.foreground }}>{formatMoney(planTotals.total)}</Text></Text>
+              <Text style={{ fontSize: 12, color: colors.mutedForeground }}>剩余 <Text style={{ fontWeight: '600', color: colors.foreground }}>{formatMoney(planTotals.remaining)}</Text></Text>
+              <Text style={{ fontSize: 12, color: colors.mutedForeground }}>已还本金 <Text style={{ fontWeight: '600', color: colors.primary }}>{formatMoney(planPaid.principal)}</Text></Text>
+              <Text style={{ fontSize: 12, color: colors.mutedForeground }}>已还利息 <Text style={{ fontWeight: '600', color: colors.expense }}>{formatMoney(planPaid.interest)}</Text></Text>
+              <Text style={{ fontSize: 12, color: colors.mutedForeground }}>方式 <Text style={{ fontWeight: '600', color: colors.foreground }}>{(METHOD_LABELS as Record<string, string>)[planTarget.loanInterestMethod ?? ''] ?? '-'}</Text></Text>
+              <Text style={{ fontSize: 12, color: colors.mutedForeground }}>利率 <Text style={{ fontWeight: '600', color: colors.foreground }}>{planTarget.loanInterestRate ?? 0}%</Text></Text>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <FlatList
+                data={planRows}
+                keyExtractor={(p) => `${p.period}-${p.dueDate}`}
+                renderItem={({ item }) => planRow(item)}
+                style={{ width: PLAN_TABLE_W, maxHeight: 420 }}
+                showsVerticalScrollIndicator={false}
+                initialNumToRender={12}
+                windowSize={7}
+                ListHeaderComponent={plans.length > 0 ? (
                   <View style={{ flexDirection: 'row', paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: colors.hairline }}>
-                    <Text style={{ width: 34, fontSize: 10, color: colors.mutedForeground }}>期次</Text>
-                    <Text style={{ width: 72, fontSize: 10, color: colors.mutedForeground }}>到期日</Text>
-                    <Text style={{ width: 58, fontSize: 10, color: colors.mutedForeground, textAlign: 'right' }}>月供</Text>
-                    <Text style={{ width: 52, fontSize: 10, color: colors.mutedForeground, textAlign: 'right' }}>本金</Text>
-                    <Text style={{ width: 52, fontSize: 10, color: colors.mutedForeground, textAlign: 'right' }}>利息</Text>
-                    <Text style={{ flex: 1, fontSize: 10, color: colors.mutedForeground, textAlign: 'right' }}>剩余</Text>
+                    <Text numberOfLines={1} style={{ width: PLAN_COLS.period, fontSize: 10, color: colors.mutedForeground }}>期次</Text>
+                    <Text numberOfLines={1} style={{ width: PLAN_COLS.due, fontSize: 10, color: colors.mutedForeground }}>到期日</Text>
+                    <Text numberOfLines={1} style={{ width: PLAN_COLS.total, fontSize: 10, color: colors.mutedForeground, textAlign: 'right' }}>月供</Text>
+                    <Text numberOfLines={1} style={{ width: PLAN_COLS.principal, fontSize: 10, color: colors.mutedForeground, textAlign: 'right' }}>本金</Text>
+                    <Text numberOfLines={1} style={{ width: PLAN_COLS.interest, fontSize: 10, color: colors.mutedForeground, textAlign: 'right' }}>利息</Text>
+                    <Text numberOfLines={1} style={{ width: PLAN_COLS.interestLeft, fontSize: 10, color: colors.mutedForeground, textAlign: 'right' }}>待还利息</Text>
+                    <Text numberOfLines={1} style={{ width: PLAN_COLS.remaining, fontSize: 10, color: colors.mutedForeground, textAlign: 'right' }}>剩余</Text>
                   </View>
-                )}
-              </View>
-            }
-            ListEmptyComponent={<Text variant="muted" style={{ textAlign: 'center', paddingVertical: 24, fontSize: 13 }}>暂无还款计划</Text>}
-          />
+                ) : null}
+                ListEmptyComponent={<Text variant="muted" style={{ textAlign: 'center', paddingVertical: 24, fontSize: 13 }}>暂无还款计划</Text>}
+              />
+            </ScrollView>
+          </View>
         )}
       </FormSheet>
 

@@ -12,7 +12,6 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
   Dialog,
-  DialogTrigger,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -269,7 +268,6 @@ export function DictionaryManagement() {
 
       {/* 添加字典弹窗 */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
-        <DialogTrigger />
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
@@ -329,7 +327,6 @@ export function DictionaryManagement() {
 
       {/* 编辑字典弹窗 */}
       <Dialog open={!!editTarget} onOpenChange={() => setEditTarget(null)}>
-        <DialogTrigger />
         <DialogContent>
           <DialogHeader>
             <DialogTitle>编辑字典项</DialogTitle>

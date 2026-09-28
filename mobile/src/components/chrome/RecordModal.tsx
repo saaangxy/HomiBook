@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ActivityIndicator, BackHandler, Dimensions, Image, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
-import Animated, { FadeIn, SlideInDown } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { ImagePlus, X } from 'lucide-react-native';
-import { useTheme, haptics, motion } from '@/theme';
+import { useTheme, haptics } from '@/theme';
+import { useAppearProgress } from '@/components/ui/useAppearAnimation';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
@@ -283,6 +284,14 @@ export function RecordModal() {
     <Text style={{ fontSize: 12, color: colors.mutedForeground, marginBottom: 6, marginTop: 2 }}>{t}</Text>
   );
 
+  // 入场动画(共享值驱动,替代 entering —— 见 useAppearAnimation.ts 顶部说明)
+  const appear = useAppearProgress({ active: recordOpen });
+  const backdropAnim = useAnimatedStyle(() => ({ opacity: appear.value }));
+  const sheetAnim = useAnimatedStyle(() => ({
+    opacity: appear.value,
+    transform: [{ translateY: (1 - appear.value) * 240 }],
+  }));
+
   // 主 window 覆盖层(替代 RN Modal):Android 上 Modal 的独立 Dialog 窗口在
   // edge-to-edge 全屏设备上高度会被截断(底部缝隙)且部分环境闪退,改用绝对定位覆盖层
   if (!recordOpen) return null;
@@ -290,13 +299,15 @@ export function RecordModal() {
   return (
     <View style={StyleSheet.absoluteFill}>
       <KeyboardAvoidingView style={{ flex: 1, justifyContent: 'flex-end' }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <Animated.View entering={FadeIn.duration(160)} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)' }}>
+        <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)' }, backdropAnim]}>
           <Pressable style={{ flex: 1 }} onPress={close} />
         </Animated.View>
 
         <Animated.View
-          entering={SlideInDown.duration(motion.duration.base).easing(motion.easing)}
-          style={{ backgroundColor: colors.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingTop: 14, paddingBottom: Math.max(insets.bottom, 18), height: sheetH, overflow: 'hidden' }}
+          style={[
+            { backgroundColor: colors.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingTop: 14, paddingBottom: Math.max(insets.bottom, 18), height: sheetH, overflow: 'hidden' },
+            sheetAnim,
+          ]}
         >
           {/* 弹窗内容容器:占满固定高度,表单滚动、保存按钮常驻底部 */}
           <View style={{ flex: 1 }}>

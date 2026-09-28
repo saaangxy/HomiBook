@@ -11,7 +11,6 @@ import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
   Dialog,
-  DialogTrigger,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -238,7 +237,6 @@ export function ApiKeyManagement() {
 
       {/* 创建 API Key 弹窗 */}
       <Dialog open={createApiKeyOpen} onOpenChange={setCreateApiKeyOpen}>
-        <DialogTrigger />
         <DialogContent>
           <DialogHeader>
             <DialogTitle>创建 API Key</DialogTitle>

@@ -105,7 +105,7 @@ export interface BudgetItem {
 }
 
 // ── 本地保留:固定收支 ──
-import type { RecordType as _RT, RecurringType as _RecT, LoanInterestMethod as _LIM } from '@homibook/core';
+import type { RecordType as _RT, RecurringType as _RecT, LoanInterestMethod as _LIM, RepaymentPlan as _RP } from '@homibook/core';
 
 export interface RecurringTransaction {
   id: string;
@@ -132,6 +132,8 @@ export interface RecurringTransaction {
   loanInterestMethod?: _LIM | null;
   loanStartDate?: string | null;
   loanTermMonths?: number | null;
+  /** 还款计划(列表接口一并返回):贷款卡片的「总还款/剩余(本息)」按它推,口径与计划弹窗一致 */
+  repaymentPlans?: _RP[];
 }
 
 // ── 本地保留:账本(mobile 使用 Ledger 命名) ──

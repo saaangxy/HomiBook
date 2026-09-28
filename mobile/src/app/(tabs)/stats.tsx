@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
-import Animated, { Easing, FadeInDown, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import {
   TrendingUp, TrendingDown, Wallet, PieChart as PieIcon,
   Activity, Search, ChevronLeft, ChevronRight, Users, X,
@@ -19,6 +19,7 @@ import type { StatGranularity } from '@homibook/core';
 import { useTheme, alpha, haptics, useChartColors } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { LoadingState } from '@/components/ui/LoadingState';
+import { useAppearStyle } from '@/components/ui/useAppearAnimation';
 import { FormSheet } from '@/components/chrome/FormSheet';
 import { DatePicker } from '@/components/ui/DatePicker';
 import { RecordRow } from '@/components/RecordRow';
@@ -77,8 +78,10 @@ function SelectionBlock({ label, amount, color, onCancel, onDetail }: {
   label: string; amount: number; color: string; onCancel: () => void; onDetail: () => void;
 }) {
   const { colors } = useTheme();
+  // 入场动画(共享值驱动,替代 entering —— 见 useAppearAnimation.ts 顶部说明)
+  const appearAnim = useAppearStyle({ active: true, offsetY: 8 });
   return (
-    <Animated.View entering={FadeInDown.duration(200)} style={{ marginTop: 8, borderRadius: 10, borderWidth: 1, borderColor: alpha(color, 0.4), backgroundColor: alpha(color, 0.08), padding: 10, gap: 8 }}>
+    <Animated.View style={[{ marginTop: 8, borderRadius: 10, borderWidth: 1, borderColor: alpha(color, 0.4), backgroundColor: alpha(color, 0.08), padding: 10, gap: 8 }, appearAnim]}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: color }} />
         <Text style={{ fontSize: 13, fontWeight: '600', color: colors.foreground, flex: 1 }} numberOfLines={1}>{label}</Text>

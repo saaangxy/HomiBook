@@ -31,6 +31,8 @@ function toRecurring(r: CoreRecurring): RecurringTransaction {
     loanInterestMethod: r.loanInterestMethod,
     loanStartDate: r.loanStartDate,
     loanTermMonths: r.loanTermMonths,
+    // 后端列表接口已 include;贷款卡片的总还款/剩余本息靠它计算(丢了就只能按本金兜底,金额会错)
+    repaymentPlans: r.repaymentPlans,
   };
 }
 

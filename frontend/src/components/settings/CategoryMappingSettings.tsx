@@ -11,7 +11,6 @@ import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
   Dialog,
-  DialogTrigger,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -249,7 +248,6 @@ export function CategoryMappingSettings() {
 
       {/* 新增分类映射弹窗 */}
       <Dialog open={mappingAddOpen} onOpenChange={(open) => { setMappingAddOpen(open); if (!open) setMappingEditTarget(null) }}>
-        <DialogTrigger />
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{mappingEditTarget ? '编辑分类映射' : '新增分类映射'}</DialogTitle>

@@ -11,7 +11,6 @@ import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
   Dialog,
-  DialogTrigger,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -234,7 +233,6 @@ export function AccountMappingSettings() {
 
       {/* 新增/编辑账户映射弹窗 */}
       <Dialog open={accountMappingAddOpen} onOpenChange={(open) => { setAccountMappingAddOpen(open); if (!open) { setAccountMappingEditTarget(null); resetAccountMappingForm() } }}>
-        <DialogTrigger />
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{accountMappingEditTarget ? '编辑账户映射' : '新增账户映射'}</DialogTitle>

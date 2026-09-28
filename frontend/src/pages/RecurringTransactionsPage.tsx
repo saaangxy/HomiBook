@@ -1,5 +1,5 @@
 import { errorMessage } from '@/lib/error'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -38,6 +38,23 @@ import { cn } from '@/lib/utils'
 
 import { RECORD_TYPE_LABELS as TYPE_LABELS, RECORD_TYPE_BADGE_CLASS as TYPE_COLORS, RECORD_TYPE_TEXT_CLASS } from '@/lib/record-type'
 
+/**
+ * 贷款列表摘要:总还款(本息合计 = 全部期次月供之和)与剩余本息(未还期次月供之和)。
+ * 与还款计划弹窗顶部的口径一致;无计划行(未生成计划)时回退本金口径,避免显示 0。
+ */
+function loanPlanSummary(t: { loanTotalAmount?: number | null; loanRemainingAmount?: number | null; repaymentPlans?: { totalPayment: number; status: string }[] }) {
+  let total = 0
+  let remaining = 0
+  for (const p of t.repaymentPlans ?? []) {
+    total += p.totalPayment
+    if (p.status !== 'GENERATED') remaining += p.totalPayment
+  }
+  return {
+    totalRepay: total || (t.loanTotalAmount ?? 0),
+    remainingRepay: total ? remaining : (t.loanRemainingAmount ?? 0),
+  }
+}
+
 export function RecurringTransactionsPage() {
   const { currentBookId } = useBookStore()
   const isMobile = useIsMobile()
@@ -54,6 +71,30 @@ export function RecurringTransactionsPage() {
 
   // 还款计划查看
   const [planTarget, setPlanTarget] = useState<RecurringTransaction | null>(null)
+  /**
+   * 还款计划汇总:
+   *   total / remaining 按**本息合计**口径(月供之和 = 本金 + 利息),满足 total = remaining + 已还本息;
+   *   paidPrincipal / paidInterest 为已还部分(status=GENERATED 表示该期已生成流水,即已还)。
+   * 无计划行(未生成计划的老数据)时回退本金口径,避免显示 0。
+   */
+  const planStats = useMemo(() => {
+    const acc = { total: 0, remaining: 0, paidPrincipal: 0, paidInterest: 0 }
+    for (const p of planTarget?.repaymentPlans ?? []) {
+      acc.total += p.totalPayment
+      if (p.status === 'GENERATED') {
+        acc.paidPrincipal += p.principal
+        acc.paidInterest += p.interest
+      } else {
+        acc.remaining += p.totalPayment
+      }
+    }
+    return {
+      total: acc.total || (planTarget?.loanTotalAmount || 0),
+      remaining: acc.total ? acc.remaining : (planTarget?.loanRemainingAmount || 0),
+      paidPrincipal: acc.paidPrincipal,
+      paidInterest: acc.paidInterest,
+    }
+  }, [planTarget])
 
   // 贷款预览
   const [loanPreview, setLoanPreview] = useState<LoanPreview | null>(null)
@@ -342,11 +383,14 @@ export function RecurringTransactionsPage() {
                     <span className="mx-1">|</span>
                     <span>{rt.nextGenerateAt ? new Date(rt.nextGenerateAt).toLocaleString('zh-CN') : '-'}</span>
                   </div>
-                  {rt.recurringType === 'LOAN' && rt.loanTotalAmount && (
-                    <div className="text-xs text-muted-foreground mb-1.5">
-                      总额: {formatMoney(rt.loanTotalAmount)} | 剩余: {formatMoney(rt.loanRemainingAmount || 0)} | {rt.loanTermMonths}期
-                    </div>
-                  )}
+                  {rt.recurringType === 'LOAN' && rt.loanTotalAmount && (() => {
+                    const sum = loanPlanSummary(rt)
+                    return (
+                      <div className="text-xs text-muted-foreground mb-1.5">
+                        贷款总额: {formatMoney(rt.loanTotalAmount)} | 总还款: {formatMoney(sum.totalRepay)} | 利率: {rt.loanInterestRate}% | 剩余(本息): {formatMoney(sum.remainingRepay)} | {rt.loanTermMonths}期
+                      </div>
+                    )
+                  })()}
                   <div className="flex items-center gap-0.5 justify-end">
                     <button onClick={() => handleToggle(rt)} title={rt.active ? '停用' : '启用'} className="p-0.5 rounded hover:bg-accent">
                       {rt.active ? <Power size={14} className="text-[#22c55e]" /> : <PowerOff size={14} className="text-muted-foreground" />}
@@ -403,13 +447,18 @@ export function RecurringTransactionsPage() {
                     {rt.nextGenerateAt ? new Date(rt.nextGenerateAt).toLocaleString('zh-CN') : '-'}
                   </TableCell>
                   <TableCell className="text-xs">
-                    {rt.recurringType === 'LOAN' && rt.loanTotalAmount ? (
-                      <div className="space-y-0.5">
-                        <div>总额: {formatMoney(rt.loanTotalAmount)}</div>
-                        <div>剩余: {formatMoney(rt.loanRemainingAmount || 0)}</div>
-                        <div>期数: {rt.loanTermMonths}期</div>
-                      </div>
-                    ) : '-'}
+                    {rt.recurringType === 'LOAN' && rt.loanTotalAmount ? (() => {
+                      const sum = loanPlanSummary(rt)
+                      return (
+                        <div className="space-y-0.5">
+                          <div>贷款总额: {formatMoney(rt.loanTotalAmount)}</div>
+                          <div>总还款: {formatMoney(sum.totalRepay)}</div>
+                          <div>剩余(本息): {formatMoney(sum.remainingRepay)}</div>
+                          <div>利率: {rt.loanInterestRate}%</div>
+                          <div>期数: {rt.loanTermMonths}期</div>
+                        </div>
+                      )
+                    })() : '-'}
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-0.5 justify-end">
@@ -779,8 +828,10 @@ export function RecurringTransactionsPage() {
           {planTarget && (
             <div className="space-y-2">
               <div className="flex gap-4 text-xs text-muted-foreground">
-                <span>总额: {formatMoney(planTarget.loanTotalAmount || 0)}</span>
-                <span>剩余: {formatMoney(planTarget.loanRemainingAmount || 0)}</span>
+                <span>总额: {formatMoney(planStats.total)}</span>
+                <span>剩余: {formatMoney(planStats.remaining)}</span>
+                <span>已还本金: {formatMoney(planStats.paidPrincipal)}</span>
+                <span>已还利息: {formatMoney(planStats.paidInterest)}</span>
                 <span>方式: {(METHOD_LABELS as Record<string, string>)[planTarget.loanInterestMethod || ''] || '-'}</span>
                 <span>利率: {planTarget.loanInterestRate}%</span>
               </div>

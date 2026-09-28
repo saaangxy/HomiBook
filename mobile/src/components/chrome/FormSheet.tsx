@@ -1,8 +1,6 @@
 import { useEffect, type ReactNode } from 'react';
 import { BackHandler, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, {
-  FadeIn,
-  FadeInDown,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
@@ -13,6 +11,7 @@ import { useTheme, motion, haptics, sheetShadow } from '@/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
+import { useAppearProgress } from '@/components/ui/useAppearAnimation';
 
 interface FormSheetProps {
   visible: boolean;
@@ -39,6 +38,15 @@ export function FormSheet({ visible, title, onClose, onSave, saveLabel = '保存
   // 内容区高度上限:整屏 − 顶部安全区 − 底部安全区 − (把手/标题/保存按钮/内边距 ≈ 240)
   const maxBodyHeight = Math.max(180, windowHeight - insets.top - insets.bottom - 240);
 
+  // 入场动画(共享值驱动,替代 entering —— 见 useAppearAnimation.ts 顶部说明)
+  const appear = useAppearProgress({ active: visible });
+  // 背景淡入;弹窗淡入上滑,并与下拉关闭手势的位移合并进同一个 worklet
+  const backdropAnim = useAnimatedStyle(() => ({ opacity: appear.value }));
+  const sheetAnim = useAnimatedStyle(() => ({
+    opacity: appear.value,
+    transform: [{ translateY: translateY.value + (1 - appear.value) * 24 }],
+  }));
+
   // 打开时复位位移 + 出现触感
   useEffect(() => {
     if (visible) {
@@ -58,8 +66,6 @@ export function FormSheet({ visible, title, onClose, onSave, saveLabel = '保存
         translateY.value = withSpring(0, motion.spring.gentle);
       }
     });
-
-  const sheetAnim = useAnimatedStyle(() => ({ transform: [{ translateY: translateY.value }] }));
 
   // Android 返回键关闭(Modal 替换为主 window 覆盖层后,需自行拦截返回键)
   useEffect(() => {
@@ -81,11 +87,10 @@ export function FormSheet({ visible, title, onClose, onSave, saveLabel = '保存
         style={{ flex: 1, justifyContent: 'flex-end' }}
         behavior="padding"
       >
-        <Animated.View entering={FadeIn.duration(180)} style={StyleSheet.absoluteFill}>
+        <Animated.View style={[StyleSheet.absoluteFill, backdropAnim]}>
           <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={onClose} />
         </Animated.View>
         <Animated.View
-          entering={FadeInDown.duration(motion.duration.base).easing(motion.easing)}
           style={[
             sheetShadow(palette),
             {
@@ -97,10 +102,10 @@ export function FormSheet({ visible, title, onClose, onSave, saveLabel = '保存
               // 兜底:即便内容区未开滚动,整张弹窗也不越过状态栏
               maxHeight: windowHeight - insets.top - 8,
             },
+            // 入场(淡入上滑)与下拉关闭手势共用这一个 worklet 样式
+            sheetAnim,
           ]}
         >
-          {/* 手势 transform 单独包一层,避免与 entering 布局动画的 transform 冲突 */}
-          <Animated.View style={[sheetAnim]}>
           {/* 把手 + 标题行整体可拖动关闭 */}
           <GestureDetector gesture={pan}>
             <View style={{ paddingTop: 10 }}>
@@ -128,7 +133,6 @@ export function FormSheet({ visible, title, onClose, onSave, saveLabel = '保存
               <Button title={saveLabel} onPress={onSave} loading={saveLoading} />
             </View>
           )}
-          </Animated.View>
         </Animated.View>
       </KeyboardAvoidingView>
     </View>

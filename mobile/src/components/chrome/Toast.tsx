@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
-import Animated, { FadeInDown, FadeOutDown } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '@/components/ui/Text';
+import { useAppearProgress } from '@/components/ui/useAppearAnimation';
 
 type ToastListener = (message: string) => void;
 const listeners = new Set<ToastListener>();
@@ -33,6 +34,13 @@ export function ToastHost() {
     };
   }, []);
 
+  // 入场动画(共享值驱动,替代 entering/exiting —— 见 useAppearAnimation.ts 顶部说明;退场改为直接消失)
+  const appear = useAppearProgress({ active: !!toast });
+  const toastAnim = useAnimatedStyle(() => ({
+    opacity: appear.value,
+    transform: [{ translateY: (1 - appear.value) * 16 }],
+  }));
+
   return (
     <View
       pointerEvents="none"
@@ -41,9 +49,10 @@ export function ToastHost() {
       {toast ? (
         <Animated.View
           key={toast.key}
-          entering={FadeInDown.duration(200)}
-          exiting={FadeOutDown.duration(180)}
-          style={{ maxWidth: '82%', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 999, backgroundColor: 'rgba(22,22,26,0.92)' }}
+          style={[
+            { maxWidth: '82%', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 999, backgroundColor: 'rgba(22,22,26,0.92)' },
+            toastAnim,
+          ]}
         >
           <Text style={{ fontSize: 13, color: '#fff', textAlign: 'center' }} numberOfLines={2}>
             {toast.message}
