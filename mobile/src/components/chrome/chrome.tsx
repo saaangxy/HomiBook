@@ -9,6 +9,8 @@ import { useLedgerStore } from '@/stores/ledger';
 interface UIShellValue {
   // 账本(转发自 ledger store)
   ledgers: ReturnType<typeof useLedgerStore>['ledgers'];
+  /** 账本列表加载中(转发自 ledger store):页面用 loading 占位而不是空态 */
+  ledgersLoading: ReturnType<typeof useLedgerStore>['loading'];
   currentLedger: ReturnType<typeof useLedgerStore>['currentLedger'];
   switchLedger: (id: string) => void;
   createLedger: (name: string) => void;
@@ -41,6 +43,7 @@ const UIShellContext = createContext<UIShellValue | null>(null);
 /** context 瞬态不可用时的安全空实现(见 useUIShell 注释) */
 const UISHELL_FALLBACK: UIShellValue = {
   ledgers: [],
+  ledgersLoading: false,
   currentLedger: { id: '', name: '', icon: '📒', memberCount: 0 },
   switchLedger: () => {},
   createLedger: () => {},
@@ -76,6 +79,7 @@ export function UIShellProvider({ children }: { children: ReactNode }) {
   const value = useMemo<UIShellValue>(
     () => ({
       ledgers: ledger.ledgers,
+      ledgersLoading: ledger.loading,
       currentLedger: ledger.currentLedger,
       switchLedger: (id) => {
         ledger.switchLedger(id);

@@ -15,6 +15,8 @@ const EMPTY_LEDGER: Ledger = { id: '', name: '', icon: '📒', memberCount: 0 };
 
 interface LedgerStoreValue {
   ledgers: Ledger[];
+  /** 账本列表加载中(首屏 / 切换服务器):页面据此显示 loading,而不是「暂无账本」空态 */
+  loading: boolean;
   currentLedger: Ledger;
   switchLedger: (id: string) => void;
   createLedger: (name: string) => Promise<void>;
@@ -27,6 +29,7 @@ const LedgerStoreContext = createContext<LedgerStoreValue | null>(null);
 export function LedgerProvider({ children }: { children: ReactNode }) {
   const { isLoggedIn, currentServer, username } = useAuth();
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
+  const [loading, setLoading] = useState(false);
   const [currentLedgerId, setCurrentLedgerId] = useState('');
   const baseUrl = currentServer?.baseUrl ?? '';
   const account = username || 'default';
@@ -51,6 +54,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     // 服务器切换(或账号变更)时先清空,避免用旧服务器的账本 id 请求新服务器
     setLedgers([]);
     setCurrentLedgerId('');
+    setLoading(true);
     fetchBooks()
       .then(async (books) => {
         if (cancelled) return;
@@ -67,7 +71,8 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
         // 选中后立即保存,切走再切回能恢复该账本
         saveLedgerId(finalId);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
     return () => {
       cancelled = true;
     };
@@ -77,6 +82,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
   const value = useMemo<LedgerStoreValue>(
     () => ({
       ledgers,
+      loading,
       currentLedger: ledgers.find((l) => l.id === currentLedgerId) ?? ledgers[0] ?? EMPTY_LEDGER,
       switchLedger: (id) => {
         setCurrentLedgerId(id);
@@ -101,7 +107,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
         }
       },
     }),
-    [ledgers, currentLedgerId, baseUrl, account],
+    [ledgers, loading, currentLedgerId, baseUrl, account],
   );
 
   return <LedgerStoreContext.Provider value={value}>{children}</LedgerStoreContext.Provider>;

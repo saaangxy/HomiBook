@@ -8,6 +8,7 @@ import { Screen } from '@/components/Screen';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { FadeInView } from '@/components/FadeInView';
+import { LoadingState } from '@/components/ui/LoadingState';
 import { FormSheet } from '@/components/chrome/FormSheet';
 import { ConfirmSheet } from '@/components/chrome/ConfirmSheet';
 import { fetchUsers } from '@/services/admin';
@@ -23,6 +24,8 @@ export default function UsersScreen() {
   const router = useRouter();
   const isAdmin = user?.role === 'ADMIN';
   const [users, setUsers] = useState<AdminUser[]>([]);
+  /** 首屏加载态:原来未就绪时是一段白列表,看不出在加载 */
+  const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [pwdTarget, setPwdTarget] = useState<AdminUser | null>(null); // 改密弹层
 
@@ -50,7 +53,7 @@ export default function UsersScreen() {
 
   useEffect(() => {
     if (!isAdmin) return;
-    fetchUsers().then(setUsers);
+    fetchUsers().then(setUsers).catch(() => {}).finally(() => setLoading(false));
   }, [isAdmin]);
 
   const [refreshing, setRefreshing] = useState(false);
@@ -169,7 +172,9 @@ export default function UsersScreen() {
         </View>
 
         <ScrollView contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}>
-          {users.map((u, i) => {
+          {loading ? (
+            <LoadingState />
+          ) : users.map((u, i) => {
             const isMe = u.username === username;
             const active = u.status === 'ACTIVE';
             return (

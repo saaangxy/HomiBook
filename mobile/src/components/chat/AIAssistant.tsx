@@ -1,13 +1,17 @@
-import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Image, NativeScrollEvent, NativeSyntheticEvent, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, BackHandler, FlatList, Image, NativeScrollEvent, NativeSyntheticEvent, Platform, Pressable, SectionList, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated, { SlideInLeft } from 'react-native-reanimated';
 import Markdown from 'react-native-markdown-display';
 import { Bot, Brain, ChevronDown, FileText, FileUp, Globe, ImagePlus, List, Plus, RefreshCw, Send, Sparkles, StopCircle, Trash2, X } from 'lucide-react-native';
-import { useTheme, alpha, haptics } from '@/theme';
+import { useTheme, alpha, haptics, motion } from '@/theme';
 import { Text } from '@/components/ui/Text';
+import { LoadingState } from '@/components/ui/LoadingState';
 import { FormSheet } from '@/components/chrome/FormSheet';
+import { ConfirmSheet } from '@/components/chrome/ConfirmSheet';
 import { showToast } from '@/components/chrome/Toast';
 import { ImageLightbox, isImageUrl } from '@/components/ui/AttachmentViewer';
-import { setStreamPaused, useChatStore, useSessionView } from '@/stores/chat';
+import { setStreamPaused, useChatStore, useSessionView, type ChatSession } from '@/stores/chat';
 import { useUIShell } from '@/components/chrome/chrome';
 import { uploadImage, loadToolNames } from '@/services/chat';
 import { uploadImportFile } from '@/services/import';
@@ -46,6 +50,9 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
   const [webSearch, setWebSearch] = useState(true);
   const [pendingImages, setPendingImages] = useState<{ id: string; uri: string; fullUrl: string; originalFilename: string }[]>([]);
   const [sessionListOpen, setSessionListOpen] = useState(false);
+  /** 待确认删除的会话:抽屉里的删除是危险操作,先弹确认再执行 */
+  const [sessionToDelete, setSessionToDelete] = useState<ChatSession | null>(null);
+  const insets = useSafeAreaInsets();
   // 导入弹窗(自定义来源选择,对齐 web DropdownMenu 的支付宝/微信/京东三选项)
   const [importSheetOpen, setImportSheetOpen] = useState(false);
   // 全屏图片预览(待发缩略图 / 消息附件图共用)
@@ -59,15 +66,30 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
   const userTouchingRef = useRef(false);
 
   const {
-    sessions, currentSessionId,
+    sessions, sessionsLoading, currentSessionId,
     loadSessions, openSession, newSession, deleteSession,
     sendMessage, retryMessage, stopStreaming, selectBranch,
   } = useChatStore();
   // 当前会话消息视图(活跃路径按分支选择派生,单一数据源在 sessionCache)
-  const { messages, allMessages, branchSelections } = useSessionView();
+  const { messages, allMessages, branchSelections, loading: messagesLoading } = useSessionView();
 
   // 当前会话(标题栏展示)
   const currentSession = sessions.find((s) => s.id === currentSessionId);
+  /** 「今天」的日期键:在打开抽屉的事件里取一次(渲染期间读时钟会触发 react-hooks/purity) */
+  const [todayKey, setTodayKey] = useState('');
+  /** 会话按「今天/昨天/日期」分组(与 web 端会话列表口径一致,长列表更好扫读) */
+  const sessionGroups = useMemo(() => {
+    const groups: { title: string; data: ChatSession[] }[] = [];
+    const yesterdayKey = todayKey ? new Date(new Date(todayKey).getTime() - 86400000).toDateString() : '';
+    for (const s of sessions) {
+      const d = new Date(s.updatedAt).toDateString();
+      const title = d === todayKey ? '今天' : d === yesterdayKey ? '昨天' : new Date(s.updatedAt).toLocaleDateString('zh-CN');
+      const last = groups[groups.length - 1];
+      if (last && last.title === title) last.data.push(s);
+      else groups.push({ title, data: [s] });
+    }
+    return groups;
+  }, [sessions, todayKey]);
   // 服务端返回的附件/图片 url 多为相对路径,统一转完整地址(含 host 校准,见 http.resolveRemoteUrl)
   const isStreaming = useChatStore((s) => s.sessionCache[s.currentSessionId ?? '']?.isStreaming ?? false);
 
@@ -76,6 +98,16 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
     // 工具显示名称缓存(对齐 web loadToolNames)
     loadToolNames();
   }, [loadSessions]);
+
+  // Android 返回键:会话抽屉打开时先关抽屉,而不是直接把整个 AI 弹窗关掉
+  useEffect(() => {
+    if (!sessionListOpen) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      setSessionListOpen(false);
+      return true;
+    });
+    return () => sub.remove();
+  }, [sessionListOpen]);
 
   // 系统分享带入的聊天草稿:并入待发附件/输入框后清空(含登录后补传的暂存图片)
   useEffect(() => {
@@ -239,7 +271,13 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
     sendMessage(bookId, text, parentId, assistantDbId);
   };
 
-  // 会话抽屉操作(与记一笔弹窗的会话列表形式一致)
+  /** 打开会话抽屉:顺手记下「今天」用于分组标题(见 todayKey 注释) */
+  const openSessionList = () => {
+    setTodayKey(new Date().toDateString());
+    setSessionListOpen(true);
+  };
+
+  // 会话抽屉操作(左侧抽屉:AI 弹窗与记一笔 AI tab 共用同一份实现)
   const handleCreateSession = () => {
     if (!bookId) return;
     newSession(bookId);
@@ -250,6 +288,17 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
     openSession(id);
     setSessionListOpen(false);
     haptics.tap();
+  };
+  /**
+   * 确认后删除。不加乐观 toast:store 的 deleteSession 失败时是静默忽略的,
+   * 一句「已删除」会和「行还在列表里」自相矛盾;行消失 / 当前会话回到空态本身就是反馈。
+   */
+  const confirmDeleteSession = () => {
+    const target = sessionToDelete;
+    setSessionToDelete(null);
+    if (!target) return;
+    deleteSession(target.id);
+    haptics.warn();
   };
 
   const renderBlock = (block: MessageBlock, isUser = false) => {
@@ -424,7 +473,7 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
     <View style={{ flex: 1 }}>
       {/* 会话工具行:菜单按钮 + 当前会话标题 + 新建 */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.hairline }}>
-        <Pressable onPress={() => setSessionListOpen(true)} style={iconBtn}>
+        <Pressable onPress={openSessionList} style={iconBtn}>
           <List size={16} color={colors.foreground} />
         </Pressable>
         <Text numberOfLines={1} style={{ flex: 1, fontSize: 15, fontWeight: '600' }}>{currentSession?.title ?? 'AI 财务助手'}</Text>
@@ -456,6 +505,9 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
         onScrollEndDrag={handleListTouchEnd}
         onMomentumScrollEnd={handleListTouchEnd}
         ListEmptyComponent={
+          messagesLoading ? (
+            <LoadingState paddingVertical={80} text="正在加载聊天记录..." />
+          ) : (
           <View style={{ alignItems: 'center', paddingTop: 48, paddingBottom: 24, gap: 8 }}>
             <View style={{ width: 58, height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center', backgroundColor: alpha(colors.primary, 0.1) }}>
               <Bot size={28} color={colors.primary} />
@@ -478,6 +530,7 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
               ))}
             </View>
           </View>
+          )
         }
       />
 
@@ -563,48 +616,80 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
         </View>
       </View>
 
-      {/* 会话列表(底部弹层,形式与记一笔弹窗一致) */}
-      <FormSheet visible={sessionListOpen} title="会话列表" onClose={() => setSessionListOpen(false)}>
-        <Pressable
-          onPress={handleCreateSession}
-          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, borderRadius: 14, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.primary, marginBottom: 12 }}
+      {/* 会话列表:占满整个 AI 面板的抽屉(无遮罩 —— 它本身就是一页会话列表;X / 返回键 / 选中会话即关闭) */}
+      {sessionListOpen && (
+        <Animated.View
+          entering={SlideInLeft.duration(motion.duration.base).easing(motion.easing)}
+          style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: colors.card }}
         >
-          <Plus size={15} color={colors.primary} />
-          <Text style={{ fontSize: 14, color: colors.primary, fontWeight: '600' }}>新建会话</Text>
-        </Pressable>
-        <ScrollView style={{ maxHeight: 360 }} showsVerticalScrollIndicator={false}>
-          {sessions.map((s) => {
-            const active = s.id === currentSessionId;
-            return (
-              <Pressable
-                key={s.id}
-                onPress={() => handleSelectSession(s.id)}
-                style={{
-                  flexDirection: 'row', alignItems: 'center', gap: 10,
-                  paddingVertical: 12, paddingHorizontal: 12, borderRadius: 12, marginBottom: 6,
-                  backgroundColor: active ? alpha(colors.primary, 0.1) : colors.muted,
-                  borderWidth: 1, borderColor: active ? alpha(colors.primary, 0.35) : 'transparent',
-                }}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: active ? '600' : '400', color: colors.foreground }}>{s.title || '新会话'}</Text>
-                  <Text style={{ fontSize: 11, color: colors.mutedForeground, marginTop: 2 }}>{timeAgo(s.updatedAt)}</Text>
-                </View>
-                <Pressable
-                  hitSlop={8}
-                  onPress={() => { deleteSession(s.id); haptics.warn(); }}
-                  style={{ width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' }}
-                >
-                  <Trash2 size={15} color={colors.mutedForeground} />
-                </Pressable>
-              </Pressable>
-            );
-          })}
-          {sessions.length === 0 && (
-            <Text variant="muted" style={{ textAlign: 'center', paddingVertical: 24, fontSize: 13 }}>暂无会话</Text>
+          {/* 头部:标题 + 会话数 + 新建 + 关闭 */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.hairline }}>
+            <Text style={{ flex: 1, fontSize: 17, fontWeight: '700' }}>会话</Text>
+            {sessions.length > 0 && (
+              <Text variant="muted" style={{ fontSize: 12, marginRight: 2 }}>{sessions.length} 个</Text>
+            )}
+            <Pressable
+              onPress={handleCreateSession}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 11, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: alpha(colors.primary, 0.35), backgroundColor: alpha(colors.primary, 0.08) }}
+            >
+              <Plus size={14} color={colors.primary} />
+              <Text style={{ fontSize: 12, color: colors.primary, fontWeight: '600' }}>新建</Text>
+            </Pressable>
+            <Pressable onPress={() => setSessionListOpen(false)} style={iconBtn}>
+              <X size={16} color={colors.foreground} />
+            </Pressable>
+          </View>
+
+          {sessionsLoading && sessions.length === 0 ? (
+            <LoadingState paddingVertical={48} text="正在加载会话..." />
+          ) : (
+            <SectionList
+              sections={sessionGroups}
+              keyExtractor={(s) => s.id}
+              stickySectionHeadersEnabled={false}
+              contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
+              showsVerticalScrollIndicator={false}
+              // 按「今天/昨天/日期」分组:与 web 端会话列表口径一致,长列表更好扫读
+              renderSectionHeader={({ section }) => (
+                <Text style={{ fontSize: 11, fontWeight: '600', color: colors.mutedForeground, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
+                  {section.title}
+                </Text>
+              )}
+              ItemSeparatorComponent={() => <View style={{ height: 1, marginLeft: 16, backgroundColor: colors.hairline }} />}
+              ListEmptyComponent={<Text variant="muted" style={{ textAlign: 'center', paddingVertical: 28, fontSize: 13 }}>暂无会话</Text>}
+              renderItem={({ item: s }) => {
+                const active = s.id === currentSessionId;
+                return (
+                  <Pressable
+                    onPress={() => handleSelectSession(s.id)}
+                    style={{
+                      flexDirection: 'row', alignItems: 'center', gap: 10,
+                      paddingVertical: 13, paddingLeft: 16, paddingRight: 10,
+                      // 当前会话:浅主色底 + 左侧主色竖条(比整块卡片更轻,长列表更清爽)
+                      backgroundColor: active ? alpha(colors.primary, 0.07) : 'transparent',
+                      borderLeftWidth: 3, borderLeftColor: active ? colors.primary : 'transparent',
+                    }}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text numberOfLines={1} style={{ fontSize: 14.5, fontWeight: active ? '600' : '400', color: active ? colors.primary : colors.foreground }}>
+                        {s.title || '新会话'}
+                      </Text>
+                      <Text style={{ fontSize: 11, color: colors.mutedForeground, marginTop: 3 }}>{timeAgo(s.updatedAt)}</Text>
+                    </View>
+                    <Pressable
+                      hitSlop={8}
+                      onPress={() => { haptics.tap(); setSessionToDelete(s); }}
+                      style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      <Trash2 size={15} color={colors.mutedForeground} />
+                    </Pressable>
+                  </Pressable>
+                );
+              }}
+            />
           )}
-        </ScrollView>
-      </FormSheet>
+        </Animated.View>
+      )}
 
       {/* 导入弹窗:自定义来源选择(对齐 web DropdownMenu),选择后打开系统文件选择器 */}
       <FormSheet visible={importSheetOpen} title="导入账单" onClose={() => setImportSheetOpen(false)}>
@@ -650,6 +735,15 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
 
       {/* 非图片附件保存方式选择(保存到设备/系统分享) */}
       <DownloadModeSheet visible={!!dlTarget} title="保存附件" onMode={runDownload} onClose={() => setDlTarget(null)} />
+
+      {/* 删除会话二次确认(聊天记录不可恢复;放在最后,确保盖在会话抽屉之上) */}
+      <ConfirmSheet
+        visible={!!sessionToDelete}
+        title="删除会话"
+        message={`确定删除「${sessionToDelete?.title || '新会话'}」吗？该会话的聊天记录会一并删除，且不可恢复。`}
+        onConfirm={confirmDeleteSession}
+        onClose={() => setSessionToDelete(null)}
+      />
     </View>
   );
 }
@@ -717,10 +811,13 @@ function InjectChip({ injection }: { injection: ChatInjection }) {
         style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: colors.muted }}
       >
         <Sparkles size={12} color={colors.mutedForeground} />
-        <Text numberOfLines={1} style={{ flex: 1, fontSize: 11, color: colors.mutedForeground, fontWeight: '500' }}>
+        {/* 注意:这里**不能**用 flex:1 —— 该行宽度按内容收缩(flexBasis 0 会被压成 0 宽),
+            文案会整段消失(只剩图标和箭头)。用 flexShrink 让文案取内容宽度,过长才截断,
+            与 ThinkingBlock 的写法一致 */}
+        <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 11, color: colors.mutedForeground, fontWeight: '500' }}>
           本轮注入:{parts.join(' · ')}
         </Text>
-        <ChevronDown size={12} color={colors.mutedForeground} style={{ transform: [{ rotate: open ? '180deg' : '0deg' }] }} />
+        <ChevronDown size={12} color={colors.mutedForeground} style={{ marginLeft: 'auto', transform: [{ rotate: open ? '180deg' : '0deg' }] }} />
       </Pressable>
       {open && (
         <View style={{ padding: 10, gap: 6, backgroundColor: alpha(colors.foreground, 0.03) }}>

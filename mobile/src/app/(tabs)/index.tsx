@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { RecordRow } from '@/components/RecordRow';
 import { FadeInView } from '@/components/FadeInView';
+import { LoadingState } from '@/components/ui/LoadingState';
 import { fetchBudgets, fetchMonthlyTrend } from '@/services/records';
 import { useRecords } from '@/stores/records';
 import { useUIShell, usePageRefresh } from '@/components/chrome/chrome';
@@ -29,7 +30,9 @@ export default function HomeScreen() {
   const [budgetExp, setBudgetExp] = useState(false);
   const [yearIncome, setYearIncome] = useState(0);
   const [yearExpense, setYearExpense] = useState(0);
-  const { records, summary, refresh } = useRecords();
+  const { records, summary, refresh, loading: recordsLoading } = useRecords();
+  /** 预算/年度收支的首屏加载态(与 store 的流水加载态一起决定是否显示占位) */
+  const [extraLoading, setExtraLoading] = useState(true);
   // 刷新时机:切到本页时(isFocused)重拉预算与年度收支
   const isFocused = useIsFocused();
   const { currentLedger, openAI } = useUIShell();
@@ -60,12 +63,15 @@ export default function HomeScreen() {
   useEffect(() => {
     const bookId = currentLedger.id;
     if (!isFocused || !bookId) return;
-    fetchBudgets(bookId).then(setBudgets);
-    // 当年收支:由月度趋势累计
-    fetchMonthlyTrend(bookId).then((t) => {
-      setYearIncome(t.income.reduce((s, x) => s + x, 0));
-      setYearExpense(t.expense.reduce((s, x) => s + x, 0));
-    });
+    // 预算 + 年度收支都到齐再撤首屏占位(之后切页回来都是静默刷新,不闪 loading)
+    Promise.all([
+      fetchBudgets(bookId).then(setBudgets),
+      // 当年收支:由月度趋势累计
+      fetchMonthlyTrend(bookId).then((t) => {
+        setYearIncome(t.income.reduce((s, x) => s + x, 0));
+        setYearExpense(t.expense.reduce((s, x) => s + x, 0));
+      }),
+    ]).catch(() => {}).finally(() => setExtraLoading(false));
   }, [isFocused, currentLedger.id]); // 切到本页时,预算进度与年度收支即时重算
 
   // 记一笔/编辑保存后由 RecordModal 直接调用:重拉预算与年度收支
@@ -93,6 +99,9 @@ export default function HomeScreen() {
 
   const income = summary.income;
   const expense = summary.expense;
+
+  /** 首屏占位:流水 store 与预算/年度收支全部到齐前,不渲染数据块(避免 ¥0 → 真实值的整体重排) */
+  const bootLoading = recordsLoading || extraLoading;
 
   // AI 助手卡片洞察:基于本月真实数据生成(预算进度优先,否则最高支出分类)
   const insight = useMemo(() => {
@@ -126,7 +135,10 @@ export default function HomeScreen() {
           </View>
         </FadeInView>
 
-        {/* 收支总览(品牌渐变,左右滑动切换月度/年度) */}
+        {/* 数据未就绪时统一占位,避免先渲染 ¥0 总览 / 空预算 / 空流水再整体重排 */}
+        {bootLoading && <LoadingState paddingVertical={90} text="正在加载账本数据..." />}
+        {!bootLoading && (
+        <>
         <FadeInView index={1}>
           <ScrollView
             horizontal
@@ -273,6 +285,8 @@ export default function HomeScreen() {
               ))}
             </Card>
           </FadeInView>
+        )}
+        </>
         )}
       </View>
     </Screen>

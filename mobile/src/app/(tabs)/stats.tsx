@@ -18,6 +18,7 @@ import type { SharedValue } from 'react-native-reanimated';
 import type { StatGranularity } from '@homibook/core';
 import { useTheme, alpha, haptics, useChartColors } from '@/theme';
 import { Text } from '@/components/ui/Text';
+import { LoadingState } from '@/components/ui/LoadingState';
 import { FormSheet } from '@/components/chrome/FormSheet';
 import { DatePicker } from '@/components/ui/DatePicker';
 import { RecordRow } from '@/components/RecordRow';
@@ -133,6 +134,9 @@ export default function StatsPage() {
   const [balance, setBalance] = useState<{ dates: string[]; series: { name: string; data: number[] }[] }>({ dates: [], series: [] });
   const [radar, setRadar] = useState<RadarMetric[]>([]);
 
+  /** 概览首屏加载态:只在第一次数据到齐前为 true,之后的切页/记账刷新都是静默更新 */
+  const [overviewLoading, setOverviewLoading] = useState(true);
+
   // 概览数据(近12个月口径,对齐 web StatsOverview.load)
   const loadOverview = useCallback(async () => {
     if (!bookId) return;
@@ -191,7 +195,17 @@ export default function StatsPage() {
 
   useEffect(() => {
     if (!isFocused) return;
-    loadOverview();
+    let cancel = false;
+    // 内联 async runner:finally 里撤首屏占位(失败也不会卡 loading),卸载后不再 setState
+    const run = async () => {
+      try {
+        await loadOverview();
+      } finally {
+        if (!cancel) setOverviewLoading(false);
+      }
+    };
+    void run();
+    return () => { cancel = true; };
   }, [isFocused, loadOverview]);
 
   // ── 时间视图数据(对齐 web StatsTimeView/AnalysisPanel):时间段 + 分组汇总 + 分类趋势 ──
@@ -386,7 +400,10 @@ export default function StatsPage() {
   );
 
   // ── 首页(Overview):对齐网页 StatsOverview ──
-  const renderOverview = () => (
+  const renderOverview = () => {
+    // 数据未就绪时不渲染空图表:否则会先画一堆空坐标轴 + ¥0 汇总卡,数据到达后整块重排
+    if (overviewLoading) return <LoadingState paddingVertical={90} text="正在加载统计数据..." />;
+    return (
     <View style={{ gap: 16 }}>
       <View style={{ flexDirection: 'row', gap: 8 }}>
         <SummaryCard icon={TrendingUp} label="总收入" value={summary.income} color={cc.income} />
@@ -426,7 +443,8 @@ export default function StatsPage() {
         </View>
       </ChartCard>
     </View>
-  );
+    );
+  };
 
   // ── 年度/月度/自由:对齐网页 StatsTimeView ──
   const renderTimeView = (mode: 'yearly' | 'monthly' | 'free') => (

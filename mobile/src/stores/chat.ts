@@ -68,10 +68,14 @@ interface SessionData {
   branchSelections: Record<string, string>;
   isStreaming: boolean;
   streamingMessageId: string | null;
+  /** 首次拉取该会话消息中:界面据此显示「正在加载聊天记录」而不是空态引导 */
+  loading: boolean;
 }
 
 interface ChatState {
   sessions: ChatSession[];
+  /** 会话列表加载中(首次进入/重新拉取):列表用占位而不是「暂无会话」 */
+  sessionsLoading: boolean;
   currentSessionId: string | null;
   sessionCache: Record<string, SessionData>;
   error: string | null;
@@ -102,7 +106,7 @@ function nextId() {
   return `msg-${Date.now()}-${++msgIdCounter}`;
 }
 
-const EMPTY_SESSION: SessionData = { allMessages: [], branchSelections: {}, isStreaming: false, streamingMessageId: null };
+const EMPTY_SESSION: SessionData = { allMessages: [], branchSelections: {}, isStreaming: false, streamingMessageId: null, loading: false };
 
 type SetState = (partial: Partial<ChatState> | ((s: ChatState) => Partial<ChatState>)) => void;
 type GetState = () => ChatState;
@@ -113,6 +117,7 @@ function viewOf(data: SessionData) {
     messages: buildActivePath(data.allMessages, data.branchSelections),
     allMessages: data.allMessages,
     branchSelections: data.branchSelections,
+    loading: data.loading,
   };
 }
 
@@ -504,6 +509,7 @@ function decideTool(
 
 export const useChatStore = create<ChatState>()((set, get) => ({
   sessions: [],
+  sessionsLoading: false,
   currentSessionId: null,
   sessionCache: {},
   error: null,
@@ -512,11 +518,14 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   setError: (error) => set({ error }),
 
   loadSessions: async () => {
+    set({ sessionsLoading: true });
     try {
       const sessions = await fetchSessions();
       set({ sessions });
     } catch {
       // ignore
+    } finally {
+      set({ sessionsLoading: false });
     }
   },
 
@@ -532,7 +541,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       set((s) => ({
         sessions: [session, ...s.sessions],
         currentSessionId: session.id,
-        sessionCache: { ...s.sessionCache, [session.id]: { allMessages: [], branchSelections: {}, isStreaming: false, streamingMessageId: null } },
+        sessionCache: { ...s.sessionCache, [session.id]: { allMessages: [], branchSelections: {}, isStreaming: false, streamingMessageId: null, loading: false } },
       }));
       return session;
     } catch {
@@ -541,6 +550,8 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   },
 
   loadMessages: async (sessionId) => {
+    // 先置 loading:切换会话时聊天区显示占位,而不是先闪一下空态引导
+    patchSession(set, sessionId, () => ({ loading: true }));
     try {
       const msgs = await fetchMessages(sessionId);
       // 后端 ChatMessage -> Message(用 core parseContentIntoBlocks 解析 thinking/tool-call 块)
@@ -576,10 +587,16 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       }
       set((s) => ({
         currentSessionId: sessionId,
-        sessionCache: { ...s.sessionCache, [sessionId]: { allMessages: messages, branchSelections: selections, isStreaming: false, streamingMessageId: null } },
+        sessionCache: { ...s.sessionCache, [sessionId]: { allMessages: messages, branchSelections: selections, isStreaming: false, streamingMessageId: null, loading: false } },
       }));
     } catch {
-      // ignore
+      // 拉取失败:移除占位条目,否则下次切回来会被 openSession 当成「已有缓存」而不再拉取
+      set((s) => {
+        if (!s.sessionCache[sessionId]) return {};
+        const cache = { ...s.sessionCache };
+        delete cache[sessionId];
+        return { sessionCache: cache };
+      });
     }
   },
 
@@ -725,7 +742,7 @@ export function useSessionView() {
   const sid = useChatStore((s) => s.currentSessionId);
   const data = useChatStore((s) => (sid ? s.sessionCache[sid] : undefined));
   return useMemo(
-    () => (data ? viewOf(data) : { messages: [], allMessages: [], branchSelections: {} }),
+    () => (data ? viewOf(data) : { messages: [], allMessages: [], branchSelections: {}, loading: false }),
     [data],
   );
 }

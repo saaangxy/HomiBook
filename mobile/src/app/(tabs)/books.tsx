@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import {
-  ScrollView, View, Pressable, TextInput, Keyboard, Dimensions,
+  ActivityIndicator, ScrollView, View, Pressable, TextInput, Keyboard, Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
@@ -8,6 +8,7 @@ import { BookPlus, Pencil, Trash2, Users, Link, Copy, LogOut, Crown, UserCheck, 
 import { useTheme, alpha } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { LoadingState } from '@/components/ui/LoadingState';
 import { ConfirmSheet } from '@/components/chrome/ConfirmSheet';
 import { showToast } from '@/components/chrome/Toast';
 import { useUIShell } from '@/components/chrome/chrome';
@@ -22,7 +23,7 @@ import type { Ledger, LedgerMember, ShareCodeItem } from '@/types';
 // 账本管理页:对齐网页端 CRUD(创建/编辑/删除/成员管理/分享码/加入/退出)
 export default function BooksPage() {
   const { colors } = useTheme();
-  const { ledgers, createLedger, refreshLedgers } = useUIShell();
+  const { ledgers, ledgersLoading, createLedger, refreshLedgers } = useUIShell();
   const { user } = useAuth();
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Ledger | null>(null);
@@ -44,14 +45,29 @@ export default function BooksPage() {
     };
   }, []);
 
-  // 成员列表 + 分享码:打开管理弹窗时从后端加载
+  // 成员列表 + 分享码:打开管理弹窗前**先取回来**(见 openManage)
   const [members, setMembers] = useState<LedgerMember[]>([]);
   const [shareCodes, setShareCodes] = useState<ShareCodeItem[]>([]);
-  useEffect(() => {
-    if (!managing) { setMembers([]); setShareCodes([]); return; }
-    fetchBookMembers(managing.id).then(setMembers);
-    listShareCodesApi(managing.id).then(setShareCodes);
-  }, [managing]);
+  /** 正在拉成员信息的账本(按钮转圈 + 防重复点) */
+  const [managingLoadingId, setManagingLoadingId] = useState<string | null>(null);
+  /**
+   * 成员管理:成员列表与分享码都到齐了再开弹窗。
+   * 原先是「先开窗、再在 effect 里请求」——开窗瞬间会先渲染「成员 (0)/暂无分享码」,数据到达后整块重排。
+   */
+  const openManage = async (ledger: Ledger) => {
+    if (managingLoadingId) return;
+    setManagingLoadingId(ledger.id);
+    try {
+      const [m, codes] = await Promise.all([fetchBookMembers(ledger.id), listShareCodesApi(ledger.id)]);
+      setMembers(m);
+      setShareCodes(codes);
+      setManaging(ledger);
+    } catch {
+      showToast('成员信息加载失败，请稍后重试');
+    } finally {
+      setManagingLoadingId(null);
+    }
+  };
 
   // 危险操作二次确认(ConfirmSheet 统一替代系统 Alert)
   const [confirm, setConfirm] = useState<{
@@ -301,7 +317,9 @@ export default function BooksPage() {
         </View>
 
         {/* 账本列表 */}
-        {ledgers.length === 0 ? (
+        {ledgersLoading ? (
+          <LoadingState />
+        ) : ledgers.length === 0 ? (
           <EmptyState icon="BookOpen" title="暂无账本" description="创建或加入一个账本开始记账" />
         ) : ledgers.map(ledger => (
           <View key={ledger.id} style={{
@@ -328,11 +346,13 @@ export default function BooksPage() {
             </View>
             {/* 操作按钮行 */}
             <View style={{ flexDirection: 'row', gap: 8 }}>
-              <Pressable onPress={() => setManaging(ledger)} style={{
+              <Pressable onPress={() => openManage(ledger)} disabled={managingLoadingId === ledger.id} style={{
                 flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6,
                 borderRadius: 8, backgroundColor: colors.muted,
               }}>
-                <Users size={14} color={colors.foreground} />
+                {managingLoadingId === ledger.id
+                  ? <ActivityIndicator size="small" color={colors.foreground} />
+                  : <Users size={14} color={colors.foreground} />}
                 <Text style={{ fontSize: 12, color: colors.foreground }}>成员</Text>
               </Pressable>
               {ledger.role === 'owner' && (

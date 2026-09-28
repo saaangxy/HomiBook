@@ -14,9 +14,14 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Send, StopCircle, Upload, Paperclip, FileText, X, Globe, Menu, Plus } from 'lucide-react'
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel,
+  AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { Send, StopCircle, Upload, Paperclip, FileText, X, Globe, Menu, Plus, Loader2 } from 'lucide-react'
 import { parseContentIntoBlocks, buildImportMessage } from '@homibook/core'
-import { type MessageBlock } from '@/stores/chat'
+import { type MessageBlock, type ChatSession } from '@/stores/chat'
 import { useIsMobile } from '@/hooks/use-mobile'
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle,
@@ -35,10 +40,12 @@ export function ChatWindow() {
   const {
     sessions, currentSessionId,
     setSessions, setCurrentSession, sendMessage, retryMessage, selectBranch, stopStreaming,
-    setSessionData, clearSessionData, hasCachedSession,
+    setSessionData, setSessionLoading, clearSessionData, hasCachedSession,
   } = useChatStore()
   // 当前会话消息视图(活跃路径按分支选择派生,单一数据源在 sessionCache)
-  const { messages, allMessages } = useSessionView()
+  const { messages, allMessages, loading: messagesLoading } = useSessionView()
+  /** 会话列表加载中(首次进入):列表用占位而不是「暂无会话」 */
+  const [sessionsLoading, setSessionsLoading] = useState(false)
 
   const isCurrentStreaming = useChatStore((s) =>
     s.sessionCache[s.currentSessionId ?? '']?.isStreaming ?? false
@@ -145,11 +152,14 @@ export function ChatWindow() {
   }, [])
 
   const loadSessions = async () => {
+    setSessionsLoading(true)
     try {
       const list = await fetchSessions()
       setSessions(list)
     } catch {
       // ignore
+    } finally {
+      setSessionsLoading(false)
     }
   }
 
@@ -159,6 +169,8 @@ export function ChatWindow() {
     // 优先从缓存恢复（保留后台流式进度）
     if (hasCachedSession(id)) return
 
+    // 标记加载:聊天区显示占位,而不是切过去先白屏一下
+    setSessionLoading(id, true)
     try {
       const msgs = await fetchMessages(id)
       const parsed = msgs.map((m) => {
@@ -184,7 +196,11 @@ export function ChatWindow() {
       })
       setSessionData(id, parsed.length > 0 ? parsed : [greetingMsg])
     } catch {
-      // ignore
+      // 拉取失败:清掉占位条目,否则下次切回来会被 hasCachedSession 当成「已缓存」而不再拉取
+      clearSessionData(id)
+    } finally {
+      // 失败也要撤 loading,否则聊天区永远停在占位上(条目已被清掉时是 no-op,见 store 内守卫)
+      setSessionLoading(id, false)
     }
   }
 
@@ -210,6 +226,15 @@ export function ChatWindow() {
     } catch {
       // ignore
     }
+  }
+
+  /** 待确认删除的会话:删除不可恢复,点垃圾桶先弹确认(对齐移动端抽屉) */
+  const [deleteTarget, setDeleteTarget] = useState<ChatSession | null>(null)
+  const askDeleteSession = (id: string) => setDeleteTarget(sessions.find((s) => s.id === id) ?? null)
+  const confirmDeleteSession = async () => {
+    const target = deleteTarget
+    setDeleteTarget(null)
+    if (target) await handleDeleteSession(target.id)
   }
 
   const handleDeleteSession = async (id: string) => {
@@ -413,9 +438,10 @@ export function ChatWindow() {
             sessions={sessions}
             currentId={currentSessionId}
             streamingSessionIds={streamingSessionIds}
+            loading={sessionsLoading}
             onSelect={handleSelectSession}
             onCreate={handleCreateSession}
-            onDelete={handleDeleteSession}
+            onDelete={askDeleteSession}
           />
         </div>
       )}
@@ -431,9 +457,10 @@ export function ChatWindow() {
               sessions={sessions}
               currentId={currentSessionId}
               streamingSessionIds={streamingSessionIds}
+              loading={sessionsLoading}
               onSelect={(id) => { handleSelectSession(id); setSessionOpen(false) }}
               onCreate={() => { handleCreateSession(); setSessionOpen(false) }}
-              onDelete={handleDeleteSession}
+              onDelete={askDeleteSession}
             />
           </SheetContent>
         </Sheet>
@@ -456,6 +483,13 @@ export function ChatWindow() {
         {/* 消息列表 */}
         <ScrollArea className="flex-1">
           <div ref={scrollRef} className="p-4 space-y-4" onPointerDown={() => setStreamPaused(true)}>
+            {/* 历史消息加载中:切会话时先占位,避免先白屏一下再整块出现 */}
+            {messagesLoading && messages.length === 0 && (
+              <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
+                <Loader2 size={16} className="animate-spin" />
+                正在加载聊天记录...
+              </div>
+            )}
             {messages.map((msg) => {
               // 检查当前消息所在位置的所有版本（同一 parentMessageId 的消息）
               const allVersions = msg.parentMessageId
@@ -608,6 +642,24 @@ export function ChatWindow() {
           </div>
         </div>
       </div>
+
+      {/* 删除会话二次确认(聊天记录不可恢复;与移动端抽屉内的确认弹窗对齐) */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除会话</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要删除「{deleteTarget?.title || '新对话'}」吗？该会话的聊天记录会一并删除，且不可恢复。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction className="bg-[#ef4444] hover:bg-[#dc2626]" onClick={confirmDeleteSession}>
+              删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

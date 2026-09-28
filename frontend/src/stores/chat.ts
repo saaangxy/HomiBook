@@ -67,6 +67,8 @@ interface SessionData {
   branchSelections: Record<string, string>
   isStreaming: boolean
   streamingMessageId: string | null
+  /** 首次拉取该会话消息中:界面据此显示「正在加载聊天记录」而不是空态 */
+  loading: boolean
 }
 
 interface ChatState {
@@ -82,6 +84,8 @@ interface ChatState {
 
   /** 兼容接口:写入会话全量消息(自动重建分支选择),取代原 setMessages */
   setSessionData: (sessionId: string, allMessages: Message[]) => void
+  /** 标记会话消息正在加载(拉取前后各调一次):聊天区据此显示 loading 而不是空白 */
+  setSessionLoading: (sessionId: string, loading: boolean) => void
   /** 兼容接口:清空指定会话数据 */
   clearSessionData: (sessionId: string) => void
   /** 兼容查询:会话是否有本地缓存(有则切换时不必重新拉取) */
@@ -103,7 +107,7 @@ function nextId() {
   return `msg-${Date.now()}-${++msgIdCounter}`
 }
 
-const EMPTY_SESSION: SessionData = { allMessages: [], branchSelections: {}, isStreaming: false, streamingMessageId: null }
+const EMPTY_SESSION: SessionData = { allMessages: [], branchSelections: {}, isStreaming: false, streamingMessageId: null, loading: false }
 
 type SetState = (partial: Partial<ChatState> | ((s: ChatState) => Partial<ChatState>)) => void
 type GetState = () => ChatState
@@ -116,6 +120,7 @@ function viewOf(data: SessionData) {
     messages: buildActivePath(data.allMessages, data.branchSelections),
     allMessages: data.allMessages,
     branchSelections: data.branchSelections,
+    loading: data.loading,
   }
 }
 
@@ -573,8 +578,14 @@ export const useChatStore = create<ChatState>()((set, get) => {
       }
     }
     set((s) => ({
-      sessionCache: { ...s.sessionCache, [sessionId]: { allMessages, branchSelections: selections, isStreaming: false, streamingMessageId: null } },
+      sessionCache: { ...s.sessionCache, [sessionId]: { allMessages, branchSelections: selections, isStreaming: false, streamingMessageId: null, loading: false } },
     }))
+  },
+
+  setSessionLoading: (sessionId, loading) => {
+    // 会话首次拉取时先建出缓存条目(loading=true),切过去立刻能看到占位而不是空白
+    if (!get().sessionCache[sessionId] && !loading) return
+    patchSession(set, sessionId, () => ({ loading }))
   },
 
   clearSessionData: (sessionId) => {
@@ -716,7 +727,7 @@ export function useSessionView() {
   const sid = useChatStore((s) => s.currentSessionId)
   const data = useChatStore((s) => (sid ? s.sessionCache[sid] : undefined))
   return useMemo(
-    () => (data ? viewOf(data) : { messages: [], allMessages: [], branchSelections: {} }),
+    () => (data ? viewOf(data) : { messages: [], allMessages: [], branchSelections: {}, loading: false }),
     [data],
   )
 }
@@ -725,5 +736,5 @@ export function useSessionView() {
 export function getSessionView() {
   const s = useChatStore.getState()
   const data = s.currentSessionId ? s.sessionCache[s.currentSessionId] : undefined
-  return data ? viewOf(data) : { messages: [], allMessages: [], branchSelections: {} }
+  return data ? viewOf(data) : { messages: [], allMessages: [], branchSelections: {}, loading: false }
 }

@@ -8,12 +8,14 @@ interface Props {
   sessions: ChatSession[]
   currentId: string | null
   streamingSessionIds?: string[]
+  /** 会话列表加载中:列表为空时显示 loading,而不是「暂无会话」 */
+  loading?: boolean
   onSelect: (id: string) => void
   onCreate: () => void
   onDelete: (id: string) => void
 }
 
-export function SessionList({ sessions, currentId, streamingSessionIds, onSelect, onCreate, onDelete }: Props) {
+export function SessionList({ sessions, currentId, streamingSessionIds, loading, onSelect, onCreate, onDelete }: Props) {
   const today = new Date().toDateString()
   const yesterday = new Date(Date.now() - 86400000).toDateString()
 
@@ -70,7 +72,14 @@ export function SessionList({ sessions, currentId, streamingSessionIds, onSelect
             </div>
           ))}
           {sessions.length === 0 && (
-            <div className="text-xs text-muted-foreground text-center py-8">暂无会话</div>
+            loading ? (
+              <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground py-8">
+                <Loader2 size={13} className="animate-spin" />
+                正在加载会话...
+              </div>
+            ) : (
+              <div className="text-xs text-muted-foreground text-center py-8">暂无会话</div>
+            )
           )}
         </div>
       </ScrollArea>

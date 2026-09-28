@@ -6,6 +6,7 @@ import { Plus, Pencil, Trash2, Search, X } from 'lucide-react-native';
 import { useTheme, alpha } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { LoadingState } from '@/components/ui/LoadingState';
 import { ConfirmSheet } from '@/components/chrome/ConfirmSheet';
 import { ChipSelect } from '@/components/ui/ChipSelect';
 import { DatePicker } from '@/components/ui/DatePicker';
@@ -90,6 +91,8 @@ export default function BudgetPage() {
   const [batchYear, setBatchYear] = useState(now.getFullYear());
   const [batchRemark, setBatchRemark] = useState('');
   const [batchSaving, setBatchSaving] = useState(false);
+  /** 首屏加载态:数据回来后置 false;切页/保存后的静默刷新不闪 loading */
+  const [loading, setLoading] = useState(true);
 
   // ── 复制预算 ──
   const [copyOpen, setCopyOpen] = useState(false);
@@ -101,7 +104,7 @@ export default function BudgetPage() {
 
   useEffect(() => {
     if (!isFocused || !bookId) return;
-    fetchBudgets(bookId).then(setBudgets);
+    fetchBudgets(bookId).then(setBudgets).catch(() => {}).finally(() => setLoading(false));
   }, [isFocused, bookId]);
 
   // 标签建议(预算标签,与网页端 getTags 一致)
@@ -588,7 +591,9 @@ export default function BudgetPage() {
         </View>
 
         {/* 列表 */}
-        {filtered.length === 0 ? (
+        {loading ? (
+          <LoadingState />
+        ) : filtered.length === 0 ? (
           <EmptyState icon="" title="暂无预算" description="创建一个预算开始管理支出" />
         ) : filtered.map(b => renderBudgetCard(b))}
       </ScrollView>

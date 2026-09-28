@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, TextInput, View } from 'react-native';
 import { useIsFocused } from 'expo-router';
 import { Plus, CreditCard, Wallet, MessageCircle, Banknote, TrendingUp, Landmark, Archive, RotateCcw, Trash2, SlidersHorizontal, Pencil } from 'lucide-react-native';
 import { useTheme, alpha } from '@/theme';
@@ -10,6 +10,8 @@ import { FadeInView } from '@/components/FadeInView';
 import { FormSheet } from '@/components/chrome/FormSheet';
 import { ConfirmSheet } from '@/components/chrome/ConfirmSheet';
 import { useUIShell, usePageRefresh } from '@/components/chrome/chrome';
+import { LoadingState } from '@/components/ui/LoadingState';
+import { showToast } from '@/components/chrome/Toast';
 import { createAccountApi, createAdjustmentApi, deleteAccountApi, fetchAccounts, listAdjustmentsApi, updateAccountApi } from '@/services/records';
 import type { BalanceAdjustment } from '@/services/records';
 import { formatMoney } from '@/lib/format';
@@ -59,6 +61,8 @@ export default function AccountsScreen() {
   const isFocused = useIsFocused();
   const [accounts, setAccounts] = useState<AccountItem[]>([]);
   const [filter, setFilter] = useState<Filter>('全部');
+  /** 首屏加载态:数据回来后置 false;之后的切页/保存刷新都是静默的,不闪 loading */
+  const [loading, setLoading] = useState(true);
 
   const [sheet, setSheet] = useState(false); // 新建
   const [editing, setEditing] = useState<AccountItem | null>(null); // 编辑
@@ -70,15 +74,26 @@ export default function AccountsScreen() {
   const [accountNo, setAccountNo] = useState('');
   const [bankName, setBankName] = useState('');
 
+  const load = useCallback(async () => {
+    if (!bookId) return; // 无账本时不请求;loading 保持占位,避免误显示「暂无账户」
+    try {
+      setAccounts(await fetchAccounts(bookId));
+    } catch {
+      // 失败保留原数据(网络层已统一 toast)
+    } finally {
+      setLoading(false);
+    }
+  }, [bookId]);
+
   useEffect(() => {
-    if (!isFocused || !bookId) return;
-    fetchAccounts(bookId).then(setAccounts);
-  }, [isFocused, bookId]);
+    if (!isFocused) return;
+    // 内联 async runner:直接在 effect 体里 void load() 会被 react-hooks/set-state-in-effect 追进 useCallback
+    const run = async () => { await load(); };
+    void run();
+  }, [isFocused, load]);
 
   // 记一笔/编辑保存后由 RecordModal 直接调用:重拉账户余额
-  const reloadPage = useCallback(() => {
-    if (bookId) fetchAccounts(bookId).then(setAccounts);
-  }, [bookId]);
+  const reloadPage = useCallback(() => { void load(); }, [load]);
   usePageRefresh(reloadPage);
 
   const [refreshing, setRefreshing] = useState(false);
@@ -86,11 +101,11 @@ export default function AccountsScreen() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      if (bookId) await fetchAccounts(bookId).then(setAccounts);
+      await load();
     } finally {
       setRefreshing(false);
     }
-  }, [bookId]);
+  }, [load]);
 
   const status = FILTER_STATUS[filter];
   const visible = accounts.filter((a) => (status ? a.status === status : true));
@@ -193,10 +208,25 @@ export default function AccountsScreen() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyAccount, setHistoryAccount] = useState<AccountItem | null>(null);
   const [adjustments, setAdjustments] = useState<BalanceAdjustment[]>([]);
-  const openHistory = (a: AccountItem) => {
-    setHistoryAccount(a);
-    setHistoryOpen(true);
-    listAdjustmentsApi(a.id).then(setAdjustments);
+  /** 正在拉调整记录的那条(按钮转圈 + 防重复点) */
+  const [historyLoadingId, setHistoryLoadingId] = useState<string | null>(null);
+  /**
+   * 调整记录:先把数据取回来再弹窗。
+   * 原来是「先弹窗再请求」——弹窗内会先渲染上一条账户的记录(或「暂无」),数据到达后再整块重排。
+   */
+  const openHistory = async (a: AccountItem) => {
+    if (historyLoadingId) return;
+    setHistoryLoadingId(a.id);
+    try {
+      const list = await listAdjustmentsApi(a.id);
+      setAdjustments(list);
+      setHistoryAccount(a);
+      setHistoryOpen(true);
+    } catch {
+      showToast('调整记录加载失败，请稍后重试');
+    } finally {
+      setHistoryLoadingId(null);
+    }
   };
 
   const inputStyle = {
@@ -239,7 +269,9 @@ export default function AccountsScreen() {
         </View>
 
         <ScrollView contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}>
-          {visible.length === 0 ? (
+          {loading ? (
+            <LoadingState />
+          ) : visible.length === 0 ? (
             <Card className="items-center py-12">
               <Text style={{ fontSize: 30, marginBottom: 6 }}>💳</Text>
               <Text variant="muted">暂无账户</Text>
@@ -280,8 +312,10 @@ export default function AccountsScreen() {
                         <SlidersHorizontal size={13} color={colors.foreground} />
                         <Text style={{ fontSize: 12, color: colors.foreground }}>调整</Text>
                       </Pressable>
-                      <Pressable onPress={() => openHistory(a)} style={opBtn}>
-                        <TrendingUp size={13} color={colors.foreground} />
+                      <Pressable onPress={() => openHistory(a)} style={opBtn} disabled={historyLoadingId === a.id}>
+                        {historyLoadingId === a.id
+                          ? <ActivityIndicator size="small" color={colors.foreground} />
+                          : <TrendingUp size={13} color={colors.foreground} />}
                         <Text style={{ fontSize: 12, color: colors.foreground }}>记录</Text>
                       </Pressable>
                       <Pressable onPress={() => toggleArchive(a)} style={opBtn}>

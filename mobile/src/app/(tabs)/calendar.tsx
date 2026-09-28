@@ -8,6 +8,7 @@ import { useTheme, haptics, alpha } from '@/theme';
 import { Screen } from '@/components/Screen';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
+import { LoadingState } from '@/components/ui/LoadingState';
 import { RecordRow } from '@/components/RecordRow';
 import { SwipeRow } from '@/components/SwipeRow';
 import { ConfirmSheet } from '@/components/chrome/ConfirmSheet';
@@ -50,6 +51,8 @@ export default function CalendarScreen() {
   const isFocused = useIsFocused();
   const [monthlyDays, setMonthlyDays] = useState<CalendarDay[]>([]);
   const [dayList, setDayList] = useState<RecordItem[]>([]);
+  /** 当日流水的加载态:未就绪时不能显示「当天暂无流水」(那是空态,不是加载态) */
+  const [dayLoading, setDayLoading] = useState(true);
   useEffect(() => {
     if (!isFocused || !bookId) return;
     let cancel = false;
@@ -57,10 +60,22 @@ export default function CalendarScreen() {
     return () => { cancel = true; };
   }, [isFocused, bookId, year, month]);
   useEffect(() => {
-    if (!isFocused || !bookId) return;
     let cancel = false;
-    const date = key(selected);
-    fetchRecords(bookId, { page: 1, pageSize: 100, dateFrom: date, dateTo: date }).then((list) => { if (!cancel) setDayList(list); });
+    // 包一层 async:避免在 effect 体内同步 setState(react-hooks/set-state-in-effect)
+    const load = async () => {
+      if (!isFocused || !bookId) { setDayLoading(false); return; }
+      setDayLoading(true);
+      try {
+        const date = key(selected);
+        const list = await fetchRecords(bookId, { page: 1, pageSize: 100, dateFrom: date, dateTo: date });
+        if (!cancel) setDayList(list);
+      } catch {
+        // 失败保留上次结果
+      } finally {
+        if (!cancel) setDayLoading(false);
+      }
+    };
+    void load();
     return () => { cancel = true; };
   }, [isFocused, bookId, year, month, selected]);
 
@@ -336,7 +351,9 @@ export default function CalendarScreen() {
           )}
           <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 24 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <Card className="px-5 py-4">
-              {dayRecords.length === 0 ? (
+              {dayLoading ? (
+                <LoadingState text={null} paddingVertical={28} />
+              ) : dayRecords.length === 0 ? (
                 <View className="items-center py-10"><Text variant="muted">当天暂无流水</Text></View>
               ) : (
                 dayRecords.map((r, i) => (

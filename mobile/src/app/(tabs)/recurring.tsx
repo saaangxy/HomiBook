@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, Switch, TextInput, View, Keyboard, Dimensions } from 'react-native';
+import { ActivityIndicator, Dimensions, FlatList, Keyboard, Pressable, RefreshControl, ScrollView, Switch, TextInput, View } from 'react-native';
 import { Plus, ArrowUpRight, ArrowDownRight, ArrowLeftRight, Trash2, FileText, Pencil } from 'lucide-react-native';
 import { useTheme, alpha } from '@/theme';
 import { Screen } from '@/components/Screen';
@@ -13,6 +13,8 @@ import { CronBuilder } from '@/components/ui/CronBuilder';
 import { TagPicker } from '@/components/ui/TagPicker';
 import { FormSheet } from '@/components/chrome/FormSheet';
 import { ConfirmSheet } from '@/components/chrome/ConfirmSheet';
+import { LoadingState } from '@/components/ui/LoadingState';
+import { showToast } from '@/components/chrome/Toast';
 import { useUIShell } from '@/components/chrome/chrome';
 import {
   createRecurringApi, deleteRecurringApi, fetchRecurring, fetchRepaymentPlanApi,
@@ -92,6 +94,10 @@ export default function RecurringScreen() {
   // 还款计划查看
   const [planTarget, setPlanTarget] = useState<RecurringTransaction | null>(null);
   const [plans, setPlans] = useState<RepaymentPlan[]>([]);
+  /** 正在拉取还款计划的那条(按钮转圈 + 防重复点) */
+  const [planLoadingId, setPlanLoadingId] = useState<string | null>(null);
+  /** 首屏/切账本的加载态;保存后的静默 reload 不置此态,避免闪 loading */
+  const [loading, setLoading] = useState(true);
 
   // 标签建议(预算标签 + 流水标签)
   useEffect(() => {
@@ -101,11 +107,22 @@ export default function RecurringScreen() {
     }).catch(() => {});
   }, [bookId]);
 
-  const reload = useCallback(() => {
-    if (bookId) fetchRecurring(bookId).then(setItems);
+  const reload = useCallback(async () => {
+    if (!bookId) { setLoading(false); return; }
+    try {
+      setItems(await fetchRecurring(bookId));
+    } catch {
+      // 失败保留原数据(网络层已统一 toast)
+    } finally {
+      setLoading(false);
+    }
   }, [bookId]);
 
-  useEffect(() => { reload(); }, [reload]);
+  // 首次进入/切账本时置 loading(包一层 async:避免在 effect 体内同步 setState)
+  useEffect(() => {
+    const boot = async () => { setLoading(true); await reload(); };
+    void boot();
+  }, [reload]);
 
   const [refreshing, setRefreshing] = useState(false);
   // 下拉刷新:固定收支 + store(分类/账户)
@@ -263,10 +280,23 @@ export default function RecurringScreen() {
     reload();
   };
 
-  const openPlan = (t: RecurringTransaction) => {
-    setPlans([]);
-    setPlanTarget(t);
-    fetchRepaymentPlanApi(t.id).then(setPlans).catch(() => {});
+  /**
+   * 还款计划:先把数据取回来再弹窗。
+   * 期数最多 loanTermMonths 期(可达数百行),先弹窗再等数据会出现「空弹窗 → 数据到达时整块渲染」的卡顿;
+   * 期间按钮转圈,失败只 toast 不弹空窗。
+   */
+  const openPlan = async (t: RecurringTransaction) => {
+    if (planLoadingId) return;
+    setPlanLoadingId(t.id);
+    try {
+      const list = await fetchRepaymentPlanApi(t.id);
+      setPlans(list);
+      setPlanTarget(t);
+    } catch {
+      showToast('还款计划加载失败，请稍后重试');
+    } finally {
+      setPlanLoadingId(null);
+    }
   };
 
   const save = async () => {
@@ -379,7 +409,9 @@ export default function RecurringScreen() {
         </View>
 
         <ScrollView contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}>
-          {items.length === 0 ? (
+          {loading ? (
+            <LoadingState />
+          ) : items.length === 0 ? (
             <Card className="items-center py-12">
               <Text style={{ fontSize: 30, marginBottom: 6 }}>🔁</Text>
               <Text variant="muted">暂无固定收支</Text>
@@ -428,8 +460,10 @@ export default function RecurringScreen() {
                       <Text style={{ fontSize: 12, marginLeft: 6, color: t.active ? colors.primary : colors.mutedForeground, fontWeight: '500' }}>{t.active ? '已启用' : '已停用'}</Text>
                       <View style={{ flex: 1 }} />
                       {t.recurringType === 'LOAN' && (
-                        <Pressable onPress={() => openPlan(t)} style={opBtn}>
-                          <FileText size={13} color={colors.foreground} />
+                        <Pressable onPress={() => openPlan(t)} style={opBtn} disabled={planLoadingId === t.id}>
+                          {planLoadingId === t.id
+                            ? <ActivityIndicator size="small" color={colors.foreground} />
+                            : <FileText size={13} color={colors.foreground} />}
                           <Text style={{ fontSize: 12, color: colors.foreground }}>还款计划</Text>
                         </Pressable>
                       )}
@@ -643,32 +677,39 @@ export default function RecurringScreen() {
         </ScrollView>
       </FormSheet>
 
-      {/* 还款计划查看 */}
+      {/* 还款计划查看(数据在 openPlan 里已取好;行数可达数百,用 FlatList 虚拟化,避免展开瞬间整块渲染) */}
       <FormSheet visible={!!planTarget} title={`还款计划 · ${planTarget?.name ?? ''}`} onClose={() => setPlanTarget(null)}>
         {planTarget && (
-          <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 420 }}>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 10 }}>
-              <Text style={{ fontSize: 12, color: colors.mutedForeground }}>总额 <Text style={{ fontWeight: '600', color: colors.foreground }}>{formatMoney(planTarget.loanTotalAmount ?? 0)}</Text></Text>
-              <Text style={{ fontSize: 12, color: colors.mutedForeground }}>剩余 <Text style={{ fontWeight: '600', color: colors.foreground }}>{formatMoney(planTarget.loanRemainingAmount ?? 0)}</Text></Text>
-              <Text style={{ fontSize: 12, color: colors.mutedForeground }}>方式 <Text style={{ fontWeight: '600', color: colors.foreground }}>{(METHOD_LABELS as Record<string, string>)[planTarget.loanInterestMethod ?? ''] ?? '-'}</Text></Text>
-              <Text style={{ fontSize: 12, color: colors.mutedForeground }}>利率 <Text style={{ fontWeight: '600', color: colors.foreground }}>{planTarget.loanInterestRate ?? 0}%</Text></Text>
-            </View>
-            {plans.length === 0 ? (
-              <Text variant="muted" style={{ textAlign: 'center', paddingVertical: 24, fontSize: 13 }}>暂无还款计划</Text>
-            ) : (
-              <>
-                <View style={{ flexDirection: 'row', paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: colors.hairline }}>
-                  <Text style={{ width: 34, fontSize: 10, color: colors.mutedForeground }}>期次</Text>
-                  <Text style={{ width: 72, fontSize: 10, color: colors.mutedForeground }}>到期日</Text>
-                  <Text style={{ width: 58, fontSize: 10, color: colors.mutedForeground, textAlign: 'right' }}>月供</Text>
-                  <Text style={{ width: 52, fontSize: 10, color: colors.mutedForeground, textAlign: 'right' }}>本金</Text>
-                  <Text style={{ width: 52, fontSize: 10, color: colors.mutedForeground, textAlign: 'right' }}>利息</Text>
-                  <Text style={{ flex: 1, fontSize: 10, color: colors.mutedForeground, textAlign: 'right' }}>剩余</Text>
+          <FlatList
+            data={plans}
+            keyExtractor={(p) => `${p.period}-${p.dueDate}`}
+            renderItem={({ item }) => planRow(item)}
+            style={{ maxHeight: 420 }}
+            showsVerticalScrollIndicator={false}
+            initialNumToRender={12}
+            windowSize={7}
+            ListHeaderComponent={
+              <View>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 10 }}>
+                  <Text style={{ fontSize: 12, color: colors.mutedForeground }}>总额 <Text style={{ fontWeight: '600', color: colors.foreground }}>{formatMoney(planTarget.loanTotalAmount ?? 0)}</Text></Text>
+                  <Text style={{ fontSize: 12, color: colors.mutedForeground }}>剩余 <Text style={{ fontWeight: '600', color: colors.foreground }}>{formatMoney(planTarget.loanRemainingAmount ?? 0)}</Text></Text>
+                  <Text style={{ fontSize: 12, color: colors.mutedForeground }}>方式 <Text style={{ fontWeight: '600', color: colors.foreground }}>{(METHOD_LABELS as Record<string, string>)[planTarget.loanInterestMethod ?? ''] ?? '-'}</Text></Text>
+                  <Text style={{ fontSize: 12, color: colors.mutedForeground }}>利率 <Text style={{ fontWeight: '600', color: colors.foreground }}>{planTarget.loanInterestRate ?? 0}%</Text></Text>
                 </View>
-                {plans.map(planRow)}
-              </>
-            )}
-          </ScrollView>
+                {plans.length > 0 && (
+                  <View style={{ flexDirection: 'row', paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: colors.hairline }}>
+                    <Text style={{ width: 34, fontSize: 10, color: colors.mutedForeground }}>期次</Text>
+                    <Text style={{ width: 72, fontSize: 10, color: colors.mutedForeground }}>到期日</Text>
+                    <Text style={{ width: 58, fontSize: 10, color: colors.mutedForeground, textAlign: 'right' }}>月供</Text>
+                    <Text style={{ width: 52, fontSize: 10, color: colors.mutedForeground, textAlign: 'right' }}>本金</Text>
+                    <Text style={{ width: 52, fontSize: 10, color: colors.mutedForeground, textAlign: 'right' }}>利息</Text>
+                    <Text style={{ flex: 1, fontSize: 10, color: colors.mutedForeground, textAlign: 'right' }}>剩余</Text>
+                  </View>
+                )}
+              </View>
+            }
+            ListEmptyComponent={<Text variant="muted" style={{ textAlign: 'center', paddingVertical: 24, fontSize: 13 }}>暂无还款计划</Text>}
+          />
         )}
       </FormSheet>
 
