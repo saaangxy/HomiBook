@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Platform, Pressable, RefreshControl, View } from 'react-native';
+import { ActivityIndicator, FlatList, Platform, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useIsFocused } from 'expo-router';
-import { ArrowUpRight, ArrowDownRight, ArrowLeftRight, SlidersHorizontal, X, Copy, Trash2, CopyMinus, FileUp, Download, Save, Share2 } from 'lucide-react-native';
+import { ArrowUpRight, ArrowDownRight, ArrowLeftRight, SlidersHorizontal, X, Copy, Trash2, CopyMinus, FileUp, Download, Save, Share2, ChevronDown, ChevronUp } from 'lucide-react-native';
 import { useTheme, alpha, haptics } from '@/theme';
 import { useUIShell, usePageRefresh } from '@/components/chrome/chrome';
 import { useRecords } from '@/stores/records';
@@ -42,6 +42,8 @@ export default function RecordsScreen() {
   const isFocused = useIsFocused();
   const [filters, setFilters] = useState<RecordFilters>(emptyFilters);
   const [filterOpen, setFilterOpen] = useState(false);
+  /** 活跃条件胶囊:默认单行横向滚动,展开态换行但限高(见下方 chips 区块) */
+  const [chipsExpanded, setChipsExpanded] = useState(false);
   const [dedupOpen, setDedupOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [exportSheetOpen, setExportSheetOpen] = useState(false);
@@ -214,6 +216,23 @@ export default function RecordsScreen() {
       : []),
   ];
 
+  // 单条条件胶囊(限宽 + 省略号:像「农业银行储蓄卡(5172)」这种长标签不会一条吃掉整行)
+  const renderChip = (c: { key: string; label: string; onClear: () => void }) => (
+    <View key={c.key} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingLeft: 12, paddingRight: 8, paddingVertical: 6, borderRadius: 999, backgroundColor: alpha(colors.primary, 0.1), borderWidth: 1, borderColor: alpha(colors.primary, 0.3), maxWidth: 200 }}>
+      <Text style={{ fontSize: 12, color: colors.primary, flexShrink: 1 }} numberOfLines={1}>{c.label}</Text>
+      <Pressable onPress={c.onClear} hitSlop={6}>
+        <X size={12} color={colors.primary} />
+      </Pressable>
+    </View>
+  );
+
+  // 一键清空全部条件
+  const clearAllChip = (
+    <Pressable onPress={() => { setFilters(emptyFilters); haptics.tap(); }} hitSlop={6} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border }}>
+      <Text style={{ fontSize: 12, color: colors.mutedForeground }}>清空</Text>
+    </Pressable>
+  );
+
   const summaryCards = [
     { label: '总收入', value: summary.income, icon: ArrowUpRight, color: colors.income },
     { label: '总支出', value: summary.expense, icon: ArrowDownRight, color: colors.expense },
@@ -302,15 +321,40 @@ export default function RecordsScreen() {
             <Text style={{ fontSize: 13, color: colors.foreground, fontWeight: '500' }}>{exporting ? '导出中...' : '导出'}</Text>
           </Pressable>
 
-          {activeChips.map((c) => (
-            <View key={c.key} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingLeft: 12, paddingRight: 8, paddingVertical: 6, borderRadius: 999, backgroundColor: alpha(colors.primary, 0.1), borderWidth: 1, borderColor: alpha(colors.primary, 0.3) }}>
-              <Text style={{ fontSize: 12, color: colors.primary }}>{c.label}</Text>
-              <Pressable onPress={c.onClear} hitSlop={6}>
-                <X size={12} color={colors.primary} />
-              </Pressable>
-            </View>
-          ))}
         </View>
+
+        {/*
+          活跃条件胶囊:独立一行,高度有上界。
+          原来它和上面 4 个操作按钮同一个 wrap 容器、且位于列表上方固定区(不参与滚动)——
+          条件一多就把整屏吃掉,FlatList 被挤成 0 高度,表现为「页面占满且滚不动」。
+          默认:单行横向滚动;展开:换行 + 限高内部滚动(最多约 3 行)。两种形态都吃不满一屏。
+        */}
+        {activeChips.length > 0 && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            {chipsExpanded ? (
+              <ScrollView style={{ flex: 1, maxHeight: 124 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {activeChips.map(renderChip)}
+                  {clearAllChip}
+                </View>
+              </ScrollView>
+            ) : (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ gap: 8, alignItems: 'center', paddingRight: 4 }}>
+                {activeChips.map(renderChip)}
+                {clearAllChip}
+              </ScrollView>
+            )}
+            {activeChips.length > 1 && (
+              <Pressable
+                onPress={() => { setChipsExpanded((v) => !v); haptics.tap(); }}
+                hitSlop={8}
+                style={{ width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border }}
+              >
+                {chipsExpanded ? <ChevronUp size={15} color={colors.foreground} /> : <ChevronDown size={15} color={colors.foreground} />}
+              </Pressable>
+            )}
+          </View>
+        )}
 
         {/* 列表虚拟化:按日期组分项,只渲染可视区,页面切换/长列表不再全量挂载拖慢首帧 */}
         {loading ? (
