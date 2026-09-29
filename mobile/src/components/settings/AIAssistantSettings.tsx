@@ -9,6 +9,7 @@ import {
 import { Btn, Chips, ErrorText, Field, FieldRow, LabeledInput, OptionModal, Section, useInputStyle } from './shared';
 import { useConfirm } from '@/components/chrome/ConfirmSheet';
 import { showToast } from '@/components/chrome/Toast';
+import { useAuth } from '@/stores/auth';
 
 const LANGUAGES = [
   { value: 'zh-CN', label: '简体中文' },
@@ -28,9 +29,12 @@ const BOOL_OPTIONS = [
 
 const TEST_STATUS_COLOR: Record<string, string> = { pass: '#22c55e', fail: '#ef4444', untested: '#9ca3af' };
 
-// AI 助手设置(管理员,对齐 web AIAssistantSettings)
+// AI 助手设置(所有用户可见:助手开关/模型槽位/模型配置/工具管理均为用户级;
+// 搜索引擎是服务端级设置,仅管理员可改 → 见下方 isAdmin 判断)
 export function AIAssistantSettings() {
   const { colors } = useTheme();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -69,7 +73,8 @@ export function AIAssistantSettings() {
         aiAdminApi.fetchProviders(),
         aiAdminApi.fetchProviderConfigs(),
         aiAdminApi.fetchTools(),
-        aiAdminApi.fetchSearchEngine(),
+        // 搜索引擎是服务端级设置:非管理员不展示该项,也就不必拉取
+        isAdmin ? aiAdminApi.fetchSearchEngine() : Promise.resolve('bing'),
       ]);
       setCfg({
         enabled: prefs.enabled,
@@ -90,7 +95,7 @@ export function AIAssistantSettings() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isAdmin]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -347,16 +352,18 @@ export function AIAssistantSettings() {
         )}
       </View>
 
-      {/* 网络搜索 */}
-      <FieldRow label="搜索引擎" desc="AI 助手搜索信息时使用的引擎">
-        <View style={{ width: 170 }}>
-          <Chips
-            options={ENGINES}
-            value={engine}
-            onChange={(v) => { setEngine(v); aiAdminApi.updateSearchEngine(v).catch(() => {}); }}
-          />
-        </View>
-      </FieldRow>
+      {/* 网络搜索(服务端级:影响所有用户,仅管理员可改) */}
+      {isAdmin && (
+        <FieldRow label="搜索引擎" desc="AI 助手搜索信息时使用的引擎">
+          <View style={{ width: 170 }}>
+            <Chips
+              options={ENGINES}
+              value={engine}
+              onChange={(v) => { setEngine(v); aiAdminApi.updateSearchEngine(v).catch(() => {}); }}
+            />
+          </View>
+        </FieldRow>
+      )}
 
       {/* 工具管理(默认折叠) */}
       <Section icon={<Zap size={15} color={colors.primaryForeground} />} title="工具管理">

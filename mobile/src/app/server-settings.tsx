@@ -2,13 +2,12 @@ import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, Bot, Brain, BookOpen, Database, FolderOpen, Key, Link2, Settings, Wallet } from 'lucide-react-native';
+import { ArrowLeft, Brain, BookOpen, Database, FolderOpen, Key, Link2, Settings, Wallet } from 'lucide-react-native';
 import { useTheme, paletteOrder, palettes } from '@/theme';
 import { useAuth } from '@/stores/auth';
 import { Text } from '@/components/ui/Text';
 import { Section, Field, Chips, Btn, ErrorText, OkText, LabeledInput } from '@/components/settings/shared';
 import { AccountMappingManager, ApiKeyManager, CategoryMappingManager, DictManager, DICT_GROUPS } from '@/components/settings/Managers';
-import { AIAssistantSettings } from '@/components/settings/AIAssistantSettings';
 import { holidayApi, memoryApi, settingsApi, type UserMemory } from '@/services/settings';
 import { ConfirmProvider, useConfirm } from '@/components/chrome/ConfirmSheet';
 import { showToast } from '@/components/chrome/Toast';
@@ -347,9 +346,6 @@ export default function ServerSettingsScreen() {
           <View style={{ gap: 12 }}>
             <Section icon={<Settings size={15} color={colors.primaryForeground} />} title="通用设置">
               <GeneralSettings />
-            </Section>
-            <Section icon={<Bot size={15} color={colors.primaryForeground} />} title="AI 助手">
-              <AIAssistantSettings />
             </Section>
             <Section icon={<Brain size={15} color={colors.primaryForeground} />} title="AI 记忆">
               <MemoryManager />

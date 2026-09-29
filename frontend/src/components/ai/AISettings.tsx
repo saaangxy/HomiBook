@@ -32,6 +32,7 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { toast } from 'sonner'
+import { useAuthStore } from '@/stores/auth'
 
 const LANGUAGES = [
   { value: 'zh-CN', label: '简体中文' },
@@ -39,6 +40,9 @@ const LANGUAGES = [
 ]
 
 export function AIAssistantSettings() {
+  const { user } = useAuthStore()
+  /** 服务端级设置(搜索引擎 / 供应商 baseURL)仅管理员可改,普通成员只用用户级配置 */
+  const isAdmin = user?.role === 'ADMIN'
   // ---------- 通用状态 ----------
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -105,7 +109,8 @@ export function AIAssistantSettings() {
         fetchProviders(),
         fetchProviderConfigs(),
         fetchTools(),
-        fetchSearchEngine(),
+        // 搜索引擎是服务端级设置:非管理员不展示该项,也就不必拉取
+        isAdmin ? fetchSearchEngine() : Promise.resolve('bing'),
       ])
       setSimpleConfigId(prefs.simpleProviderConfigId)
       setSimpleModel(prefs.simpleModel)
@@ -579,7 +584,8 @@ export function AIAssistantSettings() {
           </AccordionContent>
         </AccordionItem>
 
-        {/* 网络搜索 */}
+        {/* 网络搜索(服务端级:影响所有用户,仅管理员可改) */}
+        {isAdmin && (
         <AccordionItem value="search-engine" className="border rounded-lg">
           <AccordionTrigger className="px-4 py-3 text-sm font-semibold hover:no-underline">
             <div className="flex items-center gap-2">
@@ -608,6 +614,8 @@ export function AIAssistantSettings() {
             </div>
           </AccordionContent>
         </AccordionItem>
+
+        )}
 
         {/* 工具管理 */}
         <AccordionItem value="tools" className="border rounded-lg">

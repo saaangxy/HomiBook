@@ -3,7 +3,7 @@ import { streamText, generateText, stepCountIs, jsonSchema } from 'ai'
 import { existsSync, readFileSync } from 'fs'
 import path from 'path'
 import { prisma } from '../app.js'
-import { authenticate } from '../middleware/auth.js'
+import { authenticate, requireAdmin } from '../middleware/auth.js'
 import { createModel, ALL_PROVIDERS, DEFAULT_BASE_URLS, type ProviderType } from '../services/ai/providers.js'
 import { detectImageFormat, isImageComplete, getImageSize, VISION_MEDIA_TYPES, IMAGE_FORMAT_LABELS } from '../services/ai/image-format.js'
 import { needsTiling, fitOversizedImage, VISION_MAX_SIDE } from '../services/ai/image-tile.js'
@@ -1772,7 +1772,8 @@ export async function chatRoutes(app: FastifyInstance) {
   })
 
   // 保存供应商 baseURL
-  app.post('/providers/baseurl', async (req, reply) => {
+  // 服务端全局配置(systemConfig.ai_baseurl_*),影响所有用户 → 仅管理员可改
+  app.post('/providers/baseurl', { onRequest: [authenticate, requireAdmin] }, async (req, reply) => {
     const { provider, baseURL } = req.body as { provider?: string; baseURL?: string }
     if (!provider) return reply.status(400).send({ message: '缺少 provider 参数' })
 
@@ -1799,7 +1800,8 @@ export async function chatRoutes(app: FastifyInstance) {
     return { engine: row?.value || 'bing' }
   })
 
-  app.post('/search-engine', async (req, reply) => {
+  // 服务端全局配置(systemConfig.search_engine),影响所有用户 → 仅管理员可改
+  app.post('/search-engine', { onRequest: [authenticate, requireAdmin] }, async (req, reply) => {
     const { engine } = req.body as { engine?: string }
     const valid = ['bing', 'baidu', 'google']
     if (!engine || !valid.includes(engine)) return reply.status(400).send({ message: '无效的搜索引擎' }

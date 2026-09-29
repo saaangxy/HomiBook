@@ -52,8 +52,7 @@ export function SettingsPage() {
           </AccordionContent>
         </AccordionItem>
 
-        {isAdmin && (<>
-        {/* AI 助手 */}
+        {/* AI 助手(所有用户可见:每人独立配置自己的模型/Key 与启用开关;服务端级设置项仅管理员可见) */}
         <AccordionItem value="ai-assistant" className="border rounded-xl px-5">
           <AccordionTrigger className="text-base font-semibold hover:no-underline">
             <div className="flex items-center gap-2.5">
@@ -68,6 +67,7 @@ export function SettingsPage() {
           </AccordionContent>
         </AccordionItem>
 
+        {isAdmin && (<>
         {/* 字典管理 */}
         <DictionaryManagement />
 
