@@ -168,6 +168,38 @@ describe('isAwaitingUserAction(同一条消息里是否还有等用户点的卡)
     }
   });
 
+  it('刚点过的「建议选项」「切换账本」(decided,status 已归回 pending)不再算等用户点', () => {
+    // decideTool 批准后:status → pending + decisionData 暂存 + decided=true,
+    // 而 resolveToolCallStatus 仍会依 args.questions / result.books 推出 suggesting / switching ——
+    // 若不排除 decided,awaiting 永远 > 0 → 永不提交 /confirm(按钮 loading 后无反应)
+    const suggest = tc({
+      toolName: 'suggest_options',
+      args: { questions: [{ question: '选哪个', field: 'type', options: ['收入', '支出'], allowCustom: false }] },
+      status: 'pending',
+      decisionData: { values: { type: '支出' } },
+      decided: true,
+    });
+    expect(resolveToolCallStatus(suggest).effectiveStatus).toBe('suggesting');
+    expect(isAwaitingUserAction(suggest)).toBe(false);
+
+    const switchBook = tc({
+      toolName: 'switch_book',
+      result: { books: [{ id: 'b1', name: '家庭账本' }] },
+      status: 'pending',
+      decisionData: { bookId: 'b1' },
+      decided: true,
+    });
+    expect(resolveToolCallStatus(switchBook).effectiveStatus).toBe('switching');
+    expect(isAwaitingUserAction(switchBook)).toBe(false);
+  });
+
+  it('未点过的建议选项仍算等用户操作(与已决定区分开)', () => {
+    expect(isAwaitingUserAction(tc({
+      toolName: 'suggest_options',
+      args: { questions: [{ question: '选哪个', field: 'type', options: ['收入'], allowCustom: false }] },
+    }))).toBe(true);
+  });
+
   it('普通工具成功不算等用户点', () => {
     expect(isAwaitingUserAction(tc({ toolName: 'query_accounts', status: 'success', result: { data: {} } }))).toBe(false);
     expect(isAwaitingUserAction(tc({ toolName: 'create_record', status: 'success' }))).toBe(false);

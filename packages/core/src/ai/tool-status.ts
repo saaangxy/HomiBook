@@ -24,7 +24,16 @@ export function isAwaitingUserAction(toolCall: ToolCallEntry): boolean {
   // 从历史加载的块原始 status 可能还是 'pending'，但带 result 时 UI 会按 success 渲染出卡片
   // （见 ToolCallCard 的 showResult），读原始 status 会漏掉这些卡，「剩余 N 个」就永远不显示。
   const { effectiveStatus } = resolveToolCallStatus(toolCall);
-  if (effectiveStatus === 'confirming' || effectiveStatus === 'suggesting' || effectiveStatus === 'switching') return true;
+  if (effectiveStatus === 'confirming' || effectiveStatus === 'suggesting' || effectiveStatus === 'switching') {
+    /**
+     * 已点过(decided)的中间态块不再算「等用户点」。
+     * decideTool 提交前会把该块 status 归回 pending 并暂存 decisionData，而 resolveToolCallStatus 仍会
+     * 依 args.questions / result.books 推导出 suggesting / switching → 不排除 decided 的话，
+     * 刚点完的「建议选项」「切换账本」卡又被算作待操作，awaiting 永远 > 0 → 永不提交 /confirm
+     * （表现为：点「提交」按钮进入 loading 后无任何请求、界面无反应）。
+     */
+    return !toolCall.decided;
+  }
 
   const args = (toolCall.args ?? {}) as Record<string, unknown>;
   const data = (toolCall.result as { data?: { mode?: string; confirmed?: boolean } } | undefined)?.data;
