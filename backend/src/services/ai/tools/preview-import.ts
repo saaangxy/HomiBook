@@ -3,7 +3,14 @@ import { prisma } from '../../../app.js'
 import { assertIsMember, checkEnumList, checkEnums } from '../security.js'
 import { applyAccountMappings, applyCategoryMappings, matchAccountByName, inferAccount, type ParsedRow } from '../../import/shared.js'
 import { IMPORT_FILE_MISSING, loadImportFile, parseImportFile } from '../../import/attachment-file.js'
-import { ACCOUNT_TYPES, IMPORT_AI_SOURCES, RECORD_TYPES } from '@homibook/core'
+import { CATEGORY_DICT_GROUPS, findUnknownCategoryCodes, formatDictOptions } from '../../import/blocking.js'
+import { ACCOUNT_TYPES, IMPORT_AI_SOURCES, RECORD_TYPES, computeImportProgress } from '@homibook/core'
+import {
+  ACCOUNT_UNMATCHED_LIMIT,
+  CATEGORY_SAMPLE_LIMIT,
+  buildAccountUnmatchedRecords,
+  buildCategorySamples,
+} from '../../import/analyze-samples.js'
 
 export const previewImportTool: ToolDef = {
   name: 'preview_import',
@@ -72,6 +79,23 @@ export const previewImportTool: ToolDef = {
       categoryResolutions?: { sourceCategory: string; targetCategoryCode: string; recordType?: string; payerContains?: string; descriptionContains?: string }[]
     }
 
+    // 分类编码必须落在字典里:模型常把源分类名直接当编码填(它无从知道字典里的 code 长什么样)。
+    // 在 preview 阶段就回报错误让它重填,既不落脏规则,也不会拖到最后导入才 400。
+    if (categoryResolutions?.length) {
+      const dictItems = await prisma.dictionary.findMany({
+        where: { group: { in: [...CATEGORY_DICT_GROUPS] } },
+        select: { code: true, label: true },
+      })
+      const unknown = findUnknownCategoryCodes(categoryResolutions.map(c => c.targetCategoryCode), new Set(dictItems.map(d => d.code)))
+      if (unknown.length > 0) {
+        return {
+          success: false,
+          retryable: false,
+          error: `分类编码不存在：${unknown.join('、')}。targetCategoryCode 必须是系统字典里的编码，可选值：${formatDictOptions(dictItems)}`,
+        }
+      }
+    }
+
     const isAnalyzeMode = mode !== 'preview'
 
     // 账单文件 = 一个附件:按 attachmentId 取行、经 path 读盘(attachmentId 与磁盘名是两个 uuid)
@@ -129,6 +153,34 @@ export const previewImportTool: ToolDef = {
     if (isAnalyzeMode) {
       const unmatchedCategoryRecords = allNormalRecords.filter(r => r.categoryCode && !r.mappedCategoryCode)
 
+      // 账户待定行(含 toAccountName 未匹配)+ 分类样本:纯函数,见 services/import/analyze-samples.ts
+      const unmatchedAccountNames = new Set(unmatchedAccounts.map(ua => ua.csvName))
+      const accountUnmatchedRecords = buildAccountUnmatchedRecords(allNormalRecords, unmatchedAccountNames, ACCOUNT_UNMATCHED_LIMIT)
+      const categorySamples = buildCategorySamples(
+        allNormalRecords,
+        unmatchedCategories.map(uc => uc.sourceCategory),
+        CATEGORY_SAMPLE_LIMIT,
+      )
+
+      // 该来源下已存在的规则:AI 据此避免重复造规则(与 H 项的归一化口径一致)
+      const [existingRules, existingAccountRules] = await Promise.all([
+        prisma.importCategoryMapping.findMany({
+          where: { source },
+          select: { sourceCategory: true, targetCategoryCode: true, recordType: true, payerContains: true, descriptionContains: true },
+        }),
+        prisma.importAccountMapping.findMany({
+          where: { source },
+          select: { sourceAccountName: true, targetAccountName: true, payerContains: true, descriptionContains: true },
+        }),
+      ])
+
+      // 进度计数:与前端/预览卡同一口径(analyze 阶段尚无决议,故分类按"未映射"计入)
+      const counts = computeImportProgress({
+        unmatchedAccounts,
+        categoryResolutions: unmatchedCategories.map(uc => ({ sourceCategory: uc.sourceCategory, targetCode: '' })),
+        unrecognizedRecords: allUnrecognizedRecords,
+      })
+
       return {
         success: true,
         retryable: false,
@@ -141,6 +193,11 @@ export const previewImportTool: ToolDef = {
           unrecognizedRecords: allUnrecognizedRecords.map(r => ({
             amount: r.amount, accountName: r.accountName, payer: r.payer, remark: r.remark,
           })),
+          accountUnmatchedRecords,
+          categorySamples,
+          existingRules,
+          existingAccountRules,
+          counts,
           unmatchedAccounts,
           unmatchedCategories,
           allDictItems,

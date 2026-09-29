@@ -22,9 +22,15 @@ const PROMPT = `## 账单文件与导入流水数据
 1. 调用 preview_import({ attachmentId, mode: "analyze" }) 解析账单**附件**，获取未匹配数据
    - attachmentId 取自本轮**附件清单**里那个账单文件对应的「attachmentId: xxx」，不要填文件名，也不要臆造
    - **不要传 source**：服务端会按文件内容自动识别来源（支付宝/微信/京东）；只有自动识别失败时，才按用户说法显式指定
-2. 分析预览结果中的 unmatchedAccounts、unmatchedCategories 和 allDictItems：
-   - 为每个未匹配账户生成 accountResolutions：已有候选(candidates) → action="existing" + targetAccountId；无候选 → action="create" + 推断的 targetAccountName + accountType, 判断是同一账户但是名称有差异时合并它
-   - 为每个未匹配分类生成 categoryResolutions：根据源分类名和 allDictItems 中的分类编码/标签进行语义匹配，选择 targetCategoryCode；如有明显交易方特征可加 payerContains/descriptionContains 过滤
+2. 分析 analyze 返回的数据（字段用途见下），**必须**按下列顺序产出决议：
+   - 账户：unmatchedAccounts=账户待定清单；accountUnmatchedRecords=这些账户涉及的原始行(最多 200 行,含转账转入账户待定的行,务必结合两者一起判断)。为每个未匹配账户生成一条 accountResolutions：已有候选(candidates) → action="existing" + targetAccountId；无候选 → action="create" + 推断的 targetAccountName + accountType；判断是同一账户但名称有差异时合并它
+   - 分类：unmatchedCategories=未映射的源分类；categorySamples=每个源分类的 Top 5 样本(payer/remark/type/amount)，**必须基于样本判断,不得凭空命名**；existingRules/existingAccountRules=本来源已有规则，**能覆盖就不要新建**
+   - 分类决议的产出顺序（硬约束）：
+     ① 同一源分类的 categorySamples 里出现多个明显不同的交易方簇 → **按簇产出多条条件化规则**，每条必须给 payerContains 或 descriptionContains；
+     ② 样本同质（交易方/说明高度相似）→ 产出**一条无条件规则**（payerContains/descriptionContains 留空）；
+     ③ 仅当所有候选分类都无法语义对应时，才允许落到「其他支出/其他收入」，并**在该条规则后附一句说明理由**；
+     禁止为同一 sourceCategory 生成 2 条以上「无条件规则」（同 来源+源分类+空条件+空类型 只能有一条兜底）；
+     全账单落到「其他支出/其他收入」的比例应 ≤ 10%；若按样本判断会超出，先在回复里说明原因并请用户确认，不要硬塞
 3. 调用 preview_import({ attachmentId, mode: "preview", accountResolutions, categoryResolutions }) 展示交互卡片供用户确认(工具内会进行确认,不需要询问)
 4. 用户确认后，直接调用 confirm_import({ attachmentId, accountResolutions, categoryResolutions }) 确认导入,不要输出任何文本
 5. 导入完成后用简短文字总结导入记录数和创建账户数
@@ -35,6 +41,8 @@ const PROMPT = `## 账单文件与导入流水数据
 - 不要凭空描述导入预览的统计数字和记录内容——这些数据来自工具返回结果
 - accountResolutions 中 action="create" 时的 accountType 必须是以下之一：BANK_DEBIT、CREDIT_CARD、ALIPAY、WECHAT、INVESTMENT、CASH、RECHARGE_CARD、OTHER
 - categoryResolutions 的 targetCategoryCode 必须从 allDictItems 中选取，不可臆造编码
+- counts 是当前待处理进度(accountsTotal/accountsResolved/accountsDefault/categoriesTotal/categoriesResolved/unrecognizedTotal/willSkip/blocking)：用它准确描述"还有多少项待决"，不要凭空编造数字
+- accountsDefault / blocking 非 0 表示仍有未决项（默认建议未采纳 / 账户未解析），此时不要直接进入 preview 步骤
 - 如果步骤3中反复匹配失败（超过10%的记录仍无法匹配），告知用户具体哪些分类无法匹配并请求用户指导`
 
 export const importTransactionsSkill: SkillDef = {

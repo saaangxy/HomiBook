@@ -1,11 +1,11 @@
 // 图表原语库:点按交互浮层 / 过渡动画 / 折线·柱状·环形·雷达等自绘原语。
 // 从 stats 页面拆出 —— 页面只做 数据 → props 映射,绘制细节(含 Fabric SVG 动画 workaround)收敛于此。
-import { useState, useEffect, useMemo, type ReactNode } from 'react';
-import { View, Pressable, Dimensions, Platform } from 'react-native';
+import { useState, useEffect, type ReactNode } from 'react';
+import { View, Pressable, Dimensions, Animated as RNAnimated, Easing as RNEasing } from 'react-native';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import type { SharedValue } from 'react-native-reanimated';
-import { Animated as RNAnimated, Easing as RNEasing } from 'react-native';
+
 import { Svg, Line as SvgLine, Polyline, Rect, Circle, Text as SvgText, G, Path, Polygon } from 'react-native-svg';
 import { useTheme, alpha, haptics, useChartColors } from '@/theme';
 import { Text } from '@/components/ui/Text';

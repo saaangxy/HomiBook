@@ -1,4 +1,4 @@
-import {useEffect, useState} from 'react';
+import {useState} from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { CheckCircle2, ChevronDown, Copy, FileSpreadsheet, Search, Trash2, X } from 'lucide-react-native';
@@ -8,7 +8,7 @@ import { Text } from '@/components/ui/Text';
 import { useChatStore } from '@/stores/chat';
 import { accountLabel, isMultiOwnerAccounts } from '@/lib/account';
 import { MiniTable } from './MiniTable';
-import { ACCOUNT_TYPE_LABELS, RECORD_TYPE_LABELS, TYPE_TO_GROUP, IMPORT_SOURCE_LABELS, initAccountResolutions, unresolvedAccountCount, type AccountResolution, type ToolCallEntry } from '@homibook/core';
+import { ACCOUNT_TYPE_LABELS, RECORD_TYPE_LABELS, TYPE_TO_GROUP, adoptSuggestedAccountResolutions, computeImportProgress, initAccountResolutions, type AccountResolution, type ToolCallEntry } from '@homibook/core';
 
 // ── 导入预览交互卡(复刻 web ImportPreviewInteractive,UI 适配移动端)。从 AIAssistant.tsx 拆出 ──
 // 注意:旧版导入消息(v1)的解析统一走 core 的 parseImportMessage(AIAssistant 里在渲染前调用),
@@ -59,13 +59,6 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
   const [tab, setTab] = useState<'records' | 'accounts' | 'categories' | 'unrec'>('records');
   const [submitted, setSubmitted] = useState(false);
   const [confirmError, setConfirmError] = useState('');
-  // 账户解析:同一 csvName → 新建(名称+类型) 或 映射已有账户(类型与初始化来自 core)
-  const [accountRes, setAccountRes] = useState<Record<string, AccountResolution>>({});
-  // 分类解析规则(可复制成多条,带正则条件与保存开关)
-  interface CategoryResolution { id: string; sourceCategory: string; type: string; targetCode: string; save: boolean; payerContains: string; descriptionContains: string }
-  const [categoryRes, setCategoryRes] = useState<CategoryResolution[]>([]);
-  // 未识别记录的手动指定
-  const [unrecRes, setUnrecRes] = useState<Record<number, { type: string; accountId: string; categoryCode: string; toAccountId: string }>>({});
   // 底部选择弹窗(FormSheet)
   const [picker, setPicker] = useState<null | { kind: 'acct-existing' | 'acct-type' | 'cat-target' | 'unrec-type' | 'unrec-acct' | 'unrec-toacct' | 'unrec-cat'; key: string; type?: string }>(null);
   const [catSearch, setCatSearch] = useState('');
@@ -82,44 +75,52 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
   const isConfirmed = !!data.confirmed;
   const accountBookId: string = data.accountBookId || bookId;
 
-  // 初始化解析默认值(统一策略见 core initAccountResolutions:AI 决议 → 候选首位 → 新建建议 → AI 参数覆盖)
-  useEffect(() => {
-    setAccountRes(initAccountResolutions(unmatchedAccounts, aiArgs.accountResolutions));
-
-    setCategoryRes(
-      (data.unmatchedCategories ?? [])
-        .filter((uc: any) => uc.aiRecordType || uc.types?.[0])
-        .map((uc: any, i: number) => ({
-          id: String(i),
-          sourceCategory: uc.sourceCategory,
-          type: uc.aiRecordType || uc.types?.[0] || '',
-          targetCode: uc.suggestedCode || '',
-          save: true,
-          payerContains: uc.payerContains || '',
-          descriptionContains: uc.descriptionContains || '',
-        })),
-    );
-
+  // 解析默认值(统一策略见 core initAccountResolutions:AI 决议 → 候选首位 → 新建建议 → AI 参数覆盖)
+  // 惰性初始值:挂载时算一次,之后全部由用户交互覆盖(等价于原先"只跑一次"的 effect 初始化)
+  const [accountRes, setAccountRes] = useState<Record<string, AccountResolution>>(
+    () => initAccountResolutions(unmatchedAccounts, aiArgs.accountResolutions),
+  );
+  // 分类解析规则(可复制成多条,带正则条件与保存开关)
+  interface CategoryResolution { id: string; sourceCategory: string; type: string; targetCode: string; save: boolean; payerContains: string; descriptionContains: string }
+  const [categoryRes, setCategoryRes] = useState<CategoryResolution[]>(() =>
+    (data.unmatchedCategories ?? [])
+      .filter((uc: any) => uc.aiRecordType || uc.types?.[0])
+      .map((uc: any, i: number) => ({
+        id: String(i),
+        sourceCategory: uc.sourceCategory,
+        type: uc.aiRecordType || uc.types?.[0] || '',
+        targetCode: uc.suggestedCode || '',
+        save: true,
+        payerContains: uc.payerContains || '',
+        descriptionContains: uc.descriptionContains || '',
+      })),
+  );
+  // 未识别记录的手动指定
+  const [unrecRes, setUnrecRes] = useState<Record<number, { type: string; accountId: string; categoryCode: string; toAccountId: string }>>(() => {
     const unres: Record<number, { type: string; accountId: string; categoryCode: string; toAccountId: string }> = {};
     for (const r of unrec) {
       unres[r.rowIndex] = { type: '', accountId: r.accountId || accounts[0]?.id || '', toAccountId: r.toAccountId || '', categoryCode: r.mappedCategoryCode || r.categoryCode || '' };
     }
-    setUnrecRes(unres);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return unres;
+  });
 
-  // 后端确认成功(data.confirmed=true)后复位提交标记,按钮切换为「已确认」
-  useEffect(() => {
-    if (isConfirmed) setSubmitted(false);
-  }, [isConfirmed]);
+  // 未识别行「同意跳过」需用户显式勾选(门禁见 core canProceedImport)
+  const [agreeSkipUnrecognized, setAgreeSkipUnrecognized] = useState(false);
 
-  const unresolvedAcctCount = unresolvedAccountCount(unmatchedAccounts, accountRes);
-  const unresolvedCatCount = categoryRes.filter((cr) => !cr.targetCode).length;
-  const unresolvedUnrecCount = unrec.filter((r) => {
-    const res = unrecRes[r.rowIndex];
-    // 转账未选转入账户同样算「待处理」(与确认时跳过的口径一致)
-    return !res?.type || !res?.accountId || (res.type === 'TRANSFER' && !res.toAccountId);
-  }).length;
+  // 后端确认成功后按钮切换为「已确认」;服务端裁决拒绝(工具结果带 error)时视为未提交可重试
+  // 均为派生而非 effect 复位(避免在 effect 里 setState)
+  const toolError = (data as { error?: string } | undefined)?.error;
+  const showSubmitted = submitted && !isConfirmed && !toolError;
+
+  // 导入进度(待处理/已映射/将跳过;口径统一在 core computeImportProgress,与手动向导/web AI 卡一致)
+  const progress = computeImportProgress({
+    unmatchedAccounts,
+    accountResolutions: accountRes,
+    categoryResolutions: categoryRes.map((cr) => ({ sourceCategory: cr.sourceCategory, targetCode: cr.targetCode })),
+    unrecognizedRecords: unrec,
+    unrecognizedResolutions: unrecRes,
+  });
+  // 放行判定在服务端:点确认后由 confirm_import 裁决,未决原因经 confirmError 回显
 
   const allRecords = [...records, ...unrec];
   const tabs = [
@@ -270,10 +271,10 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
       {/* 统计摘要 */}
       {stats && (
         <View style={{ flexDirection: 'row', gap: 4 }}>
-          {[['总行数', String(stats.totalLines ?? '-')], ['已解析', String(stats.parsedRows ?? '-')], ['跳过', String(stats.skippedRows ?? '-')], ['待处理', String(unresolvedAcctCount + unresolvedCatCount + unresolvedUnrecCount)]].map(([label, val], i) => (
+          {([['待处理', String(progress.pending), '#ef4444'], ['已映射', String(progress.mapped), '#22c55e'], ['将跳过', String(progress.willSkip), '#f59e0b']] as const).map(([label, val, color]) => (
             <View key={label} style={{ flex: 1, backgroundColor: colors.card, borderRadius: 6, paddingHorizontal: 4, paddingVertical: 3, alignItems: 'center' }}>
               <Text style={{ fontSize: 9.5, color: colors.mutedForeground }}>{label}</Text>
-              <Text style={{ fontSize: 11, fontWeight: '600', color: i === 1 ? '#22c55e' : i === 2 ? '#f59e0b' : i === 3 ? '#ef4444' : colors.foreground }}>{val}</Text>
+              <Text style={{ fontSize: 11, fontWeight: '600', color }}>{val}</Text>
             </View>
           ))}
         </View>
@@ -319,13 +320,26 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
             <Text style={{ fontSize: 11.5, color: colors.mutedForeground }}>全部账户已匹配</Text>
           ) : (
             <>
-              <Text style={{ fontSize: 10.5, color: colors.mutedForeground }}>同一银行账户可能有多个名称变体，设为相同名称即可合并</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={{ flex: 1, fontSize: 10.5, color: colors.mutedForeground }}>同一银行账户可能有多个名称变体，设为相同名称即可合并</Text>
+                <Pressable
+                  onPress={() => setAccountRes((p) => adoptSuggestedAccountResolutions(unmatchedAccounts, p))}
+                  style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}
+                >
+                  <Text style={{ fontSize: 10.5 }}>全部采纳建议</Text>
+                </Pressable>
+              </View>
               {unmatchedAccounts.map((ua) => {
                 const res = accountRes[ua.csvName];
                 return (
                   <View key={ua.csvName} style={{ backgroundColor: colors.muted, borderRadius: 10, padding: 8, gap: 6 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                       <Text style={{ flex: 1, fontSize: 11.5, fontWeight: '600' }} numberOfLines={1}>{ua.csvName}</Text>
+                      {!res ? (
+                        <Text style={{ fontSize: 9.5, color: '#ef4444' }}>待选择</Text>
+                      ) : res.isDefault ? (
+                        <Text style={{ fontSize: 9.5, color: colors.mutedForeground }}>建议</Text>
+                      ) : null}
                       <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, backgroundColor: colors.card }}>
                         <Text style={{ fontSize: 9.5, color: colors.mutedForeground }}>{res?.action === 'create' ? '新建' : '已有'}</Text>
                       </View>
@@ -421,6 +435,28 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
       {/* 未识别记录 */}
       {tab === 'unrec' && (
         <View style={{ gap: 8 }}>
+          {progress.willSkip > 0 ? (
+            <Pressable
+              onPress={() => setAgreeSkipUnrecognized((v) => !v)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
+            >
+              <View
+                style={{
+                  width: 15,
+                  height: 15,
+                  borderRadius: 4,
+                  borderWidth: 1,
+                  borderColor: agreeSkipUnrecognized ? colors.primary : colors.border,
+                  backgroundColor: agreeSkipUnrecognized ? colors.primary : 'transparent',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                {agreeSkipUnrecognized ? <CheckCircle2 size={10} color={colors.primaryForeground} /> : null}
+              </View>
+              <Text style={{ fontSize: 10.5 }}>同意跳过未设置的 {progress.willSkip} 条记录</Text>
+            </Pressable>
+          ) : null}
           {unrec.length === 0 ? (
             <Text style={{ fontSize: 11.5, color: colors.mutedForeground }}>无未识别记录</Text>
           ) : (
@@ -499,17 +535,17 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
         <View style={{ flexDirection: 'row', gap: 8 }}>
           <Pressable
             onPress={handleConfirm}
-            disabled={submitted}
-            style={{ flex: 1.6, borderRadius: 10, paddingVertical: 9, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6, backgroundColor: colors.primary, opacity: submitted ? 0.6 : 1 }}
+            disabled={showSubmitted}
+            style={{ flex: 1.6, borderRadius: 10, paddingVertical: 9, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6, backgroundColor: colors.primary, opacity: showSubmitted ? 0.6 : 1 }}
           >
-            {submitted && <ActivityIndicator size="small" color={colors.primaryForeground} />}
-            <Text style={{ fontSize: 12.5, fontWeight: '600', color: colors.primaryForeground }}>{submitted ? '提交中...' : '确认无误，继续导入'}</Text>
+            {showSubmitted && <ActivityIndicator size="small" color={colors.primaryForeground} />}
+            <Text style={{ fontSize: 12.5, fontWeight: '600', color: colors.primaryForeground }}>{showSubmitted ? '提交中...' : '确认无误，继续导入'}</Text>
           </Pressable>
           {/* 取消:与确认同为这张卡的决定(web ImportPreviewInteractive 同款) */}
           <Pressable
             onPress={handleCancel}
-            disabled={submitted}
-            style={{ flex: 1, borderRadius: 10, paddingVertical: 9, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, opacity: submitted ? 0.6 : 1 }}
+            disabled={showSubmitted}
+            style={{ flex: 1, borderRadius: 10, paddingVertical: 9, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, opacity: showSubmitted ? 0.6 : 1 }}
           >
             <Text style={{ fontSize: 12.5, color: colors.foreground }}>取消</Text>
           </Pressable>

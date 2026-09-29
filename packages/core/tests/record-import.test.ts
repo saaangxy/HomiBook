@@ -1,13 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import {
+  adoptSuggestedAccountResolutions,
   autoDetectColumns,
   autoDetectTypeMapping,
+  canProceedImport,
+  computeImportProgress,
   detectTypeValues,
   initAccountResolutions,
   isColumnMappingValid,
+  isUnrecognizedResolutionComplete,
   matchAccountInPool,
   matchAccountInPoolDetailed,
   mergeAccountCreations,
+  normalizeAccountName,
+  pickAccountMappingCandidates,
   unresolvedAccountCount,
   RECORD_TYPE_LABELS,
   IMPORT_SOURCE_LABELS,
@@ -198,33 +204,30 @@ describe('initAccountResolutions', () => {
     const ua: UnmatchedAccountInput[] = [
       { csvName: '招行', suggestedName: '招商银行', suggestedType: 'BANK_DEBIT', aiResolution: { action: 'existing', targetAccountId: 'a1' } },
     ];
-    expect(initAccountResolutions(ua)).toEqual({ 招行: { action: 'existing', accountId: 'a1' } });
+    expect(initAccountResolutions(ua)).toEqual({ 招行: { action: 'existing', accountId: 'a1', source: 'ai' } });
   });
 
   it('AI 决议 create → 新建名称+类型', () => {
     const ua: UnmatchedAccountInput[] = [
       { csvName: '零钱', suggestedName: '零钱', suggestedType: 'OTHER', aiResolution: { action: 'create', targetAccountName: '微信零钱', accountType: 'WECHAT' } },
     ];
-    expect(initAccountResolutions(ua)).toEqual({ 零钱: { action: 'create', name: '微信零钱', type: 'WECHAT' } });
+    expect(initAccountResolutions(ua)).toEqual({ 零钱: { action: 'create', name: '微信零钱', type: 'WECHAT', source: 'ai' } });
   });
 
-  it('AI 决议字段残缺时回退候选首位', () => {
+  it('AI 决议字段残缺时回退候选首位,并标记为默认建议', () => {
     const ua: UnmatchedAccountInput[] = [
       { csvName: 'x', suggestedName: 'x', suggestedType: 'OTHER', candidates: [{ id: 'c1' }, { id: 'c2' }], aiResolution: { action: 'existing' } },
     ];
-    expect(initAccountResolutions(ua)).toEqual({ x: { action: 'existing', accountId: 'c1' } });
+    expect(initAccountResolutions(ua)).toEqual({
+      x: { action: 'existing', accountId: 'c1', isDefault: true, source: 'suggested-candidate' },
+    });
   });
 
-  it('无 AI 决议无候选 → 新建建议', () => {
+  it('无 AI 决议无候选 → 不写决议(不再自动新建,留待用户决策)', () => {
     const ua: UnmatchedAccountInput[] = [
       { csvName: 'x', suggestedName: '新账户', suggestedType: 'CASH' },
     ];
-    expect(initAccountResolutions(ua)).toEqual({ x: { action: 'create', name: '新账户', type: 'CASH' } });
-  });
-
-  it('建议类型为空时兜底 OTHER', () => {
-    const ua: UnmatchedAccountInput[] = [{ csvName: 'x', suggestedName: 'y', suggestedType: '' }];
-    expect(initAccountResolutions(ua)).toEqual({ x: { action: 'create', name: 'y', type: 'OTHER' } });
+    expect(initAccountResolutions(ua)).toEqual({});
   });
 
   it('aiArgsResolutions 覆盖默认值并可新增条目', () => {
@@ -235,31 +238,145 @@ describe('initAccountResolutions', () => {
       { action: 'create', sourceAccountName: '招行', targetAccountName: '招商银行卡', accountType: 'BANK_DEBIT' },
       { action: 'existing', sourceAccountName: '新来源', targetAccountId: 'a9' },
     ]);
-    expect(res['招行']).toEqual({ action: 'create', name: '招商银行卡', type: 'BANK_DEBIT' });
-    expect(res['新来源']).toEqual({ action: 'existing', accountId: 'a9' });
+    expect(res['招行']).toEqual({ action: 'create', name: '招商银行卡', type: 'BANK_DEBIT', source: 'ai' });
+    expect(res['新来源']).toEqual({ action: 'existing', accountId: 'a9', source: 'ai' });
   });
 
-  it('aiArgsResolutions 字段残缺时不覆盖', () => {
+  it('aiArgsResolutions 字段残缺时不产生决议', () => {
     const ua: UnmatchedAccountInput[] = [
       { csvName: 'x', suggestedName: '默认', suggestedType: 'OTHER' },
     ];
     const res = initAccountResolutions(ua, [{ action: 'existing', sourceAccountName: 'x' }]);
-    expect(res['x']).toEqual({ action: 'create', name: '默认', type: 'OTHER' });
+    expect(res['x']).toBeUndefined();
+  });
+});
+
+describe('adoptSuggestedAccountResolutions', () => {
+  it('有候选 → 采纳候选首位并去掉默认标记', () => {
+    const ua: UnmatchedAccountInput[] = [
+      { csvName: 'a', suggestedName: 'A', suggestedType: 'CASH', candidates: [{ id: 'c1' }, { id: 'c2' }] },
+    ];
+    const res = adoptSuggestedAccountResolutions(ua, {
+      a: { action: 'existing', accountId: 'c1', isDefault: true, source: 'suggested-candidate' },
+    });
+    expect(res['a']).toEqual({ action: 'existing', accountId: 'c1', source: 'suggested-candidate' });
+  });
+
+  it('无候选 → 采纳建议新建(类型为空兜底 OTHER)', () => {
+    const ua: UnmatchedAccountInput[] = [{ csvName: 'b', suggestedName: '新账户', suggestedType: '' }];
+    expect(adoptSuggestedAccountResolutions(ua, {})['b']).toEqual({
+      action: 'create', name: '新账户', type: 'OTHER', source: 'suggested-candidate',
+    });
+  });
+
+  it('用户已明确选择的项不被覆盖', () => {
+    const ua: UnmatchedAccountInput[] = [
+      { csvName: 'c', suggestedName: 'C', suggestedType: 'CASH', candidates: [{ id: 'c1' }] },
+    ];
+    const res = adoptSuggestedAccountResolutions(ua, { c: { action: 'create', name: '我自己建的', type: 'CASH' } });
+    expect(res['c']).toEqual({ action: 'create', name: '我自己建的', type: 'CASH' });
   });
 });
 
 describe('unresolvedAccountCount', () => {
-  it('统计 existing 缺 accountId / create 缺 name 的数量', () => {
+  it('统计缺键、existing 缺 accountId、create 缺 name 或 type 的数量', () => {
     const unmatched = [{ csvName: 'a' }, { csvName: 'b' }, { csvName: 'c' }, { csvName: 'd' }, { csvName: 'e' }];
     // 故意构造缺字段的非法决议测统计容错,超出 AccountResolution 合法形状,需断言绕过
     const resolutions: Record<string, AccountResolution> = {
       a: { action: 'existing' } as AccountResolution,          // 缺 accountId → 未解决
       b: { action: 'existing', accountId: 'x' },
-      c: { action: 'create', name: 'n' } as AccountResolution,
+      c: { action: 'create', name: 'n' } as AccountResolution, // 缺 type → 未解决
       d: { action: 'create' } as AccountResolution,            // 缺 name → 未解决
-      // e 无决议 → 不计入(视为未出现在 unmatched 决议中)
+      // e 无决议(缺键) → 同样算未解决
     };
-    expect(unresolvedAccountCount(unmatched, resolutions)).toBe(2);
+    expect(unresolvedAccountCount(unmatched, resolutions)).toBe(4);
+  });
+});
+
+describe('isUnrecognizedResolutionComplete', () => {
+  it('需类型 + 账户;转账还需转入账户', () => {
+    expect(isUnrecognizedResolutionComplete(undefined)).toBe(false);
+    expect(isUnrecognizedResolutionComplete({ type: '', accountId: 'a' })).toBe(false);
+    expect(isUnrecognizedResolutionComplete({ type: 'EXPENSE' })).toBe(false);
+    expect(isUnrecognizedResolutionComplete({ type: 'EXPENSE', accountId: 'a' })).toBe(true);
+    expect(isUnrecognizedResolutionComplete({ type: 'TRANSFER', accountId: 'a' })).toBe(false);
+    expect(isUnrecognizedResolutionComplete({ type: 'TRANSFER', accountId: 'a', toAccountId: 'b' })).toBe(true);
+  });
+});
+
+describe('computeImportProgress', () => {
+  it('统计 pending / mapped / willSkip(分类按 sourceCategory 聚合,多条需全部选好)', () => {
+    const counts = computeImportProgress({
+      unmatchedAccounts: [{ csvName: '招行' }, { csvName: '支付宝' }],
+      accountResolutions: {
+        招行: { action: 'existing', accountId: 'acc-1' },
+        // 支付宝 缺键 → 未解析
+      },
+      categoryResolutions: [
+        { sourceCategory: '餐饮美食', targetCode: 'food' },
+        { sourceCategory: '服饰装扮', targetCode: '' },
+        // 同一 sourceCategory 按类型拆成两条,其中一条没选 → 该分类未映射
+        { sourceCategory: '服饰装扮', targetCode: 'cloth' },
+      ],
+      unrecognizedRecords: [{ rowIndex: 1 }, { rowIndex: 2 }, { rowIndex: 3 }],
+      unrecognizedResolutions: {
+        1: { type: 'EXPENSE', accountId: 'acc-1' },
+        2: { type: 'TRANSFER', accountId: 'acc-1' },   // 转账缺转入 → 未解析
+        // 3 无决议 → 未解析
+      },
+    });
+
+    expect(counts.accountsTotal).toBe(2);
+    expect(counts.accountsResolved).toBe(1);
+    expect(counts.accountsDefault).toBe(0);
+    expect(counts.categoriesTotal).toBe(2);
+    expect(counts.categoriesResolved).toBe(1);
+    expect(counts.unrecognizedTotal).toBe(3);
+    expect(counts.unrecognizedResolved).toBe(1);
+    expect(counts.pending).toBe(1 + 1 + 2);
+    expect(counts.mapped).toBe(2);
+    expect(counts.willSkip).toBe(2);
+    expect(counts.blocking).toBe(1);
+  });
+
+  it('无入参决议时全部计入待处理', () => {
+    const counts = computeImportProgress({
+      unmatchedAccounts: [{ csvName: 'a' }],
+      unrecognizedRecords: [],
+    });
+    expect(counts).toMatchObject({ accountsResolved: 0, categoriesTotal: 0, pending: 1, mapped: 0, willSkip: 0, blocking: 1 });
+  });
+
+  it('默认建议计入 accountsDefault,不计入 accountsResolved / pending', () => {
+    const counts = computeImportProgress({
+      unmatchedAccounts: [{ csvName: 'a' }, { csvName: 'b' }],
+      accountResolutions: {
+        a: { action: 'existing', accountId: 'x', isDefault: true, source: 'suggested-candidate' },
+        b: { action: 'create', name: 'B', type: 'CASH' },
+      },
+      unrecognizedRecords: [],
+    });
+    expect(counts).toMatchObject({ accountsTotal: 2, accountsResolved: 1, accountsDefault: 1, pending: 0, mapped: 1, blocking: 0 });
+    expect(canProceedImport(counts)).toBe(false);
+  });
+
+  it('canProceedImport:待处理清空、默认值已采纳才放行', () => {
+    const counts = computeImportProgress({
+      unmatchedAccounts: [{ csvName: 'a' }],
+      accountResolutions: { a: { action: 'existing', accountId: 'x' } },
+      unrecognizedRecords: [],
+    });
+    expect(canProceedImport(counts)).toBe(true);
+  });
+
+  it('canProceedImport:有未识别行将跳过时需显式同意', () => {
+    const counts = computeImportProgress({
+      unmatchedAccounts: [],
+      unrecognizedRecords: [{ rowIndex: 1 }],
+    });
+    expect(counts.willSkip).toBe(1);
+    expect(canProceedImport(counts)).toBe(false);
+    expect(canProceedImport(counts, { agreeSkipUnrecognized: true })).toBe(true);
   });
 });
 
@@ -304,5 +421,132 @@ describe('共享标签常量', () => {
     expect(TYPE_TO_GROUP['EXPENSE']).toBe('transaction_category_expense');
     expect(TYPE_TO_GROUP['INCOME']).toBe('transaction_category_income');
     expect(TYPE_TO_GROUP['TRANSFER']).toBe('transaction_category_transfer');
+  });
+});
+
+describe('normalizeAccountName', () => {
+  it('剥离 & 拼接的促销/权益尾巴', () => {
+    expect(normalizeAccountName('招商银行储蓄卡(9467)&现金抵价券')).toBe('招商银行储蓄卡(9467)');
+    expect(normalizeAccountName('网商银行储蓄卡(7484)&网商银行福利金抵扣')).toBe('网商银行储蓄卡(7484)');
+    expect(normalizeAccountName('工商银行储蓄卡(7193)&工商银行立减金')).toBe('工商银行储蓄卡(7193)');
+    expect(normalizeAccountName('招商银行储蓄卡(9467)&焕新折扣')).toBe('招商银行储蓄卡(9467)');
+    expect(normalizeAccountName('网商银行储蓄卡(7484)&网商银行支付享优惠')).toBe('网商银行储蓄卡(7484)');
+  });
+
+  it('去掉银行名冗余的「中国」前缀(「中国银行」本身除外)', () => {
+    expect(normalizeAccountName('中国建设银行储蓄卡(7483)')).toBe('建设银行储蓄卡(7483)');
+    expect(normalizeAccountName('中国工商银行')).toBe('工商银行');
+    expect(normalizeAccountName('中国银行')).toBe('中国银行');
+    expect(normalizeAccountName('中国银行储蓄卡(1111)')).toBe('中国银行储蓄卡(1111)');
+  });
+
+  it('不含促销词的 & 段保留,空白压缩,空值返回空串', () => {
+    expect(normalizeAccountName('夫妻联名&共同账户')).toBe('夫妻联名&共同账户');
+    expect(normalizeAccountName('  支付宝   余额  ')).toBe('支付宝 余额');
+    expect(normalizeAccountName('')).toBe('');
+  });
+});
+
+describe('matchAccountInPoolDetailed 归一名兜底', () => {
+  it('「中国建设银行储蓄卡(7483)」命中已有「建设银行储蓄卡(7483)」', () => {
+    const pool: PoolAccount[] = [{ id: 'b1', name: '建设银行储蓄卡(7483)' }];
+    expect(matchAccountInPoolDetailed('中国建设银行储蓄卡(7483)', pool)).toEqual({
+      matched: true,
+      id: 'b1',
+      name: '建设银行储蓄卡(7483)',
+    });
+  });
+
+  it('带促销尾巴的变体命中已有干净账户名', () => {
+    const pool: PoolAccount[] = [{ id: 'b2', name: '网商银行储蓄卡(7484)' }];
+    expect(matchAccountInPoolDetailed('网商银行储蓄卡(7484)&网商银行福利金抵扣', pool)).toMatchObject({
+      matched: true,
+      id: 'b2',
+    });
+  });
+
+  it('原样精确命中优先于归一匹配', () => {
+    const pool: PoolAccount[] = [
+      { id: 'x1', name: '中国建设银行储蓄卡(7483)' },
+      { id: 'x2', name: '建设银行储蓄卡(7483)' },
+    ];
+    expect(matchAccountInPoolDetailed('中国建设银行储蓄卡(7483)', pool)).toMatchObject({ matched: true, id: 'x1' });
+  });
+
+  it('归一后仍无命中 → 不匹配', () => {
+    expect(matchAccountInPoolDetailed('中国银行储蓄卡(1111)&立减金', [{ id: 'z1', name: '支付宝' }])).toEqual({
+      matched: false,
+      ambiguous: false,
+    });
+  });
+});
+
+describe('isAccountResolutionComplete(create 需名称+类型)', () => {
+  it('create 缺类型视为未完成,门禁不放行', () => {
+    const counts = computeImportProgress({
+      unmatchedAccounts: [{ csvName: 'a' }],
+      accountResolutions: { a: { action: 'create', name: 'A', type: '' } },
+      unrecognizedRecords: [],
+    });
+    expect(counts.accountsResolved).toBe(0);
+    expect(counts.blocking).toBe(1);
+    expect(canProceedImport(counts)).toBe(false);
+  });
+
+  it('create 名称+类型齐全才放行', () => {
+    const counts = computeImportProgress({
+      unmatchedAccounts: [{ csvName: 'a' }],
+      accountResolutions: { a: { action: 'create', name: 'A', type: 'CASH' } },
+      unrecognizedRecords: [],
+    });
+    expect(counts.accountsResolved).toBe(1);
+    expect(canProceedImport(counts)).toBe(true);
+  });
+});
+
+describe('normalizeAccountName(手机银行促销尾巴)', () => {
+  it('覆盖常见尾巴:立减 / 券 / 补贴 / 红包', () => {
+    // 「立减」此前只收了「立减金」,导致「…&建设银行立减」漏网
+    expect(normalizeAccountName('建设银行储蓄卡(7483)&建设银行立减')).toBe('建设银行储蓄卡(7483)');
+    expect(normalizeAccountName('招商银行储蓄卡(9467)&政府补贴')).toBe('招商银行储蓄卡(9467)');
+    expect(normalizeAccountName('工商银行储蓄卡(7193)&随机立减')).toBe('工商银行储蓄卡(7193)');
+    expect(normalizeAccountName('支付宝&消费券')).toBe('支付宝');
+    expect(normalizeAccountName('微信零钱&红包')).toBe('微信零钱');
+    expect(normalizeAccountName('工商银行储蓄卡(7193)&工商银行立减金')).toBe('工商银行储蓄卡(7193)');
+  });
+
+  it('第一段不参与促销判定(账户名本身含这些字不受影响)', () => {
+    expect(normalizeAccountName('福利彩票专用卡')).toBe('福利彩票专用卡');
+    expect(normalizeAccountName('微信零钱')).toBe('微信零钱');
+  });
+});
+
+describe('pickAccountMappingCandidates', () => {
+  const m = (sourceAccountName: string, target: string) => ({ sourceAccountName, target });
+
+  it('原始名精确优先', () => {
+    const byName = new Map([['招商银行储蓄卡(9467)', [m('招商银行储蓄卡(9467)', 'A')]]]);
+    const byNorm = new Map([['招商银行储蓄卡(9467)', [m('招商银行储蓄卡(9467)&现金抵价券', 'B')]]]);
+    expect(pickAccountMappingCandidates('招商银行储蓄卡(9467)', byName, byNorm)?.[0].target).toBe('A');
+  });
+
+  it('精确分组为空时退回归一后相等的规则(换个促销尾巴仍能命中)', () => {
+    const byName = new Map([['招商银行储蓄卡(9467)&现金抵价券', [m('招商银行储蓄卡(9467)&现金抵价券', 'A')]]]);
+    const byNorm = new Map([['招商银行储蓄卡(9467)', [m('招商银行储蓄卡(9467)&现金抵价券', 'A')]]]);
+    expect(pickAccountMappingCandidates('招商银行储蓄卡(9467)&政府补贴', byName, byNorm)?.[0].target).toBe('A');
+  });
+
+  it('「中国」前缀差异也能命中', () => {
+    const byNorm = new Map([['建设银行储蓄卡(7483)', [m('中国建设银行储蓄卡(7483)', 'A')]]]);
+    expect(pickAccountMappingCandidates('建设银行储蓄卡(7483)', new Map(), byNorm)?.[0].target).toBe('A');
+  });
+
+  it('不同卡号不互相命中', () => {
+    const byNorm = new Map([['招商银行储蓄卡(9467)', [m('招商银行储蓄卡(9467)&立减', 'A')]]]);
+    expect(pickAccountMappingCandidates('招商银行储蓄卡(9468)', new Map(), byNorm)).toBeUndefined();
+  });
+
+  it('两处都没有 → undefined', () => {
+    expect(pickAccountMappingCandidates('没有这条', new Map(), new Map())).toBeUndefined();
   });
 });

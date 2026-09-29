@@ -63,6 +63,45 @@ export function CategoryMappingSettings() {
   const [mappingFormError, setMappingFormError] = useState('')
   const [mappingSubmitting, setMappingSubmitting] = useState(false)
   const [mappingDeleteTarget, setMappingDeleteTarget] = useState<CategoryMapping | null>(null)
+  // 规则体检(H 项):一键合并等价重复规则(归一化后同键 → 保留最早一条)
+  const [mergingDup, setMergingDup] = useState(false)
+  const handleMergeDuplicates = async () => {
+    setMergingDup(true)
+    try {
+      const res = await importExportApi.getDuplicateMappings('category')
+      const groups = res.groups ?? []
+      if (groups.length === 0) {
+        toast.info('没有发现等价重复规则')
+        return
+      }
+      let merged = 0
+      for (const g of groups) {
+        const r = await importExportApi.mergeMappings({ kind: 'category', ids: g.ids, strategy: 'keep-first' })
+        merged += r.merged
+      }
+      toast.success(`已合并 ${groups.length} 组，删除 ${merged} 条重复规则`)
+      await loadMappings(mappingSource)
+    } catch (e) {
+      toast.error(errorMessage(e))
+    } finally {
+      setMergingDup(false)
+    }
+  }
+
+  // 规则体检:清理目标分类编码已不在字典中的规则(多为早期 AI 把源分类名当编码写进来)
+  const [cleaningInvalid, setCleaningInvalid] = useState(false)
+  const handleCleanupInvalid = async () => {
+    setCleaningInvalid(true)
+    try {
+      const res = await importExportApi.cleanupInvalidCategoryMappings()
+      toast.success(res.removed > 0 ? `已清理 ${res.removed} 条无效规则` : '没有需要清理的规则')
+      await loadMappings(mappingSource)
+    } catch (e) {
+      toast.error(errorMessage(e))
+    } finally {
+      setCleaningInvalid(false)
+    }
+  }
 
   // 加载分类映射
   const loadMappings = useCallback(async (source: string) => {
@@ -165,6 +204,25 @@ export function CategoryMappingSettings() {
             </Select>
             <Button
               size="sm"
+              variant="outline"
+              className="h-8 text-xs"
+              disabled={mergingDup}
+              onClick={handleMergeDuplicates}
+            >
+              {mergingDup ? <Spinner /> : '合并重复'}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs text-[#ef4444] hover:text-[#ef4444]"
+              disabled={cleaningInvalid}
+              onClick={handleCleanupInvalid}
+              title="删除目标分类编码已不在字典中的规则"
+            >
+              {cleaningInvalid ? <Spinner /> : '清理无效规则'}
+            </Button>
+            <Button
+              size="sm"
               onClick={() => { setMappingEditTarget(null); setMappingNewSourceCategory(''); setMappingNewPayerContains(''); setMappingNewDescriptionContains(''); setMappingNewRecordType('__all__'); setMappingNewTargetCode(''); setMappingFormError(''); setMappingAddOpen(true) }}
               className="bg-primary hover:bg-primary/90 text-primary-foreground h-8 text-xs"
             >
@@ -205,8 +263,9 @@ export function CategoryMappingSettings() {
                       <TableCell className="text-xs text-muted-foreground py-2.5">
                         {m.recordType === 'INCOME' ? '收入' : m.recordType === 'EXPENSE' ? '支出' : m.recordType === 'TRANSFER' ? '转账' : '通用'}
                       </TableCell>
-                      <TableCell className="text-xs font-mono text-muted-foreground py-2.5">
+                      <TableCell className={`text-xs font-mono py-2.5 ${m.invalidCode ? 'text-[#ef4444]' : 'text-muted-foreground'}`}>
                         {m.targetCategoryCode}
+                        {m.invalidCode && <span className="ml-1.5 font-sans">（字典中不存在）</span>}
                       </TableCell>
                       <TableCell className="text-right py-2.5">
                         <div className="flex items-center justify-end gap-0.5">

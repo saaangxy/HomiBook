@@ -21,7 +21,7 @@ import { showToast } from '@/components/chrome/Toast';
 import { FormSheet } from '@/components/chrome/FormSheet';
 import { exportRecordsCsv, type ExportMode } from '@/services/import';
 import { formatMoneyShort } from '@/lib/format';
-import type { RecordItem, RecordType } from '@/types';
+import type { RecordItem } from '@/types';
 import { RECORD_TYPE_LABELS as TYPE_LABEL } from '@homibook/core';
 /** 列表分页大小:一次只加载 20 条,滚动到底自动加载下一页 */
 const PAGE_SIZE = 20;

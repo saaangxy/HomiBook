@@ -6,6 +6,8 @@ import { Text } from '@/components/ui/Text';
 import { FormSheet } from '@/components/chrome/FormSheet';
 import { ChipSelect } from '@/components/ui/ChipSelect';
 import { notifyPageRefresh } from '@/components/chrome/chrome';
+import { showToast } from '@/components/chrome/Toast';
+import { importExportApi } from '@/services/settings';
 import { useRecords } from '@/stores/records';
 import { useAuth } from '@/stores/auth';
 import { accountLabel } from '@/lib/account';
@@ -24,8 +26,10 @@ import {
   IMPORT_SOURCE_DEFS,
   IMPORT_TYPE_LABELS,
   TYPE_TO_GROUP,
+  adoptSuggestedAccountResolutions,
   autoDetectColumns,
   autoDetectTypeMapping,
+  computeImportProgress,
   detectTypeValues,
   initAccountResolutions,
   isColumnMappingValid,
@@ -38,6 +42,10 @@ import {
 
 // 类型语义色随主题(semanticTypeColor);映射未命中等警示色保持固定琥珀
 // 收支类型 → 字典组映射(TYPE_TO_GROUP)统一来自 @homibook/core
+/** 列表「分页渲染」步长:一次渲染太多行会让移动端列表卡顿(点「加载更多」逐批追加) */
+const PREVIEW_PAGE_SIZE = 30;
+const CONFIRM_PAGE_SIZE = 50;
+
 const GROUP_LABELS: Record<string, string> = {
   transaction_category_expense: '支出分类',
   transaction_category_income: '收入分类',
@@ -160,16 +168,19 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
 
   // 预览结果
   const [preview, setPreview] = useState<ImportPreviewResult | null>(null);
-  const [showAllRecords, setShowAllRecords] = useState(false);
+  // 分页渲染:可见条数(点「加载更多」逐批追加,避免一次渲染几百行导致卡顿)
+  const [prevVisible, setPrevVisible] = useState(PREVIEW_PAGE_SIZE);
   // 预览列表筛选(参考 web:类型/原始分类/账户)
   const [prevFilterType, setPrevFilterType] = useState('');
   const [prevFilterCategory, setPrevFilterCategory] = useState('');
   const [prevFilterAccount, setPrevFilterAccount] = useState('');
-  const [confirmShowAll, setConfirmShowAll] = useState(false);
+  const [confirmVisible, setConfirmVisible] = useState(CONFIRM_PAGE_SIZE);
   const [accountRes, setAccountRes] = useState<Record<string, AccountResolution>>({});
   const [categoryRes, setCategoryRes] = useState<Record<string, CategoryResolution>>({});
   // toAccountId(转入账户)仅在类型为「转账」时使用
   const [unrecognizedRes, setUnrecognizedRes] = useState<Record<number, { type: string; accountId: string; categoryCode: string; toAccountId: string }>>({});
+  // 未识别行「同意跳过」需用户显式勾选(门禁见 core canProceedImport)
+  const [agreeSkipUnrecognized, setAgreeSkipUnrecognized] = useState(false);
 
   // 确认导入
   const [selectedOwnerId, setSelectedOwnerId] = useState('__self__');
@@ -229,14 +240,15 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
     setTypeMapping({});
     setPicker(null);
     setPreview(null);
-    setShowAllRecords(false);
+    setPrevVisible(PREVIEW_PAGE_SIZE);
     setPrevFilterType('');
     setPrevFilterCategory('');
     setPrevFilterAccount('');
-    setConfirmShowAll(false);
+    setConfirmVisible(CONFIRM_PAGE_SIZE);
     setAccountRes({});
     setCategoryRes({});
     setUnrecognizedRes({});
+    setAgreeSkipUnrecognized(false);
     setSelectedOwnerId('__self__');
     setImportResult(null);
   };
@@ -332,7 +344,7 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
     setPrevFilterType('');
     setPrevFilterCategory('');
     setPrevFilterAccount('');
-    setShowAllRecords(false);
+    setPrevVisible(PREVIEW_PAGE_SIZE);
     // 初始化账户解析:有候选默认选第一个,无候选默认新建(统一策略见 core initAccountResolutions)
     setAccountRes(initAccountResolutions(result.unmatchedAccounts));
     // 初始化分类解析
@@ -358,19 +370,20 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
     setSelectedOwnerId(ownerId);
     const targetId = ownerId === '__self__' ? currentUserId : ownerId;
     const pool = accounts.filter((a) => a.status === 'ACTIVE' && (!targetId || a.ownerId === targetId));
-    setAccountRes((prev) => {
-      const next: Record<string, AccountResolution> = {};
-      for (const [key, res] of Object.entries(prev)) {
-        if (res.action === 'existing' && res.accountId) {
-          const acc = accounts.find((a) => a.id === res.accountId);
-          const rematched = acc ? matchAccountInPool(acc.name, pool, targetId) : null;
-          next[key] = { action: 'existing', accountId: rematched?.id ?? '' };
-        } else {
-          next[key] = res;
-        }
+    // 用当前 accountRes 直接算(而非函数式更新),以便把新决议一并交给服务端重新裁决
+    const next: Record<string, AccountResolution> = {};
+    for (const [key, res] of Object.entries(accountRes)) {
+      if (res.action === 'existing' && res.accountId) {
+        const acc = accounts.find((a) => a.id === res.accountId);
+        const rematched = acc ? matchAccountInPool(acc.name, pool, targetId) : null;
+        next[key] = { action: 'existing', accountId: rematched?.id ?? '' };
+      } else {
+        next[key] = res;
       }
-      return next;
-    });
+    }
+    setAccountRes(next);
+    // 归属人会改变服务端裁决(账户池不同):按新归属人 + 新决议重新裁决
+    void runServerCheck({ ownerId, accountResolutions: next });
   };
 
   // ── 组装确认数据(对齐 web buildImportData) ──
@@ -399,7 +412,111 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
     return best;
   };
 
+  // 可映射的分类:排除只出现在「类型未识别」记录上的分类
+  // (它们走「需手动处理」区块,否则会"列不出来又挡住门禁")
+  const mappableCategories = (preview?.unmatchedCategories ?? []).filter((uc) => uc.types.some((t) => t !== 'UNKNOWN'));
+
+  // 建议新建名(已归一)去重后的账户数:同一张卡的多个 CSV 变体将合并为同一个账户
+  const distinctSuggestedAccounts = new Set(
+    (preview?.unmatchedAccounts ?? []).map((ua) => ua.suggestedName?.trim() || ua.csvName),
+  ).size;
+
+  // 导入进度(待处理/已映射/将跳过;口径统一在 core computeImportProgress)
+  const progress = computeImportProgress({
+    unmatchedAccounts: preview?.unmatchedAccounts ?? [],
+    accountResolutions: accountRes,
+    categoryResolutions: mappableCategories.map((uc) => ({
+      sourceCategory: uc.sourceCategory,
+      targetCode: categoryRes[`${uc.sourceCategory}::${uc.types[0] ?? 'EXPENSE'}`]?.targetCode,
+    })),
+    unrecognizedRecords: preview?.unrecognizedRecords ?? [],
+    unrecognizedResolutions: unrecognizedRes,
+  });
+  // 注:第一步的放行判定已收敛到服务端(见 goConfirm 的 canProceed),此处 progress 仅用于展示
+
+  // 服务端裁决结果(唯一标准):canProceed + 逐条原因
+  const [serverCheck, setServerCheck] = useState<{ canProceed: boolean; reasons: string[]; skippedCount: number } | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  /**
+   * 让服务端按当前决议裁决 —— 「能否继续」的唯一来源(前端不再自行判定)。
+   * override 用于归属人切换:那时 state 还没更新,必须显式传入新的归属人与决议。
+   */
+  const runServerCheck = async (override?: {
+    ownerId?: string;
+    accountResolutions?: Record<string, AccountResolution>;
+  }): Promise<boolean> => {
+    if (!file || !bookId) return false;
+    setServerCheck(null);
+    setChecking(true);
+    const effectiveOwner = override?.ownerId ?? selectedOwnerId;
+    const ownerId = effectiveOwner === '__self__' ? undefined : effectiveOwner;
+    const accountResForServer = Object.entries(override?.accountResolutions ?? accountRes).map(([sourceAccountName, r]) => ({
+      sourceAccountName,
+      action: r.action,
+      targetAccountId: r.action === 'existing' ? r.accountId : undefined,
+      targetAccountName: r.action === 'create' ? r.name : undefined,
+      accountType: r.action === 'create' ? r.type : undefined,
+    }));
+    const catResForServer = Object.entries(categoryRes)
+      .filter(([, cr]) => !!cr.targetCode)
+      .map(([key, cr]) => {
+        const [sourceCategory, type] = key.split('::');
+        return {
+          sourceCategory,
+          targetCategoryCode: cr.targetCode,
+          recordType: type && !type.startsWith('e') ? type : undefined,
+          payerContains: cr.payerContains || undefined,
+          descriptionContains: cr.descriptionContains || undefined,
+        };
+      });
+    const unrecResForServer = Object.entries(unrecognizedRes).map(([rowIndex, r]) => ({ rowIndex: Number(rowIndex), ...r }));
+
+    try {
+      const res = await previewImport(file.uri, file.name, {
+        source,
+        accountBookId: bookId,
+        columnMapping: source === 'csv' ? columnMapping : undefined,
+        typeMapping: source === 'csv' ? typeMapping : undefined,
+        headerRow: source === 'csv' && headerRow.trim() ? parseInt(headerRow.trim(), 10) : undefined,
+        resolutions: {
+          ownerId,
+          accountResolutions: accountResForServer,
+          categoryResolutions: catResForServer,
+          unrecognizedResolutions: unrecResForServer,
+          confirmSkipUnrecognized: agreeSkipUnrecognized,
+        },
+      });
+      // 服务端裁决是唯一标准:它放行才进入第二步,否则留在当前步并展示原因
+      setServerCheck({
+        canProceed: res.canProceed ?? false,
+        reasons: res.blockReasons ?? [],
+        skippedCount: res.skipped?.unrecognized ?? 0,
+      });
+      return res.canProceed ?? false;
+    } catch {
+      // 拿不到服务端裁决时不放行(不使用本地兜底判定)
+      setServerCheck({ canProceed: false, reasons: ['服务端校验失败，请重试'], skippedCount: 0 });
+      return false;
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  /** 「下一步」:服务端裁决通过才进入第二步 */
+  const goConfirm = async () => {
+    if (!(await runServerCheck())) return;
+    setStep('confirm');
+    haptics.tap();
+  };
+
+  /** 唯一标准 = 服务端裁决:未拿到结果或明确不放行都视为阻断 */
+  const serverBlocked = !serverCheck || !serverCheck.canProceed;
+
   const buildImportData = () => {
+    /** 账户 id / 新建账户名 → 展示名(确认页账户列展示「映射后账户名」) */
+    const accountNameOf = (id?: string | null) => (id ? (accounts.find((a) => a.id === id)?.name ?? id) : undefined);
+
     // 待创建账户(合并同名) + 归属人
     const rawCreations = (preview?.unmatchedAccounts ?? [])
       .filter((ua) => accountRes[ua.csvName]?.action === 'create')
@@ -425,20 +542,27 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
     };
 
     const records = (preview?.records ?? []).map((r) => {
-      let accountId = remapAccount(r.accountId || undefined);
-      if (!accountId && r.accountName) {
+      // 用户/AI 决议优先:第一步「已匹配的账户」被改动时,覆盖后端预解析的 accountId
+      let accountId = '';
+      if (r.accountName) {
         const res = accountRes[r.accountName];
         if (res?.action === 'existing') accountId = res.accountId;
         else if (res?.action === 'create') accountId = res.name;
-        else accountId = matchAccountInPool(r.accountName, ownerPool, effectiveOwnerId)?.id || r.accountName;
+      }
+      if (!accountId) accountId = remapAccount(r.accountId || undefined);
+      if (!accountId && r.accountName) {
+        accountId = matchAccountInPool(r.accountName, ownerPool, effectiveOwnerId)?.id || r.accountName;
       }
 
-      let toAccountId = remapAccount(r.toAccountId || undefined) || undefined;
-      if (!toAccountId && r.toAccountName) {
+      let toAccountId: string | undefined;
+      if (r.toAccountName) {
         const res = accountRes[r.toAccountName];
         if (res?.action === 'existing') toAccountId = res.accountId;
         else if (res?.action === 'create') toAccountId = res.name;
-        else toAccountId = matchAccountInPool(r.toAccountName, ownerPool, effectiveOwnerId)?.id || r.toAccountName;
+      }
+      if (!toAccountId) toAccountId = remapAccount(r.toAccountId || undefined) || undefined;
+      if (!toAccountId && r.toAccountName) {
+        toAccountId = matchAccountInPool(r.toAccountName, ownerPool, effectiveOwnerId)?.id || r.toAccountName;
       }
 
       const userResolution = r.categoryCode ? findBestCategoryResolution(r.categoryCode, r.type, r.payer ?? null, r.remark ?? null) : null;
@@ -527,11 +651,41 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
         accountCreations,
         newMappings,
         newAccountMappings: Array.from(accountMappingSet.values()),
+        // 跳过的未识别行数 + 显式确认(服务端前置校验要求)
+        skippedUnrecognized: progress.willSkip,
+        confirmSkipUnrecognized: agreeSkipUnrecognized,
       },
       allCount: records.length + resolvedUnrecognized.length,
-      // 展示用列表(带账户名,同预览行渲染)
-      displayRecords: allRecords.map(({ _accountName, _toAccountName, ...r }) => ({ ...r, accountName: _accountName, toAccountName: _toAccountName })),
+      // 展示用列表:账户列展示「映射后账户名」(查不到 id 时回退原始 CSV 名)
+      displayRecords: allRecords.map(({ _accountName, _toAccountName, ...r }) => ({
+        ...r,
+        accountName: accountNameOf(r.accountId) ?? _accountName,
+        toAccountName: accountNameOf(r.toAccountId) ?? _toAccountName,
+      })),
     };
+  };
+
+  // F 项:「仅保存规则(本次不导入)」—— 复用设置页的保存接口(已做归一化)
+  const [rulesSaved, setRulesSaved] = useState(false);
+  const handleSaveRulesOnly = async () => {
+    const { payload } = buildImportData();
+    const newMappings = payload.newMappings ?? [];
+    const newAccountMappings = payload.newAccountMappings ?? [];
+    if (newMappings.length === 0 && newAccountMappings.length === 0) {
+      showToast('当前没有需要保存的新规则');
+      return;
+    }
+    setLoading(true);
+    try {
+      if (newMappings.length > 0) await importExportApi.saveMappings(newMappings.map((m) => ({ ...m, source })));
+      if (newAccountMappings.length > 0) await importExportApi.saveAccountMappings(newAccountMappings.map((m) => ({ ...m, source })));
+      setRulesSaved(true);
+      showToast('规则已保存');
+    } catch (e: any) {
+      showToast(`保存规则失败: ${e?.message ?? '未知错误'}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleConfirm = async () => {
@@ -857,13 +1011,9 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
               {/* 统计摘要 */}
               <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
                 {[
-                  { label: '解析成功', value: preview.stats.parsedRows, color: colors.income },
-                  { label: '跳过', value: preview.stats.skippedRows, color: colors.mutedForeground },
-                  {
-                    label: '待处理',
-                    value: preview.unmatchedAccounts.length + preview.unmatchedCategories.length + preview.unrecognizedRecords.length,
-                    color: '#f59e0b',
-                  },
+                  { label: '待处理', value: progress.pending, color: '#ef4444' },
+                  { label: '已映射', value: progress.mapped, color: colors.income },
+                  { label: '将跳过', value: progress.willSkip, color: '#f59e0b' },
                 ].map((s) => (
                   <View key={s.label} style={{ flex: 1, padding: 10, borderRadius: 12, backgroundColor: colors.muted, alignItems: 'center' }}>
                     <Text style={{ fontSize: 18, fontWeight: '700' }}>{s.value}</Text>
@@ -887,22 +1037,48 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
                   <Text style={{ fontSize: 13, fontWeight: '600', marginBottom: 6, color: colors.income }}>
                     已匹配的账户 ({Object.keys(preview.accountMappings ?? {}).length})
                   </Text>
-                  {Object.entries(preview.accountMappings ?? {}).map(([csvName, targetName]) => (
-                    <View key={csvName} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 }}>
-                      <Text style={{ fontSize: 12, fontWeight: '500' }} numberOfLines={1}>{csvName}</Text>
-                      <Text variant="muted" style={{ fontSize: 12 }}>→</Text>
-                      <Text style={{ fontSize: 12, color: colors.income }} numberOfLines={1}>{targetName}</Text>
-                    </View>
-                  ))}
+                  {Object.entries(preview.accountMappings ?? {}).map(([csvName, targetName]) => {
+                    const overridden = accountRes[csvName];
+                    return (
+                      <Pressable
+                        key={csvName}
+                        onPress={() => setPicker({ kind: 'account', key: csvName })}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6 }}
+                      >
+                        <Text style={{ fontSize: 12, fontWeight: '500', flex: 1 }} numberOfLines={1}>{csvName}</Text>
+                        <Text variant="muted" style={{ fontSize: 12 }}>→</Text>
+                        <Text style={{ fontSize: 12, color: overridden ? colors.primary : colors.income }} numberOfLines={1}>
+                          {overridden?.action === 'existing'
+                            ? (accounts.find((a) => a.id === overridden.accountId)?.name ?? targetName)
+                            : targetName}
+                        </Text>
+                        {overridden ? <Text style={{ fontSize: 10, color: colors.mutedForeground }}>已改</Text> : null}
+                      </Pressable>
+                    );
+                  })}
                 </View>
               ) : null}
 
               {/* 未匹配账户 */}
               {preview.unmatchedAccounts.length > 0 ? (
                 <View style={{ marginBottom: 12 }}>
-                  <Text style={{ fontSize: 13, fontWeight: '600', marginBottom: 4 }}>
-                    未匹配的账户 ({preview.unmatchedAccounts.length})
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '600', flex: 1 }}>
+                      未匹配的账户 ({preview.unmatchedAccounts.length})
+                      {distinctSuggestedAccounts < preview.unmatchedAccounts.length
+                        ? ` · 归一后 ${distinctSuggestedAccounts} 个`
+                        : ''}
+                    </Text>
+                    <Pressable
+                      onPress={() => {
+                        setAccountRes((p) => adoptSuggestedAccountResolutions(preview.unmatchedAccounts, p));
+                        haptics.tap();
+                      }}
+                      style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}
+                    >
+                      <Text style={{ fontSize: 11 }}>全部采纳建议</Text>
+                    </Pressable>
+                  </View>
                   <Text variant="muted" style={{ fontSize: 11, marginBottom: 8 }}>
                     同一账户可能有多个名称变体,设为相同名称即可合并为一个账户
                   </Text>
@@ -912,6 +1088,11 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
                       <View key={ua.csvName} style={{ padding: 10, borderRadius: 12, backgroundColor: colors.muted, marginBottom: 8 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                           <Text style={{ fontSize: 13, fontWeight: '600', flex: 1 }} numberOfLines={1}>{ua.csvName}</Text>
+                          {!res ? (
+                            <Text style={{ fontSize: 10, color: '#ef4444' }}>待选择</Text>
+                          ) : res.isDefault ? (
+                            <Text style={{ fontSize: 10, color: colors.mutedForeground }}>建议</Text>
+                          ) : null}
                           <Pressable
                             onPress={() => {
                               setAccountRes((p) =>
@@ -973,15 +1154,15 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
               ) : null}
 
               {/* 未映射分类 */}
-              {preview.unmatchedCategories.length > 0 ? (
+              {mappableCategories.length > 0 ? (
                 <View style={{ marginBottom: 12 }}>
                   <Text style={{ fontSize: 13, fontWeight: '600', marginBottom: 4 }}>
-                    未映射的分类 ({preview.unmatchedCategories.length})
+                    未映射的分类 ({mappableCategories.length})
                   </Text>
                   <Text variant="muted" style={{ fontSize: 11, marginBottom: 8 }}>
                     为源分类选择目标系统分类;勾选保存后,后续导入自动映射
                   </Text>
-                  {preview.unmatchedCategories.map((uc) => {
+                  {mappableCategories.map((uc) => {
                     const key = `${uc.sourceCategory}::${uc.types[0] ?? 'EXPENSE'}`;
                     const cr = categoryRes[key];
                     const typeLabel = IMPORT_TYPE_LABELS[uc.types[0] as keyof typeof IMPORT_TYPE_LABELS] ?? uc.types[0] ?? '支出';
@@ -1046,6 +1227,31 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
                   <Text variant="muted" style={{ fontSize: 11, marginBottom: 8 }}>
                     无法自动识别类型,请设置类型/账户/分类;类型选「转账」时还需指定转入账户。未设置的将被跳过
                   </Text>
+                  {progress.willSkip > 0 ? (
+                    <Pressable
+                      onPress={() => {
+                        setAgreeSkipUnrecognized((v) => !v);
+                        haptics.tap();
+                      }}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}
+                    >
+                      <View
+                        style={{
+                          width: 16,
+                          height: 16,
+                          borderRadius: 4,
+                          borderWidth: 1,
+                          borderColor: agreeSkipUnrecognized ? colors.primary : colors.border,
+                          backgroundColor: agreeSkipUnrecognized ? colors.primary : 'transparent',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        {agreeSkipUnrecognized ? <Check size={11} color={colors.primaryForeground} /> : null}
+                      </View>
+                      <Text style={{ fontSize: 11 }}>同意跳过未设置的 {progress.willSkip} 条记录</Text>
+                    </Pressable>
+                  ) : null}
                   {preview.unrecognizedRecords.map((r) => {
                     const res = unrecognizedRes[r.rowIndex ?? -1];
                     // 转账还要有转入账户才算设置完成(否则该行会被跳过)
@@ -1140,18 +1346,28 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
                   </Pressable>
                 ))}
               </View>
-              {(showAllRecords ? filteredPreview : filteredPreview.slice(0, 30)).map((r, i) => (
+              {filteredPreview.slice(0, prevVisible).map((r, i) => (
                 <RecordPreviewRow key={r.rowIndex ?? i} r={r} />
               ))}
-              {filteredPreview.length > 30 ? (
+              {filteredPreview.length > prevVisible ? (
                 <Pressable
                   onPress={() => {
-                    setShowAllRecords((v) => !v);
+                    setPrevVisible((v) => Math.min(v + PREVIEW_PAGE_SIZE, filteredPreview.length));
                     haptics.tap();
                   }}
                   style={{ paddingVertical: 8, alignItems: 'center' }}
                 >
-                  <Text style={{ fontSize: 12, color: colors.primary }}>{showAllRecords ? '收起' : `查看全部 ${filteredPreview.length} 条`}</Text>
+                  <Text style={{ fontSize: 12, color: colors.primary }}>加载更多（剩余 {filteredPreview.length - prevVisible} 条）</Text>
+                </Pressable>
+              ) : prevVisible > PREVIEW_PAGE_SIZE ? (
+                <Pressable
+                  onPress={() => {
+                    setPrevVisible(PREVIEW_PAGE_SIZE);
+                    haptics.tap();
+                  }}
+                  style={{ paddingVertical: 8, alignItems: 'center' }}
+                >
+                  <Text style={{ fontSize: 12, color: colors.mutedForeground }}>收起</Text>
                 </Pressable>
               ) : null}
             </>
@@ -1208,20 +1424,48 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
             />
           ) : null}
           {step === 'preview' ? (
-            <PrimaryBtn
-              label="下一步:确认导入"
-              disabled={(preview?.records.length ?? 0) === 0 && (preview?.unrecognizedRecords ?? []).every((r) => {
-                const res = unrecognizedRes[r.rowIndex ?? -1];
-                return !(res?.type && res?.accountId);
-              })}
-              onPress={() => {
-                setStep('confirm');
-                haptics.tap();
-              }}
-            />
+            <>
+              {checking ? (
+                <Text variant="muted" style={{ fontSize: 10.5, marginBottom: 6 }}>正在向服务端校验…</Text>
+              ) : serverCheck && !serverCheck.canProceed ? (
+                <Text variant="muted" style={{ fontSize: 10.5, marginBottom: 6, color: '#ef4444' }}>
+                  {serverCheck.reasons.join('；')}
+                </Text>
+              ) : null}
+              <PrimaryBtn
+                label="下一步:确认导入"
+                disabled={checking}
+                onPress={goConfirm}
+              />
+            </>
           ) : null}
           {step === 'confirm' ? (
-            <PrimaryBtn label={loading ? '导入中...' : `确认导入 ${buildImportData().allCount} 条`} loading={loading} onPress={handleConfirm} />
+            <>
+              {checking ? (
+                <Text variant="muted" style={{ fontSize: 10.5, marginBottom: 6 }}>正在按当前决议向服务端复核…</Text>
+              ) : serverBlocked ? (
+                <Text variant="muted" style={{ fontSize: 10.5, marginBottom: 6, color: '#ef4444' }}>
+                  {serverCheck?.reasons.join('；') || '服务端未放行，请返回修改'}
+                </Text>
+              ) : (serverCheck?.skippedCount ?? 0) > 0 ? (
+                <Text variant="muted" style={{ fontSize: 10.5, marginBottom: 6, color: '#f59e0b' }}>
+                  本次将跳过 {serverCheck?.skippedCount ?? 0} 条未识别记录
+                </Text>
+              ) : null}
+              <PrimaryBtn
+                label={loading ? '导入中...' : `确认导入 ${buildImportData().allCount} 条`}
+                loading={loading}
+                disabled={checking || serverBlocked}
+                onPress={handleConfirm}
+              />
+              <Pressable
+                onPress={handleSaveRulesOnly}
+                disabled={loading}
+                style={{ marginTop: 8, paddingVertical: 9, borderRadius: 10, alignItems: 'center', borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, opacity: loading ? 0.6 : 1 }}
+              >
+                <Text style={{ fontSize: 12, color: colors.foreground }}>{rulesSaved ? '规则已保存' : '仅保存规则（本次不导入）'}</Text>
+              </Pressable>
+            </>
           ) : null}
           {step === 'result' ? <PrimaryBtn label="完成" onPress={handleClose} /> : null}
         </View>
@@ -1326,18 +1570,28 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
 
         {/* 记录列表(行渲染同预览) */}
         <Text variant="muted" style={{ fontSize: 11, marginBottom: 6 }}>将导入 {allCount} 条流水记录:</Text>
-        {(confirmShowAll ? records : records.slice(0, 50)).map((r, i) => (
+        {records.slice(0, confirmVisible).map((r, i) => (
           <RecordPreviewRow key={r.rowIndex ?? i} r={r} />
         ))}
-        {records.length > 50 ? (
+        {records.length > confirmVisible ? (
           <Pressable
             onPress={() => {
-              setConfirmShowAll((v) => !v);
+              setConfirmVisible((v) => Math.min(v + CONFIRM_PAGE_SIZE, records.length));
               haptics.tap();
             }}
             style={{ paddingVertical: 8, alignItems: 'center' }}
           >
-            <Text style={{ fontSize: 12, color: colors.primary }}>{confirmShowAll ? '收起' : `查看全部 ${records.length} 条`}</Text>
+            <Text style={{ fontSize: 12, color: colors.primary }}>加载更多（剩余 {records.length - confirmVisible} 条）</Text>
+          </Pressable>
+        ) : confirmVisible > CONFIRM_PAGE_SIZE ? (
+          <Pressable
+            onPress={() => {
+              setConfirmVisible(CONFIRM_PAGE_SIZE);
+              haptics.tap();
+            }}
+            style={{ paddingVertical: 8, alignItems: 'center' }}
+          >
+            <Text style={{ fontSize: 12, color: colors.mutedForeground }}>收起</Text>
           </Pressable>
         ) : null}
       </>

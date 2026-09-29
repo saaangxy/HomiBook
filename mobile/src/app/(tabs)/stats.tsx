@@ -1,22 +1,16 @@
-import { useState, useEffect, useMemo, useCallback, useRef, type ReactNode } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useIsFocused } from 'expo-router';
 import {
-  RefreshControl, ScrollView, View, Pressable, Dimensions, Platform, ActivityIndicator, FlatList,
-  Animated as RNAnimated, Easing as RNEasing,
+  RefreshControl, ScrollView, View, Pressable, ActivityIndicator, FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { GestureDetector, Gesture } from 'react-native-gesture-handler';
-import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated from 'react-native-reanimated';
 import {
   TrendingUp, TrendingDown, Wallet, PieChart as PieIcon,
   Activity, Search, ChevronLeft, ChevronRight, Users, X,
 } from 'lucide-react-native';
-import Svg, {
-  Line as SvgLine, Polyline, Rect, Circle, Text as SvgText, G, Path, Polygon,
-} from 'react-native-svg';
-import type { SharedValue } from 'react-native-reanimated';
 import type { StatGranularity } from '@homibook/core';
-import { useTheme, alpha, haptics, useChartColors } from '@/theme';
+import { useTheme, alpha, useChartColors } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { useAppearStyle } from '@/components/ui/useAppearAnimation';
@@ -34,6 +28,8 @@ import { computeRadarMetrics, computeTimeRadar } from '@/lib/financial-health';
 import { accountLabel, isMultiOwnerAccounts } from '@/lib/account';
 import type { BudgetItem, LedgerMember, RadarMetric, RecordItem, RecordSummary } from '@/types';
 
+import { TripleLineChart, AreaLineChart, MultiLineChart, StackedBarChart, DonutChart, TimeRadar, CW } from '@/components/charts';
+
 // ── Tab 定义:对齐网页端 4 视图 ──
 type StatsTab = 'overview' | 'yearly' | 'monthly' | 'free';
 const TABS: { key: StatsTab; label: string }[] = [
@@ -42,8 +38,6 @@ const TABS: { key: StatsTab; label: string }[] = [
   { key: 'monthly', label: '月度' },
   { key: 'free', label: '自由' },
 ];
-
-import { ChartInteraction, TipRow, TripleLineChart, AreaLineChart, MultiLineChart, DualBarChart, StackedBarChart, DonutChart, TimeRadar, CW, fmtMoney } from '@/components/charts';
 
 // ════════════════════════════════════════
 function SummaryCard({ icon: Icon, label, value, color }: {

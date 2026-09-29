@@ -18,8 +18,13 @@ import { uploadImage, loadToolNames } from '@/services/chat';
 import { uploadImportFile } from '@/services/import';
 import { DownloadModeSheet } from '@/components/chrome/DownloadModeSheet';
 import { downloadAttachment, resolveRemoteUrl, type DownloadMode } from '@/services/http';
-import type { Message, MessageBlock } from '@homibook/core';
-import {IMPORT_AI_SOURCES, IMPORT_SOURCE_LABELS, buildImportMessage, parseImportMessage, type ChatInjection } from '@homibook/core';
+import type { Message, MessageBlock, ChatInjection } from '@homibook/core';
+import { IMPORT_AI_SOURCES, IMPORT_SOURCE_LABELS, buildImportMessage, parseImportMessage } from '@homibook/core';
+
+
+// 拆分出的子组件(工具卡/导入预览卡)
+import { ToolCard } from './ToolCard';
+import { ImportFileCard } from './ImportPreviewCard';
 
 // AI 财务助手聊天主体(可嵌入:AI 弹窗 / 记一笔弹窗 AI tab)
 // 复刻 web 端 ChatWindow 能力:流式/Markdown/思考块/工具卡(确认·补充信息·切换账本)/小票上传/账单导入/联网搜索/重试/分支
@@ -874,7 +879,3 @@ function ThinkingBlock({ block }: { block: Extract<MessageBlock, { type: 'thinki
     </View>
   );
 }
-
-// 拆分出的子组件(工具卡/导入预览卡)
-import { BatchIndicator, ToolCard } from './ToolCard';
-import { ImportFileCard, ImportPreviewCard } from './ImportPreviewCard';

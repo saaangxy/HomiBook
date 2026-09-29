@@ -50,6 +50,14 @@ export interface DictEntry {
   group: string;
 }
 
+/** 阻断项(服务端 D 项):willFailAtImport=true 表示不处理必然失败 */
+export interface PreviewBlockingItem {
+  kind: 'account' | 'category' | 'unrecognized';
+  ref: string;
+  reason: string;
+  willFailAtImport: boolean;
+}
+
 export interface ImportPreviewResult {
   records: ParsedImportRow[];
   unrecognizedRecords: ParsedImportRow[];
@@ -57,6 +65,32 @@ export interface ImportPreviewResult {
   unmatchedCategories: UnmatchedCategory[];
   allDictItems: DictEntry[];
   accountMappings?: Record<string, string>;
+  /** 阻断项:必然失败 / 会写脏数据的项 */
+  blocking?: PreviewBlockingItem[];
+  /** **服务端唯一裁决**:能否进入下一步 / 确认导入(前端直接采用) */
+  canProceed?: boolean;
+  /** canProceed 为 false 时的逐条原因 */
+  blockReasons?: string[];
+  /** 预览阶段会被跳过的行数 */
+  skipped?: { unrecognized: number };
+  /** C 项:应用全部决议后「实际会写入」的流水 */
+  finalRecords?: ParsedImportRow[];
+  /** C 项:未决清单 */
+  unresolved?: { accounts: string[]; categories: string[]; unrecognized: number[] };
+  /** C 项:进度计数(与 core computeImportProgress 同口径) */
+  counts?: {
+    accountsTotal: number;
+    accountsResolved: number;
+    accountsDefault: number;
+    categoriesTotal: number;
+    categoriesResolved: number;
+    unrecognizedTotal: number;
+    unrecognizedResolved: number;
+    pending: number;
+    mapped: number;
+    willSkip: number;
+    blocking: number;
+  };
   stats: {
     totalRows: number;
     parsedRows: number;
@@ -90,6 +124,9 @@ export interface ImportConfirmPayload {
   }[];
   accountCreations?: { csvName: string; name: string; type: string; bankName?: string; accountNo?: string; ownerId?: string }[];
   newMappings?: { sourceCategory: string; payerContains?: string; descriptionContains?: string; recordType?: string; targetCategoryCode: string }[];
+  /** 跳过的未识别行数 + 显式确认(服务端校验:>0 且未确认则 400) */
+  skippedUnrecognized?: number;
+  confirmSkipUnrecognized?: boolean;
   newAccountMappings?: { sourceAccountName: string; targetAccountName: string; payerContains?: string; descriptionContains?: string }[];
 }
 
@@ -131,6 +168,15 @@ export function previewImport(
     columnMapping?: Record<string, string>;
     typeMapping?: Record<string, string>;
     headerRow?: number;
+    /** C 项:第二步带上当前决议,让服务端按同一条流程重算 */
+    resolutions?: {
+      ownerId?: string;
+      accountResolutions?: unknown[];
+      categoryResolutions?: unknown[];
+      unrecognizedResolutions?: unknown[];
+      /** 是否已同意跳过未处置的未识别行(服务端裁决需要) */
+      confirmSkipUnrecognized?: boolean;
+    };
   },
 ): Promise<ImportPreviewResult> {
   const fields: Record<string, string> = {
@@ -140,6 +186,14 @@ export function previewImport(
   if (params.columnMapping) fields.columnMapping = JSON.stringify(params.columnMapping);
   if (params.typeMapping) fields.typeMapping = JSON.stringify(params.typeMapping);
   if (params.headerRow !== undefined) fields.headerRow = String(params.headerRow);
+  if (params.resolutions) {
+    const r = params.resolutions;
+    if (r.ownerId) fields.ownerId = r.ownerId;
+    if (r.accountResolutions?.length) fields.accountResolutions = JSON.stringify(r.accountResolutions);
+    if (r.categoryResolutions?.length) fields.categoryResolutions = JSON.stringify(r.categoryResolutions);
+    if (r.unrecognizedResolutions?.length) fields.unrecognizedResolutions = JSON.stringify(r.unrecognizedResolutions);
+    if (r.confirmSkipUnrecognized) fields.confirmSkipUnrecognized = 'true';
+  }
   return uploadFileNative<ImportPreviewResult>(
     `${getBaseUrl()}/api/records/import/preview`,
     fileUri,

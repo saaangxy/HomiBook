@@ -1,5 +1,6 @@
 import { prisma } from '../../app.js'
-import { matchAccountInPoolDetailed } from '@homibook/core'
+import { matchAccountInPoolDetailed, normalizeAccountName, pickAccountMappingCandidates } from '@homibook/core'
+import { CATEGORY_DICT_GROUPS, shouldMarkCategoryUnmatched } from './blocking.js'
 
 // ======================== 工具函数 ========================
 
@@ -63,7 +64,7 @@ export const NAME_TYPE_RULES: { test: (name: string) => boolean; type: string }[
   { test: (n) => /信用卡/.test(n), type: 'CREDIT_CARD' },
   { test: (n) => /储蓄卡|借记卡/.test(n), type: 'BANK_DEBIT' },
   { test: (n) => /银行/.test(n), type: 'BANK_DEBIT' },
-  { test: (n) => /投资|理财|基金|股票|余额宝/.test(n), type: 'INVESTMENT' },
+  { test: (n) => /投资|理财|基金|股票|余额宝|财富|证券|黄金/.test(n), type: 'INVESTMENT' },
   { test: (n) => /现金/.test(n), type: 'CASH' },
   { test: (n) => /充值/.test(n), type: 'RECHARGE_CARD' },
 ]
@@ -71,32 +72,36 @@ export const NAME_TYPE_RULES: { test: (name: string) => boolean; type: string }[
 export function inferAccount(paymentMethod: string): { type: string; defaultName: string; bankName?: string; accountNo?: string } | null {
   if (!paymentMethod) return null
 
+  // 建议新建名先归一:剥离促销/权益尾巴(「XX储蓄卡(1234)&立减金」)与冗余「中国」前缀。
+  // 同一张卡的多个 CSV 变体归一成同名 ⇒ 前端 mergeAccountCreations 合并为一次创建。
+  const name = normalizeAccountName(paymentMethod) || paymentMethod
+
   // 银行卡：XX银行储蓄卡(NNNN) 或 XX银行信用卡(NNNN)
-  const cardMatch = paymentMethod.match(/^(.+?银行).*?[储蓄信用]卡.*?[\(（](\d+)[\)）]/)
+  const cardMatch = name.match(/^(.+?银行).*?[储蓄信用]卡.*?[\(（](\d+)[\)）]/)
   if (cardMatch) {
     return {
-      type: paymentMethod.includes('信用') ? 'CREDIT_CARD' : 'BANK_DEBIT',
-      defaultName: paymentMethod,
+      type: name.includes('信用') ? 'CREDIT_CARD' : 'BANK_DEBIT',
+      defaultName: name,
       bankName: cardMatch[1],
       accountNo: cardMatch[2],
     }
   }
 
   // 通用银行匹配
-  const bankMatch = paymentMethod.match(/^(.+?银行)/)
+  const bankMatch = name.match(/^(.+?银行)/)
   if (bankMatch) {
-    const type = /信用/.test(paymentMethod) ? 'CREDIT_CARD' : 'BANK_DEBIT'
-    return { type, defaultName: paymentMethod, bankName: bankMatch[1] }
+    const type = /信用/.test(name) ? 'CREDIT_CARD' : 'BANK_DEBIT'
+    return { type, defaultName: name, bankName: bankMatch[1] }
   }
 
   // 按名称关键词规则匹配
   for (const rule of NAME_TYPE_RULES) {
-    if (rule.test(paymentMethod)) {
-      return { type: rule.type, defaultName: paymentMethod }
+    if (rule.test(name)) {
+      return { type: rule.type, defaultName: name }
     }
   }
 
-  return { type: 'OTHER', defaultName: paymentMethod }
+  return { type: 'OTHER', defaultName: name }
 }
 
 // ======================== 账户匹配 ========================
@@ -148,22 +153,26 @@ export async function applyAccountMappings(
 
   // DB 映射评分
   if (sourceNames.length > 0) {
+    // 查询集合同时包含原始名与归一名:账单里换个促销尾巴(「…&政府补贴」)也要能查到
+    // 之前用「…&现金抵价券」存的规则(见 pickAccountMappingCandidates)
+    const lookupNames = [...new Set([...sourceNames, ...sourceNames.map(normalizeAccountName).filter(Boolean)])]
     const allMappings = await prisma.importAccountMapping.findMany({
       where: {
         source,
-        sourceAccountName: { in: sourceNames },
+        sourceAccountName: { in: lookupNames },
       },
       orderBy: [{ sourceAccountName: 'asc' }, { payerContains: 'desc' }, { descriptionContains: 'desc' }],
     })
 
     if (allMappings.length > 0) {
       const mappingsByName = Map.groupBy(allMappings, m => m.sourceAccountName)
+      const mappingsByNormalizedName = Map.groupBy(allMappings, m => normalizeAccountName(m.sourceAccountName))
 
       for (const r of rows) {
         const key = r.accountName
         if (idMap.has(key)) continue
 
-        const candidates = mappingsByName.get(key)
+        const candidates = pickAccountMappingCandidates(key, mappingsByName, mappingsByNormalizedName)
         if (!candidates || candidates.length === 0) {
           idMap.set(key, null)
           continue
@@ -300,7 +309,7 @@ export async function applyCategoryMappings(
   const mappingsByCat = Map.groupBy(allMappings, m => m.sourceCategory)
 
   const allDictItems = await prisma.dictionary.findMany({
-    where: { group: { in: ['transaction_category_income', 'transaction_category_expense', 'transaction_category_transfer'] } },
+    where: { group: { in: [...CATEGORY_DICT_GROUPS] } },
     select: { code: true, label: true, group: true },
   })
   const expenseCodes = new Set(allDictItems.filter(d => d.group === 'transaction_category_expense').map(d => d.code))
@@ -320,8 +329,9 @@ export async function applyCategoryMappings(
     if (r.categoryCode && r.mappedCategoryCode === null) {
       r.mappedCategoryCode = findBestMapping(r)
     }
-    if (r.categoryCode && r.mappedCategoryCode === null) {
-      categoriesWithUnmatched.add(r.categoryCode)
+    // 类型未识别的行不入「未映射分类」清单(口径说明见 shouldMarkCategoryUnmatched)
+    if (shouldMarkCategoryUnmatched(r)) {
+      categoriesWithUnmatched.add(r.categoryCode!)
     }
   }
 
@@ -336,6 +346,9 @@ export async function applyCategoryMappings(
     let matched: string | null = null
     // 按该分类出现的记录类型,在对应类型字典中做包含匹配(收入分类不再只按支出字典建议)
     const types = categoryTypes.get(cat) || new Set<string>()
+    // 只出现在「类型未识别(UNKNOWN)」记录上的分类不列为待映射:
+    // 这些记录要走「需手动处理」区块(在那里才能同时选类型与分类),否则会显示不出来又永远挡住门禁
+    if (![...types].some(t => t !== 'UNKNOWN')) continue
     const codeSets: Set<string>[] = []
     if (types.has('EXPENSE')) codeSets.push(expenseCodes)
     if (types.has('INCOME')) codeSets.push(incomeCodes)

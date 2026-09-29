@@ -1,0 +1,149 @@
+/**
+ * 导入决议的服务端统一应用(C 项)。
+ *
+ * preview(第二步) 与确认导入共用同一条流程:
+ *   解析后的原始行 → 账户决议 → 分类决议 → 未识别行处置
+ *   → 「实际会写入的流水」(finalRows) + 未决清单 + 进度计数 + 阻断项。
+ *
+ * 目的:让第二步页面看到的就是实际落库的(消除客户端本地拼装与服务端口径的漂移)。
+ * 账户/分类决议的合并算法仍走 shared.ts(单一来源),未识别行处置走 apply-decisions.ts。
+ */
+import { canProceedImport, computeImportProgress } from '@homibook/core'
+import { applyAccountMappings, applyCategoryMappings, type ParsedRow } from './shared.js'
+import { resolveImportAccounts } from './pipeline.js'
+import { applyUnrecognizedResolutions, type UnrecognizedResolutionInput } from './apply-decisions.js'
+import { collectPreviewBlocking } from './blocking.js'
+
+export interface RemapAccountResolutionInput {
+  sourceAccountName: string
+  action: 'create' | 'existing'
+  targetAccountId?: string
+  targetAccountName?: string
+  accountType?: string
+}
+
+export interface RemapCategoryResolutionInput {
+  sourceCategory: string
+  targetCategoryCode: string
+  recordType?: string
+  payerContains?: string
+  descriptionContains?: string
+}
+
+export interface RemapOptions {
+  source: string
+  rows: ParsedRow[]
+  accountBookId: string
+  /** 归属人(第二步可切换);缺省按当前用户 */
+  ownerId?: string
+  accountResolutions?: RemapAccountResolutionInput[]
+  categoryResolutions?: RemapCategoryResolutionInput[]
+  unrecognizedResolutions?: UnrecognizedResolutionInput[]
+  /** 用户已显式同意跳过未处置的未识别行(与 /import 的 confirmSkipUnrecognized 同义) */
+  confirmSkipUnrecognized?: boolean
+}
+
+export async function remapImportRows(opts: RemapOptions) {
+  const {
+    source,
+    rows,
+    accountBookId,
+    ownerId,
+    accountResolutions,
+    categoryResolutions,
+    unrecognizedResolutions,
+    confirmSkipUnrecognized,
+  } = opts
+
+  // 账户:DB 规则 + 本次决议合并 → 名称包含匹配
+  const { idMap, nameRecord, newAccountCreations } = await applyAccountMappings(source, rows, accountBookId, accountResolutions, ownerId)
+  const { unmatched: rawUnmatched, nameMatched } = await resolveImportAccounts(accountBookId, rows, idMap, ownerId)
+
+  // 已由 create 决议覆盖的源账户名 ⇒ 导入时会新建账户,属于「已决策」而非「未决」。
+  // 不剔除的话第二步会被误报成「账户不存在(必然失败)」并禁用确认按钮。
+  const willCreateNames = new Set(newAccountCreations.map(c => c.sourceAccountName))
+  const unmatchedAccounts = rawUnmatched.filter(ua => !willCreateNames.has(ua.csvName))
+
+  // 新建账户清单(按目标名合并同组的多个 CSV 变体)供第二步展示
+  const creationByName = new Map<string, { name: string; type: string; sourceAccountNames: string[] }>()
+  for (const c of newAccountCreations) {
+    const existing = creationByName.get(c.name)
+    if (existing) existing.sourceAccountNames.push(c.sourceAccountName)
+    else creationByName.set(c.name, { name: c.name, type: c.type, sourceAccountNames: [c.sourceAccountName] })
+  }
+  const toCreate = [...creationByName.values()]
+
+  // 分类:DB 规则 + 本次决议合并
+  const { unmatched: unmatchedCategories, allDictItems } = await applyCategoryMappings(source, rows, categoryResolutions)
+
+  // 未识别行按处置补全(未处置/转账缺转入的留在未决清单)
+  const { resolved, unresolvedRowIndexes } = applyUnrecognizedResolutions(rows, unrecognizedResolutions)
+
+  const unrecognizedRecords = rows.filter(r => r.type === 'UNKNOWN')
+  // finalRows = 实际会写入的流水(UNKNOWN 已处置的也在内)
+  const finalRows = resolved.filter(r => r.type !== 'UNKNOWN')
+
+  // 阻断项只针对「仍未处置」的未识别行:已处置的行不该再报(D 项口径与 skipped.unrecognized 一致)
+  const unresolvedSet = new Set(unresolvedRowIndexes)
+  const blocking = collectPreviewBlocking({
+    unmatchedAccounts,
+    unmatchedCategories,
+    unrecognizedRecords: unrecognizedRecords.filter(r => unresolvedSet.has(r.rowIndex ?? -1)),
+  })
+  const unresolvedUnrecognized = unrecognizedRecords.filter(r => unresolvedSet.has(r.rowIndex ?? -1))
+  const counts = computeImportProgress({
+    unmatchedAccounts,
+    categoryResolutions: unmatchedCategories.map(uc => ({ sourceCategory: uc.sourceCategory, targetCode: '' })),
+    unrecognizedRecords: unresolvedUnrecognized,
+  })
+
+  // ---- 服务端唯一裁决(前端不再自行判定,避免两侧口径漂移) ----
+  // 能否进入下一步 / 确认导入:账户与分类都不能有未决项,未识别行要么没有要么已同意跳过,
+  // 且确实有可写入的流水。判定函数复用 core canProceedImport(与计数同源)。
+  const canProceed =
+    finalRows.length > 0 && canProceedImport(counts, { agreeSkipUnrecognized: confirmSkipUnrecognized })
+  const blockReasons: string[] = [
+    ...blocking.filter(b => b.willFailAtImport).map(b => b.reason),
+    ...unmatchedCategories.map(uc => `分类「${uc.sourceCategory}」未映射到系统分类`),
+  ]
+  if (counts.willSkip > 0 && !confirmSkipUnrecognized) {
+    blockReasons.push(`有 ${counts.willSkip} 条未识别记录未处理（勾选「同意跳过」后可继续）`)
+  }
+  if (finalRows.length === 0) blockReasons.push('没有可导入的流水记录')
+
+  // 最终流水里的分类必须落在字典中:否则 /import 的严格校验会 400(这里用同一句文案,
+  // 让用户在被拦下时看到的原因与实际报错一致)。
+  // 必须比对「最终写入的值」= mappedCategoryCode ?? categoryCode(与前端提交的字段同口径):
+  // categoryCode 只是源分类名,直接拿它比字典会把"已正确映射"的行也误判。
+  const dictCodes = new Set(allDictItems.map(d => d.code))
+  const invalidCategoryNames = [...new Set(
+    finalRows.map(r => r.mappedCategoryCode ?? r.categoryCode).filter((c): c is string => !!c && !dictCodes.has(c)),
+  )]
+  if (invalidCategoryNames.length > 0) {
+    blockReasons.push(`分类不在字典中：${invalidCategoryNames.slice(0, 5).join('、')}`)
+  }
+
+  return {
+    finalRows,
+    unrecognizedRecords,
+    unmatchedAccounts,
+    /** 将新建的账户(按目标名合并同组源账户名) */
+    toCreate,
+    unmatchedCategories,
+    allDictItems,
+    /** 源账户名 → 目标账户名(名称包含匹配 + 规则命中) */
+    nameMatched: { ...nameMatched, ...nameRecord },
+    unresolved: {
+      accounts: unmatchedAccounts.map(ua => ua.csvName),
+      categories: unmatchedCategories.map(uc => uc.sourceCategory),
+      /** 未处置(含转账缺转入)的未识别行号 */
+      unrecognized: unresolvedRowIndexes,
+    },
+    blocking,
+    counts,
+    /** 服务端裁决:能否进入下一步 / 确认导入(前端直接采用,不再自行判定) */
+    canProceed,
+    /** canProceed 为 false 时的逐条原因(人类可读) */
+    blockReasons,
+  }
+}

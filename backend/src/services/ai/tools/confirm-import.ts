@@ -2,7 +2,8 @@ import type { ToolDef, ToolContext } from './types.js'
 import { prisma } from '../../../app.js'
 import { assertIsMember, checkEnumList, checkEnums } from '../security.js'
 import { createAccountsInTx, saveCategoryMappingsInTx, saveAccountMappingsInTx, AccountResolver, batchCreateRecordsInTx, refreshBalances } from '../../import/execute.js'
-import { applyAccountMappings, applyCategoryMappings, matchAccountByName, inferAccount } from '../../import/shared.js'
+import { applyAccountMappings, applyCategoryMappings, matchAccountByName } from '../../import/shared.js'
+import { CATEGORY_DICT_GROUPS, findUnknownCategoryCodes, formatDictOptions, shouldMarkCategoryUnmatched } from '../../import/blocking.js'
 import { consumeImportOverrides, peekImportOverrides } from './index.js'
 import { IMPORT_FILE_MISSING, loadImportFile, parseImportFile } from '../../import/attachment-file.js'
 import { ACCOUNT_TYPES, ACCOUNT_TYPE_LABELS, IMPORT_AI_SOURCES, RECORD_TYPES, normalizeRecordType } from '@homibook/core'
@@ -71,6 +72,22 @@ export const confirmImportTool: ToolDef = {
       accountResolutions?: { sourceAccountName: string; action: 'existing' | 'create'; targetAccountId?: string; targetAccountName?: string; accountType?: string }[]
       categoryResolutions?: { sourceCategory: string; targetCategoryCode: string; recordType?: string; payerContains?: string; descriptionContains?: string }[]
       _execute?: boolean
+    }
+
+    // 分类编码必须在字典里(与 preview_import 同一道校验):不满足直接回报模型重填,避免脏规则落库
+    if (categoryResolutions?.length) {
+      const dictItems = await prisma.dictionary.findMany({
+        where: { group: { in: [...CATEGORY_DICT_GROUPS] } },
+        select: { code: true, label: true },
+      })
+      const unknown = findUnknownCategoryCodes(categoryResolutions.map((c: any) => c.targetCategoryCode), new Set(dictItems.map(d => d.code)))
+      if (unknown.length > 0) {
+        return {
+          success: false,
+          retryable: false,
+          error: `分类编码不存在：${unknown.join('、')}。targetCategoryCode 必须是系统字典里的编码，可选值：${formatDictOptions(dictItems)}`,
+        }
+      }
     }
 
     const effectiveOwnerId = ownerId || ctx.userId
@@ -154,8 +171,10 @@ export const confirmImportTool: ToolDef = {
       }
     }
 
-    // 自动推断未匹配账户（跳过已被 AI 映射覆盖的源账户名）
+    // 仍未匹配且未被 AI 决议覆盖的源账户:不再「自动推断并新建」(那会静默造账户、
+    // 与手动向导的口径相左),收集为未决项交给下面的服务端裁决。
     const mappedSourceNames = new Set([...creationByName.values()].flatMap(c => [...c.csvNames]))
+    const unresolvedAccountNames: string[] = []
     const seenAccounts = new Set<string>()
     for (const row of parseResult.rows) {
       if (seenAccounts.has(row.accountName)) continue
@@ -163,23 +182,24 @@ export const confirmImportTool: ToolDef = {
       if (accountMappings.has(row.accountName)) continue
       if (nameToId.has(row.accountName)) continue
       if (mappedSourceNames.has(row.accountName)) continue
-      const inferred = inferAccount(row.accountName)
-      if (inferred) {
-        const existing = creationByName.get(inferred.defaultName)
-        if (existing) {
-          existing.csvNames.add(row.accountName)
-          if (inferred.bankName) existing.bankName = inferred.bankName
-          if (inferred.accountNo) existing.accountNo = inferred.accountNo
-        } else {
-          creationByName.set(inferred.defaultName, {
-            csvNames: new Set([row.accountName]),
-            name: inferred.defaultName,
-            type: inferred.type,
-            bankName: inferred.bankName,
-            accountNo: inferred.accountNo,
-          })
-        }
-      }
+      unresolvedAccountNames.push(row.accountName)
+    }
+
+    // ---- 服务端唯一裁决(与手动向导 /preview 的 canProceed 同口径) ----
+    // 账户、分类、未识别行任一有未决项就不执行,把原因回传给用户/模型。
+    const unmappedCategories = [...new Set(
+      parseResult.rows.filter(r => shouldMarkCategoryUnmatched(r)).map(r => r.categoryCode!),
+    )]
+    const unresolvedUnrecognizedCount = parseResult.rows.filter(r => r.type === 'UNKNOWN').length
+    const blockReasons: string[] = []
+    if (unresolvedAccountNames.length > 0) {
+      blockReasons.push(`账户未指定归属账户：${unresolvedAccountNames.slice(0, 5).join('、')}${unresolvedAccountNames.length > 5 ? ` 等 ${unresolvedAccountNames.length} 个` : ''}`)
+    }
+    if (unmappedCategories.length > 0) {
+      blockReasons.push(`分类未映射到系统分类：${unmappedCategories.slice(0, 5).join('、')}`)
+    }
+    if (unresolvedUnrecognizedCount > 0) {
+      blockReasons.push(`有 ${unresolvedUnrecognizedCount} 条未识别记录未处理`)
     }
 
     const accountCreations = [...creationByName.values()].map(c => ({
@@ -292,6 +312,9 @@ export const confirmImportTool: ToolDef = {
             accountsToCreate: accountCreations.length,
           },
           ownerId: effectiveOwnerId,
+          // 服务端裁决:未决原因(空数组 = 可以执行)
+          canProceed: blockReasons.length === 0,
+          blockReasons,
           owners: [
             ...(bookOwner ? [{ id: bookOwner.owner.id, name: bookOwner.owner.nickname || bookOwner.owner.email, isOwner: true }] : []),
             ...members.filter(m => m.user.id !== bookOwnerId).map(m => ({ id: m.user.id, name: m.user.nickname || m.user.email, isOwner: false })),
@@ -302,6 +325,10 @@ export const confirmImportTool: ToolDef = {
     }
 
     // ---- 阶段2：执行导入 ----
+    // 服务端唯一裁决:有未决项就不执行(避免静默建账户 / 写入未映射分类),原因回传
+    if (blockReasons.length > 0) {
+      return { success: false, error: blockReasons.join('；'), retryable: false }
+    }
 
     // 构建源账户名 → 新建账户名映射（csvName 已合并为逗号分隔）
     const csvNameToNewName = new Map<string, string>()

@@ -32,7 +32,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip'
 import { importExportApi, type UnmatchedAccount, type UnmatchedCategory, type ParsedImportRow, type DictEntry } from '@/api/import-export'
 import { ACCOUNT_TYPE_LABELS, type AccountItem, type AccountType } from '@/api/account'
-import { IMPORT_COLUMN_FIELDS, autoDetectColumns, detectTypeValues, autoDetectTypeMapping, initAccountResolutions, matchAccountInPool, type AccountResolution } from '@homibook/core'
+import { IMPORT_COLUMN_FIELDS, adoptSuggestedAccountResolutions, autoDetectColumns, computeImportProgress, detectTypeValues, autoDetectTypeMapping, initAccountResolutions, matchAccountInPool, type AccountResolution } from '@homibook/core'
 import { RECORD_TYPE_LABELS as TYPE_LABELS, RECORD_TYPE_TEXT_CLASS as TYPE_COLORS, RECORD_TYPE_CONTAINER_CLASS } from '@/lib/record-type'
 import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
 import { bookApi, type BookMember } from '@/api/book'
@@ -105,14 +105,16 @@ function toPayloadRecord<T extends object>(r: T): Omit<T, '_accountName' | '_toA
   return out as Omit<T, '_accountName' | '_toAccountName'>
 }
 
-function TrucCell({ text, maxW = 'max-w-[100px]', className = '' }: { text: string | null | undefined; maxW?: string; className?: string }) {
+function TrucCell({ text, title, maxW = 'max-w-[100px]', className = '' }: { text: string | null | undefined; title?: string | null; maxW?: string; className?: string }) {
   const display = text || '-'
+  // title 用于"显示映射后名称、悬停看原始名"的场景(缺省与显示值相同)
+  const tip = title || display
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <span className={`truncate block ${maxW} ${className}`}>{display}</span>
       </TooltipTrigger>
-      <TooltipContent side="top" className="max-w-[300px] text-xs break-all">{display}</TooltipContent>
+      <TooltipContent side="top" className="max-w-[300px] text-xs break-all">{tip}</TooltipContent>
     </Tooltip>
   )
 }
@@ -153,6 +155,8 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
   const [unrecognizedRecords, setUnrecognizedRecords] = useState<ParsedImportRow[]>([])
   // toAccountId(转入账户)仅在类型为「转账」时使用
   const [unrecognizedResolutions, setUnrecognizedResolutions] = useState<Record<number, { type: string; accountId: string; categoryCode: string; toAccountId: string }>>({})
+  // 未识别行「同意跳过」需用户显式勾选(门禁见 core canProceedImport)
+  const [agreeSkipUnrecognized, setAgreeSkipUnrecognized] = useState(false)
 
   // 结果
   const [importResult, setImportResult] = useState<{ imported: number; accountsCreated: number } | null>(null)
@@ -184,6 +188,8 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
       }
     }
     setAccountResolutions(next)
+    // 归属人会改变服务端裁决(账户池不同):按新归属人 + 新决议重新裁决
+    void runServerCheck({ ownerId, accountResolutions: next })
   }
 
   // 通用CSV列映射
@@ -232,6 +238,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
     setRemovedKeys({})
     setUnrecognizedRecords([])
     setUnrecognizedResolutions({})
+    setAgreeSkipUnrecognized(false)
     setImportResult(null)
     setCsvHeaders([])
     setCsvSampleData([])
@@ -385,13 +392,16 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
       // 初始化无法识别的记录
       setUnrecognizedRecords(result.unrecognizedRecords || [])
       const unresRes: Record<number, { type: string; accountId: string; categoryCode: string; toAccountId: string }> = {}
+      const dictCodeSet = new Set((result.allDictItems || []).map(d => d.code))
       for (const r of result.unrecognizedRecords || []) {
         unresRes[r.rowIndex] = {
           type: '',
           accountId: r.accountId || accounts[0]?.id || '',
           // 后端已解析出的转入账户预填(转账行)
           toAccountId: r.toAccountId || '',
-          categoryCode: r.mappedCategoryCode || r.categoryCode || '',
+          // 只预填字典里的 code:源分类名(如「娱乐」)会被当成"已选好",
+          // 提交时又被 /import 的严格校验以「分类不在字典中」拒掉
+          categoryCode: r.mappedCategoryCode || (r.categoryCode && dictCodeSet.has(r.categoryCode) ? r.categoryCode : ''),
         }
       }
       setUnrecognizedResolutions(unresRes)
@@ -403,6 +413,109 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
       setLoading(false)
     }
   }
+
+  // 建议新建名(已归一)去重后的账户数:同一张卡的多个 CSV 变体将合并为同一个账户
+  const distinctSuggestedAccounts = new Set(
+    unmatchedAccounts.map(ua => ua.suggestedName?.trim() || ua.csvName),
+  ).size
+
+  // 导入进度(待处理/已映射/将跳过;口径统一在 core computeImportProgress)
+  const progress = computeImportProgress({
+    unmatchedAccounts,
+    accountResolutions,
+    // 每个「源分类 × 收支类型」一条决议,需全部选好才算该分类已映射
+    // 只统计有明确收支类型的分类:类型未识别的记录走「需手动处理」区块(那里才能选类型+分类)
+    categoryResolutions: unmatchedCategories.flatMap(uc =>
+      uc.types.filter(type => type !== 'UNKNOWN').map(type => ({
+        sourceCategory: uc.sourceCategory,
+        targetCode: categoryResolutions[`${uc.sourceCategory}::${type}`]?.targetCode,
+      })),
+    ),
+    unrecognizedRecords,
+    unrecognizedResolutions,
+  })
+  // 注:第一步的放行判定已收敛到服务端(见 goConfirm 的 canProceed),此处 progress 仅用于展示
+
+  // 服务端裁决结果(唯一标准):canProceed + 逐条原因;第一步「下一步」与第二步「确认导入」都用它
+  const [serverCheck, setServerCheck] = useState<{ canProceed: boolean; reasons: string[]; finalCount: number; skippedCount: number } | null>(null)
+  const [checking, setChecking] = useState(false)
+
+  /**
+   * 让服务端按当前决议裁决 —— 「能否继续」的唯一来源(前端不再自行判定)。
+   * override 用于归属人切换:那时 state 还没更新,必须显式传入新的归属人与决议。
+   */
+  const runServerCheck = async (override?: {
+    ownerId?: string
+    accountResolutions?: Record<string, AccountResolution>
+  }): Promise<boolean> => {
+    if (!file || !bookId) return false
+    setServerCheck(null)
+    setChecking(true)
+    const effectiveOwner = override?.ownerId ?? selectedOwnerId
+    const ownerId = effectiveOwner === '__self__' ? undefined : effectiveOwner
+    const accountRes = Object.entries(override?.accountResolutions ?? accountResolutions).map(([sourceAccountName, r]) => ({
+      sourceAccountName,
+      action: r.action,
+      targetAccountId: r.action === 'existing' ? r.accountId : undefined,
+      targetAccountName: r.action === 'create' ? r.name : undefined,
+      accountType: r.action === 'create' ? r.type : undefined,
+    }))
+    const catRes = Object.entries(categoryResolutions)
+      .filter(([, cr]) => !!cr.targetCode)
+      .map(([key, cr]) => {
+        const [sourceCategory, type] = key.split('::')
+        return {
+          sourceCategory,
+          targetCategoryCode: cr.targetCode,
+          // 手动复制的分类项 key 带 ::e{id} 后缀,不是收支类型
+          recordType: type && !type.startsWith('e') ? type : undefined,
+          payerContains: cr.payerContains || undefined,
+          descriptionContains: cr.descriptionContains || undefined,
+        }
+      })
+    const unrecRes = Object.entries(unrecognizedResolutions).map(([rowIndex, r]) => ({ rowIndex: Number(rowIndex), ...r }))
+
+    try {
+      const res = await importExportApi.preview(file, source, bookId, columnMapping, typeMapping, headerRow, {
+        ownerId,
+        accountResolutions: accountRes,
+        categoryResolutions: catRes,
+        unrecognizedResolutions: unrecRes,
+        confirmSkipUnrecognized: agreeSkipUnrecognized,
+      })
+      // 服务端裁决是唯一标准:它放行才进入第二步,否则留在当前步并把原因逐条展示
+      setServerCheck({
+        canProceed: res.canProceed ?? false,
+        reasons: res.blockReasons ?? [],
+        finalCount: res.finalRecords?.length ?? 0,
+        skippedCount: res.skipped?.unrecognized ?? 0,
+      })
+      return res.canProceed ?? false
+    } catch (e) {
+      // 拿不到服务端裁决时不放行(不使用本地兜底判定),提示重试
+      setServerCheck({
+        canProceed: false,
+        reasons: [errorMessage(e) || '服务端校验失败，请重试'],
+        finalCount: 0,
+        skippedCount: 0,
+      })
+      return false
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  /** 「下一步」:服务端裁决通过才进入第二步 */
+  const goConfirm = async () => {
+    if (!(await runServerCheck())) return
+    setFilterType('')
+    setFilterCategory('')
+    setFilterAccount('')
+    setStep('confirm')
+  }
+
+  /** 唯一标准 = 服务端裁决:未拿到结果或明确不放行都视为阻断 */
+  const serverBlocked = !serverCheck || !serverCheck.canProceed
 
   const buildImportData = () => {
     // 构建账户创建列表（合并同名账户）
@@ -485,45 +598,36 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
 
     // 构建记录列表
     const records = previewRecords.map(r => {
-      let accountId = r.accountId || ''
+      // 用户/AI 决议优先：第一步「已匹配的账户」被改动时,覆盖后端预解析的 accountId
+      let accountId = ''
+      if (r.accountName) {
+        const res = accountResolutions[r.accountName]
+        if (res?.action === 'existing') accountId = res.accountId
+        else if (res?.action === 'create') accountId = res.name
+      }
       // 改归属人后：后端按本人预解析的账户重映射到归属人名下同名账户
-      if (accountId) {
-        const acc = accounts.find(a => a.id === accountId)
-        if (acc) {
-          const rematched = matchAccountInPool(acc.name, ownerPool)
-          accountId = rematched?.id || accountId
-        }
+      if (!accountId && r.accountId) {
+        const acc = accounts.find(a => a.id === r.accountId)
+        accountId = acc ? (matchAccountInPool(acc.name, ownerPool)?.id || r.accountId) : r.accountId
       }
       if (!accountId && r.accountName) {
-        const res = accountResolutions[r.accountName]
-        if (res?.action === 'existing') {
-          accountId = res.accountId
-        } else if (res?.action === 'create') {
-          accountId = res.name
-        } else {
-          const existing = matchAccountInPool(r.accountName, ownerPool)
-          accountId = existing?.id || r.accountName
-        }
+        const existing = matchAccountInPool(r.accountName, ownerPool)
+        accountId = existing?.id || r.accountName
       }
 
-      let toAccountId = r.toAccountId || undefined
-      if (toAccountId) {
-        const acc = accounts.find(a => a.id === toAccountId)
-        if (acc) {
-          const rematched = matchAccountInPool(acc.name, ownerPool)
-          toAccountId = rematched?.id || toAccountId
-        }
+      // 同上:决议优先,再回退后端预解析的 toAccountId
+      let toAccountId: string | undefined
+      if (r.toAccountName) {
+        const res = accountResolutions[r.toAccountName]
+        if (res?.action === 'existing') toAccountId = res.accountId
+        else if (res?.action === 'create') toAccountId = res.name
+      }
+      if (!toAccountId && r.toAccountId) {
+        const acc = accounts.find(a => a.id === r.toAccountId)
+        toAccountId = acc ? (matchAccountInPool(acc.name, ownerPool)?.id || r.toAccountId) : r.toAccountId
       }
       if (!toAccountId && r.toAccountName) {
-        const res = accountResolutions[r.toAccountName]
-        if (res?.action === 'existing') {
-          toAccountId = res.accountId
-        } else if (res?.action === 'create') {
-          toAccountId = res.name
-        } else {
-          const existing = matchAccountInPool(r.toAccountName!, ownerPool)
-          toAccountId = existing?.id || r.toAccountName!
-        }
+        toAccountId = matchAccountInPool(r.toAccountName, ownerPool)?.id || r.toAccountName
       }
 
       // 用户前端配置的条件化映射优先于后端通用映射
@@ -604,6 +708,31 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
     return { accountCreations, newMappings, newAccountMappings, records, resolvedUnrecognized }
   }
 
+  // F 项:「仅保存规则(本次不导入)」—— 复用设置页的两个保存接口(已做归一化)
+  const [rulesSaved, setRulesSaved] = useState(false)
+  const handleSaveRulesOnly = async () => {
+    const { newMappings, newAccountMappings } = buildImportData()
+    if (newMappings.length === 0 && newAccountMappings.length === 0) {
+      setError('当前没有需要保存的新规则')
+      return
+    }
+    setLoading(true)
+    setError('')
+    try {
+      if (newMappings.length > 0) {
+        await importExportApi.saveMappings(newMappings.map(m => ({ ...m, source })))
+      }
+      if (newAccountMappings.length > 0) {
+        await importExportApi.saveAccountMappings(newAccountMappings.map(m => ({ ...m, source })))
+      }
+      setRulesSaved(true)
+    } catch (e) {
+      setError(errorMessage(e))
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const handleImport = async () => {
     setLoading(true)
     setError('')
@@ -618,6 +747,9 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
         accountCreations,
         newMappings,
         newAccountMappings,
+        // 跳过的未识别行数 + 显式确认(服务端前置校验要求)
+        skippedUnrecognized: progress.willSkip,
+        confirmSkipUnrecognized: agreeSkipUnrecognized,
       })
 
       setImportResult({ imported: result.imported, accountsCreated: result.accountsCreated })
@@ -649,7 +781,8 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogTrigger />
-      <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col">
+      {/* max-h + overflow-y-auto:内容(账户/记录列表)再多也在弹窗内滚动,不溢出到弹窗外 */}
+      <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col overflow-y-auto">
         {/* Step 1: 选择来源 */}
         {step === 'source' && (
           <>
@@ -998,16 +1131,16 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
               {stats && (
                 <div className="grid grid-cols-3 gap-3">
                   <div className="rounded-lg bg-muted p-3 text-center">
-                    <p className="text-2xl font-semibold">{stats.parsedRows}</p>
-                    <p className="text-xs text-muted-foreground mt-1">解析成功</p>
-                  </div>
-                  <div className="rounded-lg bg-muted p-3 text-center">
-                    <p className="text-2xl font-semibold">{stats.skippedRows}</p>
-                    <p className="text-xs text-muted-foreground mt-1">跳过</p>
-                  </div>
-                  <div className="rounded-lg bg-muted p-3 text-center">
-                    <p className="text-2xl font-semibold">{unmatchedAccounts.length + unmatchedCategories.length + unrecognizedRecords.length}</p>
+                    <p className="text-2xl font-semibold text-[#ef4444]">{progress.pending}</p>
                     <p className="text-xs text-muted-foreground mt-1">待处理</p>
+                  </div>
+                  <div className="rounded-lg bg-muted p-3 text-center">
+                    <p className="text-2xl font-semibold text-green-600 dark:text-green-400">{progress.mapped}</p>
+                    <p className="text-xs text-muted-foreground mt-1">已映射</p>
+                  </div>
+                  <div className="rounded-lg bg-muted p-3 text-center">
+                    <p className="text-2xl font-semibold text-amber-600">{progress.willSkip}</p>
+                    <p className="text-xs text-muted-foreground mt-1">将跳过</p>
                   </div>
                 </div>
               )}
@@ -1024,7 +1157,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                 </details>
               )}
 
-              {/* 已匹配账户（通过导入账户映射规则自动匹配） */}
+              {/* 已匹配账户（映射规则/名称命中自动匹配；可在此改映射,改动会作为本次导入的决议） */}
               {Object.keys(accountMappings).length > 0 && (
                 <div>
                   <p className="text-sm font-medium mb-1">
@@ -1032,14 +1165,34 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                     已匹配的账户 ({Object.keys(accountMappings).length})
                   </p>
                   <div className="space-y-1 mb-3">
-                    {Object.entries(accountMappings).map(([csvName, targetName]) => (
-                      <div key={csvName} className="flex items-center gap-2 p-2 rounded-lg bg-green-50 dark:bg-green-950/20 text-xs">
-                        <span className="font-medium">{csvName}</span>
-                        <span className="text-muted-foreground">→</span>
-                        <span className="text-green-600 dark:text-green-400">{targetName}</span>
-                        <CheckCircle size={12} className="text-green-500 ml-auto" />
-                      </div>
-                    ))}
+                    {Object.entries(accountMappings).map(([csvName, targetName]) => {
+                      const overridden = accountResolutions[csvName]
+                      const matchedId = ownerPool.find(a => a.name === targetName)?.id ?? ''
+                      return (
+                        <div key={csvName} className="flex items-center gap-2 p-2 rounded-lg bg-green-50 dark:bg-green-950/20 text-xs">
+                          <span className="font-medium min-w-[100px]">{csvName}</span>
+                          <span className="text-muted-foreground">→</span>
+                          <Select
+                            value={overridden?.action === 'existing' ? overridden.accountId : matchedId}
+                            onValueChange={(v) => setAccountResolutions({ ...accountResolutions, [csvName]: { action: 'existing', accountId: v } })}
+                          >
+                            <SelectTrigger className="h-7 text-xs flex-1 bg-background">
+                              <SelectValue placeholder={targetName} />
+                            </SelectTrigger>
+                            <SelectContent className="bg-card border-border">
+                              {ownerPool.map(a => (
+                                <SelectItem key={a.id} value={a.id} className="text-xs">{accountLabel(a, multiOwnerAccounts)}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {overridden ? (
+                            <Badge variant="secondary" className="text-[10px] shrink-0">已改</Badge>
+                          ) : (
+                            <CheckCircle size={12} className="text-green-500 shrink-0" />
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
               )}
@@ -1047,10 +1200,25 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
               {/* 未匹配账户 */}
               {unmatchedAccounts.length > 0 && (
                 <div>
-                  <p className="text-sm font-medium mb-1">
-                    <AlertCircle size={14} className="inline text-yellow-500 mr-1" />
-                    未匹配的账户 ({unmatchedAccounts.length})
-                  </p>
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-sm font-medium">
+                      <AlertCircle size={14} className="inline text-yellow-500 mr-1" />
+                      未匹配的账户 ({unmatchedAccounts.length})
+                      {distinctSuggestedAccounts < unmatchedAccounts.length && (
+                        <span className="ml-2 text-xs font-normal text-muted-foreground">
+                          归一后 {distinctSuggestedAccounts} 个账户
+                        </span>
+                      )}
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => setAccountResolutions(adoptSuggestedAccountResolutions(unmatchedAccounts, accountResolutions))}
+                    >
+                      全部采纳建议
+                    </Button>
+                  </div>
                   <p className="text-xs text-muted-foreground mb-2">
                     同一银行账户可能有多个名称变体（如"农业银行储蓄卡"和"中国农业银行"），设为相同名称即可合并为一个账户
                   </p>
@@ -1060,6 +1228,8 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                       return (
                         <div key={ua.csvName} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
                           <span className="text-sm font-medium min-w-[100px]">{ua.csvName}</span>
+                          {!res && <Badge variant="destructive" className="text-[10px]">待选择</Badge>}
+                          {res?.isDefault && <Badge variant="secondary" className="text-[10px]">建议</Badge>}
                           {res?.action === 'create' ? (
                             <>
                               <Input
@@ -1125,7 +1295,8 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
               {(unmatchedCategories.length > 0 || extraUnmatched.length > 0) && (() => {
                 // 合并并过滤(手动添加项带 id,两者取公共形状)
                 const allUnmatched: UnmatchedCategoryRow[] = [
-                  ...unmatchedCategories.filter(uc => !removedKeys[uc.sourceCategory]),
+                  // 只保留有明确收支类型的分类:纯 UNKNOWN 分类在「需手动处理」里处置,不在此处(否则标题有数字却无行)
+                  ...unmatchedCategories.filter(uc => !removedKeys[uc.sourceCategory] && uc.types.some(t => t !== 'UNKNOWN')),
                   ...extraUnmatched.filter(eu => !removedKeys[`e${eu.id}`]),
                 ]
                 if (allUnmatched.length === 0) return null
@@ -1133,6 +1304,8 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                 const grouped = new Map<string, typeof allUnmatched>()
                 for (const uc of allUnmatched) {
                   for (const t of uc.types) {
+                    // 类型未识别的记录走「需手动处理」,这里只按明确收支类型分组
+                    if (t === 'UNKNOWN') continue
                     const list = grouped.get(t) || []
                     list.push(uc)
                     grouped.set(t, list)
@@ -1287,6 +1460,16 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                   <p className="text-xs text-muted-foreground mb-2">
                     以下记录无法自动识别类型，请手动设置类型、账户和分类后导入；类型选「转账」时还需指定转入账户。未设置的记录将被跳过。
                   </p>
+                  {progress.willSkip > 0 && (
+                    <label className="flex items-center gap-2 text-xs mb-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={agreeSkipUnrecognized}
+                        onChange={(e) => setAgreeSkipUnrecognized(e.target.checked)}
+                      />
+                      同意跳过未设置的 {progress.willSkip} 条记录
+                    </label>
+                  )}
                   <div className="space-y-2 max-h-64 overflow-y-auto">
                     {unrecognizedRecords.map(r => {
                       const res = unrecognizedResolutions[r.rowIndex]
@@ -1507,17 +1690,20 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                 </div>
               )}
             </div>
+            {checking && (
+              <p className="text-xs text-muted-foreground px-1">正在向服务端校验…</p>
+            )}
+            {!checking && serverCheck && !serverCheck.canProceed && (
+              <p className="text-xs text-destructive px-1">{serverCheck.reasons.join('；')}</p>
+            )}
             <DialogFooter>
               <Button variant="outline" onClick={() => setStep(source === 'csv' ? 'columnMapping' : 'upload')} disabled={loading}>
                 <ArrowLeft size={16} /> 上一步
               </Button>
               <Button
                 className="bg-primary hover:bg-primary/90 text-primary-foreground"
-                onClick={() => { setFilterType(''); setFilterCategory(''); setFilterAccount(''); setStep('confirm') }}
-                disabled={previewRecords.length === 0 && unrecognizedRecords.filter(r => {
-                  const res = unrecognizedResolutions[r.rowIndex]
-                  return !!res?.type && !!res?.accountId && (res.type !== 'TRANSFER' || !!res.toAccountId)
-                }).length === 0}
+                onClick={goConfirm}
+                disabled={checking}
               >
                 下一步：确认导入
                 <ArrowRight size={16} />
@@ -1552,7 +1738,8 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                 {accountCreations.length > 0 && (
                   <div>
                     <p className="text-sm font-medium mb-2">将创建 {accountCreations.length} 个新账户：</p>
-                    <div className="border rounded-lg overflow-hidden">
+                    {/* 账户多时表格自身滚动,避免把整个弹窗撑高 */}
+                    <div className="border rounded-lg overflow-y-auto max-h-[260px]">
                       <Table>
                         <TableHeader>
                           <TableRow className="bg-muted/50 hover:bg-muted/50">
@@ -1616,14 +1803,30 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
 
                   {/* 全部记录预览 */}
                   {(() => {
+                    // 账户列展示「映射后账户名」,原始 CSV 名放进 tooltip;筛选下拉也按展示名。
+                    // 「将新建」的账户还没有 id,行里带的是目标名/原始 CSV 名,故再查一层 sourceAccountName → 目标名。
+                    const accountNameById = new Map([...accounts, ...ownerPool].map(a => [a.id, a.name]))
+                    const createdNameByCsvName = new Map<string, string>()
+                    for (const ac of accountCreations) {
+                      for (const sn of ac.csvName.split(', ')) createdNameByCsvName.set(sn, ac.name)
+                      createdNameByCsvName.set(ac.name, ac.name)
+                    }
+                    const labelOf = (idOrName?: string | null, csvName?: string | null) =>
+                      accountNameById.get(idOrName ?? '')
+                      ?? createdNameByCsvName.get(idOrName ?? '')
+                      ?? createdNameByCsvName.get(csvName ?? '')
+                      ?? idOrName
+                      ?? csvName
+                      ?? ''
+                    const accountLabelOf = (r: ConfirmRow) => labelOf(r.accountId, r._accountName)
                     const allRecords: ConfirmRow[] = [...records, ...resolvedUnrecognized]
                     const cfTypes = [...new Set(allRecords.map(r => r.type))]
                     const cfCategories = [...new Set(allRecords.map(r => r.categoryCode).filter(Boolean))] as string[]
-                    const cfAccounts = [...new Set(allRecords.map(r => r._accountName).filter(Boolean))] as string[]
+                    const cfAccounts = [...new Set(allRecords.map(accountLabelOf).filter(Boolean))] as string[]
                     const filteredConfirm = allRecords.filter(r => {
                       if (filterType && r.type !== filterType) return false
                       if (filterCategory && r.categoryCode !== filterCategory) return false
-                      if (filterAccount && r._accountName !== filterAccount) return false
+                      if (filterAccount && accountLabelOf(r) !== filterAccount) return false
                       return true
                     })
                     return (
@@ -1702,8 +1905,8 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                                 <TableHead className="text-xs whitespace-nowrap py-2">日期</TableHead>
                                 <TableHead className="text-xs whitespace-nowrap py-2">类型</TableHead>
                                 <TableHead className="text-xs whitespace-nowrap py-2">金额</TableHead>
-                                <TableHead className="text-xs whitespace-nowrap py-2">账户</TableHead>
-                                <TableHead className="text-xs whitespace-nowrap py-2">目标账户</TableHead>
+                                <TableHead className="text-xs whitespace-nowrap py-2 min-w-[160px]">账户</TableHead>
+                                <TableHead className="text-xs whitespace-nowrap py-2 min-w-[100px]">目标账户</TableHead>
                                 <TableHead className="text-xs whitespace-nowrap py-2">交易方</TableHead>
                                 <TableHead className="text-xs whitespace-nowrap py-2">分类</TableHead>
                                 <TableHead className="text-xs whitespace-nowrap py-2">备注</TableHead>
@@ -1722,10 +1925,18 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                                     {r.amount.toFixed(2)}
                                   </TableCell>
                                   <TableCell className="text-xs py-2">
-                                    <TrucCell text={r._accountName} maxW="max-w-[80px]" />
+                                    <TrucCell
+                                      text={labelOf(r.accountId, r._accountName)}
+                                      title={r._accountName}
+                                      maxW="max-w-[220px]"
+                                    />
                                   </TableCell>
                                   <TableCell className="text-xs py-2 text-muted-foreground">
-                                    <TrucCell text={r._toAccountName} maxW="max-w-[80px]" />
+                                    <TrucCell
+                                      text={labelOf(r.toAccountId, r._toAccountName)}
+                                      title={r._toAccountName}
+                                      maxW="max-w-[140px]"
+                                    />
                                   </TableCell>
                                   <TableCell className="text-xs py-2 text-muted-foreground">
                                     <TrucCell text={r.payer} maxW="max-w-[80px]" />
@@ -1747,14 +1958,26 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                   })()}
                 </div>
               </div>
+              {checking ? (
+                <p className="text-xs text-muted-foreground px-1">正在按当前决议向服务端复核…</p>
+              ) : serverBlocked ? (
+                <p className="text-xs text-destructive px-1">
+                  {serverCheck?.reasons.join('；') || '服务端未放行，请返回修改'}
+                </p>
+              ) : (serverCheck?.skippedCount ?? 0) > 0 ? (
+                <p className="text-xs text-amber-600 px-1">本次将跳过 {serverCheck?.skippedCount ?? 0} 条未识别记录</p>
+              ) : null}
               <DialogFooter>
                 <Button variant="outline" onClick={() => setStep('preview')} disabled={loading}>
                   <ArrowLeft size={16} /> 返回修改
                 </Button>
+                <Button variant="outline" onClick={handleSaveRulesOnly} disabled={loading}>
+                  {rulesSaved ? '规则已保存' : '仅保存规则'}
+                </Button>
                 <Button
                   className="bg-primary hover:bg-primary/90 text-primary-foreground"
                   onClick={handleImport}
-                  disabled={loading}
+                  disabled={loading || checking || serverBlocked}
                 >
                   {loading ? <Spinner /> : `确认导入 ${allRecordCount} 条记录`}
                 </Button>

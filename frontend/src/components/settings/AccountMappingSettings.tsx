@@ -53,6 +53,30 @@ export function AccountMappingSettings() {
   const [accountMappingsLoading, setAccountMappingsLoading] = useState(false)
   const [accountMappingsError, setAccountMappingsError] = useState('')
   const [accountMappingAddOpen, setAccountMappingAddOpen] = useState(false)
+  // 规则体检(H 项):一键合并等价重复规则(归一化后同键 → 保留最早一条)
+  const [mergingDup, setMergingDup] = useState(false)
+  const handleMergeDuplicates = async () => {
+    setMergingDup(true)
+    try {
+      const res = await importExportApi.getDuplicateMappings('account')
+      const groups = res.groups ?? []
+      if (groups.length === 0) {
+        toast.info('没有发现等价重复规则')
+        return
+      }
+      let merged = 0
+      for (const g of groups) {
+        const r = await importExportApi.mergeMappings({ kind: 'account', ids: g.ids, strategy: 'keep-first' })
+        merged += r.merged
+      }
+      toast.success(`已合并 ${groups.length} 组，删除 ${merged} 条重复规则`)
+      await loadAccountMappings(accountMappingSource)
+    } catch (e) {
+      toast.error(errorMessage(e))
+    } finally {
+      setMergingDup(false)
+    }
+  }
   const [accountMappingEditTarget, setAccountMappingEditTarget] = useState<AccountMapping | null>(null)
   const [accountMappingNewSourceName, setAccountMappingNewSourceName] = useState('')
   const [accountMappingNewPayerContains, setAccountMappingNewPayerContains] = useState('')
@@ -154,6 +178,15 @@ export function AccountMappingSettings() {
                 <SelectItem value="csv" className="text-xs">其他CSV</SelectItem>
               </SelectContent>
             </Select>
+            <Button
+              size="sm"
+              variant="outline"
+              className="bg-background border-border"
+              disabled={mergingDup}
+              onClick={handleMergeDuplicates}
+            >
+              {mergingDup ? <Spinner /> : '合并重复'}
+            </Button>
             <Button
               size="sm"
               variant="outline"

@@ -135,6 +135,58 @@ export function autoDetectTypeMapping(values: string[]): Partial<Record<string, 
 
 // ── 账户池内匹配(对齐 backend matchAccountByName 多用户修复版语义) ──
 
+/**
+ * 促销/权益尾巴词表:手机银行导出常在同一张卡上拼出「XX储蓄卡(1234)&立减金」这类变体,
+ * 这些变体是同一个账户,归一后应同名(⇒ 导入时合并为一次创建)。
+ */
+const PROMO_WORD_RE = /(券|红包|立减|满减|折扣|焕新|支付享|优惠|权益|积分|返现|奖励|补贴|福利|抵扣)/;
+
+/**
+ * 归一账户名(匹配比较与「建议新建名」共用):
+ * ① 砍掉 `&` 拼接的促销/权益尾巴(仅当该段含促销词,避免误伤正常含 `&` 的账户名)
+ * ② 去掉银行名里冗余的「中国」前缀(「中国银行」本身除外)
+ * ③ 压缩空白
+ */
+export function normalizeAccountName(raw: string): string {
+  if (!raw) return '';
+  const trimmed = raw.trim().replace(/\s+/g, ' ');
+  let name = trimmed;
+
+  const parts = trimmed.split(/[&＆]/);
+  if (parts.length > 1) {
+    const kept: string[] = [parts[0]];
+    for (let i = 1; i < parts.length; i++) {
+      if (PROMO_WORD_RE.test(parts[i])) break;
+      kept.push(parts[i]);
+    }
+    name = kept.join('&');
+  }
+
+  // 非贪婪:「中国建设银行储蓄卡(7483)」→「建设银行储蓄卡(7483)」,而「中国银行…」不含冗余前缀(整体不匹配)
+  name = name.replace(/^中国(.+?银行)/, '$1');
+  return name.trim();
+}
+
+/**
+ * 按源账户名挑候选账户映射规则:
+ * ① 原始名精确优先;② 否则退回归一后相等的规则。
+ *
+ * 有了 ②,手机银行换个促销尾巴(「XX储蓄卡(1234)&立减金」)或银行名多写「中国」时,
+ * 仍能复用同一张卡的历史规则 —— 归一保留卡号,不会把不同卡混起来。
+ * 精确分组里若存在规则但不满足条件,不会退回归一组(避免更宽的规则覆盖用户的条件规则)。
+ */
+export function pickAccountMappingCandidates<M extends { sourceAccountName: string }>(
+  accountName: string,
+  byName: Map<string, M[]>,
+  byNormalizedName: Map<string, M[]>,
+): M[] | undefined {
+  const exact = byName.get(accountName);
+  if (exact?.length) return exact;
+
+  const normalized = normalizeAccountName(accountName);
+  return normalized ? byNormalizedName.get(normalized) : undefined;
+}
+
 export interface PoolAccount {
   id: string;
   name: string;
@@ -155,19 +207,39 @@ export function matchAccountInPoolDetailed(name: string, pool: PoolAccount[], ow
   const candidates = ownerId ? pool.filter((a) => !a.ownerId || a.ownerId === ownerId) : pool;
   if (!name || candidates.length === 0) return { matched: false, ambiguous: false };
 
-  const exact = candidates.filter((a) => a.name === name);
+  // ① 原样四级匹配
+  const direct = matchRounds(name, candidates, (a) => a.name);
+  if (direct) return direct;
+
+  // ② 归一名兜底:「中国建设银行储蓄卡(7483)」↔「建设银行储蓄卡(7483)」、带促销尾巴的变体
+  const normalized = normalizeAccountName(name);
+  if (normalized && normalized !== name) {
+    const byNormalized = matchRounds(normalized, candidates, (a) => normalizeAccountName(a.name));
+    if (byNormalized) return byNormalized;
+  }
+
+  return { matched: false, ambiguous: false };
+}
+
+/** 四级名称匹配(精确 → 账户名含目标名 → 目标名含账户名);nameOf 决定参与比较的名字 */
+function matchRounds(
+  target: string,
+  candidates: PoolAccount[],
+  nameOf: (a: PoolAccount) => string,
+): AccountPoolMatchResult | null {
+  const exact = candidates.filter((a) => nameOf(a) === target);
   if (exact.length === 1) return { matched: true, id: exact[0].id, name: exact[0].name };
   if (exact.length > 1) return { matched: false, ambiguous: true, candidates: exact };
 
-  const contains = candidates.filter((a) => a.name.includes(name));
+  const contains = candidates.filter((a) => nameOf(a).includes(target));
   if (contains.length === 1) return { matched: true, id: contains[0].id, name: contains[0].name };
   if (contains.length > 1) return { matched: false, ambiguous: true, candidates: contains };
 
-  const containedBy = candidates.filter((a) => name.includes(a.name));
+  const containedBy = candidates.filter((a) => target.includes(nameOf(a)));
   if (containedBy.length === 1) return { matched: true, id: containedBy[0].id, name: containedBy[0].name };
   if (containedBy.length > 1) return { matched: false, ambiguous: true, candidates: containedBy };
 
-  return { matched: false, ambiguous: false };
+  return null;
 }
 
 /** 简化版:直接取首个命中(不做歧义决议),供导入向导直接取 id */
@@ -178,10 +250,13 @@ export function matchAccountInPool(name: string, pool: PoolAccount[], ownerId?: 
 
 // ── 账户决议(手动导入向导 / AI 导入卡共用) ──
 
-/** 账户解析:映射已有账户 或 新建(名称+类型) */
+/** 账户决议来源:ai=AI 给出;suggested-candidate=系统建议(候选首位/建议新建) */
+export type AccountResolutionSource = 'ai' | 'suggested-candidate';
+
+/** 账户解析:映射已有账户 或 新建(名称+类型)。isDefault 标记"仍是默认建议,用户未确认" */
 export type AccountResolution =
-  | { action: 'existing'; accountId: string }
-  | { action: 'create'; name: string; type: string };
+  | { action: 'existing'; accountId: string; isDefault?: boolean; source?: AccountResolutionSource }
+  | { action: 'create'; name: string; type: string; isDefault?: boolean; source?: AccountResolutionSource };
 
 /** AI 预填的账户决议(preview 结果的 aiResolution / AI 参数中的 accountResolutions) */
 export interface AIAccountResolution {
@@ -208,8 +283,10 @@ export const TYPE_TO_GROUP: Record<string, string> = {
 };
 
 /**
- * 账户决议默认值初始化(四处导入 UI 共用策略):
- * AI 决议(既有→映射 / 新建→名称+类型) → 候选首位 → 新建建议;aiArgsResolutions 最后覆盖。
+ * 账户决议初始化(四处导入 UI 共用策略):
+ * AI 决议(既有→映射 / 新建→名称+类型) → 候选首位(标记 isDefault) → 无候选则**不写决议**。
+ * 无候选不再自动新建:UI 显示「待选择」并阻止进入下一步,用户点「全部采纳建议」
+ * (adoptSuggestedAccountResolutions)后才等价于旧的自动新建行为。
  */
 export function initAccountResolutions(
   unmatchedAccounts: UnmatchedAccountInput[],
@@ -219,35 +296,168 @@ export function initAccountResolutions(
   for (const ua of unmatchedAccounts) {
     const ar = ua.aiResolution;
     if (ar?.action === 'existing' && ar.targetAccountId) {
-      res[ua.csvName] = { action: 'existing', accountId: ar.targetAccountId };
+      res[ua.csvName] = { action: 'existing', accountId: ar.targetAccountId, source: 'ai' };
     } else if (ar?.action === 'create' && ar.targetAccountName && ar.accountType) {
-      res[ua.csvName] = { action: 'create', name: ar.targetAccountName, type: ar.accountType };
+      res[ua.csvName] = { action: 'create', name: ar.targetAccountName, type: ar.accountType, source: 'ai' };
     } else if (ua.candidates?.length) {
-      res[ua.csvName] = { action: 'existing', accountId: ua.candidates[0].id };
-    } else {
-      res[ua.csvName] = { action: 'create', name: ua.suggestedName, type: ua.suggestedType || 'OTHER' };
+      // 候选首位只是建议:标记 isDefault,用户不显式采纳就不放行(见 canProceedImport)
+      res[ua.csvName] = { action: 'existing', accountId: ua.candidates[0].id, isDefault: true, source: 'suggested-candidate' };
     }
   }
   // AI 参数中的账户映射回显(覆盖默认值)
   for (const ar of aiArgsResolutions ?? []) {
     if (ar.action === 'existing' && ar.targetAccountId) {
-      res[ar.sourceAccountName ?? ''] = { action: 'existing', accountId: ar.targetAccountId };
+      res[ar.sourceAccountName ?? ''] = { action: 'existing', accountId: ar.targetAccountId, source: 'ai' };
     } else if (ar.action === 'create' && ar.targetAccountName && ar.accountType) {
-      res[ar.sourceAccountName ?? ''] = { action: 'create', name: ar.targetAccountName, type: ar.accountType };
+      res[ar.sourceAccountName ?? ''] = { action: 'create', name: ar.targetAccountName, type: ar.accountType, source: 'ai' };
     }
   }
   return res;
 }
 
-/** 未匹配账户中仍缺决议的数量(existing 缺 accountId / create 缺 name) */
+/**
+ * 一键采纳建议:把默认值(候选首位)与缺失决议一次性落为明确决议(去掉 isDefault)。
+ * 用户已明确选择的项保持不变。
+ */
+export function adoptSuggestedAccountResolutions(
+  unmatchedAccounts: UnmatchedAccountInput[],
+  current: Record<string, AccountResolution>,
+): Record<string, AccountResolution> {
+  const next = { ...current };
+  for (const ua of unmatchedAccounts) {
+    const cur = next[ua.csvName];
+    if (cur && !cur.isDefault) continue;
+    next[ua.csvName] = ua.candidates?.length
+      ? { action: 'existing', accountId: ua.candidates[0].id, source: 'suggested-candidate' }
+      : { action: 'create', name: ua.suggestedName, type: ua.suggestedType || 'OTHER', source: 'suggested-candidate' };
+  }
+  return next;
+}
+
+/** 账户决议是否完整(existing 需 accountId;create 需 name 且 type —— 与后端建账户的口径一致) */
+export function isAccountResolutionComplete(res: AccountResolution | undefined): boolean {
+  if (!res) return false;
+  return res.action === 'existing' ? !!res.accountId : !!res.name && !!res.type;
+}
+
+/** 未识别记录的处置是否完整(需类型 + 账户;类型为转账时还需转入账户) */
+export function isUnrecognizedResolutionComplete(
+  res: { type?: string; accountId?: string; toAccountId?: string } | undefined,
+): boolean {
+  if (!res?.type || !res.accountId) return false;
+  return res.type === 'TRANSFER' ? !!res.toAccountId : true;
+}
+
+/**
+ * 未匹配账户中仍缺决议的数量。
+ * 口径:「缺键」(没有任何决议记录)同样算未解析 —— 旧实现只统计"有决议但内容不全"的项,
+ * 会让默认值/漏填的账户在计数里消失。
+ */
 export function unresolvedAccountCount(
   unmatchedAccounts: { csvName: string }[],
   resolutions: Record<string, AccountResolution>,
 ): number {
-  return unmatchedAccounts.filter((ua) => {
-    const res = resolutions[ua.csvName];
-    return res && (res.action === 'existing' ? !res.accountId : !res.name);
-  }).length;
+  return unmatchedAccounts.filter(
+    (ua) => !Object.hasOwn(resolutions, ua.csvName) || !isAccountResolutionComplete(resolutions[ua.csvName]),
+  ).length;
+}
+
+// ── 导入进度计数(web/mobile 手动向导 + AI 预览卡共用口径) ──
+
+/** 导入进度(三项明细 + 三个界面直接展示的聚合值) */
+export interface ImportProgressCounts {
+  accountsTotal: number;
+  /** 有明确决议的账户数(不含仍停留在默认建议上的) */
+  accountsResolved: number;
+  /** 仍是默认建议(候选首位)、需用户显式采纳的账户数 */
+  accountsDefault: number;
+  categoriesTotal: number;
+  categoriesResolved: number;
+  unrecognizedTotal: number;
+  unrecognizedResolved: number;
+  /** 待处理(未决)项数 = 未解析账户 + 未映射分类 + 未处置未识别 */
+  pending: number;
+  /** 已映射项数 = 已解析账户 + 已映射分类 */
+  mapped: number;
+  /** 未识别且未处置 → 导入时会被跳过的行数 */
+  willSkip: number;
+  /** 必然失败/写脏数据的项数(当前 = 账户未解析;D 项落地后改由服务端 blocking 下发) */
+  blocking: number;
+}
+
+export interface ImportProgressInput {
+  /** 未匹配账户(预览响应 unmatchedAccounts) */
+  unmatchedAccounts: { csvName: string }[];
+  /** 账户决议(按 csvName 索引;缺键即未解析) */
+  accountResolutions?: Record<string, AccountResolution>;
+  /** 未映射分类的决议条目(同一 sourceCategory 按收支类型拆成的多条需全部选好才算已映射) */
+  categoryResolutions?: { sourceCategory: string; targetCode?: string | null }[];
+  /** 未识别记录(预览响应 unrecognizedRecords;rowIndex 缺失时视为无决议) */
+  unrecognizedRecords: { rowIndex?: number }[];
+  /** 未识别记录的处置(按 rowIndex 索引) */
+  unrecognizedResolutions?: Record<number, { type?: string; accountId?: string; toAccountId?: string }>;
+}
+
+/**
+ * 汇总导入进度。三处 UI(web ImportDialog、mobile ImportSheet、双端 AI 预览卡)统一调用,
+ * 避免各端各写一套"待处理/已映射/将跳过"口径。
+ */
+export function computeImportProgress(input: ImportProgressInput): ImportProgressCounts {
+  const {
+    unmatchedAccounts,
+    accountResolutions = {},
+    categoryResolutions = [],
+    unrecognizedRecords,
+    unrecognizedResolutions = {},
+  } = input;
+
+  const accountsTotal = unmatchedAccounts.length;
+  const accountsDefault = unmatchedAccounts.filter((ua) => !!accountResolutions[ua.csvName]?.isDefault).length;
+  const accountsResolved = accountsTotal - unresolvedAccountCount(unmatchedAccounts, accountResolutions) - accountsDefault;
+
+  // 同一 sourceCategory 可能按收支类型拆成多条决议,全部选好才算已映射
+  const categoryState = new Map<string, boolean>();
+  for (const cr of categoryResolutions) {
+    const ok = !!cr.targetCode;
+    categoryState.set(cr.sourceCategory, (categoryState.get(cr.sourceCategory) ?? true) && ok);
+  }
+  const categoriesTotal = categoryState.size;
+  const categoriesResolved = Array.from(categoryState.values()).filter(Boolean).length;
+
+  const unrecognizedTotal = unrecognizedRecords.length;
+  const unrecognizedResolved = unrecognizedRecords.filter((r) =>
+    isUnrecognizedResolutionComplete(unrecognizedResolutions[r.rowIndex ?? -1]),
+  ).length;
+
+  const accountsUnresolved = accountsTotal - accountsResolved - accountsDefault;
+  const categoriesUnresolved = categoriesTotal - categoriesResolved;
+  const willSkip = unrecognizedTotal - unrecognizedResolved;
+  return {
+    accountsTotal,
+    accountsResolved,
+    accountsDefault,
+    categoriesTotal,
+    categoriesResolved,
+    unrecognizedTotal,
+    unrecognizedResolved,
+    pending: accountsUnresolved + categoriesUnresolved + willSkip,
+    mapped: accountsResolved + categoriesResolved,
+    willSkip,
+    blocking: accountsUnresolved,
+  };
+}
+
+/**
+ * 第一步/第二步放行判定(四处导入 UI 共用):
+ * 账户(含还停留在默认建议上的)与分类必须都有明确决议;未识别行要么没有,要么用户显式同意跳过。
+ */
+export function canProceedImport(
+  counts: ImportProgressCounts,
+  opts: { agreeSkipUnrecognized?: boolean } = {},
+): boolean {
+  if (counts.accountsResolved < counts.accountsTotal) return false;
+  if (counts.categoriesResolved < counts.categoriesTotal) return false;
+  return counts.willSkip === 0 || !!opts.agreeSkipUnrecognized;
 }
 
 // ── 待创建账户合并 ──

@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils'
 import { markSubmitted, isSubmitted, clearSubmitted } from '@/lib/ai-submit'
 import { ACCOUNT_TYPE_LABELS, type AccountType } from '@/api/account'
 import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
-import { initAccountResolutions, RECORD_TYPE_LABELS, TYPE_TO_GROUP as coreTypeToGroup, type AccountResolution } from '@homibook/core'
+import { adoptSuggestedAccountResolutions, computeImportProgress, initAccountResolutions, RECORD_TYPE_LABELS, TYPE_TO_GROUP as coreTypeToGroup, type AccountResolution } from '@homibook/core'
 import { RECORD_TYPE_TEXT_CLASS } from '@/lib/record-type'
 import { useChatStore } from '@/stores/chat'
 import { Button } from '@/components/ui/button'
@@ -124,20 +124,47 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
   const allDictItems = data.allDictItems || []
   const isConfirmed = !!data.confirmed
   const submitted = isSubmitted(toolCallId)
+  // 服务端裁决拒绝时(工具结果带 error)视为未提交:按钮保持可用,原因随工具结果一并展示
+  const toolError = (data as { error?: string } | undefined)?.error
+  const showSubmitted = submitted && !isConfirmed && !toolError
 
   // ---- 状态 ----
   const [tab, setTab] = useState<'records' | 'unmatchedAccounts' | 'unmatchedCategories' | 'unrecognized'>('records')
 
-  // 账户解析(类型来自 @homibook/core)
-  const [accountResolutions, setAccountResolutions] = useState<Record<string, AccountResolution>>({})
+  // 账户解析(类型来自 @homibook/core;统一策略见 core initAccountResolutions)
+  // 惰性初始值:挂载时算一次,之后全部由用户交互覆盖(等价于原先"只跑一次"的 effect 初始化)
+  const [accountResolutions, setAccountResolutions] = useState<Record<string, AccountResolution>>(
+    () => initAccountResolutions(data.unmatchedAccounts || [], aiArgs?.accountResolutions),
+  )
 
-  // 分类解析 - 数组结构，复制/删除/更新全部操作此字段
+  // 分类解析 - 数组结构，复制/删除/更新全部操作此字段(直接从后端映射规则构建)
   interface CategoryResolution { id: string; sourceCategory: string; type: string; targetCode: string; save: boolean; payerContains: string; descriptionContains: string }
-  const [categoryResolutions, setCategoryResolutions] = useState<CategoryResolution[]>([])
+  const [categoryResolutions, setCategoryResolutions] = useState<CategoryResolution[]>(() =>
+    (data.unmatchedCategories || [])
+      .filter(uc => uc.aiRecordType || uc.types[0])
+      .map((uc, i) => ({
+        id: String(i),
+        sourceCategory: uc.sourceCategory,
+        type: uc.aiRecordType || uc.types[0] || '',
+        targetCode: uc.suggestedCode || '',
+        save: true,
+        payerContains: uc.payerContains || '',
+        descriptionContains: uc.descriptionContains || '',
+      })),
+  )
 
   // 未识别记录解析(toAccountId 仅在类型为「转账」时使用)
   type UnrecognizedResolution = { type: string; accountId: string; categoryCode: string; toAccountId: string }
-  const [unrecognizedResolutions, setUnrecognizedResolutions] = useState<Record<number, UnrecognizedResolution>>({})
+  const [unrecognizedResolutions, setUnrecognizedResolutions] = useState<Record<number, UnrecognizedResolution>>(() => {
+    const unresRes: Record<number, UnrecognizedResolution> = {}
+    for (const r of data.unrecognizedRecords || []) {
+      unresRes[r.rowIndex] = { type: '', accountId: r.accountId || accounts[0]?.id || '', toAccountId: r.toAccountId || '', categoryCode: r.mappedCategoryCode || r.categoryCode || '' }
+    }
+    return unresRes
+  })
+
+  // 未识别行「同意跳过」需用户显式勾选(门禁见 core canProceedImport)
+  const [agreeSkipUnrecognized, setAgreeSkipUnrecognized] = useState(false)
 
   // 分类弹出框
   const [comboOpen, setComboOpen] = useState<string | null>(null)
@@ -150,49 +177,16 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
     if (data?.confirmed) clearSubmitted(toolCallId)
   }, [data?.confirmed, toolCallId])
 
-  // ---- 初始化 ----
-  const initialized = { current: false }
-  useEffect(() => {
-    if (initialized.current) return
-    initialized.current = true
-    // 账户解析(统一策略见 core initAccountResolutions)
-    setAccountResolutions(initAccountResolutions(data.unmatchedAccounts || [], aiArgs?.accountResolutions))
-
-    // 分类解析 - 直接从后端映射规则构建数组
-    setCategoryResolutions(
-      (data.unmatchedCategories || [])
-        .filter(uc => uc.aiRecordType || uc.types[0])
-        .map((uc, i) => ({
-          id: String(i),
-          sourceCategory: uc.sourceCategory,
-          type: uc.aiRecordType || uc.types[0] || '',
-          targetCode: uc.suggestedCode || '',
-          save: true,
-          payerContains: uc.payerContains || '',
-          descriptionContains: uc.descriptionContains || '',
-        }))
-    )
-
-    // 未识别记录
-    const unresRes: Record<number, UnrecognizedResolution> = {}
-    for (const r of data.unrecognizedRecords || []) {
-      unresRes[r.rowIndex] = { type: '', accountId: r.accountId || accounts[0]?.id || '', toAccountId: r.toAccountId || '', categoryCode: r.mappedCategoryCode || r.categoryCode || '' }
-    }
-    setUnrecognizedResolutions(unresRes)
-  }, [])
-
   // ---- 计算 ----
-  const unresolvedAcctCount = (data.unmatchedAccounts || []).filter(ua => {
-    const res = accountResolutions[ua.csvName]
-    return res && (res.action === 'existing' ? !res.accountId : !res.name)
-  }).length
-  const unresolvedCatCount = categoryResolutions.filter(cr => !cr.targetCode).length
-  const unresolvedUnrecCount = unrecognizedRecords.filter(r => {
-    const res = unrecognizedResolutions[r.rowIndex]
-    // 转账未选转入账户同样算「待处理」(与确认时跳过的口径一致)
-    return !res?.type || !res?.accountId || (res.type === 'TRANSFER' && !res.toAccountId)
-  }).length
-
+  // 导入进度(待处理/已映射/将跳过;口径统一在 core computeImportProgress,与手动向导/AI 移动端卡一致)
+  const progress = computeImportProgress({
+    unmatchedAccounts: data.unmatchedAccounts || [],
+    accountResolutions,
+    categoryResolutions: categoryResolutions.map(cr => ({ sourceCategory: cr.sourceCategory, targetCode: cr.targetCode })),
+    unrecognizedRecords,
+    unrecognizedResolutions,
+  })
+  // 放行判定在服务端:点确认后由 confirm_import 裁决,未决原因经 confirmError 回显
   const allRecords = [...records, ...unrecognizedRecords]
 
   const tabs = [
@@ -227,22 +221,18 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
     <div className="space-y-2">
       {/* 统计摘要 */}
       {stats && (
-        <div className="grid grid-cols-4 gap-1 text-[10px]">
-          <div className="bg-background rounded px-1.5 py-0.5 text-center">
-            <span className="text-muted-foreground">总行数 </span>
-            <span className="font-medium">{stats.totalLines}</span>
-          </div>
-          <div className="bg-background rounded px-1.5 py-0.5 text-center">
-            <span className="text-muted-foreground">已解析 </span>
-            <span className="font-medium text-[#22c55e]">{stats.parsedRows}</span>
-          </div>
-          <div className="bg-background rounded px-1.5 py-0.5 text-center">
-            <span className="text-muted-foreground">跳过 </span>
-            <span className="font-medium text-amber-600">{stats.skippedRows}</span>
-          </div>
+        <div className="grid grid-cols-3 gap-1 text-[10px]">
           <div className="bg-background rounded px-1.5 py-0.5 text-center">
             <span className="text-muted-foreground">待处理 </span>
-            <span className="font-medium text-[#ef4444]">{unresolvedAcctCount + unresolvedCatCount + unresolvedUnrecCount}</span>
+            <span className="font-medium text-[#ef4444]">{progress.pending}</span>
+          </div>
+          <div className="bg-background rounded px-1.5 py-0.5 text-center">
+            <span className="text-muted-foreground">已映射 </span>
+            <span className="font-medium text-[#22c55e]">{progress.mapped}</span>
+          </div>
+          <div className="bg-background rounded px-1.5 py-0.5 text-center">
+            <span className="text-muted-foreground">将跳过 </span>
+            <span className="font-medium text-amber-600">{progress.willSkip}</span>
           </div>
         </div>
       )}
@@ -326,15 +316,27 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
             <p className="text-muted-foreground text-xs">全部账户已匹配</p>
           ) : (
             <>
-              <p className="text-xs text-muted-foreground">
-                同一银行账户可能有多个名称变体，设为相同名称即可合并
-              </p>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground">
+                  同一银行账户可能有多个名称变体，设为相同名称即可合并
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-6 text-[10px] shrink-0"
+                  onClick={() => setAccountResolutions(prev => adoptSuggestedAccountResolutions(data.unmatchedAccounts || [], prev))}
+                >
+                  全部采纳建议
+                </Button>
+              </div>
               <div className="space-y-1.5">
                 {(data.unmatchedAccounts || []).map(ua => {
                   const res = accountResolutions[ua.csvName]
                   return (
                     <div key={ua.csvName} className="flex items-center gap-2 p-2 rounded-lg bg-muted/50">
                       <span className="text-xs font-medium min-w-[80px] max-w-[100px] truncate">{ua.csvName}</span>
+                      {!res && <Badge variant="destructive" className="text-[10px] shrink-0">待选择</Badge>}
+                      {res?.isDefault && <Badge variant="secondary" className="text-[10px] shrink-0">建议</Badge>}
                       {res?.action === 'create' ? (
                         <>
                           <Input
@@ -521,6 +523,16 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
       {/* 未识别记录 */}
       {tab === 'unrecognized' && (
         <div className="space-y-1.5 max-h-64 overflow-y-auto">
+          {progress.willSkip > 0 && (
+            <label className="flex items-center gap-1.5 text-[10px] cursor-pointer">
+              <input
+                type="checkbox"
+                checked={agreeSkipUnrecognized}
+                onChange={(e) => setAgreeSkipUnrecognized(e.target.checked)}
+              />
+              同意跳过未设置的 {progress.willSkip} 条记录
+            </label>
+          )}
           {unrecognizedRecords.length === 0 ? (
             <p className="text-muted-foreground text-xs">无未识别记录</p>
           ) : (
@@ -599,12 +611,13 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
             {confirmError}
           </div>
         )}
+
         {!isConfirmed ? (
           <div className="flex items-center gap-2">
           <Button
             size="sm"
             className="flex-1 text-xs"
-            disabled={submitted}
+            disabled={showSubmitted}
             onClick={async () => {
               if (!toolCallId) return
               markSubmitted(toolCallId)
@@ -673,8 +686,8 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
               }
             }}
           >
-            {submitted ? <Loader2 size={12} className="animate-spin mr-1" /> : null}
-            {submitted ? '提交中...' : '确认无误，继续导入'}
+            {showSubmitted ? <Loader2 size={12} className="animate-spin mr-1" /> : null}
+            {showSubmitted ? '提交中...' : '确认无误，继续导入'}
           </Button>
           {/* 取消这张账单：approved=false → 模型收到「用户拒绝了此操作」，不会为它调 confirm_import */}
           <Button

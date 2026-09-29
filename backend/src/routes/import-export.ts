@@ -9,8 +9,11 @@ import { prisma } from '../app.js'
 import { authenticate, assertIsMember } from '../middleware/auth.js'
 import { zSchema } from '../lib/schema-helpers.js'
 import { dateKey } from '../lib/date-time.js'
-import { applyAccountMappings, type ParsedRow } from '../services/import/shared.js'
-import { resolveImportAccounts, resolveImportCategories, toImportPreviewRow } from '../services/import/pipeline.js'
+import type { ParsedRow } from '../services/import/shared.js'
+import { toImportPreviewRow } from '../services/import/pipeline.js'
+import { buildValidAccountRefs, CATEGORY_DICT_GROUPS, validateImportRecords } from '../services/import/blocking.js'
+import { remapImportRows } from '../services/import/remap.js'
+import { normalizeAccountMappings, normalizeCategoryMappings, normalizeCondition } from '../services/import/mapping-normalize.js'
 import { ACCOUNT_TYPES, IMPORT_SOURCES, RECORD_TYPES, RECORD_TYPE_LABELS } from '@homibook/core'
 import {
   createAccountsInTx,
@@ -37,6 +40,41 @@ const previewSchema = z.object({
   accountBookId: z.string().min(1),
 })
 
+/**
+ * 预览(第二步)可选的决议入参:multipart 字段是字符串,数组需 JSON.parse。
+ * 与 AI 链路保持同形(existing/create 的账户决议、条件化分类决议、未识别行处置)。
+ */
+function parseRemapFields(fields: Record<string, { value: string } | undefined>) {
+  const out: {
+    ownerId?: string
+    confirmSkipUnrecognized?: boolean
+    accountResolutions?: any[]
+    categoryResolutions?: any[]
+    unrecognizedResolutions?: any[]
+  } = {}
+
+  for (const key of ['accountResolutions', 'categoryResolutions', 'unrecognizedResolutions'] as const) {
+    const raw = fields[key]?.value
+    if (!raw) continue
+    try {
+      const parsed = JSON.parse(raw)
+      if (!Array.isArray(parsed)) return { error: `${key} 必须是数组` }
+      out[key] = parsed
+    } catch {
+      return { error: `${key} JSON 格式错误` }
+    }
+  }
+
+  const ownerId = (fields.ownerId?.value || '').trim()
+  if (ownerId) out.ownerId = ownerId
+  // 是否已同意跳过未处置的未识别行:第二步的服务端裁决需要它
+  if (fields.confirmSkipUnrecognized?.value === 'true') out.confirmSkipUnrecognized = true
+  return { data: out }
+}
+
+/** 严格导入校验开关:默认开启;`STRICT_IMPORT_VALIDATION=false` 回退为只阻断必然失败的项 */
+const STRICT_IMPORT_VALIDATION = process.env.STRICT_IMPORT_VALIDATION !== 'false'
+
 const importConfirmSchema = z.object({
   accountBookId: z.string().min(1),
   source: z.enum(IMPORT_SOURCES),
@@ -51,7 +89,12 @@ const importConfirmSchema = z.object({
     remark: z.string().optional(),
     tags: z.array(z.string()).optional(),
     ownerId: z.string().optional(),
+    /** 原始行号(预览行携带;用于把阻断项指回具体行) */
+    rowIndex: z.number().optional(),
   })).min(1),
+  /** 客户端跳过的未识别行数;>0 时必须显式确认 */
+  skippedUnrecognized: z.number().int().min(0).optional(),
+  confirmSkipUnrecognized: z.boolean().optional(),
   accountCreations: z.array(z.object({
     csvName: z.string(),
     name: z.string().min(1).max(30),
@@ -249,34 +292,53 @@ export async function importExportRoutes(app: FastifyInstance) {
       return reply.status(400).send({ message: parseResult.errors[0] })
     }
 
-    // 应用账户映射规则（只匹配本人账户）
-    const { idMap: accountMappings, nameRecord: accountMappingNames } = await applyAccountMappings(source, parseResult.rows, accountBookId, undefined, payload.id)
+    // C 项:第二步可以带上当前决议(账户/分类/未识别行处置)与归属人,由服务端统一重映射
+    const remapFields = parseRemapFields(fields)
+    if ('error' in remapFields) {
+      return reply.status(400).send({ message: remapFields.error })
+    }
 
-    // 匹配账户（传入映射结果；只匹配本人账户）
-    const { unmatched: unmatchedAccounts, nameMatched: nameMatchedByContains } = await resolveImportAccounts(accountBookId, parseResult.rows, accountMappings, payload.id)
-
-    // 匹配分类
-    const { unmatched: unmatchedCategories, allDictItems } = await resolveImportCategories(source, parseResult.rows)
+    const remapped = await remapImportRows({
+      source,
+      rows: parseResult.rows,
+      accountBookId,
+      ownerId: remapFields.data.ownerId || payload.id,
+      confirmSkipUnrecognized: remapFields.data.confirmSkipUnrecognized,
+      accountResolutions: remapFields.data.accountResolutions,
+      categoryResolutions: remapFields.data.categoryResolutions,
+      unrecognizedResolutions: remapFields.data.unrecognizedResolutions,
+    })
 
     // 分离正常记录和无法自动识别的记录
     const normalRecords = parseResult.rows.filter(r => r.type !== 'UNKNOWN')
-    const unrecognizedRecords = parseResult.rows.filter(r => r.type === 'UNKNOWN')
 
     // 预览行形状与短信预览统一(见 services/import/pipeline.ts)
     const mapRow = toImportPreviewRow
 
     return {
       records: normalRecords.map(mapRow),
-      unrecognizedRecords: unrecognizedRecords.map(mapRow),
-      unmatchedAccounts,
-      unmatchedCategories,
-      allDictItems,
-      accountMappings: { ...nameMatchedByContains, ...accountMappingNames },
+      unrecognizedRecords: remapped.unrecognizedRecords.map(mapRow),
+      unmatchedAccounts: remapped.unmatchedAccounts,
+      unmatchedCategories: remapped.unmatchedCategories,
+      allDictItems: remapped.allDictItems,
+      accountMappings: remapped.nameMatched,
+      // 将新建的账户:create 决议覆盖的源账户已从 unmatchedAccounts 剔除,这里单独回报
+      toCreate: remapped.toCreate,
+      // 阻断项与「会被跳过」计数:让"必然失败/写脏"在预览阶段就显性化(客户端据此禁用确认)
+      blocking: remapped.blocking,
+      skipped: { unrecognized: remapped.unresolved.unrecognized.length },
+      // C 项:实际会写入的流水 + 未决清单 + 进度计数(第二步据此校验"零残留")
+      finalRecords: remapped.finalRows.map(mapRow),
+      unresolved: remapped.unresolved,
+      counts: remapped.counts,
+      // 服务端唯一裁决:客户端直接采用(不再自行判定口径)
+      canProceed: remapped.canProceed,
+      blockReasons: remapped.blockReasons,
       stats: {
         totalRows: parseResult.rows.length + parseResult.errors.length,
         parsedRows: normalRecords.length,
         skippedRows: parseResult.errors.length,
-        unrecognizedCount: unrecognizedRecords.length,
+        unrecognizedCount: remapped.unrecognizedRecords.length,
         errors: parseResult.errors,
       },
     }
@@ -296,9 +358,45 @@ export async function importExportRoutes(app: FastifyInstance) {
       return reply.status(400).send({ message: '请求参数无效' })
     }
 
-    const { accountBookId, source, records, accountCreations = [], newMappings = [], newAccountMappings = [] } = parsed.data
+    const {
+      accountBookId,
+      source,
+      records,
+      accountCreations = [],
+      newMappings = [],
+      newAccountMappings = [],
+      skippedUnrecognized = 0,
+      confirmSkipUnrecognized,
+    } = parsed.data
 
     await assertIsMember(accountBookId, payload.id)
+
+    // ---- 前置校验:把"必然失败/会写脏"的项挡在事务外,并回传 blocking 明细 ----
+    if (skippedUnrecognized > 0 && !confirmSkipUnrecognized) {
+      return reply.status(400).send({
+        message: `有 ${skippedUnrecognized} 条未识别记录将被跳过，请确认后再导入`,
+        blocking: [{ kind: 'unrecognized', ref: '', reason: '未识别记录未确认跳过', willFailAtImport: true }],
+      })
+    }
+
+    const [bookAccounts, dictItems] = await Promise.all([
+      prisma.account.findMany({ where: { accountBookId, status: 'ACTIVE' }, select: { id: true } }),
+      prisma.dictionary.findMany({ where: { group: { in: CATEGORY_DICT_GROUPS } }, select: { code: true } }),
+    ])
+    // 本次将创建的账户也算「合法引用」:账户在事务内才创建,而校验发生在事务外
+    const validAccountRefs = buildValidAccountRefs(
+      bookAccounts.map(a => a.id),
+      accountCreations,
+    )
+    const blocking = validateImportRecords({
+      records,
+      validAccountIds: validAccountRefs,
+      validCategoryCodes: new Set(dictItems.map(d => d.code)),
+      strict: STRICT_IMPORT_VALIDATION,
+    })
+    if (blocking.length > 0) {
+      return reply.status(400).send({ message: blocking[0].reason, blocking })
+    }
 
     const { accountMap, accountsCreated, affectedAccounts, createdIds } = await prisma.$transaction(async (tx) => {
       const { accountMap, accountsCreated } = await createAccountsInTx(tx, accountBookId, payload.id, accountCreations)
@@ -318,6 +416,26 @@ export async function importExportRoutes(app: FastifyInstance) {
       // 创建出的流水 id:客户端用于「撤销最近一次自动记账」等场景
       ids: createdIds,
     }
+  })
+
+  /** 清理目标分类不在字典中的分类映射(脏规则):早期 AI 会把源分类名直接当编码写进来 */
+  app.post('/import/mappings/cleanup', {
+    schema: {
+      description: '清理目标分类不在字典中的导入分类映射',
+      tags: ['导入导出'],
+    },
+  }, async () => {
+    const dictItems = await prisma.dictionary.findMany({
+      where: { group: { in: [...CATEGORY_DICT_GROUPS] } },
+      select: { code: true },
+    })
+    const validCodes = new Set(dictItems.map(d => d.code))
+    const all = await prisma.importCategoryMapping.findMany({ select: { id: true, targetCategoryCode: true } })
+    const invalidIds = all.filter(m => !validCodes.has(m.targetCategoryCode)).map(m => m.id)
+    if (invalidIds.length > 0) {
+      await prisma.importCategoryMapping.deleteMany({ where: { id: { in: invalidIds } } })
+    }
+    return { removed: invalidIds.length }
   })
 
   // ===== 分类映射 CRUD =====
@@ -361,7 +479,13 @@ export async function importExportRoutes(app: FastifyInstance) {
       where,
       orderBy: { createdAt: 'desc' },
     })
-    return { mappings }
+    // 标记目标分类已失效的规则(字典里没有这个 code):设置页据此标红 + 提供一键清理
+    const dictItems = await prisma.dictionary.findMany({
+      where: { group: { in: [...CATEGORY_DICT_GROUPS] } },
+      select: { code: true },
+    })
+    const validCodes = new Set(dictItems.map(d => d.code))
+    return { mappings: mappings.map(m => ({ ...m, invalidCode: !validCodes.has(m.targetCategoryCode) })) }
   })
 
   app.post('/import/mappings', {
@@ -375,20 +499,27 @@ export async function importExportRoutes(app: FastifyInstance) {
       return reply.status(400).send({ message: '参数无效' })
     }
 
-    for (const m of body.mappings) {
-      const payerContains = m.payerContains || ''
-      const descriptionContains = m.descriptionContains || ''
+    for (const raw of body.mappings) {
+      // 归一化条件后再落库(H 项):避免"看起来不同、实际等价"的条件写成两条规则
+      const [m] = normalizeCategoryMappings([raw])
       await prisma.importCategoryMapping.upsert({
         where: {
           source_sourceCategory_payerContains_descriptionContains_recordType: {
-            source: m.source,
+            source: raw.source,
             sourceCategory: m.sourceCategory,
-            payerContains,
-            descriptionContains,
-            recordType: m.recordType || '',
+            payerContains: m.payerContains,
+            descriptionContains: m.descriptionContains,
+            recordType: m.recordType,
           },
         },
-        create: { source: m.source, sourceCategory: m.sourceCategory, payerContains, descriptionContains, recordType: m.recordType || '', targetCategoryCode: m.targetCategoryCode },
+        create: {
+          source: raw.source,
+          sourceCategory: m.sourceCategory,
+          payerContains: m.payerContains,
+          descriptionContains: m.descriptionContains,
+          recordType: m.recordType,
+          targetCategoryCode: m.targetCategoryCode,
+        },
         update: { targetCategoryCode: m.targetCategoryCode },
       })
     }
@@ -405,6 +536,92 @@ export async function importExportRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string }
     await prisma.importCategoryMapping.delete({ where: { id } })
     return { success: true }
+  })
+
+  // ===== 规则体检:列出等价重复规则 =====
+  // 唯一键含条件字段,历史数据里可能存在"条件只是空格/全角不同"的等价重复 —— 归一化后同键即为一组。
+  app.get('/import/mappings/duplicates', {
+    schema: {
+      description: '列出等价的重复导入映射规则(按归一化后的唯一键分组)',
+      tags: ['导入导出'],
+    },
+  }, async (req) => {
+    const kind = ((req.query as { kind?: string }).kind ?? 'category')
+
+    if (kind === 'account') {
+      const rows = await prisma.importAccountMapping.findMany({ orderBy: { createdAt: 'asc' } })
+      const groups = new Map<string, typeof rows>()
+      for (const m of rows) {
+        const key = [m.source, m.sourceAccountName, normalizeCondition(m.payerContains), normalizeCondition(m.descriptionContains)].join('\u0000')
+        const list = groups.get(key)
+        if (list) list.push(m)
+        else groups.set(key, [m])
+      }
+      return {
+        kind,
+        groups: Array.from(groups.entries())
+          .filter(([, items]) => items.length > 1)
+          .map(([, items]) => ({ ids: items.map(i => i.id), items })),
+      }
+    }
+
+    const rows = await prisma.importCategoryMapping.findMany({ orderBy: { createdAt: 'asc' } })
+    const groups = new Map<string, typeof rows>()
+    for (const m of rows) {
+      const key = [m.source, m.sourceCategory, normalizeCondition(m.payerContains), normalizeCondition(m.descriptionContains), m.recordType].join('\u0000')
+      const list = groups.get(key)
+      if (list) list.push(m)
+      else groups.set(key, [m])
+    }
+    return {
+      kind,
+      groups: Array.from(groups.entries())
+        .filter(([, items]) => items.length > 1)
+        .map(([, items]) => ({ ids: items.map(i => i.id), items })),
+    }
+  })
+
+  // ===== 规则体检:合并重复规则 =====
+  app.post('/import/mappings/merge', {
+    schema: {
+      description: '合并同一组重复的导入映射规则(保留一条,删除其余)',
+      tags: ['导入导出'],
+    },
+  }, async (req, reply) => {
+    const body = req.body as { kind?: 'category' | 'account'; ids?: string[]; strategy?: 'keep-first' | 'keep-target'; target?: string }
+    const ids = body.ids ?? []
+    if (!body.kind || ids.length < 2) {
+      return reply.status(400).send({ message: '至少选择两条同组规则' })
+    }
+    const strategy = body.strategy ?? 'keep-first'
+
+    if (body.kind === 'category') {
+      const rows = await prisma.importCategoryMapping.findMany({ where: { id: { in: ids } }, orderBy: { createdAt: 'asc' } })
+      if (rows.length < 2) return reply.status(400).send({ message: '规则不存在' })
+      const keeper = strategy === 'keep-target' && body.target
+        ? (rows.find(r => r.targetCategoryCode === body.target) ?? rows[0])
+        : (strategy === 'keep-first' ? rows[0] : rows[rows.length - 1])
+      const targetCategoryCode = strategy === 'keep-target' && body.target ? body.target : keeper.targetCategoryCode
+      const removed = rows.filter(r => r.id !== keeper.id).map(r => r.id)
+      await prisma.$transaction([
+        prisma.importCategoryMapping.update({ where: { id: keeper.id }, data: { targetCategoryCode } }),
+        prisma.importCategoryMapping.deleteMany({ where: { id: { in: removed } } }),
+      ])
+      return { keptId: keeper.id, merged: removed.length }
+    }
+
+    const rows = await prisma.importAccountMapping.findMany({ where: { id: { in: ids } }, orderBy: { createdAt: 'asc' } })
+    if (rows.length < 2) return reply.status(400).send({ message: '规则不存在' })
+    const keeper = strategy === 'keep-target' && body.target
+      ? (rows.find(r => r.targetAccountName === body.target) ?? rows[0])
+      : (strategy === 'keep-first' ? rows[0] : rows[rows.length - 1])
+    const targetAccountName = strategy === 'keep-target' && body.target ? body.target : keeper.targetAccountName
+    const removed = rows.filter(r => r.id !== keeper.id).map(r => r.id)
+    await prisma.$transaction([
+      prisma.importAccountMapping.update({ where: { id: keeper.id }, data: { targetAccountName } }),
+      prisma.importAccountMapping.deleteMany({ where: { id: { in: removed } } }),
+    ])
+    return { keptId: keeper.id, merged: removed.length }
   })
 
   // ===== 账户映射 CRUD =====
@@ -461,19 +678,25 @@ export async function importExportRoutes(app: FastifyInstance) {
       return reply.status(400).send({ message: '参数无效' })
     }
 
-    for (const m of body.mappings) {
-      const payerContains = m.payerContains || ''
-      const descriptionContains = m.descriptionContains || ''
+    for (const raw of body.mappings) {
+      // 归一化条件后再落库(H 项):与导入路径共用同一口径
+      const [m] = normalizeAccountMappings([raw])
       await prisma.importAccountMapping.upsert({
         where: {
           source_sourceAccountName_payerContains_descriptionContains: {
-            source: m.source,
+            source: raw.source,
             sourceAccountName: m.sourceAccountName,
-            payerContains,
-            descriptionContains,
+            payerContains: m.payerContains,
+            descriptionContains: m.descriptionContains,
           },
         },
-        create: { source: m.source, sourceAccountName: m.sourceAccountName, payerContains, descriptionContains, targetAccountName: m.targetAccountName },
+        create: {
+          source: raw.source,
+          sourceAccountName: m.sourceAccountName,
+          payerContains: m.payerContains,
+          descriptionContains: m.descriptionContains,
+          targetAccountName: m.targetAccountName,
+        },
         update: { targetAccountName: m.targetAccountName },
       })
     }

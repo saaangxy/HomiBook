@@ -1,5 +1,6 @@
 import { refreshAccountBalance } from '../record.js'
 import { normalizeAccountType, normalizeRecordType } from '@homibook/core'
+import { normalizeAccountMappings, normalizeCategoryMappings } from './mapping-normalize.js'
 
 // ---- 类型 ----
 
@@ -95,27 +96,25 @@ export async function saveCategoryMappingsInTx(
   source: string,
   mappings: CategoryMappingInput[],
 ): Promise<void> {
-  for (const m of mappings) {
-    // 归一化:'' 表示不限类型(保留);其余非法值会让该映射永远匹配不上(静默失效)
-    const recordType = m.recordType ? normalizeRecordType(m.recordType) : ''
-    const payerContains = m.payerContains || ''
-    const descriptionContains = m.descriptionContains || ''
+  // 先归一化 + 同唯一键去重(H 项):避免"条件只是空格/全角不同"被写成第二条规则
+  const normalized = normalizeCategoryMappings(mappings)
+  for (const m of normalized) {
     await tx.importCategoryMapping.upsert({
       where: {
         source_sourceCategory_payerContains_descriptionContains_recordType: {
           source,
           sourceCategory: m.sourceCategory,
-          payerContains,
-          descriptionContains,
-          recordType,
+          payerContains: m.payerContains,
+          descriptionContains: m.descriptionContains,
+          recordType: m.recordType,
         },
       },
       create: {
         source,
         sourceCategory: m.sourceCategory,
-        payerContains,
-        descriptionContains,
-        recordType,
+        payerContains: m.payerContains,
+        descriptionContains: m.descriptionContains,
+        recordType: m.recordType,
         targetCategoryCode: m.targetCategoryCode,
       },
       update: { targetCategoryCode: m.targetCategoryCode },
@@ -130,23 +129,23 @@ export async function saveAccountMappingsInTx(
   source: string,
   mappings: AccountMappingInput[],
 ): Promise<void> {
-  for (const m of mappings) {
-    const payerContains = m.payerContains || ''
-    const descriptionContains = m.descriptionContains || ''
+  // 先归一化 + 同唯一键去重(H 项;保留最后一条 = 本次用户/AI 决议)
+  const normalized = normalizeAccountMappings(mappings)
+  for (const m of normalized) {
     await tx.importAccountMapping.upsert({
       where: {
         source_sourceAccountName_payerContains_descriptionContains: {
           source,
           sourceAccountName: m.sourceAccountName,
-          payerContains,
-          descriptionContains,
+          payerContains: m.payerContains,
+          descriptionContains: m.descriptionContains,
         },
       },
       create: {
         source,
         sourceAccountName: m.sourceAccountName,
-        payerContains,
-        descriptionContains,
+        payerContains: m.payerContains,
+        descriptionContains: m.descriptionContains,
         targetAccountName: m.targetAccountName,
       },
       update: { targetAccountName: m.targetAccountName },
