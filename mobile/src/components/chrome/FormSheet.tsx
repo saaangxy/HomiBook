@@ -1,12 +1,12 @@
 import { useEffect, type ReactNode } from 'react';
-import { BackHandler, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, {
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useTheme, motion, haptics, sheetShadow } from '@/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '@/components/ui/Text';
@@ -67,22 +67,17 @@ export function FormSheet({ visible, title, onClose, onSave, saveLabel = '保存
       }
     });
 
-  // Android 返回键关闭(Modal 替换为主 window 覆盖层后,需自行拦截返回键)
-  useEffect(() => {
-    if (!visible) return;
-    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      onClose();
-      return true;
-    });
-    return () => sub.remove();
-  }, [visible, onClose]);
-
-  // 主 window 覆盖层(替代 RN Modal):Android 上 Modal 的独立 Dialog 窗口在
-  // edge-to-edge 全屏设备上高度会被截断(底部缝隙),改用绝对定位覆盖层
+  // 全屏 Modal(透明):弹窗必须盖住整个屏幕。早期用 `StyleSheet.absoluteFill` 覆盖层,
+  // 它只能盖住「所在父容器」—— 被嵌在页面/聊天面板里时,弹窗被裁在容器内(底部按钮被 tab bar
+  // 压住、面板外还露出页面内容)。Android edge-to-edge 下必须带 statusBarTranslucent +
+  // navigationBarTranslucent,否则独立 Dialog 窗口的高度会被截断(底部留缝)。
+  // 返回键由 Modal 的 onRequestClose 处理,不再需要 BackHandler。
   if (!visible) return null;
 
   return (
-    <View style={StyleSheet.absoluteFill}>
+    <Modal visible transparent animationType="none" statusBarTranslucent navigationBarTranslucent onRequestClose={onClose}>
+      {/* Modal 是独立原生层级,不在根 GestureHandlerRootView 子树内 —— 少了它,把手区下拉关闭手势不生效 */}
+      <GestureHandlerRootView style={{ flex: 1 }}>
       <KeyboardAvoidingView
         style={{ flex: 1, justifyContent: 'flex-end' }}
         behavior="padding"
@@ -135,6 +130,7 @@ export function FormSheet({ visible, title, onClose, onSave, saveLabel = '保存
           )}
         </Animated.View>
       </KeyboardAvoidingView>
-    </View>
+      </GestureHandlerRootView>
+    </Modal>
   );
 }

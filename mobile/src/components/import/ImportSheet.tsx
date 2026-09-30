@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Pressable, ScrollView, TextInput, useWindowDimensions, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Check, CheckCircle2, ChevronDown, FileText } from 'lucide-react-native';
 import { useTheme, alpha, haptics, semanticTypeColor } from '@/theme';
 import { Text } from '@/components/ui/Text';
@@ -15,6 +16,7 @@ import { fetchBookMembers } from '@/services/records';
 import {
   analyzeImportCsv,
   confirmImport,
+  isBillFile,
   previewImport,
   type DictEntry,
   type ImportPreviewResult,
@@ -148,8 +150,14 @@ interface ImportSheetProps {
 // 流水导入向导(复刻 web ImportDialog):来源 → 上传 → (CSV 列映射) → 预览处理 → 确认 → 结果
 export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview, onImported }: ImportSheetProps) {
   const { colors, palette } = useTheme();
+  const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
   const { accounts } = useRecords();
   const isPreset = !!presetPreview;
+
+  // 内容区高度上限:整屏 − 上下安全区 − (把手+标题+底部按钮+内边距 ≈ 210)。
+  // 用动态值替代原先硬编码的 520:小屏/横屏下弹窗总高会超过窗口,底部按钮被裁掉。
+  const scrollMaxHeight = Math.max(220, windowHeight - insets.top - insets.bottom - 210);
 
   const [step, setStep] = useState<Step>('source');
   const [source, setSource] = useState<ImportSource>('alipay');
@@ -258,16 +266,24 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
     onClose();
   };
 
-  const pickFile = async (src: ImportSource) => {
+  const pickFile = async () => {
     const DocumentPicker = await import('expo-document-picker');
+    // 不按 MIME 过滤(说明见 services/import.ts:isBillFile):Android SAF 对 CSV 报的 MIME
+    // 不统一(text/plain、application/octet-stream、text/comma-separated-values…),按
+    // 'text/csv' 过滤会让 CSV 在系统选择器里不可见。放开后按扩展名校验并给出提示。
     const result = await DocumentPicker.getDocumentAsync({
       multiple: false,
       copyToCacheDirectory: true,
-      type: src === 'wechat' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'text/comma-separated-values,text/csv',
+      type: '*/*',
     });
     if (result.canceled || !result.assets?.length) return null;
     const asset = result.assets[0];
-    return { uri: asset.uri, name: asset.name || 'bill.csv', size: asset.size ?? 0 };
+    const name = asset.name || 'bill.csv';
+    if (!isBillFile(name)) {
+      setError(`不支持的格式「${name}」:请选择 CSV / XLS / XLSX 格式的账单文件`);
+      return null;
+    }
+    return { uri: asset.uri, name, size: asset.size ?? 0 };
   };
 
   // ── 步骤流转 ──
@@ -283,7 +299,7 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
 
   const handlePickFile = async () => {
     try {
-      const f = await pickFile(source);
+      const f = await pickFile();
       if (f) {
         setFile(f);
         setError('');
@@ -800,6 +816,11 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
     } else if (picker.kind === 'prev-acct') {
       setPrevFilterAccount(value);
     }
+    // 决议变更(账户/分类/未识别行处置)后作废上一次的服务端复核结论:
+    // 否则用户改完决议仍看到过期红字,误以为「改了也没用」
+    if (['acct-type', 'account', 'category'].includes(picker.kind) || picker.kind.startsWith('unrec-')) {
+      setServerCheck(null);
+    }
   };
 
   const pickerTitle =
@@ -829,7 +850,7 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
   return (
     <>
       <FormSheet visible={visible} title={STEP_TITLE[step]} onClose={handleClose}>
-        <ScrollView style={{ maxHeight: 520 }} contentContainerStyle={{ paddingBottom: 8 }} showsVerticalScrollIndicator={false}>
+        <ScrollView style={{ maxHeight: scrollMaxHeight }} contentContainerStyle={{ paddingBottom: 8 }} showsVerticalScrollIndicator={false}>
           {error ? (
             <View style={{ padding: 10, borderRadius: 10, backgroundColor: alpha(colors.expense, 0.1), marginBottom: 12 }}>
               <Text style={{ fontSize: 12, color: colors.expense }}>{error}</Text>
@@ -1231,6 +1252,8 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
                     <Pressable
                       onPress={() => {
                         setAgreeSkipUnrecognized((v) => !v);
+                        // 勾选改变裁决结果,作废上一次复核结论(否则勾完红字还挂着)
+                        setServerCheck(null);
                         haptics.tap();
                       }}
                       style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}
@@ -1263,13 +1286,14 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
                     const toAccount = accounts.find((x) => x.id === res?.toAccountId);
                     const toLabel = toAccount ? `转入 → ${accountLabel(toAccount, multiOwnerAccounts)}` : '转入账户';
                     const catLabel = allDictItems.find((d) => d.code === res?.categoryCode)?.label ?? '分类';
-                    // 一个选择器按钮(kind 决定打开哪个 picker);类型按钮不参与等分,与原有视觉一致
-                    const pickBtn = (kind: 'unrec-type' | 'unrec-acct' | 'unrec-toacct' | 'unrec-cat', label: string, filled: boolean, grow = true) => (
+                    // 一个选择器按钮(kind 决定打开哪个 picker);三个选择器等宽,文字占满左侧、
+                    // 箭头统一靠右(此前「类型」按内容自适应,与另两个 flex:1 的宽度参差)
+                    const pickBtn = (kind: 'unrec-type' | 'unrec-acct' | 'unrec-toacct' | 'unrec-cat', label: string, filled: boolean) => (
                       <Pressable
                         onPress={() => setPicker({ kind, key: String(r.rowIndex) })}
-                        style={grow ? { ...pickerBtnStyle, flex: 1 } : pickerBtnStyle}
+                        style={{ ...pickerBtnStyle, flex: 1 }}
                       >
-                        <Text style={{ fontSize: 11, color: filled ? colors.foreground : colors.mutedForeground }} numberOfLines={1}>{label}</Text>
+                        <Text style={{ fontSize: 11, flex: 1, color: filled ? colors.foreground : colors.mutedForeground }} numberOfLines={1}>{label}</Text>
                         <ChevronDown size={10} color={colors.mutedForeground} />
                       </Pressable>
                     );
@@ -1294,7 +1318,7 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
                         {isTransfer ? (
                           <>
                             <View style={{ flexDirection: 'row', gap: 6, marginBottom: 6 }}>
-                              {pickBtn('unrec-type', typeLabel, !!res?.type, false)}
+                              {pickBtn('unrec-type', typeLabel, !!res?.type)}
                               {pickBtn('unrec-acct', fromLabel, !!res?.accountId)}
                             </View>
                             <View style={{ flexDirection: 'row', gap: 6 }}>
@@ -1304,7 +1328,7 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
                           </>
                         ) : (
                           <View style={{ flexDirection: 'row', gap: 6 }}>
-                            {pickBtn('unrec-type', typeLabel, !!res?.type, false)}
+                            {pickBtn('unrec-type', typeLabel, !!res?.type)}
                             {pickBtn('unrec-acct', fromLabel, !!res?.accountId)}
                             {pickBtn('unrec-cat', catLabel, !!res?.categoryCode)}
                           </View>
@@ -1390,84 +1414,90 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
           ) : null}
         </ScrollView>
 
-        {/* 底部按钮 */}
-        <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
-          {!isPreset && step !== 'source' && step !== 'result' ? (
-            <Pressable
-              onPress={() => {
-                setError('');
-                setStep(step === 'confirm' ? 'preview' : step === 'preview' ? (source === 'csv' ? 'columnMapping' : 'upload') : step === 'columnMapping' ? 'upload' : 'source');
-              }}
-              style={{ flex: 1, height: 46, borderRadius: palette.radius.button, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}
-            >
-              <Text style={{ fontSize: 14, fontWeight: '500' }}>上一步</Text>
-            </Pressable>
-          ) : null}
+        {/* 底部按钮区(纵向):复核提示独占一行 —— 此前提示与按钮同处 flexDirection:'row' 容器,
+            服务端返回的长文案会把「上一步/下一步」挤到 0 宽(表现为「报错后按钮消失」) */}
+        <View style={{ marginTop: 12 }}>
+          {step === 'preview' && (checking ? (
+            <Text variant="muted" style={{ fontSize: 10.5, marginBottom: 6 }}>正在向服务端校验…</Text>
+          ) : serverCheck && !serverCheck.canProceed ? (
+            <Text variant="muted" style={{ fontSize: 10.5, marginBottom: 6, color: '#ef4444' }}>
+              {serverCheck.reasons.join('；')}
+            </Text>
+          ) : null)}
+          {step === 'confirm' && (checking ? (
+            <Text variant="muted" style={{ fontSize: 10.5, marginBottom: 6 }}>正在按当前决议向服务端复核…</Text>
+          ) : serverBlocked ? (
+            <Text variant="muted" style={{ fontSize: 10.5, marginBottom: 6, color: '#ef4444' }}>
+              {serverCheck?.reasons.join('；') || '服务端未放行，请返回修改'}
+            </Text>
+          ) : (serverCheck?.skippedCount ?? 0) > 0 ? (
+            <Text variant="muted" style={{ fontSize: 10.5, marginBottom: 6, color: '#f59e0b' }}>
+              本次将跳过 {serverCheck?.skippedCount ?? 0} 条未识别记录
+            </Text>
+          ) : null)}
 
-          {step === 'source' ? (
-            <PrimaryBtn label="下一步" onPress={() => goUpload(source)} />
-          ) : null}
-          {step === 'upload' ? (
-            <PrimaryBtn
-              label={loading ? '解析中...' : source === 'csv' ? '分析文件' : '开始解析'}
-              loading={loading}
-              disabled={!file || loading}
-              onPress={() => (source === 'csv' ? handleAnalyze() : handleParse())}
-            />
-          ) : null}
-          {step === 'columnMapping' ? (
-            <PrimaryBtn
-              label={loading ? '解析中...' : '开始解析'}
-              loading={loading}
-              disabled={loading || !isColumnMappingValid(columnMapping as any)}
-              onPress={handleParse}
-            />
-          ) : null}
-          {step === 'preview' ? (
-            <>
-              {checking ? (
-                <Text variant="muted" style={{ fontSize: 10.5, marginBottom: 6 }}>正在向服务端校验…</Text>
-              ) : serverCheck && !serverCheck.canProceed ? (
-                <Text variant="muted" style={{ fontSize: 10.5, marginBottom: 6, color: '#ef4444' }}>
-                  {serverCheck.reasons.join('；')}
-                </Text>
-              ) : null}
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            {!isPreset && step !== 'source' && step !== 'result' ? (
+              <Pressable
+                onPress={() => {
+                  setError('');
+                  setStep(step === 'confirm' ? 'preview' : step === 'preview' ? (source === 'csv' ? 'columnMapping' : 'upload') : step === 'columnMapping' ? 'upload' : 'source');
+                }}
+                style={{ flex: 1, height: 46, borderRadius: palette.radius.button, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Text style={{ fontSize: 14, fontWeight: '500' }}>上一步</Text>
+              </Pressable>
+            ) : null}
+
+            {step === 'source' ? (
+              <PrimaryBtn label="下一步" onPress={() => goUpload(source)} />
+            ) : null}
+            {step === 'upload' ? (
+              <PrimaryBtn
+                label={loading ? '解析中...' : source === 'csv' ? '分析文件' : '开始解析'}
+                loading={loading}
+                disabled={!file || loading}
+                onPress={() => (source === 'csv' ? handleAnalyze() : handleParse())}
+              />
+            ) : null}
+            {step === 'columnMapping' ? (
+              <PrimaryBtn
+                label={loading ? '解析中...' : '开始解析'}
+                loading={loading}
+                disabled={loading || !isColumnMappingValid(columnMapping as any)}
+                onPress={handleParse}
+              />
+            ) : null}
+            {step === 'preview' ? (
               <PrimaryBtn
                 label="下一步:确认导入"
                 disabled={checking}
                 onPress={goConfirm}
               />
-            </>
-          ) : null}
-          {step === 'confirm' ? (
-            <>
-              {checking ? (
-                <Text variant="muted" style={{ fontSize: 10.5, marginBottom: 6 }}>正在按当前决议向服务端复核…</Text>
-              ) : serverBlocked ? (
-                <Text variant="muted" style={{ fontSize: 10.5, marginBottom: 6, color: '#ef4444' }}>
-                  {serverCheck?.reasons.join('；') || '服务端未放行，请返回修改'}
-                </Text>
-              ) : (serverCheck?.skippedCount ?? 0) > 0 ? (
-                <Text variant="muted" style={{ fontSize: 10.5, marginBottom: 6, color: '#f59e0b' }}>
-                  本次将跳过 {serverCheck?.skippedCount ?? 0} 条未识别记录
-                </Text>
-              ) : null}
+            ) : null}
+            {step === 'confirm' ? (
               <PrimaryBtn
                 label={loading ? '导入中...' : `确认导入 ${buildImportData().allCount} 条`}
                 loading={loading}
                 disabled={checking || serverBlocked}
                 onPress={handleConfirm}
               />
-              <Pressable
-                onPress={handleSaveRulesOnly}
-                disabled={loading}
-                style={{ marginTop: 8, paddingVertical: 9, borderRadius: 10, alignItems: 'center', borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, opacity: loading ? 0.6 : 1 }}
-              >
-                <Text style={{ fontSize: 12, color: colors.foreground }}>{rulesSaved ? '规则已保存' : '仅保存规则（本次不导入）'}</Text>
-              </Pressable>
-            </>
+            ) : null}
+            {step === 'result' ? <PrimaryBtn label="完成" onPress={handleClose} /> : null}
+          </View>
+
+          {step === 'confirm' ? (
+            // 次要操作降级为文字链接:先前做成全宽描边按钮,与上面的主/次按钮同高同形堆三层,视觉笨重
+            <Pressable
+              onPress={handleSaveRulesOnly}
+              disabled={loading}
+              style={{ marginTop: 2, paddingVertical: 10, alignItems: 'center', opacity: loading ? 0.6 : 1 }}
+            >
+              <Text style={{ fontSize: 12.5, color: colors.primary }}>
+                {rulesSaved ? '规则已保存' : '仅保存规则（本次不导入）'}
+              </Text>
+            </Pressable>
           ) : null}
-          {step === 'result' ? <PrimaryBtn label="完成" onPress={handleClose} /> : null}
         </View>
       </FormSheet>
 

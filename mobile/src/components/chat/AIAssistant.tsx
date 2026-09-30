@@ -15,7 +15,7 @@ import { ImageLightbox, isImageUrl } from '@/components/ui/AttachmentViewer';
 import { setStreamPaused, useChatStore, useSessionView, type ChatSession } from '@/stores/chat';
 import { useUIShell } from '@/components/chrome/chrome';
 import { uploadImage, loadToolNames } from '@/services/chat';
-import { uploadImportFile } from '@/services/import';
+import { isBillFile, uploadImportFile } from '@/services/import';
 import { DownloadModeSheet } from '@/components/chrome/DownloadModeSheet';
 import { downloadAttachment, resolveRemoteUrl, type DownloadMode } from '@/services/http';
 import type { Message, MessageBlock, ChatInjection } from '@homibook/core';
@@ -243,19 +243,20 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
     setImportSheetOpen(false);
     try {
       const DocumentPicker = await import('expo-document-picker');
-      // 仅允许 csv / excel(web input accept 同规则)
+      // 不按 MIME 过滤(说明见 services/import.ts:isBillFile):Android SAF 对 CSV 报的 MIME
+      // 不统一,只声明 'text/csv' 会让 CSV 在系统选择器里不可见。放开后按扩展名校验。
       const result = await DocumentPicker.getDocumentAsync({
         copyToCacheDirectory: true,
         multiple: false,
-        type: [
-          'text/csv',
-          'application/vnd.ms-excel', // .xls
-          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
-        ],
+        type: '*/*',
       });
       if (result.canceled || !result.assets?.length) return;
       const asset = result.assets[0];
       const fileName = asset.name || '账单.csv';
+      if (!isBillFile(fileName)) {
+        showToast('请选择 CSV / XLS / XLSX 格式的账单文件');
+        return;
+      }
       const up = await uploadImportFile(asset.uri, fileName);
       if (!up?.attachmentId) throw new Error('服务端未返回附件标识');
       // 账单文件就是一个附件:连同 attachmentId 一起发出,AI 从附件清单取 id 调 preview_import

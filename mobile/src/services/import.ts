@@ -132,6 +132,19 @@ export interface ImportConfirmPayload {
 
 // ── 文件上传 ──
 
+/**
+ * 账单文件白名单(按扩展名)。
+ *
+ * 系统文件选择器**不要**按 MIME 过滤:Android SAF 对 CSV 报告的 MIME 五花八门
+ * (text/plain、application/octet-stream、text/comma-separated-values…),只声明 `text/csv`
+ * 会让 CSV 在文件管理器里直接不可见/不可选。改为放开选择 + 选完用这个白名单校验。
+ */
+const BILL_FILE_EXTENSIONS = ['.csv', '.xls', '.xlsx'];
+export function isBillFile(fileName: string): boolean {
+  const lower = fileName.toLowerCase();
+  return BILL_FILE_EXTENSIONS.some((ext) => lower.endsWith(ext));
+}
+
 /** 按来源推断上传文件的 MIME(wechat 为 xlsx,其余 csv) */
 export function guessImportMime(fileName: string): string {
   const lower = fileName.toLowerCase();
