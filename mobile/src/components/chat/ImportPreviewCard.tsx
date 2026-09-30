@@ -7,6 +7,7 @@ import { useTheme, alpha, motion, semanticTypeColor, sheetShadow } from '@/theme
 import { Text } from '@/components/ui/Text';
 import { useChatStore } from '@/stores/chat';
 import { accountLabel, isMultiOwnerAccounts } from '@/lib/account';
+import { checkImport } from '@/services/import';
 import { MiniTable } from './MiniTable';
 import { ACCOUNT_TYPE_LABELS, RECORD_TYPE_LABELS, TYPE_TO_GROUP, adoptSuggestedAccountResolutions, computeImportProgress, initAccountResolutions, type AccountResolution, type ToolCallEntry } from '@homibook/core';
 
@@ -123,6 +124,26 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
   // 放行判定在服务端:点确认后由 confirm_import 裁决,未决原因经 confirmError 回显
 
   const allRecords = [...records, ...unrec];
+
+  // 「将新建」的账户(源账户名 → 目标名),preview_import 回报
+  const newAccountCreations = (data as { newAccountCreations?: { sourceAccountName: string; name: string; type: string }[] }).newAccountCreations || [];
+
+  /**
+   * 账户列展示「映射后账户名」(与手动向导确认页同口径):
+   * 用户当前决议 → 将新建的目标名 → 服务端映射名 → 回退原始 CSV 名。
+   */
+  const accountNameOf = (row: { accountName?: string | null }) => {
+    const res = row.accountName ? accountRes[row.accountName] : undefined;
+    if (res?.action === 'create' && res.name) return res.name;
+    if (res?.action === 'existing' && res.accountId) {
+      const acc = accounts.find((a) => a.id === res.accountId);
+      if (acc) return acc.name;
+    }
+    const created = newAccountCreations.find((c) => c.sourceAccountName === row.accountName);
+    if (created) return created.name;
+    const mapped = row.accountName ? (data as { accountMappingNames?: Record<string, string> }).accountMappingNames?.[row.accountName] : undefined;
+    return mapped || row.accountName || '-';
+  };
   const tabs = [
     { key: 'records' as const, label: `记录 (${allRecords.length})` },
     { key: 'accounts' as const, label: `未匹配账户 (${unmatchedAccounts.length})` },
@@ -218,8 +239,8 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
     }
   };
 
-  // ── 确认导入(构建 overrides 发起 confirm_import) ──
-  const handleConfirm = () => {
+  // ── 确认导入(先服务端校验,通过才构建 overrides 发起 confirm_import) ──
+  const handleConfirm = async () => {
     if (submitted) return;
     setSubmitted(true);
     setConfirmError('');
@@ -256,9 +277,25 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
     if (userUnrec.length > 0) overrides.unrecognizedResolutions = userUnrec;
 
     try {
+      // 服务端裁决(与手动向导「下一步」同一道校验):未通过就停在卡片上,不执行导入
+      const check = await checkImport({
+        accountBookId,
+        attachmentId: aiArgs.attachmentId || '',
+        confirmSkipUnrecognized: agreeSkipUnrecognized,
+        accountResolutions: userAccounts,
+        categoryResolutions: userCats,
+        unrecognizedResolutions: userUnrec,
+      });
+      if (!check.canProceed) {
+        setConfirmError(check.blockReasons.join('；') || '服务端校验未通过');
+        // 未识别行未处理时,把用户带到能勾选/处置的 tab
+        if (check.skippedUnrecognized > 0 && !agreeSkipUnrecognized) setTab('unrec');
+        setSubmitted(false);
+        return;
+      }
       confirmAndContinue(accountBookId, toolCall.toolCallId, true, Object.keys(overrides).length > 0 ? overrides : undefined);
     } catch (e: any) {
-      setConfirmError(e?.message || '确认请求失败');
+      setConfirmError(e?.message || '校验或确认失败');
       setSubmitted(false);
     }
   };
@@ -307,7 +344,7 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
               const d = new Date(r.date);
               if (!isNaN(d.getTime())) displayDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
             } catch { /* 原样展示 */ }
-            return [String(r.rowIndex), displayDate, IMPORT_TYPE_LABELS[r.type] || r.type, (r.amount ?? 0).toFixed(2), r.accountName ?? '-', r.categoryLabel || r.categoryCode || '-', r.mappedCategoryLabel || r.mappedCategoryCode || '-', r.payer || '-', r.remark || '-'];
+            return [String(r.rowIndex), displayDate, IMPORT_TYPE_LABELS[r.type] || r.type, (r.amount ?? 0).toFixed(2), accountNameOf(r), r.categoryLabel || r.categoryCode || '-', r.mappedCategoryLabel || r.mappedCategoryCode || '-', r.payer || '-', r.remark || '-'];
           })}
           maxHeight={220}
         />

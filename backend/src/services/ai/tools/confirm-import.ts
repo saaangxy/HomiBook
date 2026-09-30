@@ -212,7 +212,6 @@ export const confirmImportTool: ToolDef = {
     const unmappedCategories = [...new Set(
       parseResult.rows.filter(r => shouldMarkCategoryUnmatched(r)).map(r => r.categoryCode!),
     )]
-    const unresolvedUnrecognizedCount = parseResult.rows.filter(r => r.type === 'UNKNOWN').length
     const blockReasons: string[] = []
     if (unresolvedAccountNames.length > 0) {
       blockReasons.push(`账户未指定归属账户：${unresolvedAccountNames.slice(0, 5).join('、')}${unresolvedAccountNames.length > 5 ? ` 等 ${unresolvedAccountNames.length} 个` : ''}`)
@@ -220,9 +219,8 @@ export const confirmImportTool: ToolDef = {
     if (unmappedCategories.length > 0) {
       blockReasons.push(`分类未映射到系统分类：${unmappedCategories.slice(0, 5).join('、')}`)
     }
-    if (unresolvedUnrecognizedCount > 0) {
-      blockReasons.push(`有 ${unresolvedUnrecognizedCount} 条未识别记录未处理`)
-    }
+    // 注意:未处置的未识别行**不作为阻断** —— 用户在预览卡片上点「确认导入」就是同意跳过,
+    // 且工具没有「同意跳过」这类入参,留在阻断里会让导入永远过不去。数量改为在预览数据里回报。
 
     const accountCreations = [...creationByName.values()].map(c => ({
       csvName: [...c.csvNames].join(', '),
@@ -337,6 +335,8 @@ export const confirmImportTool: ToolDef = {
           // 服务端裁决:未决原因(空数组 = 可以执行)
           canProceed: blockReasons.length === 0,
           blockReasons,
+          // 未处置的未识别行会被跳过(用户点确认即视为同意),只回报数量
+          skippedUnrecognized: parseResult.rows.filter(r => r.type === 'UNKNOWN').length,
           owners: [
             ...(bookOwner ? [{ id: bookOwner.owner.id, name: bookOwner.owner.nickname || bookOwner.owner.email, isOwner: true }] : []),
             ...members.filter(m => m.user.id !== bookOwnerId).map(m => ({ id: m.user.id, name: m.user.nickname || m.user.email, isOwner: false })),

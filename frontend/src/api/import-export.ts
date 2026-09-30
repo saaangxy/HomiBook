@@ -210,6 +210,21 @@ export const importExportApi = {
   }): Promise<ImportConfirmResult> =>
     api.post('/api/records/import', data),
 
+  /**
+   * AI 卡片用:按当前决议校验能否导入(**不执行**),与手动向导的「下一步」是同一道服务端裁决。
+   * 未通过就停在卡片上让用户处理或勾选「同意跳过」。
+   */
+  checkImport: (data: {
+    accountBookId: string
+    attachmentId: string
+    ownerId?: string
+    confirmSkipUnrecognized?: boolean
+    accountResolutions?: unknown[]
+    categoryResolutions?: unknown[]
+    unrecognizedResolutions?: unknown[]
+  }): Promise<{ canProceed: boolean; blockReasons: string[]; finalCount: number; skippedUnrecognized: number }> =>
+    api.post('/api/records/import/check', data),
+
   getMappings: (source?: string): Promise<{ mappings: CategoryMapping[] }> => {
     const query = source ? `?source=${encodeURIComponent(source)}` : ''
     return api.get(`/api/records/import/mappings${query}`)

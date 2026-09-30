@@ -312,6 +312,7 @@ export async function applyCategoryMappings(
     where: { group: { in: [...CATEGORY_DICT_GROUPS] } },
     select: { code: true, label: true, group: true },
   })
+  const dictCodeSet = new Set(allDictItems.map(d => d.code))
   const expenseCodes = new Set(allDictItems.filter(d => d.group === 'transaction_category_expense').map(d => d.code))
   const incomeCodes = new Set(allDictItems.filter(d => d.group === 'transaction_category_income').map(d => d.code))
   const transferCodes = new Set(allDictItems.filter(d => d.group === 'transaction_category_transfer').map(d => d.code))
@@ -327,7 +328,10 @@ export async function applyCategoryMappings(
     categoryTypes.set(r.categoryCode, types)
 
     if (r.categoryCode && r.mappedCategoryCode === null) {
+      // 规则优先;规则没命中时,若源分类名本身就是合法字典编码(中文 code,如「退款」)则直接采用。
+      // 这类行不需要任何规则 —— 不认它就会被判「未映射」挡住门禁,而实际写库用的就是这个源名。
       r.mappedCategoryCode = findBestMapping(r)
+        ?? (dictCodeSet.has(r.categoryCode) ? r.categoryCode : null)
     }
     // 类型未识别的行不入「未映射分类」清单(口径说明见 shouldMarkCategoryUnmatched)
     if (shouldMarkCategoryUnmatched(r)) {

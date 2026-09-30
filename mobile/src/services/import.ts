@@ -202,6 +202,22 @@ export function previewImport(
   );
 }
 
+/**
+ * AI 卡片用:按当前决议校验能否导入(**不执行**),与手动向导的「下一步」是同一道服务端裁决。
+ * 未通过就停在卡片上让用户处理或勾选「同意跳过」。
+ */
+export async function checkImport(data: {
+  accountBookId: string;
+  attachmentId: string;
+  ownerId?: string;
+  confirmSkipUnrecognized?: boolean;
+  accountResolutions?: unknown[];
+  categoryResolutions?: unknown[];
+  unrecognizedResolutions?: unknown[];
+}): Promise<{ canProceed: boolean; blockReasons: string[]; finalCount: number; skippedUnrecognized: number }> {
+  return http.post('/api/records/import/check', data);
+}
+
 // ── 确认导入 ──
 
 export async function confirmImport(payload: ImportConfirmPayload): Promise<{ imported: number; accountsCreated: number; ids?: string[] }> {

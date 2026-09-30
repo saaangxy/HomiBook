@@ -6,6 +6,7 @@ import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
 import { adoptSuggestedAccountResolutions, computeImportProgress, initAccountResolutions, RECORD_TYPE_LABELS, TYPE_TO_GROUP as coreTypeToGroup, type AccountResolution } from '@homibook/core'
 import { RECORD_TYPE_TEXT_CLASS } from '@/lib/record-type'
 import { useChatStore } from '@/stores/chat'
+import { importExportApi } from '@/api/import-export'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -69,6 +70,8 @@ export interface ImportPreviewData {
   unmatchedCategories?: UnmatchedCategory[]
   allDictItems?: DictEntry[]
   accountMappingNames?: Record<string, string>
+  /** 「将新建」的账户(源账户名 → 目标名),由 preview_import 回报 */
+  newAccountCreations?: { sourceAccountName: string; name: string; type: string }[]
   accounts?: { id: string; name: string; type: string; ownerId?: string; ownerName?: string }[]
   accountBookId?: string
   mappedCategories?: { sourceCategory: string; sourceLabel: string; targetCode: string; targetLabel: string }[]
@@ -171,6 +174,8 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
   const [categorySearch, setCategorySearch] = useState('')
 
   const [confirmError, setConfirmError] = useState<string | null>(null)
+  // 正在向服务端校验(与手动向导「下一步」同一道裁决)
+  const [checking, setChecking] = useState(false)
 
   // 后端在 /confirm 返回后设置 confirmed:true，前端据此清除提交标记（按钮已切换为「已确认」）
   useEffect(() => {
@@ -188,6 +193,22 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
   })
   // 放行判定在服务端:点确认后由 confirm_import 裁决,未决原因经 confirmError 回显
   const allRecords = [...records, ...unrecognizedRecords]
+
+  /**
+   * 账户列展示「映射后账户名」(与手动向导确认页同口径):
+   * 用户当前决议 → 将新建的目标名 → 服务端映射名 → 回退原始 CSV 名。
+   */
+  const accountNameOf = (row: ParsedRow) => {
+    const res = row.accountName ? accountResolutions[row.accountName] : undefined
+    if (res?.action === 'create' && res.name) return res.name
+    if (res?.action === 'existing' && res.accountId) {
+      const acc = accounts.find(a => a.id === res.accountId)
+      if (acc) return acc.name
+    }
+    const created = (data.newAccountCreations || []).find(c => c.sourceAccountName === row.accountName)
+    if (created) return created.name
+    return (row.accountName && data.accountMappingNames?.[row.accountName]) || row.accountName || '-'
+  }
 
   const tabs = [
     { key: 'records' as const, label: `记录 (${allRecords.length})` },
@@ -296,7 +317,7 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
                   <td className="px-1 py-0.5">{displayDate}</td>
                   <td className={cn('px-1 py-0.5', TYPE_COLORS[r.type])}>{TYPE_LABELS[r.type] || r.type}</td>
                   <td className="px-1 py-0.5 text-right">{r.amount.toFixed(2)}</td>
-                  <td className="px-1 py-0.5">{r.accountName}</td>
+                  <td className="px-1 py-0.5">{accountNameOf(r)}</td>
                   <td className="px-1 py-0.5">{r.categoryLabel || r.categoryCode || '-'}</td>
                   <td className="px-1 py-0.5">{r.mappedCategoryLabel || r.mappedCategoryCode || '-'}</td>
                   <td className="px-1 py-0.5 max-w-16 truncate">{r.payer || '-'}</td>
@@ -617,11 +638,11 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
           <Button
             size="sm"
             className="flex-1 text-xs"
-            disabled={showSubmitted}
+            disabled={showSubmitted || checking}
             onClick={async () => {
               if (!toolCallId) return
-              markSubmitted(toolCallId)
               setConfirmError(null)
+              setChecking(true)
               try {
                 if (toolCallId) {
                   const overrides: Record<string, unknown> = {}
@@ -671,6 +692,23 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
                   }
                   if (userUnrecognizedResolutions.length > 0) overrides.unrecognizedResolutions = userUnrecognizedResolutions
 
+                  // 服务端裁决(与手动向导「下一步」同一道校验):未通过就停在卡片上,不执行导入
+                  const check = await importExportApi.checkImport({
+                    accountBookId,
+                    attachmentId: attachmentId || '',
+                    confirmSkipUnrecognized: agreeSkipUnrecognized,
+                    accountResolutions: userAccountResolutions,
+                    categoryResolutions: userCategoryResolutions,
+                    unrecognizedResolutions: userUnrecognizedResolutions,
+                  })
+                  if (!check.canProceed) {
+                    setConfirmError(check.blockReasons.join('；') || '服务端校验未通过')
+                    // 未识别行未处理时,把用户带到能勾选/处置的 tab
+                    if (check.skippedUnrecognized > 0 && !agreeSkipUnrecognized) setTab('unrecognized')
+                    return
+                  }
+
+                  markSubmitted(toolCallId)
                   useChatStore.getState().confirmAndContinue(
                     accountBookId,
                     toolCallId,
@@ -681,8 +719,10 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
                 // 成功：保持 submitted 标记，按钮禁用+spinner，防止重复点击
                 // 后端返回 confirmed:true 后，isConfirmed 切换为「已确认」并移除按钮
               } catch (err) {
-                setConfirmError(err instanceof Error ? err.message : '确认请求失败')
+                setConfirmError(err instanceof Error ? err.message : '校验或确认失败')
                 clearSubmitted(toolCallId) // 出错复位，允许重试
+              } finally {
+                setChecking(false)
               }
             }}
           >

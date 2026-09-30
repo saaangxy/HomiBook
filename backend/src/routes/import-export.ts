@@ -13,6 +13,7 @@ import type { ParsedRow } from '../services/import/shared.js'
 import { toImportPreviewRow } from '../services/import/pipeline.js'
 import { buildValidAccountRefs, CATEGORY_DICT_GROUPS, validateImportRecords } from '../services/import/blocking.js'
 import { remapImportRows } from '../services/import/remap.js'
+import { loadImportFile, parseImportFile } from '../services/import/attachment-file.js'
 import { normalizeAccountMappings, normalizeCategoryMappings, normalizeCondition } from '../services/import/mapping-normalize.js'
 import { ACCOUNT_TYPES, IMPORT_SOURCES, RECORD_TYPES, RECORD_TYPE_LABELS } from '@homibook/core'
 import {
@@ -341,6 +342,61 @@ export async function importExportRoutes(app: FastifyInstance) {
         unrecognizedCount: remapped.unrecognizedRecords.length,
         errors: parseResult.errors,
       },
+    }
+  })
+
+  // ===== 校验(不执行导入) =====
+
+  /**
+   * AI 卡片用:按当前决议做与 /preview 同一套服务端裁决,但**不执行导入**。
+   * 与手动向导的「下一步」同口径 —— 未通过就停在卡片上让用户处理或勾选「同意跳过」。
+   */
+  const importCheckSchema = z.object({
+    accountBookId: z.string().min(1),
+    attachmentId: z.string().min(1),
+    ownerId: z.string().optional(),
+    confirmSkipUnrecognized: z.boolean().optional(),
+    accountResolutions: z.array(z.any()).optional(),
+    categoryResolutions: z.array(z.any()).optional(),
+    unrecognizedResolutions: z.array(z.any()).optional(),
+  })
+
+  app.post('/import/check', {
+    schema: {
+      description: '按当前决议校验导入可行性(不执行导入)',
+      tags: ['导入导出'],
+      body: zSchema(importCheckSchema),
+    },
+  }, async (req, reply) => {
+    const payload = req.user as { id: string }
+    const parsed = importCheckSchema.safeParse(req.body)
+    if (!parsed.success) return reply.status(400).send({ message: '请求参数无效' })
+    const body = parsed.data
+
+    await assertIsMember(body.accountBookId, payload.id)
+
+    const file = await loadImportFile(body.attachmentId)
+    if (!file) return reply.status(404).send({ message: '账单文件不存在或已过期' })
+    const fileParsed = parseImportFile(file, undefined)
+    if (!fileParsed.ok) return reply.status(400).send({ message: fileParsed.error })
+
+    const remapped = await remapImportRows({
+      source: fileParsed.source,
+      rows: fileParsed.rows,
+      accountBookId: body.accountBookId,
+      ownerId: body.ownerId || payload.id,
+      confirmSkipUnrecognized: body.confirmSkipUnrecognized,
+      accountResolutions: body.accountResolutions,
+      categoryResolutions: body.categoryResolutions,
+      unrecognizedResolutions: body.unrecognizedResolutions,
+    })
+
+    return {
+      canProceed: remapped.canProceed,
+      blockReasons: remapped.blockReasons,
+      counts: remapped.counts,
+      finalCount: remapped.finalRows.length,
+      skippedUnrecognized: remapped.unresolved.unrecognized.length,
     }
   })
 
