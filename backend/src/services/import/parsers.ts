@@ -140,6 +140,9 @@ export function parseAlipayCSV(buffer: Buffer): { rows: ParsedRow[]; errors: str
 
       let recordType: 'INCOME' | 'EXPENSE' | 'TRANSFER' | 'UNKNOWN' = 'EXPENSE'
       let toAccountName: string | null = null
+      // 少数场景里「收/付款方式」是**收款方**(余额宝/蚂蚁财富转出到银行卡、提现),
+      // 此时付款方是支付宝本身,需要覆盖默认取「收/付款方式」的账户名
+      let fromAccountNameOverride: string | null = null
 
       if (direction === '收入') {
         recordType = 'INCOME'
@@ -172,7 +175,15 @@ export function parseAlipayCSV(buffer: Buffer): { rows: ParsedRow[]; errors: str
           toAccountName = '支付宝'
         } else if (isYueBaoTransfer) {
           recordType = 'TRANSFER'
-          toAccountName = '支付宝'
+          if (/转出到银行卡|提现/.test(description)) {
+            // 余额宝/余利宝 → 银行卡:钱从支付宝系出、进「收/付款方式」那张卡。
+            // 此前无条件把「支付宝」当转入方,导致方向整个反了(2026-09 真实账单)。
+            fromAccountNameOverride = '支付宝'
+            toAccountName = paymentMethod || counterparty
+          } else {
+            // 银行卡 → 余额宝
+            toAccountName = '支付宝'
+          }
         } else if (isAntTransfer) {
           if (/转出到银行卡/.test(description)) {
             recordType = 'TRANSFER'
@@ -190,7 +201,7 @@ export function parseAlipayCSV(buffer: Buffer): { rows: ParsedRow[]; errors: str
         recordType = 'EXPENSE'
       }
 
-      const resolvedAccountName = resolveAlipayAccountName(paymentMethod)
+      const resolvedAccountName = resolveAlipayAccountName(fromAccountNameOverride ?? paymentMethod)
       const resolvedToAccountName = toAccountName ? resolveAlipayAccountName(toAccountName) : null
 
       if (recordType === 'TRANSFER' && resolvedAccountName === '支付宝' && resolvedToAccountName === '支付宝') {

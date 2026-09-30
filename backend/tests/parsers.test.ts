@@ -221,6 +221,22 @@ describe('parseAlipayCSV', () => {
       expect(r.rows[0].toAccountName).toBe('支付宝');
     });
 
+    it('余额宝-转出到银行卡 → 支付宝 → 银行卡(方向修正,2026-09 真实账单回归)', () => {
+      const r = parseAlipayCSV(
+        Buffer.from(alipayCsv([aliRow({
+          ...neutral,
+          category: '投资理财',
+          counterparty: '中国农业银行',
+          counterpartyAccount: 'myt***@igwfmc.com',
+          description: '余额宝-转出到银行卡',
+          paymentMethod: '中国农业银行储蓄卡(5172)',
+        })]), 'utf8'),
+      );
+      expect(r.rows).toHaveLength(1);
+      expect(r.rows[0].type).toBe('TRANSFER');
+      expect(r.rows[0].accountName).toBe('支付宝');
+      expect(r.rows[0].toAccountName).toBe('中国农业银行储蓄卡(5172)');
+    });
     it('余额宝转入 → TRANSFER 到 支付宝', () => {
       const r = parseAlipayCSV(
         Buffer.from(alipayCsv([aliRow({ ...neutral, category: '投资理财', counterparty: '余额宝', description: '转入' })]), 'utf8'),
