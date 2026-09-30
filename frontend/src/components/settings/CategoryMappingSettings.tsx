@@ -44,7 +44,8 @@ import {
 import { Spinner } from '@/components/ui/spinner'
 import { importExportApi, type CategoryMapping } from '@/api/import-export'
 import { DictCombobox } from '@/components/DictCombobox'
-import { Plus, Pencil, Trash2, Link2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Link2, ChevronDown, Wrench } from 'lucide-react'
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { toast } from 'sonner'
 
 // 导入分类映射管理（仅管理员可见）
@@ -102,6 +103,9 @@ export function CategoryMappingSettings() {
       setCleaningInvalid(false)
     }
   }
+
+  // 无效规则数(目标分类不在字典中 / 源分类与目标分类同名):工具条上提示 + 一键清理
+  const invalidCount = mappings.filter(m => m.invalidReason).length
 
   // 加载分类映射
   const loadMappings = useCallback(async (source: string) => {
@@ -190,7 +194,9 @@ export function CategoryMappingSettings() {
             </Alert>
           )}
 
-          <div className="flex items-center justify-between mb-3">
+          {/* 工具条:左侧数据源,右侧「规则体检(下拉)」+ 主操作 —— 原先 4 个元素 justify-between
+              被均匀拉开,一排 outline 按钮很散 */}
+          <div className="flex items-center gap-2 mb-3">
             <Select value={mappingSource} onValueChange={(v) => { setMappingSource(v); loadMappings(v) }}>
               <SelectTrigger className="w-28 h-8 text-xs bg-background">
                 <SelectValue />
@@ -202,32 +208,37 @@ export function CategoryMappingSettings() {
                 <SelectItem value="csv" className="text-xs">其他CSV</SelectItem>
               </SelectContent>
             </Select>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-8 text-xs"
-              disabled={mergingDup}
-              onClick={handleMergeDuplicates}
-            >
-              {mergingDup ? <Spinner /> : '合并重复'}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-8 text-xs text-[#ef4444] hover:text-[#ef4444]"
-              disabled={cleaningInvalid}
-              onClick={handleCleanupInvalid}
-              title="删除目标分类编码已不在字典中的规则"
-            >
-              {cleaningInvalid ? <Spinner /> : '清理无效规则'}
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => { setMappingEditTarget(null); setMappingNewSourceCategory(''); setMappingNewPayerContains(''); setMappingNewDescriptionContains(''); setMappingNewRecordType('__all__'); setMappingNewTargetCode(''); setMappingFormError(''); setMappingAddOpen(true) }}
-              className="bg-primary hover:bg-primary/90 text-primary-foreground h-8 text-xs"
-            >
-              <Plus size={14} /> 新增映射
-            </Button>
+            {invalidCount > 0 && <span className="text-xs text-[#ef4444]">{invalidCount} 条无效</span>}
+            <div className="flex items-center gap-1.5 ml-auto">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" variant="outline" className="h-8 text-xs">
+                    <Wrench size={13} className="mr-1" />
+                    规则体检
+                    <ChevronDown size={12} className="ml-1 opacity-50" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44 bg-card border-border">
+                  <DropdownMenuItem className="text-xs" disabled={mergingDup} onSelect={handleMergeDuplicates}>
+                    合并重复规则
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="text-xs text-[#ef4444] focus:text-[#ef4444]"
+                    disabled={cleaningInvalid}
+                    onSelect={handleCleanupInvalid}
+                  >
+                    清理无效规则
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Button
+                size="sm"
+                onClick={() => { setMappingEditTarget(null); setMappingNewSourceCategory(''); setMappingNewPayerContains(''); setMappingNewDescriptionContains(''); setMappingNewRecordType('__all__'); setMappingNewTargetCode(''); setMappingFormError(''); setMappingAddOpen(true) }}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground h-8 text-xs"
+              >
+                <Plus size={14} /> 新增映射
+              </Button>
+            </div>
           </div>
 
           {mappingsLoading ? (
@@ -263,9 +274,9 @@ export function CategoryMappingSettings() {
                       <TableCell className="text-xs text-muted-foreground py-2.5">
                         {m.recordType === 'INCOME' ? '收入' : m.recordType === 'EXPENSE' ? '支出' : m.recordType === 'TRANSFER' ? '转账' : '通用'}
                       </TableCell>
-                      <TableCell className={`text-xs font-mono py-2.5 ${m.invalidCode ? 'text-[#ef4444]' : 'text-muted-foreground'}`}>
+                      <TableCell className={`text-xs font-mono py-2.5 ${m.invalidReason ? 'text-[#ef4444]' : 'text-muted-foreground'}`}>
                         {m.targetCategoryCode}
-                        {m.invalidCode && <span className="ml-1.5 font-sans">（字典中不存在）</span>}
+                        {m.invalidReason && <span className="ml-1.5 font-sans">（{m.invalidReason}）</span>}
                       </TableCell>
                       <TableCell className="text-right py-2.5">
                         <div className="flex items-center justify-end gap-0.5">

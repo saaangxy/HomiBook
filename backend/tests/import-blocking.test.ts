@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildValidAccountRefs, collectPreviewBlocking, findUnknownCategoryCodes, formatDictOptions, shouldMarkCategoryUnmatched, validateImportRecords } from '../src/services/import/blocking.js';
+import { buildValidAccountRefs, collectPreviewBlocking, findGenericUnconditionalResolutions, findSelfMappedCategoryResolutions, findUnknownCategoryCodes, formatDictOptions, shouldMarkCategoryUnmatched, validateImportRecords } from '../src/services/import/blocking.js';
 
 describe('collectPreviewBlocking', () => {
   it('三组清单 → 阻断项,账户类标记为必然失败', () => {
@@ -147,5 +147,55 @@ describe('formatDictOptions', () => {
   it('超出限量时补总数提示', () => {
     const many = Array.from({ length: 5 }, (_, i) => ({ code: `c${i}`, label: `L${i}` }));
     expect(formatDictOptions(many, 2)).toBe('L0(c0)、L1(c1) 等 5 项');
+  });
+});
+
+describe('findGenericUnconditionalResolutions', () => {
+  const res = (o: { sourceCategory: string; targetCategoryCode: string; payerContains?: string; descriptionContains?: string }) => o;
+
+  it('兜底分类 + 无条件 → 命中(「其他」→「育儿母婴」)', () => {
+    const bad = findGenericUnconditionalResolutions([res({ sourceCategory: '其他', targetCategoryCode: '育儿母婴' })]);
+    expect(bad).toHaveLength(1);
+    expect(bad[0].targetCategoryCode).toBe('育儿母婴');
+  });
+
+  it('带条件(交易方/说明)则不报', () => {
+    expect(findGenericUnconditionalResolutions([res({ sourceCategory: '其他', targetCategoryCode: '育儿母婴', payerContains: '奈尔宝' })])).toHaveLength(0);
+    expect(findGenericUnconditionalResolutions([res({ sourceCategory: '其他', targetCategoryCode: '育儿母婴', descriptionContains: '奶粉' })])).toHaveLength(0);
+  });
+
+  it('源分类不是兜底名 → 不报(「餐饮美食」→「餐饮」无条件是对的)', () => {
+    expect(findGenericUnconditionalResolutions([res({ sourceCategory: '餐饮美食', targetCategoryCode: '餐饮' })])).toHaveLength(0);
+  });
+
+  it('同质分类「转账红包」不受限', () => {
+    expect(findGenericUnconditionalResolutions([res({ sourceCategory: '转账红包', targetCategoryCode: '红包' })])).toHaveLength(0);
+  });
+
+  it('目标是兜底类本身 → 不报(「其他」→「其他」)', () => {
+    expect(findGenericUnconditionalResolutions([res({ sourceCategory: '其他', targetCategoryCode: '其他收入' })])).toHaveLength(0);
+  });
+
+  it('「未知」「其它」等兜底名同样命中', () => {
+    expect(findGenericUnconditionalResolutions([res({ sourceCategory: '未知', targetCategoryCode: '购物' })])).toHaveLength(1);
+    expect(findGenericUnconditionalResolutions([res({ sourceCategory: '其它', targetCategoryCode: '餐饮' })])).toHaveLength(1);
+  });
+});
+
+describe('findSelfMappedCategoryResolutions', () => {
+  it('源分类与目标同名 → 命中(「日用百货」→「日用百货」)', () => {
+    expect(findSelfMappedCategoryResolutions([{ sourceCategory: '日用百货', targetCategoryCode: '日用百货' }])).toHaveLength(1);
+  });
+
+  it('两侧空白差异也算同名', () => {
+    expect(findSelfMappedCategoryResolutions([{ sourceCategory: ' 日用百货 ', targetCategoryCode: '日用百货' }])).toHaveLength(1);
+  });
+
+  it('不同名 → 不报', () => {
+    expect(findSelfMappedCategoryResolutions([{ sourceCategory: '餐饮美食', targetCategoryCode: '餐饮' }])).toHaveLength(0);
+  });
+
+  it('源分类为空 → 不报', () => {
+    expect(findSelfMappedCategoryResolutions([{ sourceCategory: '', targetCategoryCode: '' }])).toHaveLength(0);
   });
 });

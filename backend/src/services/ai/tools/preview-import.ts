@@ -3,7 +3,7 @@ import { prisma } from '../../../app.js'
 import { assertIsMember, checkEnumList, checkEnums } from '../security.js'
 import { applyAccountMappings, applyCategoryMappings, matchAccountByName, inferAccount, type ParsedRow } from '../../import/shared.js'
 import { IMPORT_FILE_MISSING, loadImportFile, parseImportFile } from '../../import/attachment-file.js'
-import { CATEGORY_DICT_GROUPS, findUnknownCategoryCodes, formatDictOptions } from '../../import/blocking.js'
+import { CATEGORY_DICT_GROUPS, findGenericUnconditionalResolutions, findSelfMappedCategoryResolutions, findUnknownCategoryCodes, formatDictOptions } from '../../import/blocking.js'
 import { ACCOUNT_TYPES, IMPORT_AI_SOURCES, RECORD_TYPES, computeImportProgress } from '@homibook/core'
 import {
   ACCOUNT_UNMATCHED_LIMIT,
@@ -93,6 +93,29 @@ export const previewImportTool: ToolDef = {
           retryable: false,
           error: `分类编码不存在：${unknown.join('、')}。targetCategoryCode 必须是系统字典里的编码，可选值：${formatDictOptions(dictItems)}`,
         }
+      }
+    }
+
+    // 兜底类源分类(其他/未知/转账…)不能用无条件规则映射到具体分类:
+    // 一条无条件规则会把该源分类下所有记录都改掉(如整个「其他」→「育儿母婴」)
+    const genericBad = findGenericUnconditionalResolutions(categoryResolutions ?? [])
+    if (genericBad.length > 0) {
+      const detail = genericBad.map(r => `「${r.sourceCategory}」→「${r.targetCategoryCode}」`).join('、')
+      return {
+        success: false,
+        retryable: false,
+        error: `兜底分类不能用无条件规则映射到具体分类：${detail}。这类分类下的记录互不相关，一条无条件规则会把它们全部误映射。请依据 categorySamples 按交易方/说明分簇，为每条规则补充 payerContains 或 descriptionContains；分不出簇就不要为该分类生成规则。`,
+      }
+    }
+
+    // 源分类与目标分类同名 = 没映射,存成规则只会污染规则表
+    const selfMapped = findSelfMappedCategoryResolutions(categoryResolutions ?? [])
+    if (selfMapped.length > 0) {
+      const detail = selfMapped.map(r => `「${r.sourceCategory}」→「${r.targetCategoryCode}」`).join('、')
+      return {
+        success: false,
+        retryable: false,
+        error: `源分类与目标分类同名：${detail}。这条规则等于没有映射，请去掉它，或改为真正要映射到的系统分类。`,
       }
     }
 

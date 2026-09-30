@@ -166,9 +166,10 @@ export function AccountMappingSettings() {
           <p className="text-sm text-muted-foreground mb-4">
             将 CSV 文件中的账户名映射到系统中的账户，导入时自动匹配。
           </p>
-          <div className="flex items-center justify-between mb-3">
+          {/* 工具条对齐分类映射面板:左侧数据源,右侧操作组(与分类面板保持同一套视觉层级) */}
+          <div className="flex items-center gap-2 mb-3">
             <Select value={accountMappingSource} onValueChange={(v) => { setAccountMappingSource(v); loadAccountMappings(v) }}>
-              <SelectTrigger className="w-[130px] h-8 text-xs bg-background border-border">
+              <SelectTrigger className="w-28 h-8 text-xs bg-background border-border">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent className="bg-card border-border">
@@ -178,23 +179,24 @@ export function AccountMappingSettings() {
                 <SelectItem value="csv" className="text-xs">其他CSV</SelectItem>
               </SelectContent>
             </Select>
-            <Button
-              size="sm"
-              variant="outline"
-              className="bg-background border-border"
-              disabled={mergingDup}
-              onClick={handleMergeDuplicates}
-            >
-              {mergingDup ? <Spinner /> : '合并重复'}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="bg-background border-border"
-              onClick={() => { resetAccountMappingForm(); setAccountMappingEditTarget(null); setAccountMappingAddOpen(true) }}
-            >
-              <Plus size={14} /> 新增映射
-            </Button>
+            <div className="flex items-center gap-1.5 ml-auto">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs bg-background border-border"
+                disabled={mergingDup}
+                onClick={handleMergeDuplicates}
+              >
+                {mergingDup ? <Spinner /> : '合并重复规则'}
+              </Button>
+              <Button
+                size="sm"
+                className="bg-primary hover:bg-primary/90 text-primary-foreground h-8 text-xs"
+                onClick={() => { resetAccountMappingForm(); setAccountMappingEditTarget(null); setAccountMappingAddOpen(true) }}
+              >
+                <Plus size={14} /> 新增映射
+              </Button>
+            </div>
           </div>
           {accountMappingsLoading && <Spinner className="py-4" />}
           {accountMappingsError && (

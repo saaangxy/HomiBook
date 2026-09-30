@@ -430,8 +430,12 @@ export async function importExportRoutes(app: FastifyInstance) {
       select: { code: true },
     })
     const validCodes = new Set(dictItems.map(d => d.code))
-    const all = await prisma.importCategoryMapping.findMany({ select: { id: true, targetCategoryCode: true } })
-    const invalidIds = all.filter(m => !validCodes.has(m.targetCategoryCode)).map(m => m.id)
+    const all = await prisma.importCategoryMapping.findMany({ select: { id: true, sourceCategory: true, targetCategoryCode: true } })
+    // 无效 = 目标分类不在字典中,或源分类与目标分类同名(等于没映射)
+    const invalidIds = all.filter(m => {
+      const src = m.sourceCategory.trim()
+      return !validCodes.has(m.targetCategoryCode) || (!!src && src === m.targetCategoryCode.trim())
+    }).map(m => m.id)
     if (invalidIds.length > 0) {
       await prisma.importCategoryMapping.deleteMany({ where: { id: { in: invalidIds } } })
     }
@@ -479,13 +483,24 @@ export async function importExportRoutes(app: FastifyInstance) {
       where,
       orderBy: { createdAt: 'desc' },
     })
-    // 标记目标分类已失效的规则(字典里没有这个 code):设置页据此标红 + 提供一键清理
+    // 标记无效规则:设置页据此标红 + 提供一键清理
+    // 无效的两种情形:① 目标分类不在字典中;② 源分类与目标分类同名(等于没映射)
     const dictItems = await prisma.dictionary.findMany({
       where: { group: { in: [...CATEGORY_DICT_GROUPS] } },
       select: { code: true },
     })
     const validCodes = new Set(dictItems.map(d => d.code))
-    return { mappings: mappings.map(m => ({ ...m, invalidCode: !validCodes.has(m.targetCategoryCode) })) }
+    return {
+      mappings: mappings.map(m => {
+        const src = m.sourceCategory.trim()
+        const reason = !validCodes.has(m.targetCategoryCode)
+          ? '目标分类不在字典中'
+          : (src && src === m.targetCategoryCode.trim())
+            ? '源分类与目标分类同名（等于未映射）'
+            : undefined
+        return { ...m, invalidReason: reason }
+      }),
+    }
   })
 
   app.post('/import/mappings', {

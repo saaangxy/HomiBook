@@ -119,8 +119,8 @@ export interface CategoryMapping {
   descriptionContains: string
   recordType: string
   targetCategoryCode: string
-  /** 服务端标记:目标分类编码已不在字典中(AI 早期可能把源分类名当编码写进来) */
-  invalidCode?: boolean
+  /** 服务端标记:非空表示这条规则无效(目标分类不在字典中 / 源分类与目标分类同名) */
+  invalidReason?: string
 }
 
 // 账户映射

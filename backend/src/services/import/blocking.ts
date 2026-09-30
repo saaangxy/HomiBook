@@ -114,6 +114,48 @@ export function formatDictOptions(items: { code: string; label: string }[], limi
   return items.length > limit ? `${head.join('、')} 等 ${items.length} 项` : head.join('、')
 }
 
+/**
+ * 兜底/泛化类源分类:这些分类下的记录互不相关。
+ * 注意不要扩大范围 —— 「转账红包」这类是**同质**分类(都是红包/转账),
+ * 对它出无条件规则是对的,放进来会误报。
+ */
+const GENERIC_SOURCE_CATEGORY_RE = /^(其他|其它|未知)/
+
+export interface CategoryResolutionLike {
+  sourceCategory: string
+  targetCategoryCode: string
+  payerContains?: string
+  descriptionContains?: string
+}
+
+/**
+ * 找出「兜底类源分类 + 无条件规则」的决议。
+ *
+ * 例:「其他」→「育儿母婴」(不带任何条件) 会把这个源分类下**所有**记录都算成育儿母婴。
+ * 目标是兜底类本身的除外(「其他」→「其他」无害)。
+ * 用于 AI 链路:这类决议必然错,回报模型让它补条件或撤掉。
+ */
+export function findGenericUnconditionalResolutions<T extends CategoryResolutionLike>(resolutions: T[]): T[] {
+  return resolutions.filter(r => {
+    if (!GENERIC_SOURCE_CATEGORY_RE.test((r.sourceCategory || '').trim())) return false
+    if ((r.payerContains || '').trim() || (r.descriptionContains || '').trim()) return false
+    return !GENERIC_SOURCE_CATEGORY_RE.test((r.targetCategoryCode || '').trim())
+  })
+}
+
+/**
+ * 找出「源分类与目标分类同名」的决议。
+ *
+ * 例:「日用百货」→「日用百货」—— 等于没映射(未映射时 /import 也会回退成源名,结果完全一样),
+ * 存成规则只会污染规则表。仅用于 AI 链路:这类决议没有价值,让模型去掉或改成真正的目标分类。
+ */
+export function findSelfMappedCategoryResolutions<T extends CategoryResolutionLike>(resolutions: T[]): T[] {
+  return resolutions.filter(r => {
+    const src = (r.sourceCategory || '').trim()
+    return !!src && src === (r.targetCategoryCode || '').trim()
+  })
+}
+
 /** 分类字典的三个组(收入/支出/转账):导入校验统一用这一份 */
 export const CATEGORY_DICT_GROUPS = [
   'transaction_category_income',
