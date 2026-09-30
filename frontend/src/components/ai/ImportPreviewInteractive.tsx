@@ -22,8 +22,11 @@ interface ParsedRow {
   type: string
   amount: number
   accountName: string
+  /** 服务端给出的「映射后账户名」(源账户名 → 目标名);前端仅作兜底 */
+  mappedAccountName?: string | null
   accountId?: string | null
   toAccountName?: string | null
+  mappedToAccountName?: string | null
   toAccountId?: string | null
   categoryCode?: string | null
   categoryLabel?: string | null
@@ -207,8 +210,32 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
     }
     const created = (data.newAccountCreations || []).find(c => c.sourceAccountName === row.accountName)
     if (created) return created.name
+    if (row.mappedAccountName) return row.mappedAccountName
     return (row.accountName && data.accountMappingNames?.[row.accountName]) || row.accountName || '-'
   }
+
+  /** 目标账户列(与账户列同口径) */
+  const toAccountNameOf = (row: ParsedRow) => {
+    if (!row.toAccountName) return '-'
+    const res = accountResolutions[row.toAccountName]
+    if (res?.action === 'create' && res.name) return res.name
+    if (res?.action === 'existing' && res.accountId) {
+      const acc = accounts.find(a => a.id === res.accountId)
+      if (acc) return acc.name
+    }
+    const created = (data.newAccountCreations || []).find(c => c.sourceAccountName === row.toAccountName)
+    if (created) return created.name
+    if (row.mappedToAccountName) return row.mappedToAccountName
+    return data.accountMappingNames?.[row.toAccountName] || row.toAccountName
+  }
+
+  /** 原始分类列:账单里的源分类(标签优先,回退编码) */
+  const rawCategoryOf = (row: ParsedRow) =>
+    row.categoryLabel || row.categoryCode || '-'
+
+  /** 系统分类列:实际会写入的分类(映射结果优先,与手动向导确认页同口径) */
+  const mappedCategoryOf = (row: ParsedRow) =>
+    row.mappedCategoryLabel || row.mappedCategoryCode || '-'
 
   const tabs = [
     { key: 'records' as const, label: `记录 (${allRecords.length})` },
@@ -290,16 +317,17 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
           <div className="rounded border overflow-hidden max-h-64 overflow-y-auto">
           <table className="w-full text-[10px]">
             <thead className="bg-muted/30 sticky top-0">
+              {/* 列与手动向导确认页对齐:日期/类型/金额/账户/目标账户/交易方/原始分类/系统分类/备注 */}
               <tr>
-                <th className="px-1 py-0.5 text-left">#</th>
                 <th className="px-1 py-0.5 text-left">日期</th>
                 <th className="px-1 py-0.5 text-left">类型</th>
                 <th className="px-1 py-0.5 text-right">金额</th>
                 <th className="px-1 py-0.5 text-left">账户</th>
-                <th className="px-1 py-0.5 text-left">分类</th>
-                <th className="px-1 py-0.5 text-left">映射分类</th>
+                <th className="px-1 py-0.5 text-left">目标账户</th>
                 <th className="px-1 py-0.5 text-left">交易方</th>
-                <th className="px-1 py-0.5 text-left">说明</th>
+                <th className="px-1 py-0.5 text-left">原始分类</th>
+                <th className="px-1 py-0.5 text-left">系统分类</th>
+                <th className="px-1 py-0.5 text-left">备注</th>
               </tr>
             </thead>
             <tbody>
@@ -313,15 +341,15 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
                 })()
                 return (
                 <tr key={i} className={cn('border-t', r.type === 'UNKNOWN' && 'bg-red-50/30')}>
-                  <td className="px-1 py-0.5 text-muted-foreground">{r.rowIndex}</td>
                   <td className="px-1 py-0.5">{displayDate}</td>
                   <td className={cn('px-1 py-0.5', TYPE_COLORS[r.type])}>{TYPE_LABELS[r.type] || r.type}</td>
                   <td className="px-1 py-0.5 text-right">{r.amount.toFixed(2)}</td>
-                  <td className="px-1 py-0.5">{accountNameOf(r)}</td>
-                  <td className="px-1 py-0.5">{r.categoryLabel || r.categoryCode || '-'}</td>
-                  <td className="px-1 py-0.5">{r.mappedCategoryLabel || r.mappedCategoryCode || '-'}</td>
+                  <td className="px-1 py-0.5 max-w-24 truncate">{accountNameOf(r)}</td>
+                  <td className="px-1 py-0.5 max-w-20 truncate">{toAccountNameOf(r)}</td>
                   <td className="px-1 py-0.5 max-w-16 truncate">{r.payer || '-'}</td>
-                  <td className="px-1 py-0.5 text-muted-foreground max-w-20 truncate">{r.remark || '-'}</td>
+                  <td className="px-1 py-0.5 max-w-20 truncate">{rawCategoryOf(r)}</td>
+                  <td className="px-1 py-0.5 max-w-20 truncate">{mappedCategoryOf(r)}</td>
+                  <td className="px-1 py-0.5 text-muted-foreground max-w-24 truncate">{r.remark || '-'}</td>
                 </tr>
               )})}
             </tbody>

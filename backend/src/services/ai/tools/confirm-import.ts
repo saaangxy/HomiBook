@@ -2,11 +2,11 @@ import type { ToolDef, ToolContext } from './types.js'
 import { prisma } from '../../../app.js'
 import { assertIsMember, checkEnumList, checkEnums } from '../security.js'
 import { createAccountsInTx, saveCategoryMappingsInTx, saveAccountMappingsInTx, AccountResolver, batchCreateRecordsInTx, refreshBalances } from '../../import/execute.js'
-import { applyAccountMappings, applyCategoryMappings, matchAccountByName } from '../../import/shared.js'
-import { CATEGORY_DICT_GROUPS, findGenericUnconditionalResolutions, findSelfMappedCategoryResolutions, findUnknownCategoryCodes, formatDictOptions, shouldMarkCategoryUnmatched } from '../../import/blocking.js'
+import { CATEGORY_DICT_GROUPS, findGenericUnconditionalResolutions, findSelfMappedCategoryResolutions, findUnknownCategoryCodes, formatDictOptions } from '../../import/blocking.js'
+import { remapImportRows } from '../../import/remap.js'
 import { consumeImportOverrides, peekImportOverrides } from './index.js'
 import { IMPORT_FILE_MISSING, loadImportFile, parseImportFile } from '../../import/attachment-file.js'
-import { ACCOUNT_TYPES, ACCOUNT_TYPE_LABELS, IMPORT_AI_SOURCES, RECORD_TYPES, normalizeRecordType } from '@homibook/core'
+import { ACCOUNT_TYPES, ACCOUNT_TYPE_LABELS, IMPORT_AI_SOURCES, RECORD_TYPES } from '@homibook/core'
 
 export const confirmImportTool: ToolDef = {
   name: 'confirm_import',
@@ -141,98 +141,39 @@ export const confirmImportTool: ToolDef = {
     const effectiveAccountResolutions = userOverrides?.accountResolutions ?? accountResolutions
     const effectiveCategoryResolutions = userOverrides?.categoryResolutions ?? categoryResolutions
 
-    // 应用用户指定的未识别记录处理
-    if (userOverrides?.unrecognizedResolutions && userOverrides.unrecognizedResolutions.length > 0) {
-      const unresMap = new Map(userOverrides.unrecognizedResolutions.map(u => [u.rowIndex, u]))
-      for (const r of parseResult.rows) {
-        const unres = unresMap.get(r.rowIndex)
-        if (unres && r.type === 'UNKNOWN') {
-          // 归一化:该类型来自客户端提交的人工指定,非法值直接落库会让各端渲染崩溃
-          r.type = normalizeRecordType(unres.type)
-          r.accountId = unres.accountId || null
-          // 转账必须带转入账户:execute 里 toAccountId 为 null 会落成没有收款方的转账
-          if (r.type === 'TRANSFER') r.toAccountId = unres.toAccountId || null
-          if (unres.categoryCode) r.mappedCategoryCode = unres.categoryCode
-        }
-      }
-    }
-
-    // DB + AI 分类映射合并应用（AI 按唯一键覆盖/补充 DB，统一走评分匹配）
-    await applyCategoryMappings(source, parseResult.rows, effectiveCategoryResolutions)
-
-    // 应用 DB 账户映射 + AI 覆盖（只匹配本人/指定归属人的账户）
-    const { idMap: accountMappings, newAccountCreations } = await applyAccountMappings(source, parseResult.rows, ctx.accountBookId, effectiveAccountResolutions, effectiveOwnerId)
-
-    // 匹配账户（只匹配本人/指定归属人的账户）
-    const allAccounts = await prisma.account.findMany({
-      where: { accountBookId: ctx.accountBookId, status: 'ACTIVE', ownerId: effectiveOwnerId },
-      select: { id: true, name: true },
+    // ---- 统一走 remapImportRows(与手动向导 /preview、/import/check 同一份实现) ----
+    // 这里不再自己拼「账户匹配 / 分类映射 / 未决判定」:此前那套手写逻辑与手动向导口径漂移,
+    // 是「同一份账单两种入口结论不同」的反复来源。未处置的未识别行不算阻断 ——
+    // 用户在预览卡上点「确认导入」即视为同意跳过(confirmSkipUnrecognized)。
+    const remapped = await remapImportRows({
+      source,
+      rows: parseResult.rows,
+      accountBookId: ctx.accountBookId,
+      ownerId: effectiveOwnerId,
+      accountResolutions: effectiveAccountResolutions,
+      categoryResolutions: effectiveCategoryResolutions,
+      unrecognizedResolutions: userOverrides?.unrecognizedResolutions,
+      confirmSkipUnrecognized: true,
     })
 
-    const nameToId = new Map<string, string>()
-    for (const row of parseResult.rows) {
-      const names = [row.accountName]
-      if (row.toAccountName) names.push(row.toAccountName)
-      for (const name of names) {
-        if (accountMappings.has(name) || nameToId.has(name)) continue
-        const result = matchAccountByName(name, allAccounts, effectiveOwnerId)
-        if (result.matched) {
-          nameToId.set(name, result.id)
-        }
-      }
-    }
+    // 实际会写入的流水(UNKNOWN 已处置的也在内)
+    const finalRows = remapped.finalRows
 
-    // 构建 accountCreations（按 targetName 合并，避免多个源账户映射到同一目标时重复创建）
-    const creationByName = new Map<string, { csvNames: Set<string>; name: string; type: string; bankName?: string; accountNo?: string }>()
-    for (const nac of newAccountCreations) {
-      const existing = creationByName.get(nac.name)
-      if (existing) {
-        existing.csvNames.add(nac.sourceAccountName)
-      } else {
-        creationByName.set(nac.name, { csvNames: new Set([nac.sourceAccountName]), name: nac.name, type: nac.type })
-      }
-    }
-
-    // 仍未匹配且未被 AI 决议覆盖的源账户:不再「自动推断并新建」(那会静默造账户、
-    // 与手动向导的口径相左),收集为未决项交给下面的服务端裁决。
-    const mappedSourceNames = new Set([...creationByName.values()].flatMap(c => [...c.csvNames]))
-    const unresolvedAccountNames: string[] = []
-    const seenAccounts = new Set<string>()
-    for (const row of parseResult.rows) {
-      if (seenAccounts.has(row.accountName)) continue
-      seenAccounts.add(row.accountName)
-      if (accountMappings.has(row.accountName)) continue
-      if (nameToId.has(row.accountName)) continue
-      if (mappedSourceNames.has(row.accountName)) continue
-      unresolvedAccountNames.push(row.accountName)
-    }
-
-    // ---- 服务端唯一裁决(与手动向导 /preview 的 canProceed 同口径) ----
-    // 账户、分类、未识别行任一有未决项就不执行,把原因回传给用户/模型。
-    const unmappedCategories = [...new Set(
-      parseResult.rows.filter(r => shouldMarkCategoryUnmatched(r)).map(r => r.categoryCode!),
-    )]
-    const blockReasons: string[] = []
-    if (unresolvedAccountNames.length > 0) {
-      blockReasons.push(`账户未指定归属账户：${unresolvedAccountNames.slice(0, 5).join('、')}${unresolvedAccountNames.length > 5 ? ` 等 ${unresolvedAccountNames.length} 个` : ''}`)
-    }
-    if (unmappedCategories.length > 0) {
-      blockReasons.push(`分类未映射到系统分类：${unmappedCategories.slice(0, 5).join('、')}`)
-    }
-    // 注意:未处置的未识别行**不作为阻断** —— 用户在预览卡片上点「确认导入」就是同意跳过,
-    // 且工具没有「同意跳过」这类入参,留在阻断里会让导入永远过不去。数量改为在预览数据里回报。
-
-    const accountCreations = [...creationByName.values()].map(c => ({
-      csvName: [...c.csvNames].join(', '),
+    // 将新建的账户(remap 已按目标名合并同组源账户名)
+    const accountCreations = remapped.toCreate.map(c => ({
+      csvName: c.sourceAccountNames.join(', '),
       name: c.name,
       type: c.type,
-      bankName: c.bankName,
-      accountNo: c.accountNo,
     }))
 
-    const newAccountMappings = [...creationByName.values()].flatMap(c =>
-      [...c.csvNames].map(sn => ({ sourceAccountName: sn, targetAccountName: c.name })),
+    const newAccountMappings = remapped.toCreate.flatMap(c =>
+      c.sourceAccountNames.map(sn => ({ sourceAccountName: sn, targetAccountName: c.name })),
     )
+
+    // ---- 服务端唯一裁决(remapImportRows 下发,与手动向导 /preview 同口径) ----
+    // 账户未解析 / 分类未映射 / 无可导入流水 → 不执行,原因回传用户与模型。
+    // 未处置的未识别行不作为阻断:点「确认导入」即同意跳过,数量在预览数据里回报。
+    const blockReasons = remapped.blockReasons
 
     // 构建 newMappings
     const newMappings: { sourceCategory: string; targetCategoryCode: string; payerContains?: string; descriptionContains?: string; recordType?: string }[] = []
@@ -248,18 +189,9 @@ export const confirmImportTool: ToolDef = {
       }
     }
 
-    // 构建记录列表（只包含正常记录）
-    const normalRecords = parseResult.rows.filter(r => r.type !== 'UNKNOWN')
-
-    // 填充 accountId / toAccountId
-    for (const r of normalRecords) {
-      if (!r.accountId) {
-        r.accountId = accountMappings.get(r.accountName) || nameToId.get(r.accountName) || null
-      }
-      if (r.toAccountName && !r.toAccountId) {
-        r.toAccountId = accountMappings.get(r.toAccountName) || nameToId.get(r.toAccountName) || null
-      }
-    }
+    // 实际会写入的流水(UNKNOWN 已处置的也在内;未处置的已被 remap 剔除)
+    // accountId / toAccountId 已经 remap 的账户解析填好,这里不再补。
+    const normalRecords = finalRows
 
     // ---- 获取账本成员（供归属人选择） ----
     const members = await prisma.accountBookMember.findMany({
@@ -279,6 +211,10 @@ export const confirmImportTool: ToolDef = {
         return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')} ${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}:${String(dt.getSeconds()).padStart(2, '0')}`
       } catch { return d }
     }
+
+    // 记录列表要展示「映射后账户名」:remap 已给出 源账户名 → 目标名 的映射,直接下发(前端只做兜底)
+    const accountDisplayName = (csvName?: string | null) =>
+      csvName ? (remapped.nameMatched[csvName] ?? csvName) : null
 
     // ---- 阶段1：返回预览数据 ----
     if (!_execute) {
@@ -313,8 +249,10 @@ export const confirmImportTool: ToolDef = {
             type: r.type,
             amount: r.amount,
             accountName: r.accountName,
+            mappedAccountName: accountDisplayName(r.accountName),
             accountId: r.accountId,
             toAccountName: r.toAccountName,
+            mappedToAccountName: accountDisplayName(r.toAccountName),
             toAccountId: r.toAccountId,
             categoryCode: r.categoryCode,
             categoryLabel: r.categoryCode ? (labelMap.get(r.categoryCode) || r.categoryCode) : null,
@@ -336,7 +274,7 @@ export const confirmImportTool: ToolDef = {
           canProceed: blockReasons.length === 0,
           blockReasons,
           // 未处置的未识别行会被跳过(用户点确认即视为同意),只回报数量
-          skippedUnrecognized: parseResult.rows.filter(r => r.type === 'UNKNOWN').length,
+          skippedUnrecognized: remapped.unresolved.unrecognized.length,
           owners: [
             ...(bookOwner ? [{ id: bookOwner.owner.id, name: bookOwner.owner.nickname || bookOwner.owner.email, isOwner: true }] : []),
             ...members.filter(m => m.user.id !== bookOwnerId).map(m => ({ id: m.user.id, name: m.user.nickname || m.user.email, isOwner: false })),
@@ -352,19 +290,14 @@ export const confirmImportTool: ToolDef = {
       return { success: false, error: blockReasons.join('；'), retryable: false }
     }
 
-    // 构建源账户名 → 新建账户名映射（csvName 已合并为逗号分隔）
-    const csvNameToNewName = new Map<string, string>()
-    for (const c of creationByName.values()) {
-      for (const sn of c.csvNames) {
-        csvNameToNewName.set(sn, c.name)
-      }
-    }
+    // 源账户名 → 目标账户名(remap 已给出:名称匹配到的账户名 / 本次将新建的账户名)
+    const accountNameMap = remapped.nameMatched
 
     const records = normalRecords.map(r => ({
       date: r.date,
       type: r.type as 'INCOME' | 'EXPENSE' | 'TRANSFER',
       amount: r.amount,
-      accountId: r.accountId || csvNameToNewName.get(r.accountName) || r.accountName,
+      accountId: r.accountId || accountNameMap[r.accountName] || r.accountName,
       toAccountId: r.toAccountId || undefined,
       categoryCode: r.mappedCategoryCode || r.categoryCode,
       payer: r.payer,

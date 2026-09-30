@@ -56,6 +56,24 @@ describe('applyUnrecognizedResolutions', () => {
     expect(unresolvedRowIndexes).toEqual([9]);
   });
 
+  it('非法类型归一化为 EXPENSE(各端按 type 查图标/颜色,非法值会直接崩)', () => {
+    const { resolved, unresolvedRowIndexes } = applyUnrecognizedResolutions(
+      [row({ rowIndex: 7, type: 'UNKNOWN' })],
+      [{ rowIndex: 7, type: 'NOT_A_TYPE', accountId: 'acc-1' }],
+    );
+    expect(unresolvedRowIndexes).toEqual([]);
+    expect(resolved[0]).toMatchObject({ type: 'EXPENSE', accountId: 'acc-1' });
+  });
+
+  it('类型为空串视为未处置(不落成 EXPENSE)', () => {
+    const { resolved, unresolvedRowIndexes } = applyUnrecognizedResolutions(
+      [row({ rowIndex: 8, type: 'UNKNOWN' })],
+      [{ rowIndex: 8, type: '', accountId: 'acc-1' }],
+    );
+    expect(resolved).toHaveLength(0);
+    expect(unresolvedRowIndexes).toEqual([8]);
+  });
+
   it('不修改传入的原始行对象(纯函数)', () => {
     const original = row({ rowIndex: 1, type: 'UNKNOWN' });
     applyUnrecognizedResolutions([original], [{ rowIndex: 1, type: 'EXPENSE', accountId: 'acc-1' }]);

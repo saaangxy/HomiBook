@@ -1638,7 +1638,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                               <TableHead className="text-xs whitespace-nowrap py-2">目标账户</TableHead>
                               <TableHead className="text-xs whitespace-nowrap py-2">交易方</TableHead>
                               <TableHead className="text-xs whitespace-nowrap py-2">原始分类</TableHead>
-                              <TableHead className="text-xs whitespace-nowrap py-2">映射分类</TableHead>
+                              <TableHead className="text-xs whitespace-nowrap py-2">系统分类</TableHead>
                               <TableHead className="text-xs whitespace-nowrap py-2">说明</TableHead>
                             </TableRow>
                           </TableHeader>

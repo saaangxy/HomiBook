@@ -132,7 +132,7 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
    * 账户列展示「映射后账户名」(与手动向导确认页同口径):
    * 用户当前决议 → 将新建的目标名 → 服务端映射名 → 回退原始 CSV 名。
    */
-  const accountNameOf = (row: { accountName?: string | null }) => {
+  const accountNameOf = (row: { accountName?: string | null; mappedAccountName?: string | null }) => {
     const res = row.accountName ? accountRes[row.accountName] : undefined;
     if (res?.action === 'create' && res.name) return res.name;
     if (res?.action === 'existing' && res.accountId) {
@@ -141,9 +141,33 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
     }
     const created = newAccountCreations.find((c) => c.sourceAccountName === row.accountName);
     if (created) return created.name;
+    if (row.mappedAccountName) return row.mappedAccountName;
     const mapped = row.accountName ? (data as { accountMappingNames?: Record<string, string> }).accountMappingNames?.[row.accountName] : undefined;
     return mapped || row.accountName || '-';
   };
+
+  /** 目标账户列(与账户列同口径) */
+  const toAccountNameOf = (row: { toAccountName?: string | null; mappedToAccountName?: string | null }) => {
+    if (!row.toAccountName) return '-';
+    const res = accountRes[row.toAccountName];
+    if (res?.action === 'create' && res.name) return res.name;
+    if (res?.action === 'existing' && res.accountId) {
+      const acc = accounts.find((a) => a.id === res.accountId);
+      if (acc) return acc.name;
+    }
+    const created = newAccountCreations.find((c) => c.sourceAccountName === row.toAccountName);
+    if (created) return created.name;
+    if (row.mappedToAccountName) return row.mappedToAccountName;
+    const mapped = (data as { accountMappingNames?: Record<string, string> }).accountMappingNames?.[row.toAccountName];
+    return mapped || row.toAccountName;
+  };
+
+  /** 原始分类列:账单里的源分类(标签优先,回退编码) */
+  const rawCategoryOf = (row: { categoryLabel?: string | null; categoryCode?: string | null }) =>
+    row.categoryLabel || row.categoryCode || '-';
+  /** 系统分类列:实际会写入的分类(映射结果优先,与手动向导确认页同口径) */
+  const mappedCategoryOf = (row: { mappedCategoryLabel?: string | null; mappedCategoryCode?: string | null }) =>
+    row.mappedCategoryLabel || row.mappedCategoryCode || '-';
   const tabs = [
     { key: 'records' as const, label: `记录 (${allRecords.length})` },
     { key: 'accounts' as const, label: `未匹配账户 (${unmatchedAccounts.length})` },
@@ -336,7 +360,7 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
       {/* 记录列表 */}
       {tab === 'records' && (
         <MiniTable
-          columns={['#', '日期', '类型', '金额', '账户', '分类', '映射分类', '交易方', '说明']}
+          columns={['日期', '类型', '金额', '账户', '目标账户', '交易方', '原始分类', '系统分类', '备注']}
           aligns={['left', 'left', 'left', 'right']}
           rows={allRecords.map((r) => {
             let displayDate = r.date;
@@ -344,7 +368,8 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
               const d = new Date(r.date);
               if (!isNaN(d.getTime())) displayDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
             } catch { /* 原样展示 */ }
-            return [String(r.rowIndex), displayDate, IMPORT_TYPE_LABELS[r.type] || r.type, (r.amount ?? 0).toFixed(2), accountNameOf(r), r.categoryLabel || r.categoryCode || '-', r.mappedCategoryLabel || r.mappedCategoryCode || '-', r.payer || '-', r.remark || '-'];
+            // 原始分类 = 账单里的源分类;系统分类 = 实际写入的分类(与手动向导确认页同口径)
+            return [displayDate, IMPORT_TYPE_LABELS[r.type] || r.type, (r.amount ?? 0).toFixed(2), accountNameOf(r), toAccountNameOf(r), r.payer || '-', rawCategoryOf(r), mappedCategoryOf(r), r.remark || '-'];
           })}
           maxHeight={220}
         />

@@ -6,7 +6,8 @@
  *   ParsedRow[] → 账户匹配(本模块) → 分类映射(本模块) → 预览组装 / 批量入账
  *
  * 调用方:routes/import-export.ts(手动向导与 /import 预览)、routes/sms.ts(短信候选直入)。
- * AI 工具链(preview_import / confirm_import)另有自己的 AI 决议合并逻辑,但同样复用 shared.ts 的映射应用。
+ * AI 工具链(preview_import / confirm_import)不再自己组合本模块的函数,统一走 services/import/remap.ts
+ * 的 remapImportRows(它内部调用本模块的 resolveImportAccounts) —— 保证「同一份账单,手动与 AI 同一结论」。
  */
 import { prisma } from '../../app.js'
 import { dateKey } from '../../lib/date-time.js'

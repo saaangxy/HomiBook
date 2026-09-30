@@ -8,6 +8,7 @@
  *
  * 账户/分类决议的合并仍走 shared.ts 的 applyAccountMappings / applyCategoryMappings(单一来源)。
  */
+import { normalizeRecordType } from '@homibook/core'
 import type { ParsedRow } from './shared.js'
 
 /** 未识别行的处置(前端 unrecognizedResolutions / AI overrides 同形) */
@@ -50,15 +51,24 @@ export function applyUnrecognizedResolutions(
 
     const rowIndex = r.rowIndex ?? -1
     const res = byRow.get(rowIndex)
-    // 类型 + 账户必填;转账还需转入账户(与前端/校验口径一致)
-    if (!res?.type || !res.accountId || (res.type === 'TRANSFER' && !res.toAccountId)) {
+    // 类型 + 账户必填(与前端/校验口径一致)
+    if (!res?.type || !res.accountId) {
+      unresolvedRowIndexes.push(rowIndex)
+      continue
+    }
+
+    // 归一化:该类型来自客户端/模型的人工指定,非法值直接落库会让各端渲染崩溃
+    // (AI 工具链原先在手写逻辑里做这一步,收敛到本函数后必须在此保留)
+    const type = normalizeRecordType(res.type)
+    // 转账必须带转入账户(归一化后再判,避免别名写法漏判)
+    if (type === 'TRANSFER' && !res.toAccountId) {
       unresolvedRowIndexes.push(rowIndex)
       continue
     }
 
     resolved.push({
       ...r,
-      type: res.type as ParsedRow['type'],
+      type,
       accountId: res.accountId,
       toAccountId: res.toAccountId ?? null,
       categoryCode: res.categoryCode ?? r.categoryCode,

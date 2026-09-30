@@ -534,8 +534,20 @@ export function ToolCard({ toolCall, bookId }: { toolCall: ToolCallEntry; bookId
             )}
             {data.records?.length > 0 && (
               <MiniTable
-                columns={['#', '日期', '类型', '金额', '账户', '分类', '说明']}
-                rows={data.records.map((r: any) => [String(r.rowIndex), r.date, typeLabel(r.type), (r.amount ?? 0).toFixed(2), r.accountName, r.categoryLabel || r.categoryCode || '-', r.remark || '-'])}
+                columns={['日期', '类型', '金额', '账户', '目标账户', '交易方', '原始分类', '系统分类', '备注']}
+                rows={data.records.map((r: any) => [
+                  r.date,
+                  typeLabel(r.type),
+                  (r.amount ?? 0).toFixed(2),
+                  // 账户/目标账户展示「映射后账户名」(服务端下发,回退原始名),与手动向导一致
+                  r.mappedAccountName || r.accountName || '-',
+                  r.mappedToAccountName || r.toAccountName || '-',
+                  r.payer || '-',
+                  // 原始分类 = 账单里的源分类;系统分类 = 实际写入的分类(与手动向导确认页同口径)
+                  r.categoryLabel || r.categoryCode || '-',
+                  r.mappedCategoryLabel || r.mappedCategoryCode || '-',
+                  r.remark || '-',
+                ])}
                 maxHeight={220}
               />
             )}

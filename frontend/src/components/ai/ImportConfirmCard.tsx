@@ -17,8 +17,11 @@ interface ConfirmRecord {
   type: string
   amount: number
   accountName: string
+  /** 服务端下发的「映射后账户名」(源账户名 → 目标名);前端仅作兜底 */
+  mappedAccountName?: string | null
   accountId?: string | null
   toAccountName?: string | null
+  mappedToAccountName?: string | null
   toAccountId?: string | null
   categoryCode?: string | null
   categoryLabel?: string | null
@@ -68,7 +71,7 @@ interface ConfirmResultData {
 type ConfirmCardData = ConfirmPreviewData | ConfirmResultData
 
 function isPreviewData(data: ConfirmCardData): data is ConfirmPreviewData {
-  return (data as any).mode === 'confirm_preview'
+  return (data as { mode?: string }).mode === 'confirm_preview'
 }
 
 interface Props {
@@ -166,23 +169,22 @@ export function ImportConfirmCard({ data, toolCallId }: Props) {
         <div className="rounded border overflow-hidden max-h-64 overflow-y-auto">
           <Table>
             <TableHeader>
+              {/* 列与手动向导确认页对齐:日期/类型/金额/账户/目标账户/交易方/原始分类/系统分类/备注 */}
               <TableRow>
-                <TableHead className="text-[10px] px-1.5 py-1 w-10">#</TableHead>
                 <TableHead className="text-[10px] px-1.5 py-1">日期</TableHead>
                 <TableHead className="text-[10px] px-1.5 py-1">类型</TableHead>
                 <TableHead className="text-[10px] px-1.5 py-1 text-right">金额</TableHead>
                 <TableHead className="text-[10px] px-1.5 py-1">账户</TableHead>
                 <TableHead className="text-[10px] px-1.5 py-1">目标账户</TableHead>
-                <TableHead className="text-[10px] px-1.5 py-1">分类</TableHead>
-                <TableHead className="text-[10px] px-1.5 py-1">映射分类</TableHead>
                 <TableHead className="text-[10px] px-1.5 py-1">交易方</TableHead>
-                <TableHead className="text-[10px] px-1.5 py-1">说明</TableHead>
+                <TableHead className="text-[10px] px-1.5 py-1">原始分类</TableHead>
+                <TableHead className="text-[10px] px-1.5 py-1">系统分类</TableHead>
+                <TableHead className="text-[10px] px-1.5 py-1">备注</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {data.records.map((r) => (
                 <TableRow key={r.rowIndex}>
-                  <TableCell className="text-[10px] px-1.5 py-0.5 text-muted-foreground">{r.rowIndex}</TableCell>
                   <TableCell className="text-[10px] px-1.5 py-0.5">{r.date}</TableCell>
                   <TableCell className={cn('text-[10px] px-1.5 py-0.5', TYPE_COLORS[r.type] || '')}>
                     {TYPE_LABELS[r.type] || r.type}
@@ -190,20 +192,19 @@ export function ImportConfirmCard({ data, toolCallId }: Props) {
                   <TableCell className="text-[10px] px-1.5 py-0.5 text-right font-mono">
                     {r.amount.toFixed(2)}
                   </TableCell>
-                  <TableCell className="text-[10px] px-1.5 py-0.5">{r.accountName}</TableCell>
-                  <TableCell className="text-[10px] px-1.5 py-0.5 text-muted-foreground">
-                    {r.toAccountName || '-'}
-                  </TableCell>
-                  <TableCell className="text-[10px] px-1.5 py-0.5">
-                    {r.categoryLabel || r.categoryCode || '-'}
-                  </TableCell>
-                  <TableCell className="text-[10px] px-1.5 py-0.5">
-                    <span className={r.mappedCategoryLabel ? 'text-green-600' : ''}>
-                      {r.mappedCategoryLabel || r.mappedCategoryCode || '-'}
-                    </span>
+                  {/* 账户/目标账户展示「映射后账户名」(服务端下发,回退原始名) */}
+                  <TableCell className="text-[10px] px-1.5 py-0.5 max-w-24 truncate">{r.mappedAccountName || r.accountName || '-'}</TableCell>
+                  <TableCell className="text-[10px] px-1.5 py-0.5 max-w-20 truncate text-muted-foreground">
+                    {r.mappedToAccountName || r.toAccountName || '-'}
                   </TableCell>
                   <TableCell className="text-[10px] px-1.5 py-0.5 max-w-16 truncate">{r.payer || '-'}</TableCell>
-                  <TableCell className="text-[10px] px-1.5 py-0.5 text-muted-foreground max-w-20 truncate">{r.remark || '-'}</TableCell>
+                  <TableCell className="text-[10px] px-1.5 py-0.5 max-w-20 truncate">
+                    {r.categoryLabel || r.categoryCode || '-'}
+                  </TableCell>
+                  <TableCell className="text-[10px] px-1.5 py-0.5 max-w-20 truncate">
+                    {r.mappedCategoryLabel || r.mappedCategoryCode || '-'}
+                  </TableCell>
+                  <TableCell className="text-[10px] px-1.5 py-0.5 text-muted-foreground max-w-24 truncate">{r.remark || '-'}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

@@ -1,11 +1,16 @@
 /**
  * 导入决议的服务端统一应用(C 项)。
  *
- * preview(第二步) 与确认导入共用同一条流程:
- *   解析后的原始行 → 账户决议 → 分类决议 → 未识别行处置
- *   → 「实际会写入的流水」(finalRows) + 未决清单 + 进度计数 + 阻断项。
+ * **手动与 AI 两条链路共用的唯一入口** —— 调用方:
+ *   - routes/import-export.ts:GET/POST /preview(手动向导第一步与第二步)、POST /import/check(AI 卡片改决议后复核)
+ *   - services/ai/tools/preview-import.ts:preview_import(mode=preview)
+ *   - services/ai/tools/confirm-import.ts:confirm_import(peek 展示 + execute 执行)
+ * 此前 AI 工具各自组合 shared.ts 的函数,导致「同一份账单两种入口结论不同」反复出现;现在统一到这里。
  *
- * 目的:让第二步页面看到的就是实际落库的(消除客户端本地拼装与服务端口径的漂移)。
+ * 流程:解析后的原始行 → 账户决议 → 分类决议 → 未识别行处置
+ *   → 「实际会写入的流水」(finalRows) + 未决清单 + 进度计数 + 阻断项 + 服务端裁决(canProceed/blockReasons)。
+ *
+ * 目的:让第二步页面 / 预览卡看到的就是实际落库的(消除客户端本地拼装与服务端口径的漂移)。
  * 账户/分类决议的合并算法仍走 shared.ts(单一来源),未识别行处置走 apply-decisions.ts。
  */
 import { canProceedImport, computeImportProgress } from '@homibook/core'
@@ -131,8 +136,12 @@ export async function remapImportRows(opts: RemapOptions) {
     toCreate,
     unmatchedCategories,
     allDictItems,
-    /** 源账户名 → 目标账户名(名称包含匹配 + 规则命中) */
-    nameMatched: { ...nameMatched, ...nameRecord },
+    /** 源账户名 → 目标账户名(名称包含匹配 + 规则命中 + 本次将新建的账户) */
+    nameMatched: {
+      ...nameMatched,
+      ...nameRecord,
+      ...Object.fromEntries(toCreate.flatMap(c => c.sourceAccountNames.map(sn => [sn, c.name]))),
+    },
     unresolved: {
       accounts: unmatchedAccounts.map(ua => ua.csvName),
       categories: unmatchedCategories.map(uc => uc.sourceCategory),

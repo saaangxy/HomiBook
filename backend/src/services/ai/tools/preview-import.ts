@@ -1,10 +1,11 @@
 import type { ToolDef, ToolContext } from './types.js'
 import { prisma } from '../../../app.js'
 import { assertIsMember, checkEnumList, checkEnums } from '../security.js'
-import { applyAccountMappings, applyCategoryMappings, matchAccountByName, inferAccount, type ParsedRow } from '../../import/shared.js'
+import { type ParsedRow } from '../../import/shared.js'
 import { IMPORT_FILE_MISSING, loadImportFile, parseImportFile } from '../../import/attachment-file.js'
 import { CATEGORY_DICT_GROUPS, findGenericUnconditionalResolutions, findSelfMappedCategoryResolutions, findUnknownCategoryCodes, formatDictOptions } from '../../import/blocking.js'
-import { ACCOUNT_TYPES, IMPORT_AI_SOURCES, RECORD_TYPES, computeImportProgress } from '@homibook/core'
+import { remapImportRows } from '../../import/remap.js'
+import { ACCOUNT_TYPES, IMPORT_AI_SOURCES, RECORD_TYPES } from '@homibook/core'
 import {
   ACCOUNT_UNMATCHED_LIMIT,
   CATEGORY_SAMPLE_LIMIT,
@@ -131,11 +132,30 @@ export const previewImportTool: ToolDef = {
     const source = parsed.source
     const parseResult = { rows: parsed.rows, errors: parsed.errors }
 
-    // ---- 合并 DB 映射规则 + AI 映射规则（内存合并，不写 DB；只匹配本人账户）----
-    const { idMap: accountMappings, nameRecord: accountMappingNames, newAccountCreations } = await applyAccountMappings(source, parseResult.rows, ctx.accountBookId, accountResolutions, ctx.userId)
+    // ---- 统一走 remapImportRows(与手动向导 /preview、confirm_import 同一份实现) ----
+    // 账户匹配 / 分类映射 / 未匹配清单 / 进度计数都从这里出,不再自己组合 shared.ts 的函数
+    // (两套组合是「同一份账单不同入口结论不同」的来源)。
+    const remapped = await remapImportRows({
+      source,
+      rows: parseResult.rows,
+      accountBookId: ctx.accountBookId,
+      ownerId: ctx.userId,
+      accountResolutions,
+      categoryResolutions,
+    })
 
-    // 匹配账户（只匹配本人账户；返回的 accounts 保留全量供前端切换归属人候选）
-    const { unmatched: unmatchedAccounts, nameMatched, accounts } = await resolveAccountsForTool(ctx.accountBookId, parseResult.rows, accountMappings, ctx.userId)
+    // 未匹配账户(含建议新建名/候选)与未匹配分类(含类型与建议编码)
+    const unmatchedAccounts = remapped.unmatchedAccounts
+    const dbUnmatchedCategories = remapped.unmatchedCategories
+    const allDictItems = remapped.allDictItems
+
+    // 本次将新建的账户:remap 按目标名合并,这里展开回「源账户名 → 目标名」逐条(前端沿用旧形状)
+    const newAccountCreations = remapped.toCreate.flatMap(c =>
+      c.sourceAccountNames.map(sn => ({ sourceAccountName: sn, name: c.name, type: c.type })),
+    )
+
+    // 账本全量账户(带归属人)供前端切换归属人时列候选
+    const accounts = await loadAccountsForTool(ctx.accountBookId)
 
     // AI 账户映射规则直接展示，供前端预填充（跳过已在 DB 未匹配列表中的同名项）
     if (accountResolutions?.length) {
@@ -152,9 +172,6 @@ export const previewImportTool: ToolDef = {
       )
     }
 
-    // DB + AI 分类映射合并应用（AI 按唯一键覆盖/补充 DB，统一走评分匹配）
-    const { unmatched: dbUnmatchedCategories, allDictItems } = await applyCategoryMappings(source, parseResult.rows, categoryResolutions)
-
     // AI 分类映射规则直接展示
     const unmatchedCategories = categoryResolutions?.length
       ? categoryResolutions.map(cr => ({
@@ -168,8 +185,8 @@ export const previewImportTool: ToolDef = {
         }))
       : dbUnmatchedCategories
 
-    // 分离正常记录和未识别记录
-    const allNormalRecords = parseResult.rows.filter(r => r.type !== 'UNKNOWN')
+    // 实际会写入的流水(remap 已排除「未处置的未识别行」)与原始未识别行(供「需处理」区块)
+    const allNormalRecords = remapped.finalRows
     const allUnrecognizedRecords = parseResult.rows.filter(r => r.type === 'UNKNOWN')
 
     // 分析模式：返回全部未匹配分类的记录供 AI 分析，不展示交互卡片
@@ -197,12 +214,8 @@ export const previewImportTool: ToolDef = {
         }),
       ])
 
-      // 进度计数:与前端/预览卡同一口径(analyze 阶段尚无决议,故分类按"未映射"计入)
-      const counts = computeImportProgress({
-        unmatchedAccounts,
-        categoryResolutions: unmatchedCategories.map(uc => ({ sourceCategory: uc.sourceCategory, targetCode: '' })),
-        unrecognizedRecords: allUnrecognizedRecords,
-      })
+      // 进度计数:直接采用 remapImportRows 的结果(与手动向导 /preview、confirm_import 同一口径)
+      const counts = remapped.counts
 
       return {
         success: true,
@@ -255,14 +268,32 @@ export const previewImportTool: ToolDef = {
       : []
     const categoryLabelMap = new Map(dictEntries.map(d => [d.code, d.label]))
 
+    // 账户列要展示「映射后账户名」(与手动向导确认页同口径):
+    // remap 已给出 源账户名 → 目标名 的完整映射(名称匹配 + DB 规则 + 本次将新建),直接下发。
+    const accountNameMap: Record<string, string> = { ...remapped.nameMatched }
+    for (const c of newAccountCreations) {
+      if (!(c.sourceAccountName in accountNameMap)) accountNameMap[c.sourceAccountName] = c.name
+    }
+    // 兜底:AI 决议本身就是「源账户名 → 目标名」,最可靠的一份
+    for (const ar of accountResolutions ?? []) {
+      if (!ar.sourceAccountName || ar.sourceAccountName in accountNameMap) continue
+      const name = ar.action === 'create'
+        ? ar.targetAccountName
+        : accounts.find(a => a.id === ar.targetAccountId)?.name
+      if (name) accountNameMap[ar.sourceAccountName] = name
+    }
+    const accountDisplayName = (csvName?: string | null) => (csvName ? (accountNameMap[csvName] ?? csvName) : null)
+
     const mapRow = (r: ParsedRow) => ({
       rowIndex: r.rowIndex,
       date: r.date,
       type: r.type,
       amount: r.amount,
       accountName: r.accountName,
+      mappedAccountName: accountDisplayName(r.accountName),
       accountId: r.accountId,
       toAccountName: r.toAccountName,
+      mappedToAccountName: accountDisplayName(r.toAccountName),
       toAccountId: r.toAccountId,
       categoryCode: r.categoryCode,
       categoryLabel: r.categoryCode ? (categoryLabelMap.get(r.categoryCode) || r.categoryCode) : null,
@@ -305,7 +336,7 @@ export const previewImportTool: ToolDef = {
         allDictItems,
         accounts,
         accountBookId: ctx.accountBookId,
-        accountMappingNames: { ...nameMatched, ...accountMappingNames },
+        accountMappingNames: { ...remapped.nameMatched },
         newAccountCreations: newAccountCreations.length > 0 ? newAccountCreations : undefined,
         mappedCategories,
         stats: {
@@ -320,70 +351,17 @@ export const previewImportTool: ToolDef = {
   },
 }
 
-/** 账户匹配（与 import-export.ts 中 resolveAccounts 逻辑一致）。传入 ownerId 时只匹配本人账户，但返回账本全量 accounts 供前端切换归属人候选 */
-async function resolveAccountsForTool(bookId: string, rows: ParsedRow[], idMap?: Map<string, string | null>, ownerId?: string) {
-  const accountNames = new Set(rows.flatMap(r => [r.accountName, r.toAccountName].filter((x): x is string => x != null)))
-
-  const mappedCsvNameToId = new Map<string, string>()
-  if (idMap) {
-    for (const [csvName, id] of idMap) {
-      if (id) mappedCsvNameToId.set(csvName, id)
-    }
-  }
-
-  const namesToLookup = [...accountNames].filter(n => !mappedCsvNameToId.has(n))
-  // 仅匹配本人账户
-  const matchableAccounts = await prisma.account.findMany({
-    where: { accountBookId: bookId, status: 'ACTIVE', ...(ownerId ? { ownerId } : {}) },
-    select: { id: true, name: true, type: true },
-  })
-  // 返回的 accounts 保留账本全量供前端展示候选（含他人账户，带 ownerId/ownerName 供前端按归属人切换候选）
+/** 账本全量活跃账户(带归属人),供前端切换归属人时列候选 */
+async function loadAccountsForTool(bookId: string) {
   const allAccountsRaw = await prisma.account.findMany({
     where: { accountBookId: bookId, status: 'ACTIVE' },
     select: { id: true, name: true, type: true, ownerId: true, owner: { select: { nickname: true, email: true } } },
   })
-  const allAccounts = allAccountsRaw.map(a => ({
+  return allAccountsRaw.map(a => ({
     id: a.id,
     name: a.name,
     type: a.type,
     ownerId: a.ownerId,
     ownerName: a.owner.nickname || a.owner.email,
   }))
-
-  const nameToId = new Map<string, string>()
-  const nameMatched: Record<string, string> = {}
-  const candidatesMap = new Map<string, { id: string; name: string }[]>()
-  for (const name of namesToLookup) {
-    const result = matchAccountByName(name, matchableAccounts, ownerId)
-    if (result.matched) {
-      nameToId.set(name, result.id)
-      nameMatched[name] = result.name
-    } else if (result.ambiguous) {
-      candidatesMap.set(name, result.candidates)
-    }
-  }
-
-  const unmatched = [...new Set(
-    [...accountNames].filter(name => !mappedCsvNameToId.has(name) && !nameToId.has(name))
-  )]
-    .map(name => ({ name, amb: candidatesMap.get(name), inf: inferAccount(name) }))
-    .filter(({ amb, inf }) => inf || amb)
-    .map(({ name, inf, amb }) => ({
-      csvName: name,
-      suggestedType: inf?.type || '',
-      suggestedName: inf?.defaultName || name,
-      ...(inf?.bankName != null ? { bankName: inf.bankName } : {}),
-      ...(inf?.accountNo != null ? { accountNo: inf.accountNo } : {}),
-      ...(amb ? { candidates: amb } : {}),
-    }))
-
-  // 填充 accountId / toAccountId
-  rows.forEach(r => {
-    r.accountId = mappedCsvNameToId.get(r.accountName) || nameToId.get(r.accountName) || null
-    if (r.toAccountName) {
-      r.toAccountId = mappedCsvNameToId.get(r.toAccountName) || nameToId.get(r.toAccountName) || null
-    }
-  })
-
-  return { unmatched, nameMatched, accounts: allAccounts }
 }
