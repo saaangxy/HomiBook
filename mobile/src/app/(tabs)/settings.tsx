@@ -9,7 +9,7 @@ import { Screen } from '@/components/Screen';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { FadeInView } from '@/components/FadeInView';
-import { AccountMappingManager, ApiKeyManager, CategoryMappingManager, DICT_GROUPS } from '@/components/settings/Managers';
+import { ApiKeyManager } from '@/components/settings/Managers';
 import { UserMemorySettings } from '@/components/ai/UserMemorySettings';
 import { AIAssistantSettings } from '@/components/settings/AIAssistantSettings';
 import { ConfirmProvider } from '@/components/chrome/ConfirmSheet';
@@ -260,16 +260,6 @@ export default function SettingsScreen() {
             <LogOut size={16} color={colors.expense} />
             <Text style={{ color: colors.expense, fontSize: 15, fontWeight: '600' }}>退出登录</Text>
           </Pressable>
-        </FadeInView>
-        {/* ══ 导入映射规则(所有用户可见:与 web 设置页能力对齐,含规则体检入口) ══ */}
-        <GroupTitle title="导入映射" />
-        <FadeInView index={9}>
-          <Card className="px-5 py-4 mb-2">
-            <Text style={{ fontSize: 13, fontWeight: '600', marginBottom: 10 }}>分类映射</Text>
-            <CategoryMappingManager dictGroups={DICT_GROUPS.map((g) => g.key)} />
-            <Text style={{ fontSize: 13, fontWeight: '600', marginTop: 16, marginBottom: 10 }}>账户映射</Text>
-            <AccountMappingManager />
-          </Card>
         </FadeInView>
       </View>
     </Screen>
