@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, View, useWindowDimensions } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useIsFocused } from 'expo-router';
 import { ChevronLeft, ChevronRight, CalendarCheck, Copy, Trash2 } from 'lucide-react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -33,7 +33,6 @@ const todayDateKey = () => {
 // 流水日历:月历网格(日期下常显当日收支) + 选中压缩日历可视高度(整月仍可滚动)+ 放大当日流水(点击记录可编辑)+ 年月快速导航
 export default function CalendarScreen() {
   const { colors } = useTheme();
-  const { width } = useWindowDimensions();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1); // 1-12
@@ -135,6 +134,18 @@ export default function CalendarScreen() {
     return [...Array(offset).fill(0), ...Array.from({ length: total }, (_, i) => i + 1)];
   }, [year, month]);
 
+  // 按 7 天切行:每行一个独立的行容器、子项 flex:1 均分。
+  // 不能用「宽度 100/7 %」—— 那是无限小数(14.2857…%),7 格之和会略超容器宽,
+  // 经像素圆整后在不同分辨率/字体缩放下最后一格被挤到下一行(表现为「每行只有 6 个」)。
+  const weeks = useMemo(() => {
+    // 末尾补 0 占位,保证每行恰好 7 格:否则末行不足的格子会被 flex:1 拉伸得比其它行宽
+    const cells = [...days];
+    while (cells.length % 7 !== 0) cells.push(0);
+    const out: number[][] = [];
+    for (let i = 0; i < cells.length; i += 7) out.push(cells.slice(i, i + 7));
+    return out;
+  }, [days]);
+
   // 日历总行数 -> 展开态高度;压缩态只显示 3 行,内部滚动查看整月
   const gridRows = Math.ceil(days.length / 7);
   const fullH = gridRows * ROW_FULL;
@@ -230,7 +241,6 @@ export default function CalendarScreen() {
   };
 
   const todayKey = todayDateKey();
-  const cellW = `${100 / 7}%`;
 
   return (
     <Screen>
@@ -258,10 +268,10 @@ export default function CalendarScreen() {
           </View>
         </View>
 
-        {/* 星期表头 */}
+        {/* 星期表头(与网格同为 7 等分;flex:1 均分不依赖像素取整) */}
         <View style={{ flexDirection: 'row', marginBottom: 6 }}>
           {WEEKDAYS.map((w) => (
-            <View key={w} style={{ width: cellW, alignItems: 'center' }}>
+            <View key={w} style={{ flex: 1, alignItems: 'center' }}>
               <Text variant="muted" style={{ fontSize: 12, fontWeight: '600' }}>{w}</Text>
             </View>
           ))}
@@ -270,44 +280,49 @@ export default function CalendarScreen() {
         {/* 日历网格:选中后压缩可视高度,整月上下滚动展示;日期下收支金额常显 */}
         <Animated.View style={gridBoxStyle}>
           <ScrollView showsVerticalScrollIndicator={false} nestedScrollEnabled refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-              {days.map((d, i) => {
-                if (d === 0) return <View key={`b${i}`} style={{ width: cellW, alignItems: 'center', justifyContent: 'center', height: ROW_FULL }} />;
-                const isToday = key(d) === todayKey;
-                const isSel = d === selected;
-                const sum = daySum[key(d)];
-                const hasSum = !!sum && (sum.income > 0 || sum.expense > 0 || sum.transfer > 0);
-                const holiday = holidayMap[key(d)];
-                return (
-                  <Pressable key={d} onPress={() => onPressDay(d)} style={{ width: cellW, height: ROW_FULL, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 3 }}>
-                    <View style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: isSel || isToday ? colors.primary : 'transparent' }}>
-                      {/* 节假日数字标红(同 web 端法定休日 rose 色),选中/今天保持主色 */}
-                      <Text style={{ fontSize: 13, fontWeight: isToday || isSel ? '700' : '400', color: isSel || isToday ? colors.primaryForeground : holiday && !holiday.isWorkday ? colors.expense : colors.foreground }}>
-                        {d}
-                      </Text>
-                    </View>
-                    {/* 节假日名称/调休班标记(同 web 端:休日显示名称,调休日显示"班") */}
-                    {holiday && (
-                      <Text numberOfLines={1} style={{ fontSize: 8.5, lineHeight: 11, marginTop: 1, maxWidth: '100%', color: holiday.isWorkday ? colors.mutedForeground : colors.expense, fontWeight: holiday.isWorkday ? '400' : '500' }}>
-                        {holiday.isWorkday ? '班' : holiday.name}
-                      </Text>
-                    )}
-                    {hasSum && (
-                      <View style={{ alignItems: 'center', marginTop: 2 }}>
-                        {sum!.transfer > 0 && (
-                          <Text style={{ fontSize: 8.5, color: colors.transfer, fontVariant: ['tabular-nums'], lineHeight: 12 }} numberOfLines={1}>↻{formatMoneyShort(sum!.transfer)}</Text>
+            <View>
+              {weeks.map((row, ri) => (
+                <View key={ri} style={{ flexDirection: 'row' }}>
+                  {row.map((d, ci) => {
+                    if (d === 0) return <View key={`b${ri}-${ci}`} style={{ flex: 1, height: ROW_FULL }} />;
+                    const cellKey = key(d);
+                    const isToday = cellKey === todayKey;
+                    const isSel = d === selected;
+                    const sum = daySum[cellKey];
+                    const hasSum = !!sum && (sum.income > 0 || sum.expense > 0 || sum.transfer > 0);
+                    const holiday = holidayMap[cellKey];
+                    return (
+                      <Pressable key={d} onPress={() => onPressDay(d)} style={{ flex: 1, height: ROW_FULL, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 3 }}>
+                        <View style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: isSel || isToday ? colors.primary : 'transparent' }}>
+                          {/* 节假日数字标红(同 web 端法定休日 rose 色),选中/今天保持主色 */}
+                          <Text style={{ fontSize: 13, fontWeight: isToday || isSel ? '700' : '400', color: isSel || isToday ? colors.primaryForeground : holiday && !holiday.isWorkday ? colors.expense : colors.foreground }}>
+                            {d}
+                          </Text>
+                        </View>
+                        {/* 节假日名称/调休班标记(同 web 端:休日显示名称,调休日显示"班") */}
+                        {holiday && (
+                          <Text numberOfLines={1} style={{ fontSize: 8.5, lineHeight: 11, marginTop: 1, maxWidth: '100%', color: holiday.isWorkday ? colors.mutedForeground : colors.expense, fontWeight: holiday.isWorkday ? '400' : '500' }}>
+                            {holiday.isWorkday ? '班' : holiday.name}
+                          </Text>
                         )}
-                        {sum!.expense > 0 && (
-                          <Text style={{ fontSize: 8.5, color: colors.expense, fontVariant: ['tabular-nums'], lineHeight: 12 }} numberOfLines={1}>-{formatMoneyShort(sum!.expense)}</Text>
+                        {hasSum && (
+                          <View style={{ alignItems: 'center', marginTop: 2 }}>
+                            {sum!.transfer > 0 && (
+                              <Text style={{ fontSize: 8.5, color: colors.transfer, fontVariant: ['tabular-nums'], lineHeight: 12 }} numberOfLines={1}>↻{formatMoneyShort(sum!.transfer)}</Text>
+                            )}
+                            {sum!.expense > 0 && (
+                              <Text style={{ fontSize: 8.5, color: colors.expense, fontVariant: ['tabular-nums'], lineHeight: 12 }} numberOfLines={1}>-{formatMoneyShort(sum!.expense)}</Text>
+                            )}
+                            {sum!.income > 0 && (
+                              <Text style={{ fontSize: 8.5, color: colors.income, fontVariant: ['tabular-nums'], lineHeight: 12 }} numberOfLines={1}>+{formatMoneyShort(sum!.income)}</Text>
+                            )}
+                          </View>
                         )}
-                        {sum!.income > 0 && (
-                          <Text style={{ fontSize: 8.5, color: colors.income, fontVariant: ['tabular-nums'], lineHeight: 12 }} numberOfLines={1}>+{formatMoneyShort(sum!.income)}</Text>
-                        )}
-                      </View>
-                    )}
-                  </Pressable>
-                );
-              })}
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ))}
             </View>
           </ScrollView>
         </Animated.View>

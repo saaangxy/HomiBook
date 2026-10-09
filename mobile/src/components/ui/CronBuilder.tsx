@@ -220,17 +220,30 @@ export function CronBuilder({ value, onChange }: CronBuilderProps) {
             <>
               {sectionLabel('日期')}
               <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 108 }} nestedScrollEnabled>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-                  {DAYS_OF_MONTH.map((d) => {
-                    const active = daysOfMonth.includes(d);
-                    return (
-                      <Pressable key={d} onPress={() => toggleIn(daysOfMonth, d, setDaysOfMonth)} style={{ width: `${100 / 7}%`, padding: 3 }}>
-                        <View style={{ height: 30, borderRadius: 8, alignItems: 'center', justifyContent: 'center', borderWidth: 1, backgroundColor: active ? colors.primary : colors.muted, borderColor: active ? colors.primary : colors.border }}>
-                          <Text style={[chipText(active), { fontSize: 11.5 }]}>{d}</Text>
-                        </View>
-                      </Pressable>
-                    );
-                  })}
+                <View>
+                  {(() => {
+                    // 按 7 天切行、每格 flex:1 均分:避免「宽度 100/7 %」的圆整误差把每行挤成 6 个;
+                    // 末尾补 0 占位,保证每行恰好 7 格(否则末行 flex:1 会把不足的格子拉宽)。
+                    const padded = [...DAYS_OF_MONTH];
+                    while (padded.length % 7 !== 0) padded.push(0);
+                    const rows: number[][] = [];
+                    for (let i = 0; i < padded.length; i += 7) rows.push(padded.slice(i, i + 7));
+                    return rows.map((row, ri) => (
+                      <View key={ri} style={{ flexDirection: 'row' }}>
+                        {row.map((d, ci) => {
+                          if (d === 0) return <View key={`b${ri}-${ci}`} style={{ flex: 1, padding: 3 }} />;
+                          const active = daysOfMonth.includes(d);
+                          return (
+                            <Pressable key={d} onPress={() => toggleIn(daysOfMonth, d, setDaysOfMonth)} style={{ flex: 1, padding: 3 }}>
+                              <View style={{ height: 30, borderRadius: 8, alignItems: 'center', justifyContent: 'center', borderWidth: 1, backgroundColor: active ? colors.primary : colors.muted, borderColor: active ? colors.primary : colors.border }}>
+                                <Text style={[chipText(active), { fontSize: 11.5 }]}>{d}</Text>
+                              </View>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    ));
+                  })()}
                 </View>
               </ScrollView>
             </>

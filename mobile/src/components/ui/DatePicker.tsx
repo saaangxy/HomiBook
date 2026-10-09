@@ -49,7 +49,16 @@ export function DatePicker({ value, onChange }: DatePickerProps) {
   const total = view.daysInMonth();
   const cells = [...Array(firstDay).fill(0), ...Array.from({ length: total }, (_, i) => i + 1)];
   const todayKey = dayjs().format('YYYY-MM-DD');
-  const cellW = `${100 / 7}%`;
+  // 按 7 天切行、每格 flex:1 均分。不能用「宽度 100/7 %」—— 那是无限小数(14.2857…%),
+  // 7 格之和略超容器宽,像素圆整后不同分辨率下最后一格被挤到下一行(表现为「每行只有 6 个」)。
+  // 末尾补 0 占位,保证每行恰好 7 格(否则末行 flex:1 会把不足的格子拉宽)。
+  const weeks = (() => {
+    const padded = [...cells];
+    while (padded.length % 7 !== 0) padded.push(0);
+    const out: number[][] = [];
+    for (let i = 0; i < padded.length; i += 7) out.push(padded.slice(i, i + 7));
+    return out;
+  })();
   const display = value ? dayjs(value).format('YYYY年M月D日 HH:mm:ss') : '选择日期';
 
   // 时/分/秒滚轮:ScrollView 上下滑动 + 点击项选中 + onScroll 防抖提交(兼容 Web 无 momentum 事件)
@@ -112,10 +121,10 @@ export function DatePicker({ value, onChange }: DatePickerProps) {
               </Pressable>
             </View>
 
-            {/* 星期表头 */}
+            {/* 星期表头(与网格同为 7 等分) */}
             <View style={{ flexDirection: 'row', marginBottom: 6 }}>
               {WEEKDAYS.map((w) => (
-                <View key={w} style={{ width: cellW, alignItems: 'center' }}>
+                <View key={w} style={{ flex: 1, alignItems: 'center' }}>
                   <Text variant="muted" style={{ fontSize: 11, fontWeight: '600' }}>{w}</Text>
                 </View>
               ))}
@@ -123,27 +132,31 @@ export function DatePicker({ value, onChange }: DatePickerProps) {
 
             {/* 日期网格 */}
             <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 260 }} keyboardShouldPersistTaps="handled">
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-                {cells.map((d, i) => {
-                  if (d === 0) return <View key={`b${i}`} style={{ width: cellW, height: 40 }} />;
-                  const k = view.year() + '-' + String(view.month() + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
-                  const isToday = k === todayKey;
-                  const isSel = k === value?.slice(0, 10);
-                  return (
-                    <Pressable key={k} onPress={() => emitDay(d)} style={{ width: cellW, height: 40, alignItems: 'center', justifyContent: 'center' }}>
-                      <View
-                        style={{
-                          width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
-                          backgroundColor: isSel ? colors.primary : isToday ? alpha(colors.primary, 0.12) : 'transparent',
-                          borderWidth: isToday && !isSel ? 1 : 0,
-                          borderColor: colors.primary,
-                        }}
-                      >
-                        <Text style={{ fontSize: 14, fontWeight: isSel || isToday ? '700' : '400', color: isSel ? '#fff' : colors.foreground }}>{d}</Text>
-                      </View>
-                    </Pressable>
-                  );
-                })}
+              <View>
+                {weeks.map((row, ri) => (
+                  <View key={ri} style={{ flexDirection: 'row' }}>
+                    {row.map((d, ci) => {
+                      if (d === 0) return <View key={`b${ri}-${ci}`} style={{ flex: 1, height: 40 }} />;
+                      const k = view.year() + '-' + String(view.month() + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+                      const isToday = k === todayKey;
+                      const isSel = k === value?.slice(0, 10);
+                      return (
+                        <Pressable key={k} onPress={() => emitDay(d)} style={{ flex: 1, height: 40, alignItems: 'center', justifyContent: 'center' }}>
+                          <View
+                            style={{
+                              width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
+                              backgroundColor: isSel ? colors.primary : isToday ? alpha(colors.primary, 0.12) : 'transparent',
+                              borderWidth: isToday && !isSel ? 1 : 0,
+                              borderColor: colors.primary,
+                            }}
+                          >
+                            <Text style={{ fontSize: 14, fontWeight: isSel || isToday ? '700' : '400', color: isSel ? '#fff' : colors.foreground }}>{d}</Text>
+                          </View>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                ))}
               </View>
             </ScrollView>
 
