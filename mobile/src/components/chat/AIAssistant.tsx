@@ -3,7 +3,7 @@ import { ActivityIndicator, BackHandler, FlatList, Image, NativeScrollEvent, Nat
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import Markdown from 'react-native-markdown-display';
-import { Bot, Brain, ChevronDown, FileText, FileUp, Globe, ImagePlus, List, Plus, RefreshCw, Send, Sparkles, StopCircle, Trash2, X } from 'lucide-react-native';
+import { Bot, Brain, ChevronDown, ChevronLeft, ChevronRight, FileText, FileUp, Globe, ImagePlus, List, Plus, RefreshCw, Send, Sparkles, StopCircle, Trash2, X } from 'lucide-react-native';
 import { useTheme, alpha, haptics } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { LoadingState } from '@/components/ui/LoadingState';
@@ -12,7 +12,7 @@ import { FormSheet } from '@/components/chrome/FormSheet';
 import { ConfirmSheet } from '@/components/chrome/ConfirmSheet';
 import { showToast } from '@/components/chrome/Toast';
 import { ImageLightbox, isImageUrl } from '@/components/ui/AttachmentViewer';
-import { setStreamPaused, useChatStore, useSessionView, type ChatSession } from '@/stores/chat';
+import { GREETING_ID, setStreamPaused, useChatStore, useSessionView, type ChatSession } from '@/stores/chat';
 import { useUIShell } from '@/components/chrome/chrome';
 import { uploadImage, loadToolNames } from '@/services/chat';
 import { isBillFile, uploadImportFile } from '@/services/import';
@@ -83,7 +83,7 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
     sendMessage, retryMessage, stopStreaming, selectBranch,
   } = useChatStore();
   // 当前会话消息视图(活跃路径按分支选择派生,单一数据源在 sessionCache)
-  const { messages, allMessages, branchSelections, loading: messagesLoading } = useSessionView();
+  const { messages, allMessages, loading: messagesLoading } = useSessionView();
 
   // 当前会话(标题栏展示)
   const currentSession = sessions.find((s) => s.id === currentSessionId);
@@ -184,9 +184,10 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
       });
       return;
     }
-    // 父 = 对话末端的消息：只认 DB id，尚未落库的临时 msg-* 一律丢空
-    // （发给后端会写入指向不存在消息的外键）。移动端没有 web 的 greeting 锚点。
-    const parentId = messages[messages.length - 1]?.dbId;
+    // 父 = 对话末端消息:有 dbId 直接用;是本地锚点 greeting 就保留(前端靠它归属分支,
+    // 丢了它会落成「根」,分支消息就会并列渲染)。临时 msg-* 一律丢空(不能落库)。
+    const tail = messages[messages.length - 1];
+    const parentId = tail?.dbId || (tail?.id === GREETING_ID ? GREETING_ID : undefined);
     sendMessage(bookId, msg, parentId, undefined, attachmentIds.length ? attachmentIds : undefined, webSearch, localAttachments);
   };
 
@@ -364,16 +365,48 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
 
   const renderMessage = ({ item }: { item: Message }) => {
     const isUser = item.role === 'user';
-    // 分支版本:以当前消息为父,找所有子消息(存在多个分支时显示版本选择)
-    const parentKey = item.dbId || item.id;
-    const childBranches = allMessages.filter((m) => m.parentMessageId === parentKey);
-    const hasBranches = childBranches.length > 1;
+    // 分支版本:同一父消息下的兄弟消息(编辑/重试产生)。与 web MessageBubble 同口径 ——
+    // 切换器显示在「分支消息自身」上(以前是在父消息下列「版本 N」按钮,位置与双端不一致)。
+    const versions = item.parentMessageId
+      ? allMessages.filter((m) => m.parentMessageId === item.parentMessageId)
+      : [];
+    const versionIndex = versions.findIndex((v) => (v.dbId || v.id) === (item.dbId || item.id));
 
     if (isUser) {
       return (
         <View style={{ flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'flex-start', gap: 8, marginBottom: 14 }}>
           {/* 列:气泡在上、附件在气泡**下方**(与 web MessageBubble 一致,不再塞进气泡内) */}
           <View style={{ maxWidth: '82%', alignItems: 'flex-end', gap: 6 }}>
+            {/* 版本切换(对齐 web MessageBubble):同一父下的兄弟消息之间切换 */}
+            {versions.length > 1 && versionIndex >= 0 && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+                <Pressable
+                  hitSlop={8}
+                  disabled={versionIndex <= 0}
+                  onPress={() => {
+                    const prev = versions[versionIndex - 1];
+                    if (item.parentMessageId && prev) selectBranch(item.parentMessageId, prev.dbId || prev.id);
+                  }}
+                  style={{ padding: 2, opacity: versionIndex <= 0 ? 0.3 : 1 }}
+                >
+                  <ChevronLeft size={14} color={colors.mutedForeground} />
+                </Pressable>
+                <Text style={{ fontSize: 11, color: colors.mutedForeground, fontWeight: '500', minWidth: 36, textAlign: 'center' }}>
+                  {versionIndex + 1}/{versions.length}
+                </Text>
+                <Pressable
+                  hitSlop={8}
+                  disabled={versionIndex >= versions.length - 1}
+                  onPress={() => {
+                    const next = versions[versionIndex + 1];
+                    if (item.parentMessageId && next) selectBranch(item.parentMessageId, next.dbId || next.id);
+                  }}
+                  style={{ padding: 2, opacity: versionIndex >= versions.length - 1 ? 0.3 : 1 }}
+                >
+                  <ChevronRight size={14} color={colors.mutedForeground} />
+                </Pressable>
+              </View>
+            )}
             {/* 用户气泡:主色,右上角收窄(web: rounded-2xl rounded-tr-md) */}
             <View style={[bubbleBase, { backgroundColor: colors.primary, borderTopRightRadius: 5 }]}>
               <View style={{ gap: 6 }}>
@@ -453,24 +486,6 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
               </Pressable>
             </View>
           ) : null}
-          {/* 分支版本选择 */}
-          {hasBranches && (
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
-              {childBranches.map((cb, i) => {
-                const cbKey = cb.dbId || cb.id;
-                const isSelected = branchSelections[parentKey] === cbKey;
-                return (
-                  <Pressable
-                    key={cbKey}
-                    onPress={() => selectBranch(parentKey, cbKey)}
-                    style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, borderWidth: 1, borderColor: isSelected ? colors.primary : colors.hairline, backgroundColor: isSelected ? alpha(colors.primary, 0.1) : 'transparent' }}
-                  >
-                    <Text style={{ fontSize: 11, color: isSelected ? colors.primary : colors.mutedForeground, fontWeight: isSelected ? '600' : '400' }}>版本 {i + 1}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          )}
         </View>
       </View>
     );

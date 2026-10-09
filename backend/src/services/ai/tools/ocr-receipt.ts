@@ -4,8 +4,8 @@ import type { ToolDef } from './types.js'
 import { prisma } from '../../../app.js'
 import { assertIsMember } from '../security.js'
 import { createModel, type ProviderType } from '../providers.js'
-import { detectImageFormat, VISION_MEDIA_TYPES, IMAGE_FORMAT_LABELS } from '../image-format.js'
 import { loadVisionConfig } from '../vision.js'
+import { prepareVisionImage, describeSlices } from '../image-tile.js'
 import { generateText } from 'ai'
 
 export const ocrReceiptTool: ToolDef = {
@@ -80,16 +80,11 @@ export const ocrReceiptTool: ToolDef = {
       ? categories.map(c => `- ${c.code} ${c.label}`).join('\n')
       : '无可用分类'
 
-    // 5. 按文件内容判定图片真实格式(视觉模型不认扩展名,非 JPEG/PNG/GIF/WebP 会被直接拒绝)
-    const fmt = detectImageFormat(imageData)
-    const mediaType = VISION_MEDIA_TYPES[fmt]
-    if (!mediaType) {
-      return {
-        success: false,
-        error: `图片格式不支持（实际为 ${IMAGE_FORMAT_LABELS[fmt]}），视觉模型仅支持 JPEG/PNG/GIF/WebP，请转换后重试`,
-        retryable: false,
-      }
-    }
+    // 5. 出站准备:格式白名单 + 完整性校验 + 超限切片/缩放(与主流程共用同一套实现)。
+    // 只做格式判定就发会被上游按单边尺寸上限拒绝(手机长截图常见,报错文案是误导性的
+    // "unsupported image",看着像「OCR 工具在 DeepSeek 上报错」)。
+    const prep = await prepareVisionImage(imageData)
+    if ('error' in prep) return { success: false, error: prep.error, retryable: false }
 
     // 6. 调用视觉模型识别
     try {
@@ -120,11 +115,11 @@ ${categoriesContext}
 - categoryCode: 最可能的分类编码（从上面可用分类中选最匹配的）
 - rawText: 图片中识别到的所有原始文本内容（用于存入备注）
 
-请以 JSON 格式返回，不要添加其他说明文字。` },
-            { type: 'image', image: imageData.toString('base64'), mediaType },
+请以 JSON 格式返回，不要添加其他说明文字。${describeSlices(prep.count)}` },
+            ...prep.parts.map((p) => ({ type: 'image' as const, image: p.image, mediaType: p.mediaType })),
           ],
         }],
-        maxOutputTokens: 1000,
+        maxOutputTokens: 5000,
         temperature: 0.1,
       })
 

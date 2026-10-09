@@ -20,6 +20,7 @@ import { prisma } from '../../app.js'
 import { createModel, type ProviderType } from './providers.js'
 import { detectImageFormat, VISION_MEDIA_TYPES, IMAGE_FORMAT_LABELS } from './image-format.js'
 import { loadVisionConfig } from './vision.js'
+import { prepareVisionImage, describeSlices } from './image-tile.js'
 
 export interface ImageTextContext {
   /** 一句话描述(后续轮次凭它「记得」这张图) */
@@ -78,6 +79,14 @@ async function ensureOne(
     return null
   }
 
+  // 2b. 出站准备:格式白名单 + 完整性校验 + 超限切片/缩放(与主流程共用同一套实现)。
+  // 漏掉尺寸适配会被上游按单边上限拒绝 —— 表现就是整张图读不出摘要。
+  const prep = await prepareVisionImage(img.buf)
+  if ('error' in prep) {
+    console.warn(`[image-context] 跳过 ${attachment.originalFilename}:${prep.error}`)
+    return null
+  }
+
   // 3. 调视觉模型
   const vision = await loadVisionConfig(userId)
   if (!vision) return null
@@ -93,8 +102,8 @@ async function ensureOne(
       messages: [{
         role: 'user',
         content: [
-          { type: 'text', text: ANALYZE_PROMPT },
-          { type: 'image', image: img.buf.toString('base64'), mediaType: img.mediaType },
+          { type: 'text', text: `${ANALYZE_PROMPT}${describeSlices(prep.count)}` },
+          ...prep.parts.map((p) => ({ type: 'image' as const, image: p.image, mediaType: p.mediaType })),
         ],
       }],
       maxOutputTokens: 5000,
@@ -211,6 +220,11 @@ export async function askImage(
   const img = loadImageForVision(attachment)
   if ('error' in img) return { error: img.error }
 
+  // 出站准备:格式白名单 + 完整性 + 超限切片(与主流程同一套实现);
+  // 长截图不切片会被上游按单边上限拒绝 —— 用户表现为「查看图片细节失败」
+  const prep = await prepareVisionImage(img.buf)
+  if ('error' in prep) return { error: prep.error }
+
   const vision = await loadVisionConfig(userId)
   if (!vision) return { error: '未配置视觉模型，请在 AI 设置中配置' }
 
@@ -236,8 +250,8 @@ export async function askImage(
       messages: [{
         role: 'user',
         content: [
-          { type: 'text', text: `${background ? `${background}\n\n` : ''}问题:${question}` },
-          { type: 'image', image: img.buf.toString('base64'), mediaType: img.mediaType },
+          { type: 'text', text: `${background ? `${background}\n\n` : ''}问题:${question}${describeSlices(prep.count)}` },
+          ...prep.parts.map((p) => ({ type: 'image' as const, image: p.image, mediaType: p.mediaType })),
         ],
       }],
       maxOutputTokens: 5000,

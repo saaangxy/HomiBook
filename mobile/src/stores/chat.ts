@@ -108,6 +108,28 @@ function nextId() {
 
 const EMPTY_SESSION: SessionData = { allMessages: [], branchSelections: {}, isStreaming: false, streamingMessageId: null, loading: false };
 
+/** 本地锚点消息 id:不入库,只作为「首条消息的父」参与前端分支归属(与 web ChatWindow 的 greetingMsg 同口径) */
+export const GREETING_ID = 'greeting';
+
+/**
+ * 本地锚点消息(不入库)。
+ *
+ * 为什么需要:`buildActivePath` 在**根级别不做择一** —— 多条「无父消息」会被同时渲染。
+ * 首条消息(以及它编辑/重试出的分支)若没有父,就会各自成根而全部显示,
+ * 移动端表现就是「多个版本被渲染成多条连续对话」。让它们统一挂在 greeting 下,分支切换才生效。
+ */
+function greetingMessage(): Message {
+  return {
+    id: GREETING_ID,
+    role: 'assistant',
+    blocks: [{
+      id: 'greeting-text',
+      type: 'text' as const,
+      content: '你好，我是 AI 记账助手。可以问我：本月花了多少？餐饮超预算了吗？帮我分析一下支出趋势。',
+    }],
+  };
+}
+
 type SetState = (partial: Partial<ChatState> | ((s: ChatState) => Partial<ChatState>)) => void;
 type GetState = () => ChatState;
 
@@ -541,7 +563,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       set((s) => ({
         sessions: [session, ...s.sessions],
         currentSessionId: session.id,
-        sessionCache: { ...s.sessionCache, [session.id]: { allMessages: [], branchSelections: {}, isStreaming: false, streamingMessageId: null, loading: false } },
+        sessionCache: { ...s.sessionCache, [session.id]: { allMessages: [greetingMessage()], branchSelections: {}, isStreaming: false, streamingMessageId: null, loading: false } },
       }));
       return session;
     } catch {
@@ -573,6 +595,20 @@ export const useChatStore = create<ChatState>()((set, get) => ({
           ...(m.injections?.length ? { injections: m.injections } : {}),
         };
       });
+      // 归一:老数据的首条消息 parent 为空(当时前端还没用 greeting 做锚点),它自成「根」;
+      // 而 buildActivePath 在根级别不做择一 ⇒ 编辑/重试出的分支会各成一条并列渲染
+      // (移动端表现为「多个版本被渲染成多条连续对话」)。与 web ChatWindow.handleSelectSession
+      // 同一套处理:把无父的用户消息挂到 greeting 下,并把 greeting 补进集合,让它们重新参与分支择一。
+      const needsGreeting = messages.length === 0 || messages.some(
+        (m) => m.parentMessageId === GREETING_ID || (m.role === 'user' && !m.parentMessageId),
+      );
+      if (needsGreeting) {
+        for (const m of messages) {
+          if (m.role === 'user' && !m.parentMessageId) m.parentMessageId = GREETING_ID;
+        }
+        messages.unshift(greetingMessage());
+      }
+
       // 重建分支选择:同一父消息多个子分支时默认选中最后一条
       const selections: Record<string, string> = {};
       const childrenMap = new Map<string, Message[]>();
@@ -680,8 +716,12 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       applyFinishPatch(set, sid, assistantMsgId, event);
     });
 
+    // 本地锚点 greeting 不是 DB 消息:它只服务于前端的分支归属,
+    // 发给后端要折算成 undefined,否则库里会存一个指向不存在消息的 parentMessageId(与 web 一致)
+    const dbParentId = parentMessageId === GREETING_ID ? undefined : parentMessageId;
+
     sendMessageStream(
-      { sessionId: sid, accountBookId, message, parentMessageId, replaceAssistantDbId, attachmentIds, enableWebSearch },
+      { sessionId: sid, accountBookId, message, parentMessageId: dbParentId, replaceAssistantDbId, attachmentIds, enableWebSearch },
       handleEvent,
       handleDone,
       controller.signal,
