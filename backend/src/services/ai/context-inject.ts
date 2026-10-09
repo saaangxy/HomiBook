@@ -103,19 +103,37 @@ function hasContentBeyondPrefix(text: string): boolean {
  * 才生成出来的(`image-context.ts`),继承旧段会让新摘要永远进不了上下文。
  * 返回值已去掉注入前缀(前缀由新一轮统一加一次,避免重复)。
  */
-export async function takeOverInjections(fromUserId: string): Promise<string[]> {
+async function readInjections(fromUserId: string): Promise<{ sections: string[]; ids: string[] }> {
   const injects = await prisma.chatMessage.findMany({
     where: { role: INJECT_ROLE, parentMessageId: fromUserId },
     select: { id: true, content: true },
   }).catch(() => [])
 
   const sections: string[] = []
+  const ids: string[] = []
   for (const inj of injects) {
+    ids.push(inj.id)
     const kept = stripAttachmentSection(inj.content)
     if (hasContentBeyondPrefix(kept)) sections.push(stripInjectPrefix(kept))
-    // 内容已取出(或只剩附件段)⇒ 旧消息一律删掉:该由新一轮统一写回
-    await prisma.chatMessage.delete({ where: { id: inj.id } }).catch(() => {})
   }
+  return { sections, ids }
+}
+
+/**
+ * 读出指定用户消息上的注入内容（剥掉附件段、去掉注入前缀），**不删除**那条注入消息。
+ *
+ * 编辑重发用它：新消息与被编辑的那条是「同父兄弟」，注入必须带过来，否则新分支只剩
+ * 新一轮生成的「附件清单」段，模型看不到日期/记忆/技能。但与重试不同 —— 编辑是「新增一个
+ * 分支」，旧消息要留在 1/2 里可切换，所以只复制内容、不能把旧的注入搬走。
+ */
+export async function collectInjections(fromUserId: string): Promise<string[]> {
+  return (await readInjections(fromUserId)).sections
+}
+
+export async function takeOverInjections(fromUserId: string): Promise<string[]> {
+  const { sections, ids } = await readInjections(fromUserId)
+  // 内容已取出(或只剩附件段)⇒ 旧消息一律删掉:该由新一轮统一写回
+  for (const id of ids) await prisma.chatMessage.delete({ where: { id } }).catch(() => {})
   return sections
 }
 

@@ -14,7 +14,7 @@ import { ALL_TOOLS, TOOL_GROUPS, storeImportOverrides, peekImportOverrides } fro
 import { buildConfirmPreview } from '../services/ai/confirm-preview.js'
 import { sendMessageSchema, createSessionSchema, updateSessionSchema, confirmActionSchema, updateAIConfigSchema, createProviderConfigSchema, updateProviderConfigSchema } from '../schemas/chat.js'
 import { detectSkills } from '../services/ai/skills/index.js'
-import { INJECT_ROLE, buildAttachmentSection, foldInjections, persistInjectionIfChanged, summarizeInjection, takeOverInjections } from '../services/ai/context-inject.js'
+import { INJECT_ROLE, buildAttachmentSection, collectInjections, foldInjections, persistInjectionIfChanged, summarizeInjection, takeOverInjections } from '../services/ai/context-inject.js'
 import { ensureImageTextContexts } from '../services/ai/image-context.js'
 import { dedupeToolCalls, nextToolCallId } from '../services/ai/tool-call-id.js'
 import { loadMemoriesForPrompt, listMemories, deleteMemory, updateMemory } from '../services/ai/memory.js'
@@ -962,9 +962,35 @@ export async function chatRoutes(app: FastifyInstance) {
     // 这些是会话级差量、新一轮不会再写，而旧消息已不在历史链上 —— 不接管模型这一轮就看不到它们了。
     // 取回的文本随后作为 extraSections 交给 persistInjectionIfChanged，与新一轮的附件段**合并成同一条**
     // 注入消息（与首次发送的形态一致，避免出现「记忆/技能」+「附件清单」两个 chip）。
+    //
+    // 编辑重发走另一条路：新消息与被编辑的那条是「同父兄弟」（前端把新消息挂在同一个 parent 下），
+    // 它的注入同样要带过来，否则新分支只剩新一轮生成的「附件清单」——模型这一轮就看不到日期/记忆/技能
+    // （表现为：编辑后 AI 忘了用户偏好/记忆）。与重试的区别是编辑要**保留**那条旧消息（1/2 可切换），
+    // 所以只复制内容、不删旧注入。
+    let injectSourceUserId = retriedUserId
+    if (!injectSourceUserId) {
+      const sibling = await prisma.chatMessage.findFirst({
+        where: {
+          sessionId: session.id,
+          role: 'user',
+          id: { not: userMsgDb.id },
+          // 编辑首条消息时前端传来的父是空（本地 greeting 锚点不发给后端），
+          // 而老数据里那条的父是 'greeting' —— 两种都要能匹配到。
+          ...(parentId
+            ? { parentMessageId: parentId }
+            : { OR: [{ parentMessageId: null }, { parentMessageId: 'greeting' }] }),
+        },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true },
+      }).catch(() => null)
+      injectSourceUserId = sibling?.id ?? null
+    }
+
     const inheritedSections = retriedUserId && retriedUserId !== userMsgDb.id
       ? await takeOverInjections(retriedUserId).catch(() => [])
-      : []
+      : injectSourceUserId && injectSourceUserId !== userMsgDb.id
+        ? await collectInjections(injectSourceUserId).catch(() => [])
+        : []
 
     // 重试：清掉被替换的旧用户消息 —— 前端只删了**本地**那条，DB 里留着会让刷新后出现
     // 「同一条消息两遍」（新消息的 parentId 指向旧消息之前，两者互为兄弟，都会被拉回来）。
