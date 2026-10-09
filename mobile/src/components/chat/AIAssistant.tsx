@@ -41,6 +41,15 @@ function timeAgo(iso: string): string {
   return `${d.getMonth() + 1}月${d.getDate()}日`;
 }
 
+/**
+ * 消息是否有可渲染内容 —— 空文本块不计入。
+ * 与 web `MessageBubble` 的口径一致:那里对每个 block 单独渲染气泡,空 text 块 `return null`;
+ * 移动端的气泡是包住所有 block 的外层容器,所以必须在外面判断,否则纯附件消息会留下一个空气泡。
+ */
+function hasRenderableBlocks(message: Message): boolean {
+  return message.blocks.some((b) => (b.type === 'text' ? !!b.content.trim() : true));
+}
+
 /** 取消息的全部文本内容(与 web MessageBubble.getMessageText 同口径) */
 function getMessageText(message: Message): string {
   return message.blocks
@@ -460,16 +469,19 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
               </View>
             )}
             {/* 用户气泡:主色,右上角收窄(web: rounded-2xl rounded-tr-md)。
-                点击气泡本体 ⇒ 用下方输入框进入编辑态;附件区留在可点区域之外,不受影响 */}
-            <Pressable
-              onPress={() => beginEdit(item)}
-              disabled={isStreaming || !item.blocks.some((b) => b.type === 'text' && b.content.trim())}
-              style={[bubbleBase, { backgroundColor: colors.primary, borderTopRightRadius: 5 }]}
-            >
-              <View style={{ gap: 6 }}>
-                {item.blocks.map((b) => renderBlock(b, true))}
-              </View>
-            </Pressable>
+                点击气泡本体 ⇒ 用下方输入框进入编辑态;附件区留在可点区域之外,不受影响。
+                纯附件消息(无文本)不渲染气泡本体 —— 与 web MessageBubble 跳过空文本块同口径 */}
+            {hasRenderableBlocks(item) && (
+              <Pressable
+                onPress={() => beginEdit(item)}
+                disabled={isStreaming}
+                style={[bubbleBase, { backgroundColor: colors.primary, borderTopRightRadius: 5 }]}
+              >
+                <View style={{ gap: 6 }}>
+                  {item.blocks.map((b) => renderBlock(b, true))}
+                </View>
+              </Pressable>
+            )}
             {item.attachments && item.attachments.length > 0 && (
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end' }}>
                 {(() => {
@@ -522,16 +534,19 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
         {avatar('ai')}
         <View style={{ flexShrink: 1, maxWidth: '86%', minWidth: '58%' }}>
           {/* AI 气泡:浅灰底,左上角收窄;流式空态显示「思考中...」 */}
-          <View style={[bubbleBase, { backgroundColor: alpha(colors.foreground, 0.05), borderTopLeftRadius: 5, alignSelf: isEmptyStreaming ? 'flex-start' : 'stretch' }]}>
-            {isEmptyStreaming ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <ActivityIndicator size="small" color={colors.mutedForeground} />
-                <Text style={{ fontSize: 13, color: colors.mutedForeground }}>思考中...</Text>
-              </View>
-            ) : (
-              <View style={{ gap: 8 }}>{item.blocks.length > 0 ? item.blocks.map((b) => renderBlock(b)) : null}</View>
-            )}
-          </View>
+          {/* 无可渲染内容时整个气泡不出现(与 web 相同);纯空消息只保留头像,不留空灰块 */}
+          {(isEmptyStreaming || hasRenderableBlocks(item)) && (
+            <View style={[bubbleBase, { backgroundColor: alpha(colors.foreground, 0.05), borderTopLeftRadius: 5, alignSelf: isEmptyStreaming ? 'flex-start' : 'stretch' }]}>
+              {isEmptyStreaming ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <ActivityIndicator size="small" color={colors.mutedForeground} />
+                  <Text style={{ fontSize: 13, color: colors.mutedForeground }}>思考中...</Text>
+                </View>
+              ) : (
+                <View style={{ gap: 8 }}>{item.blocks.map((b) => renderBlock(b))}</View>
+              )}
+            </View>
+          )}
           {/* 次要信息行:Token 消耗 + 重试(流式结束后才显示) */}
           {!item.isStreaming && (item.usage || item.blocks.some((b) => b.type === 'text')) ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6, minHeight: 22 }}>

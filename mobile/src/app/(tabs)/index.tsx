@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useIsFocused } from 'expo-router';
+import { router, useIsFocused } from 'expo-router';
 import { Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ChevronRight } from 'lucide-react-native';
 import { useTheme, alpha } from '@/theme';
 import { useAuth } from '@/stores/auth';
+import { useAIAvailability } from '@/hooks/useAIAvailability';
 import { Screen } from '@/components/Screen';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
@@ -36,6 +37,9 @@ export default function HomeScreen() {
   // 刷新时机:切到本页时(isFocused)重拉预算与年度收支
   const isFocused = useIsFocused();
   const { currentLedger, openAI } = useUIShell();
+  // AI 助手可用性:未启用则整块隐藏;开着但没配模型则提示去配置(与 web 首页同语义)。
+  // 传 isFocused:从设置里配好返回到本页时会重读,不必杀进程才生效。
+  const ai = useAIAvailability(isFocused);
   const [refreshing, setRefreshing] = useState(false);
 
   // 下拉刷新:重拉 store(流水/账户/分类) + 预算 + 当年收支
@@ -258,19 +262,33 @@ export default function HomeScreen() {
           </FadeInView>
         )}
 
-        {/* AI 财务助手(点击直接弹出 AI 弹窗) */}
-        <FadeInView index={3}>
-          <Pressable onPress={openAI} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: alpha(colors.primary, 0.06), borderRadius: 20, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: alpha(colors.primary, 0.2) }}>
-            <View style={{ width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: alpha(colors.primary, 0.12) }}>
-              <Text style={{ fontSize: 22 }}>🤖</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 15, fontWeight: '600' }}>AI 财务助手</Text>
-              <Text variant="muted" style={{ fontSize: 12, marginTop: 2 }} numberOfLines={1}>{insight}</Text>
-            </View>
-            <ChevronRight size={16} color={colors.primary} />
-          </Pressable>
-        </FadeInView>
+        {/* AI 财务助手:
+            - 未启用(在设置里关掉 AI 助手) ⇒ 整块不渲染,不留一个点不开的入口;
+            - 已启用但没配模型 ⇒ 就地提示「前往配置」(与 web HomePage 同语义) */}
+        {ai.enabled && (
+          <FadeInView index={3}>
+            {ai.configured ? (
+              <Pressable onPress={openAI} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: alpha(colors.primary, 0.06), borderRadius: 20, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: alpha(colors.primary, 0.2) }}>
+                <View style={{ width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: alpha(colors.primary, 0.12) }}>
+                  <Text style={{ fontSize: 22 }}>🤖</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 15, fontWeight: '600' }}>AI 财务助手</Text>
+                  <Text variant="muted" style={{ fontSize: 12, marginTop: 2 }} numberOfLines={1}>{insight}</Text>
+                </View>
+                <ChevronRight size={16} color={colors.primary} />
+              </Pressable>
+            ) : (
+              <View style={{ alignItems: 'center', gap: 8, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 20, padding: 18, marginBottom: 16 }}>
+                <Text style={{ fontSize: 22 }}>🤖</Text>
+                <Text variant="muted" style={{ fontSize: 12.5, textAlign: 'center' }}>AI 助手尚未配置模型，请先完成供应商配置</Text>
+                <Pressable onPress={() => router.push('/settings')} style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, backgroundColor: alpha(colors.primary, 0.12) }}>
+                  <Text style={{ fontSize: 12.5, fontWeight: '600', color: colors.primary }}>前往配置</Text>
+                </Pressable>
+              </View>
+            )}
+          </FadeInView>
+        )}
 
         {/* 最近流水(无流水记录时整块不展示) */}
         {recent.length > 0 && (

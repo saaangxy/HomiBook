@@ -15,6 +15,7 @@ import { ImageLightbox, isImageUrl } from '@/components/ui/AttachmentViewer';
 import { showToast } from '@/components/chrome/Toast';
 import { AIAssistant } from '@/components/chat/AIAssistant';
 import { useUIShell, notifyPageRefresh } from './chrome';
+import { useAIAvailability } from '@/hooks/useAIAvailability';
 import { useRecords } from '@/stores/records';
 import { useAuth } from '@/stores/auth';
 import { fetchBookMembers, fetchRecordTags, fetchBudgetTags, uploadRecordAttachment } from '@/services/records';
@@ -34,6 +35,8 @@ function todayStr() {
 export function RecordModal() {
   const { colors } = useTheme();
   const { recordOpen, closeRecord, editingRecord, currentLedger } = useUIShell();
+  // AI 助手可用性:未启用/未配置时不显示「AI」模式,只留手动(每次打开弹窗重读配置)
+  const ai = useAIAvailability(recordOpen);
   const bookId = currentLedger.id;
   const { addRecord, updateRecord, accounts: allAccounts, categories: allCategories } = useRecords();
   const { user } = useAuth();
@@ -315,7 +318,8 @@ export function RecordModal() {
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <Text style={{ fontSize: 18, fontWeight: '700' }}>{editingRecord ? '编辑流水' : '记一笔'}</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              {!editingRecord && (
+              {/* AI 不可用(未启用/未配置)时不显示模式切换 —— 只留手动,避免点进去用不了 */}
+              {!editingRecord && ai.ready && (
                 <View style={{ flexDirection: 'row', backgroundColor: colors.muted, borderRadius: 999, padding: 3 }}>
                   {(['manual', 'ai'] as Mode[]).map((md) => {
                     const active = mode === md;
@@ -333,7 +337,9 @@ export function RecordModal() {
             </View>
           </View>
 
-          {mode === 'manual' ? (
+          {/* AI 不可用时强制走手动分支:模式记忆(AsyncStorage)可能停在 'ai',
+              不放行会渲染成一片空白 */}
+          {mode === 'manual' || !ai.ready ? (
           <View style={{ flex: 1 }}>
             <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets nestedScrollEnabled>
               {/* 类型(仿网页 Tabs 分段控件) */}
