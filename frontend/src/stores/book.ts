@@ -11,6 +11,8 @@ interface BookState {
   addBook: (book: BookItem) => void
   removeBook: (id: string) => void
   fetchBooks: () => Promise<void>
+  /** 清空账本缓存(登出/切换账号时调用)。persist 会把清空后的状态一并写回 localStorage */
+  reset: () => void
 }
 
 // 并发去重：MainLayout 与 BookSwitcher 挂载时会同时请求，避免重复拉取
@@ -33,6 +35,10 @@ export const useBookStore = create<BookState>()(
           books: state.books.filter((b) => b.id !== id),
           currentBookId: state.currentBookId === id ? null : state.currentBookId,
         })),
+
+      // 清空账本缓存：books 与 currentBookId 都按「上一个账号」持久化在 localStorage，
+      // 登出/换账号后不清就会把上一个账号的账本列表带到新账号（先闪旧数据再被覆盖）。
+      reset: () => set({ books: [], currentBookId: null }),
 
       // 每次进入应用都重新拉取账本，保证切换数据库/刷新后列表是最新的
       fetchBooks: async () => {

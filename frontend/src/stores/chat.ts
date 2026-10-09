@@ -81,6 +81,8 @@ interface ChatState {
   setSessions: (sessions: ChatSession[]) => void
   setCurrentSession: (sessionId: string | null) => void
   setError: (error: string | null) => void
+  /** 切换账号/登出时清空:会话与缓存属于上一个账号,不能带过去 */
+  reset: () => void
 
   /** 兼容接口:写入会话全量消息(自动重建分支选择),取代原 setMessages */
   setSessionData: (sessionId: string, allMessages: Message[]) => void
@@ -560,6 +562,22 @@ export const useChatStore = create<ChatState>()((set, get) => {
   setSessions: (sessions) => set({ sessions }),
   setCurrentSession: (sessionId) => set({ currentSessionId: sessionId }),
   setError: (error) => set({ error }),
+
+  /**
+   * 切换账号 / 登出时清空聊天内存态(与移动端 chat store 的 reset 同口径)。
+   * 先中断在途流:否则请求返回后的回调会把上一个账号的消息写回新账号的状态里。
+   */
+  reset: () => {
+    const { abortControllers } = get()
+    for (const c of Object.values(abortControllers)) c.abort()
+    set({
+      sessions: [],
+      currentSessionId: null,
+      sessionCache: {},
+      error: null,
+      abortControllers: {},
+    })
+  },
 
   setSessionData: (sessionId, allMessages) => {
     // 首次加载历史消息时，自动选择每个分支点的最新版本

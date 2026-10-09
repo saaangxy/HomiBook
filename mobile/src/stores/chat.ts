@@ -82,6 +82,8 @@ interface ChatState {
   abortControllers: Record<string, AbortController>;
 
   setError: (error: string | null) => void;
+  /** 切换账号/服务器/登出时清空:会话与缓存都属于上一个账号,不能带过去 */
+  reset: () => void;
 
   loadSessions: () => Promise<void>;
   openSession: (sessionId: string) => Promise<void>;
@@ -538,6 +540,24 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   abortControllers: {},
 
   setError: (error) => set({ error }),
+
+  /**
+   * 切换账号 / 服务器 / 登出时清空聊天内存态。
+   * 会话列表与 sessionCache 都属于「上一个账号」,不清空就会被带到新账号里。
+   * 同时先中断在途流 —— 否则请求返回后的回调会把这些消息写回新账号的状态。
+   */
+  reset: () => {
+    const { abortControllers } = get();
+    for (const c of Object.values(abortControllers)) c.abort();
+    set({
+      sessions: [],
+      sessionsLoading: false,
+      currentSessionId: null,
+      sessionCache: {},
+      error: null,
+      abortControllers: {},
+    });
+  },
 
   loadSessions: async () => {
     set({ sessionsLoading: true });

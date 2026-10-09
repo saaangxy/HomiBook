@@ -1,4 +1,4 @@
-import { api } from './http'
+import { api, notifyUnauthorized } from './http'
 import { IMPORT_AI_SOURCES } from '@homibook/core'
 
 /** 服务端能自动识别的账单来源(AI 导入工具支持的三种,与 core 同源) */
@@ -278,6 +278,8 @@ export const importExportApi = {
     if (token) headers['Authorization'] = `Bearer ${token}`
     const res = await fetch(url, { headers })
     if (!res.ok) {
+      // 这里为拿 blob 而自持 fetch,401 同样要上报给上层统一处理
+      notifyUnauthorized(res.status, token, url)
       const error = await res.json().catch(() => ({ message: '导出失败' }))
       throw new Error(error.message || `HTTP ${res.status}`)
     }

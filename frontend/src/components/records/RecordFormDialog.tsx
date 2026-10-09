@@ -1,4 +1,5 @@
 import { errorMessage } from '@/lib/error'
+import { notifyUnauthorized } from '@/api/http'
 import { useEffect, useState } from 'react'
 import dayjs from 'dayjs'
 import { X, Download, Upload } from 'lucide-react'
@@ -176,7 +177,11 @@ export function RecordFormDialog({ open, editRecord, currentBookId, accounts, mu
       if (token) headers['Authorization'] = `Bearer ${token}`
 
       const res = await fetch(downloadUrl, { headers })
-      if (!res.ok) throw new Error('下载失败')
+      if (!res.ok) {
+        // 附件下载自持 fetch(需要 blob),401 同样上报给上层统一处理
+        notifyUnauthorized(res.status, token, downloadUrl)
+        throw new Error('下载失败')
+      }
       const blob = await res.blob()
       const blobUrl = URL.createObjectURL(blob)
       const a = document.createElement('a')

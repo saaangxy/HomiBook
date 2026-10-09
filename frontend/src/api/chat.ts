@@ -1,4 +1,4 @@
-import { api } from './http'
+import { api, notifyUnauthorized } from './http'
 import { consumeSSEStream, type ChatInjection, type ChatSSEEvent, type MessageUsage } from '@homibook/core'
 
 const BASE = '/api/chat'
@@ -176,6 +176,8 @@ export function confirmActionStream(
   })
     .then(async (response) => {
       if (!response.ok) {
+        // SSE 是自持 fetch(不经过 request),同样要上报 401:交给上层清缓存并登出
+        notifyUnauthorized(response.status, token)
         const err = await response.json().catch(() => ({ message: '请求失败' }))
         onEvent({ type: 'error', message: err.message || `HTTP ${response.status}` })
         onDone()
@@ -271,6 +273,8 @@ export function sendMessageStream(
   })
     .then(async (response) => {
       if (!response.ok) {
+        // SSE 是自持 fetch(不经过 request),同样要上报 401:交给上层清缓存并登出
+        notifyUnauthorized(response.status, token)
         const err = await response.json().catch(() => ({ message: '请求失败' }))
         onEvent({ type: 'error', message: err.message || `HTTP ${response.status}` })
         onDone()

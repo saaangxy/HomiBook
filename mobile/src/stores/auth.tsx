@@ -3,6 +3,8 @@ import * as authService from '@/services/auth';
 import type { ServerCredential } from '@/services/auth';
 import { clearCredential, getCredential, isCredentialExpired, setUnauthorizedHandler } from '@/services/http';
 import { palettes, useTheme, type ThemeId } from '@/theme';
+import { useChatStore } from '@/stores/chat';
+import { resetRegisteredCaches } from '@/stores/account-cache';
 import type { Server, UserInfo } from '@/types';
 
 interface AuthStore {
@@ -28,6 +30,29 @@ interface AuthStore {
 }
 
 const AuthContext = createContext<AuthStore | null>(null);
+
+/**
+ * 清空「与账号绑定」的前端缓存(登出 / 切换账号 / 换服务器 / 凭据失效共用)。
+ *
+ * 分两类:
+ *   - 聊天:`useChatStore` 是 zustand(模块级),这里可以直接调;
+ *   - 账本 / 流水 / 账户 / 分类:`LedgerProvider` / `RecordsProvider` 是 React Context,
+ *     定义在 AuthProvider **内层**,这里拿不到它们的 setter —— 它们在挂载时把清理函数
+ *     注册进 `stores/account-cache`,由 `resetRegisteredCaches()` 统一调用。
+ *
+ * 改为显式清理的原因:原先只清了聊天,账本/流水靠 `isLoggedIn → ledger 清空 →
+ * bookId 变空 → records 清空` 的多级 effect 级联推导 —— 能生效,但改动时极易漏掉一环。
+ *
+ * 本机数据**不在此列**:主题、服务器列表、短信去重标记(`homibook.smsProcessed`)、
+ * 分享暂存(`homibook.shareInbox`)都与账号无关,清掉反而会丢用户数据
+ * (短信标记清空会让同一批短信重新进入候选,导致重复记账)。
+ *
+ * 定义为模块级函数(而非 useCallback):这样它不必进各处 useCallback / useEffect 的依赖数组。
+ */
+function clearAccountCaches() {
+  useChatStore.getState().reset();
+  resetRegisteredCaches();
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { themeId, setThemeId } = useTheme();
@@ -73,6 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearCredential();
       setUser(null);
       setIsLoggedIn(false);
+      clearAccountCaches(); // 凭据失效等同于登出,同样不能把旧账号的聊天留在界面上
     });
     (async () => {
       await refreshServers();
@@ -99,6 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(
     async (account: string, password: string, serverId: string) => {
+      clearAccountCaches(); // 换服务器/账号即换账号上下文:清掉上一个账号的聊天内存态
       await authService.switchServer(serverId);
       const me = await authService.apiLogin(account, password);
       // 登录成功后把账号密码写回服务器配置,便于下次选服务器一键登录
@@ -113,6 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginWithApiKey = useCallback(
     async (key: string, serverId: string) => {
+      clearAccountCaches(); // 同上:API Key 登录也是换账号上下文
       await authService.switchServer(serverId);
       const me = await authService.verifyApiKey(key);
       // 登录成功后把 API Key 写回服务器配置
@@ -129,10 +157,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await authService.apiLogout();
     setUser(null);
     setIsLoggedIn(false);
+    clearAccountCaches(); // 登出即换账号上下文:清空聊天,避免再次登录时串号
     // 服务器列表与当前服务器保留,便于下次直接登录
   }, []);
 
   const switchServer = useCallback(async (id: string) => {
+    clearAccountCaches(); // 换服务器 = 换数据源;未登录时是 no-op
     await authService.switchServer(id);
     await refreshServers();
   }, [refreshServers]);
@@ -141,6 +171,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const quickLogin = useCallback(
     async (id: string): Promise<{ ok: boolean; error?: string }> => {
       try {
+        clearAccountCaches(); // 一键登录同样是换账号上下文:先清掉上一个账号的聊天
         await authService.switchServer(id);
         await refreshServers();
         const server = servers.find((s) => s.id === id);
@@ -181,6 +212,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refreshServers]);
 
   const removeServer = useCallback(async (id: string) => {
+    // 若删的是当前服务器,账号上下文随之失效:一并清缓存,避免残留旧服务器的会话
+    clearAccountCaches();
     // 乐观移除:立即从本地 state 移除,确保 UI 即时反馈(再持久化 + 最终同步)
     setServers((prev) => prev.filter((s) => s.id !== id));
     await authService.removeServer(id);

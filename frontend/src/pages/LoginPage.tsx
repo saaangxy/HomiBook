@@ -4,6 +4,7 @@ import { Eye, EyeOff, Palette, AlertCircle } from 'lucide-react'
 import { authApi } from '../api/auth'
 import { settingsApi } from '../api/settings'
 import { useAuthStore } from '../stores/auth'
+import { resetAccountCaches } from '../stores/reset-account'
 import { PasswordStrength } from '../components/PasswordStrength'
 import { ThemeSelector } from '../components/ThemeSelector'
 import { useIsMobile } from '../hooks/use-mobile'
@@ -294,6 +295,8 @@ export function LoginPage() {
 
     try {
       const res = await authApi.login(loginAccount, loginPassword)
+      // 从 A 账号直接登录 B 时也要先清:A 的账本列表是 persist 的,不清会先闪一下 A 的账本
+      resetAccountCaches()
       setAuth(res.token, res.user)
       navigate('/')
     } catch (err: any) {

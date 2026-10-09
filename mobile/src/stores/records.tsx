@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createRecord, deleteRecordApi, fetchAccounts, fetchCategories, fetchRecords, updateRecordApi, type RecordCreatePayload } from '@/services/records';
 import { useLedgerStore } from '@/stores/ledger';
+import { registerAccountCache } from '@/stores/account-cache';
 import type { AccountItem, Category, RecordItem, RecordSummary } from '@/types';
 
 interface RecordsValue {
@@ -49,8 +50,10 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     if (!bookId) {
+      // 无账本(未登录/正在切换账号):把上一个账号的数据清干净,避免切换瞬间看到旧流水
       setRecords([]);
       setAccounts([]);
+      setCategories([]);
       setLoading(false);
       return;
     }
@@ -64,6 +67,19 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // 注册到统一的账号缓存清理:登出/切账号时立即清空上一个账号的流水/账户/分类,
+  // 不等 bookId 变化再级联(pending 的请求也会被后续 refresh 覆盖)
+  useEffect(
+    () =>
+      registerAccountCache(() => {
+        setRecords([]);
+        setAccounts([]);
+        setCategories([]);
+        setLoading(false);
+      }),
+    [],
+  );
 
   const summary = useMemo<RecordSummary>(() => {
     let income = 0;

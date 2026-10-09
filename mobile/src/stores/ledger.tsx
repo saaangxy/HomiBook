@@ -3,6 +3,7 @@ import type { Ledger } from '@/types';
 import { createBookApi, fetchBooks } from '@/services/records';
 import { secureGet, secureSet } from '@/services/storage';
 import { useAuth } from '@/stores/auth';
+import { registerAccountCache } from '@/stores/account-cache';
 
 // 账本域 store:当前账本 / 账本列表 / 切换与刷新的唯一数据源。
 // chrome(UIShellProvider)转发本 store 供既有 useUIShell() 消费者使用;
@@ -46,6 +47,17 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
       setCurrentLedgerId('');
     }
   }, [isLoggedIn]);
+
+  // 同时注册到统一的账号缓存清理:登出/切账号/换服务器时由 auth 显式调用。
+  // 不再只依赖上面那条 effect 的级联 —— records 也靠这一清立即跟着清空(不等 bookId 变化)
+  useEffect(
+    () =>
+      registerAccountCache(() => {
+        setLedgers([]);
+        setCurrentLedgerId('');
+      }),
+    [],
+  );
 
   // 登录后拉取账本,优先打开该服务器+账号上次使用的账本,否则选第一个
   useEffect(() => {

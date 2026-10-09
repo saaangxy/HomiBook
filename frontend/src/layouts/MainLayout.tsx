@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/sidebar'
 import { useAuthStore } from '../stores/auth'
 import { useBookStore } from '../stores/book'
+import { resetAccountCaches } from '../stores/reset-account'
 import { BookSwitcher } from '../components/BookSwitcher'
 import { UserMenu } from '../components/UserMenuSheet'
 import { BottomNav } from '../components/BottomNav'
@@ -122,6 +123,8 @@ export function MainLayout() {
   }, [fetchBooks])
 
   const handleLogout = () => {
+    // 清掉与账号绑定的缓存(账本列表是 persist 的、聊天是内存的)，否则会串到下一个账号
+    resetAccountCaches()
     logout()
     navigate('/login')
   }
