@@ -87,34 +87,41 @@ function hasContentBeyondPrefix(text: string): boolean {
 }
 
 /**
- * 重试:把「被替换的那条用户消息」的注入消息转挂到新的用户消息上。
+ * 重试:接管「被替换的那条用户消息」的注入内容,并删掉它的注入消息。
  *
  * 为什么必须做:日期/记忆/技能都是**会话级差量**(已注入过就不再写),而重试走的是
  * 「新建一条用户消息」的路径 —— 新一轮只会拿到「附件清单」那一段,日期/记忆/技能
  * 则随旧消息一起被排除在历史链之外,模型这一轮就完全看不到它们了(表现为:重试后
  * AI 忘了用户偏好/长期记忆)。
  *
+ * 为什么返回**文本**而不是把旧消息转挂过去:转挂会让「旧消息一条 + 新一轮一条」变成
+ * **两个注入 chip**(首次发送时是拼成一条的)。这里把内容取出来交给调用方,由调用方
+ * 作为 extraSections 交给新一轮的 persistInjectionIfChanged —— 它会与差量段拼成
+ * **同一条**注入消息,于是重试与首次发送的形态一致。
+ *
  * 附件段会被**剥掉**:它必须由新一轮重新生成 —— 图片的文字化摘要可能是在两次之间
  * 才生成出来的(`image-context.ts`),继承旧段会让新摘要永远进不了上下文。
+ * 返回值已去掉注入前缀(前缀由新一轮统一加一次,避免重复)。
  */
-export async function inheritInjections(fromUserId: string, toUserId: string): Promise<void> {
+export async function takeOverInjections(fromUserId: string): Promise<string[]> {
   const injects = await prisma.chatMessage.findMany({
     where: { role: INJECT_ROLE, parentMessageId: fromUserId },
     select: { id: true, content: true },
   }).catch(() => [])
 
+  const sections: string[] = []
   for (const inj of injects) {
     const kept = stripAttachmentSection(inj.content)
-    if (!hasContentBeyondPrefix(kept)) {
-      // 只剩前缀(原本只有附件段)⇒ 交给新一轮的附件注入,旧消息直接删掉
-      await prisma.chatMessage.delete({ where: { id: inj.id } }).catch(() => {})
-      continue
-    }
-    await prisma.chatMessage.update({
-      where: { id: inj.id },
-      data: { content: kept, parentMessageId: toUserId, tokenCount: estimateTokens(kept) },
-    }).catch(() => {})
+    if (hasContentBeyondPrefix(kept)) sections.push(stripInjectPrefix(kept))
+    // 内容已取出(或只剩附件段)⇒ 旧消息一律删掉:该由新一轮统一写回
+    await prisma.chatMessage.delete({ where: { id: inj.id } }).catch(() => {})
   }
+  return sections
+}
+
+/** 去掉注入前缀(前缀在新一轮统一加一次) */
+function stripInjectPrefix(text: string): string {
+  return (text.startsWith(INJECT_PREFIX) ? text.slice(INJECT_PREFIX.length) : text).trim()
 }
 
 /**

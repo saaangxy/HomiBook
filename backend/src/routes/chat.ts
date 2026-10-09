@@ -14,7 +14,7 @@ import { ALL_TOOLS, TOOL_GROUPS, storeImportOverrides, peekImportOverrides } fro
 import { buildConfirmPreview } from '../services/ai/confirm-preview.js'
 import { sendMessageSchema, createSessionSchema, updateSessionSchema, confirmActionSchema, updateAIConfigSchema, createProviderConfigSchema, updateProviderConfigSchema } from '../schemas/chat.js'
 import { detectSkills } from '../services/ai/skills/index.js'
-import { INJECT_ROLE, buildAttachmentSection, foldInjections, inheritInjections, persistInjectionIfChanged, summarizeInjection } from '../services/ai/context-inject.js'
+import { INJECT_ROLE, buildAttachmentSection, foldInjections, persistInjectionIfChanged, summarizeInjection, takeOverInjections } from '../services/ai/context-inject.js'
 import { ensureImageTextContexts } from '../services/ai/image-context.js'
 import { dedupeToolCalls, nextToolCallId } from '../services/ai/tool-call-id.js'
 import { loadMemoriesForPrompt, listMemories, deleteMemory, updateMemory } from '../services/ai/memory.js'
@@ -958,12 +958,24 @@ export async function chatRoutes(app: FastifyInstance) {
       })
     }
 
-    // 重试：把「被替换的那条用户消息」的注入（日期/记忆/技能）继承到新消息上。
-    // 不做的话新一轮只能拿到「附件清单」那一段 —— 日期/记忆/技能是会话级差量、不会重复写，
-    // 而旧消息已不在历史链上，模型这一轮就完全看不到它们了。
-    // 附件段由下面 persistInjectionIfChanged 重新生成（继承时会剥掉，见 inheritInjections）。
+    // 重试：接管被替换那条用户消息的注入内容（日期/记忆/技能）。
+    // 这些是会话级差量、新一轮不会再写，而旧消息已不在历史链上 —— 不接管模型这一轮就看不到它们了。
+    // 取回的文本随后作为 extraSections 交给 persistInjectionIfChanged，与新一轮的附件段**合并成同一条**
+    // 注入消息（与首次发送的形态一致，避免出现「记忆/技能」+「附件清单」两个 chip）。
+    const inheritedSections = retriedUserId && retriedUserId !== userMsgDb.id
+      ? await takeOverInjections(retriedUserId).catch(() => [])
+      : []
+
+    // 重试：清掉被替换的旧用户消息 —— 前端只删了**本地**那条，DB 里留着会让刷新后出现
+    // 「同一条消息两遍」（新消息的 parentId 指向旧消息之前，两者互为兄弟，都会被拉回来）。
+    // 先把旧消息剩余的子消息（用户切换过的其他回复版本）转挂到新消息上再删，版本不丢；
+    // parentMessageId 无外键约束，删除本身安全；附件的关联行随消息级联清理，附件文件不受影响。
     if (retriedUserId && retriedUserId !== userMsgDb.id) {
-      await inheritInjections(retriedUserId, userMsgDb.id).catch(() => {})
+      await prisma.chatMessage.updateMany({
+        where: { parentMessageId: retriedUserId, role: { not: INJECT_ROLE } },
+        data: { parentMessageId: userMsgDb.id },
+      }).catch(() => {})
+      await prisma.chatMessage.delete({ where: { id: retriedUserId } }).catch(() => {})
     }
 
     // 查询账本名称用于提示词
@@ -1026,7 +1038,11 @@ export async function chatRoutes(app: FastifyInstance) {
         today: dateKey(new Date()),
         memories,
         skills: activeSkills.map((s) => ({ name: s.name, prompt: s.buildPrompt({ multimodalImage: isMultimodalImage }) })),
-        extraSections: attachmentSection ? [attachmentSection] : [],
+        // 继承的段(重试)放最前,与新一轮的附件段合并成同一条注入消息(与首次发送的形态一致)
+        extraSections: [
+          ...inheritedSections,
+          ...(attachmentSection ? [attachmentSection] : []),
+        ],
       },
     })
 
@@ -1092,6 +1108,7 @@ export async function chatRoutes(app: FastifyInstance) {
       baseURL,
       temperature: activeConfig?.temperature ?? prefs.temperature,
       // 本轮注入实时回传:界面据此在用户消息下方显示「本轮注入了哪些记忆/技能」
+      // (重试场景的继承段已合并进这一条注入消息,故这里仍是单条事件)
       initialSSEEvents: injection ? [{ event: 'context-injected', data: { userMessageId: userMsgDb.id, injection } }] : undefined,
       maxTokens,
       maxSteps: prefs.maxSteps,

@@ -97,10 +97,10 @@ async function ensureOne(
           { type: 'image', image: img.buf.toString('base64'), mediaType: img.mediaType },
         ],
       }],
-      maxOutputTokens: 1500,
+      maxOutputTokens: 5000,
       temperature: 0.1,
     })
-
+    console.log(`图片的文字化结果: ${result.text}`)
     const parsed = parseAnalyzeResult(result.text)
     if (!parsed.summary) return null
 
@@ -240,10 +240,11 @@ export async function askImage(
           { type: 'image', image: img.buf.toString('base64'), mediaType: img.mediaType },
         ],
       }],
-      maxOutputTokens: 500,
+      maxOutputTokens: 5000,
       temperature: 0.1,
     })
     const answer = result.text.trim()
+    console.log(`视觉模型回复 ${answer}`);
     return { answer: answer || '（视觉模型未给出有效回答）' }
   } catch (e: any) {
     return { error: `查看图片失败:${e?.message || '未知错误'}` }
