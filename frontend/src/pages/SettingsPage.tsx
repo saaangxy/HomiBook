@@ -15,7 +15,19 @@ import { useAuthStore } from '@/stores/auth'
 import { AIAssistantSettings } from '@/components/ai/AISettings'
 import { AIMemorySettings } from '@/components/ai/AIMemorySettings'
 import { DataMigrationPanel } from '@/components/backup/DataMigrationPanel'
-import { Bot, Brain, Info, ExternalLink, Database } from 'lucide-react'
+import { Bot, Brain, Info, ExternalLink, Database, RefreshCw, Loader2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+
+/** 与 backend/src/services/github-release.ts 的 LatestReleaseInfo 对应 */
+interface LatestRelease {
+  current: string
+  latest: string | null
+  hasUpdate: boolean
+  releaseUrl: string | null
+  publishedAt: string | null
+  releaseName: string | null
+  error: string | null
+}
 
 export function SettingsPage() {
   const { user } = useAuthStore()
@@ -26,6 +38,27 @@ export function SettingsPage() {
   useEffect(() => {
     fetch('/api/version').then(r => r.json()).then(d => setAppVersion(d.version)).catch(() => {})
   }, [])
+
+  // 检查更新:由服务端比对 GitHub Release(见 backend/src/services/github-release.ts)。
+  // 失败不抛错,原因以 error 字段返回,这里只做提示
+  const [release, setRelease] = useState<LatestRelease | null>(null)
+  const [checking, setChecking] = useState(false)
+  const [checkError, setCheckError] = useState('')
+
+  const checkUpdate = async () => {
+    setChecking(true)
+    setCheckError('')
+    try {
+      const res = await fetch('/api/version/latest')
+      const data = await res.json() as LatestRelease
+      if (data.error) setCheckError(data.error)
+      else setRelease(data)
+    } catch {
+      setCheckError('检查更新失败')
+    } finally {
+      setChecking(false)
+    }
+  }
 
   // 折叠面板状态，about 默认展开
   const [accordionValue, setAccordionValue] = useState<string[]>(['about'])
@@ -119,6 +152,31 @@ export function SettingsPage() {
                 <span className="text-muted-foreground">版本</span>
                 <span className="font-medium">v{appVersion || '—'}</span>
               </div>
+
+              {/* 检查更新:最新版本提示紧跟在版本下方 */}
+              <div className="flex items-center justify-between gap-3 pt-1">
+                <Button size="sm" variant="outline" onClick={checkUpdate} disabled={checking}>
+                  {checking ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                  {checking ? '检查中…' : '检查更新'}
+                </Button>
+                <span className="text-xs">
+                  {checkError
+                    ? <span className="text-destructive">{checkError}</span>
+                    : release && (release.hasUpdate ? (
+                      <a
+                        href={release.releaseUrl ?? 'https://github.com/saaangxy/HomiBook/releases'}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-medium text-primary hover:underline"
+                      >
+                        发现新版本 v{release.latest}
+                      </a>
+                    ) : (
+                      <span className="text-muted-foreground">已是最新版本</span>
+                    ))}
+                </span>
+              </div>
+
               <div className="flex justify-between">
                 <span className="text-muted-foreground">开发者</span>
                 <span className="font-medium">saaangxy</span>

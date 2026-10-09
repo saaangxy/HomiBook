@@ -18,6 +18,7 @@ import { chatRoutes } from './routes/chat.js'
 import { seedDefaults } from './seed.js'
 import { startScheduler } from './services/scheduler.js'
 import { APP_VERSION } from './version.js'
+import { checkLatestRelease } from './services/github-release.js'
 
 /** 启动时打印数据库信息（隐藏连接串中的凭据） */
 function printDatabaseInfo() {
@@ -61,6 +62,10 @@ async function main() {
 
   // 版本信息
   app.get('/api/version', async () => ({ version: APP_VERSION }))
+
+  // 最新版本:比对 GitHub Release 判断是否有更新(两端「关于」的检查更新按钮共用)。
+  // 网络不通/无 Release 不返回错误码,而是把原因放在 error 字段,交给界面提示
+  app.get('/api/version/latest', async () => checkLatestRelease())
 
   // 启动（端口可通过环境变量 PORT 配置，默认 3002）
   const PORT = Number(process.env.PORT) || 3002

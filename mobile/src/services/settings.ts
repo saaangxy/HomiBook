@@ -177,3 +177,19 @@ export async function fetchAppVersion(): Promise<string> {
   const res = await http.get<{ version: string }>('/api/version').catch(() => null);
   return res?.version ?? '';
 }
+
+/** 与 backend/src/services/github-release.ts 的 LatestReleaseInfo 对应 */
+export interface LatestRelease {
+  current: string;
+  latest: string | null;
+  hasUpdate: boolean;
+  releaseUrl: string | null;
+  publishedAt: string | null;
+  releaseName: string | null;
+  error: string | null;
+}
+
+/** 比对 GitHub Release 判断是否有新版本(由服务端代理,失败以 error 字段返回而不抛错) */
+export async function fetchLatestRelease(): Promise<LatestRelease> {
+  return http.get<LatestRelease>('/api/version/latest');
+}

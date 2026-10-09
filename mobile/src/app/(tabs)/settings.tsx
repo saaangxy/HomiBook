@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Linking, Pressable, View } from 'react-native';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
-import { Bot, Brain, ChevronDown, ChevronRight, CircleUserRound, ExternalLink, Key, LogOut, MessageSquareText, Palette, Server, ServerCog, Smartphone, User } from 'lucide-react-native';
+import { Bot, Brain, ChevronDown, ChevronRight, CircleUserRound, ExternalLink, Key, LogOut, MessageSquareText, Palette, RefreshCw, Server, ServerCog, Smartphone, User } from 'lucide-react-native';
 import { useTheme, alpha, haptics } from '@/theme';
 import { useAuth } from '@/stores/auth';
 import { Screen } from '@/components/Screen';
@@ -13,7 +13,7 @@ import { ApiKeyManager } from '@/components/settings/Managers';
 import { UserMemorySettings } from '@/components/ai/UserMemorySettings';
 import { AIAssistantSettings } from '@/components/settings/AIAssistantSettings';
 import { ConfirmProvider } from '@/components/chrome/ConfirmSheet';
-import { fetchAppVersion } from '@/services/settings';
+import { fetchAppVersion, fetchLatestRelease, type LatestRelease } from '@/services/settings';
 
 // 设置分区标题(App / 服务器)
 function GroupTitle({ title }: { title: string }) {
@@ -46,9 +46,58 @@ function useAboutRows() {
   useEffect(() => { fetchAppVersion().then(setServerVersion); }, []);
   const appVersion = Constants.expoConfig?.version ?? '';
 
+  // 检查更新:由服务端比对 GitHub Release(见 backend/src/services/github-release.ts)。
+  // 失败只提示,不抛错、不影响其它功能
+  const [release, setRelease] = useState<LatestRelease | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [checkError, setCheckError] = useState('');
+
+  const checkUpdate = useCallback(async () => {
+    if (checking) return;
+    haptics.tap();
+    setChecking(true);
+    setCheckError('');
+    try {
+      const data = await fetchLatestRelease();
+      if (data.error) setCheckError(data.error);
+      else setRelease(data);
+    } catch (e) {
+      setCheckError(e instanceof Error ? e.message : '检查更新失败');
+    } finally {
+      setChecking(false);
+    }
+  }, [checking]);
+
   const rows: { icon: React.ReactNode; label: string; right: React.ReactNode; onPress?: () => void }[] = [
     { icon: <Smartphone size={15} color={colors.primary} />, label: 'App 版本', right: <Text variant="muted" style={{ fontSize: 13 }}>{appVersion ? `v${appVersion}` : '—'}</Text> },
     { icon: <Server size={15} color={colors.primary} />, label: '服务端版本', right: <Text variant="muted" style={{ fontSize: 13 }}>{serverVersion ? `v${serverVersion}` : '—'}</Text> },
+
+    // 最新版本:点「检查更新」后出现,紧跟在版本行下方;有新版本时整行可点,直达 Release 页
+    ...(release?.latest
+      ? [{
+        icon: <RefreshCw size={15} color={colors.primary} />,
+        label: '最新版本',
+        right: (
+          <Text style={{ fontSize: 13, fontWeight: release.hasUpdate ? '600' : '400', color: release.hasUpdate ? colors.primary : colors.mutedForeground }}>
+            {release.hasUpdate ? `v${release.latest} · 有新版本` : `v${release.latest} · 已是最新`}
+          </Text>
+        ),
+        onPress: release.hasUpdate
+          ? () => { Linking.openURL(release.releaseUrl ?? 'https://github.com/saaangxy/HomiBook/releases').catch(() => {}); }
+          : undefined,
+      }]
+      : []),
+
+    {
+      icon: <RefreshCw size={15} color={colors.primary} />, label: '检查更新',
+      right: checking
+        ? <Text variant="muted" style={{ fontSize: 13 }}>检查中…</Text>
+        : checkError
+          ? <Text style={{ fontSize: 13, color: colors.destructive }}>{checkError}</Text>
+          : <Text variant="muted" style={{ fontSize: 13 }}>{release ? '点击重新检查' : '点击检查'}</Text>,
+      onPress: checkUpdate,
+    },
+
     { icon: <User size={15} color={colors.primary} />, label: '开发者', right: <Text variant="muted" style={{ fontSize: 13 }}>saaangxy</Text> },
     {
       icon: <ExternalLink size={15} color={colors.primary} />, label: 'GitHub 仓库',
