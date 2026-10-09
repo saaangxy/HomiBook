@@ -3,7 +3,7 @@ import { ActivityIndicator, BackHandler, FlatList, Image, NativeScrollEvent, Nat
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import Markdown from 'react-native-markdown-display';
-import { Bot, Brain, ChevronDown, ChevronLeft, ChevronRight, FileText, FileUp, Globe, ImagePlus, List, Plus, RefreshCw, Send, Sparkles, StopCircle, Trash2, X } from 'lucide-react-native';
+import { Bot, Brain, ChevronDown, ChevronLeft, ChevronRight, FileText, FileUp, Globe, ImagePlus, List, Pencil, Plus, RefreshCw, Send, Sparkles, StopCircle, Trash2, X } from 'lucide-react-native';
 import { useTheme, alpha, haptics } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { LoadingState } from '@/components/ui/LoadingState';
@@ -41,6 +41,14 @@ function timeAgo(iso: string): string {
   return `${d.getMonth() + 1}月${d.getDate()}日`;
 }
 
+/** 取消息的全部文本内容(与 web MessageBubble.getMessageText 同口径) */
+function getMessageText(message: Message): string {
+  return message.blocks
+    .filter((b): b is Extract<MessageBlock, { type: 'text' }> => b.type === 'text')
+    .map((b) => b.content)
+    .join('\n');
+}
+
 // 空状态快捷指令(点击填入输入框,降低上手门槛)
 const QUICK_PROMPTS = ['本月花了多少？', '餐饮超预算了吗？', '帮我分析支出趋势'];
 
@@ -54,6 +62,9 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
 
   const [input, setInput] = useState('');
   const [webSearch, setWebSearch] = useState(true);
+  /** 编辑态:非 null 表示正在编辑这条用户消息(复用下方输入框,提交走与 web 一致的「同父分支」逻辑) */
+  const [editingMsg, setEditingMsg] = useState<Message | null>(null);
+  const inputRef = useRef<TextInput>(null);
   const [pendingImages, setPendingImages] = useState<{ id: string; uri: string; fullUrl: string; originalFilename: string }[]>([]);
   const [sessionListOpen, setSessionListOpen] = useState(false);
   /** 待确认删除的会话:抽屉里的删除是危险操作,先弹确认再执行 */
@@ -191,7 +202,48 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
     sendMessage(bookId, msg, parentId, undefined, attachmentIds.length ? attachmentIds : undefined, webSearch, localAttachments);
   };
 
+  /**
+   * 点击自己的文本消息 ⇒ 用**下方已有输入框**进入编辑态。
+   * 与 web 一致:只对「含文本的用户消息」开放;流式中不可编辑(内容还在变)。
+   */
+  const beginEdit = (item: Message) => {
+    if (isStreaming) return;
+    const text = getMessageText(item);
+    if (!text.trim()) return;
+    setPendingImages([]); // 编辑的是既有消息,待发附件先清掉,避免混入
+    setEditingMsg(item);
+    setInput(text);
+    haptics.tap();
+    inputRef.current?.focus();
+  };
+
+  const cancelEdit = () => {
+    setEditingMsg(null);
+    setInput('');
+  };
+
+  /**
+   * 编辑重发:与 web ChatWindow.handleEditSubmit 同一套逻辑 ——
+   * 新消息挂在「被编辑消息的 parentMessageId」下,于是它与被编辑的那条成为**兄弟**,
+   * 形成可切换的版本分支(而不是在末尾新发一条);附件沿用原消息(改完文字不该丢图/文件)。
+   * 注:本端 sendMessage 第 6 参是 enableWebSearch、第 7 参才是 localAttachments。
+   */
+  const submitEdit = () => {
+    const target = editingMsg;
+    const newText = input.trim();
+    if (!target || !newText || !bookId) return;
+    const idx = messages.findIndex((m) => m.id === target.id);
+    if (idx < 0) return;
+    const attachments = messages[idx].attachments;
+    setEditingMsg(null);
+    setInput('');
+    haptics.tap();
+    sendMessage(bookId, newText, messages[idx].parentMessageId, undefined, attachments?.map((a) => a.id), undefined, attachments);
+  };
+
   const handleSend = () => {
+    // 编辑态下发送 = 提交编辑(生成新版本),不再新发一条消息
+    if (editingMsg) { submitEdit(); return; }
     const msg = input.trim();
     if (!msg && pendingImages.length === 0) return;
     setInput('');
@@ -407,12 +459,17 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
                 </Pressable>
               </View>
             )}
-            {/* 用户气泡:主色,右上角收窄(web: rounded-2xl rounded-tr-md) */}
-            <View style={[bubbleBase, { backgroundColor: colors.primary, borderTopRightRadius: 5 }]}>
+            {/* 用户气泡:主色,右上角收窄(web: rounded-2xl rounded-tr-md)。
+                点击气泡本体 ⇒ 用下方输入框进入编辑态;附件区留在可点区域之外,不受影响 */}
+            <Pressable
+              onPress={() => beginEdit(item)}
+              disabled={isStreaming || !item.blocks.some((b) => b.type === 'text' && b.content.trim())}
+              style={[bubbleBase, { backgroundColor: colors.primary, borderTopRightRadius: 5 }]}
+            >
               <View style={{ gap: 6 }}>
                 {item.blocks.map((b) => renderBlock(b, true))}
               </View>
-            </View>
+            </Pressable>
             {item.attachments && item.attachments.length > 0 && (
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end' }}>
                 {(() => {
@@ -567,6 +624,16 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
 
       {/* 输入区(仿网页组合式输入框:文本框在上,工具行在下,发送靠右) */}
       <View style={{ paddingHorizontal: 12, paddingTop: 6, paddingBottom: 8, borderTopWidth: 1, borderTopColor: colors.hairline }}>
+        {/* 编辑态提示:点明「发送 = 生成新版本」,并提供取消 */}
+        {editingMsg && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingBottom: 6 }}>
+            <Pencil size={12} color={colors.primary} />
+            <Text numberOfLines={1} style={{ flex: 1, fontSize: 11.5, color: colors.primary }}>正在编辑消息 · 发送后生成新版本</Text>
+            <Pressable hitSlop={8} onPress={cancelEdit} style={composerBtn}>
+              <X size={14} color={colors.mutedForeground} />
+            </Pressable>
+          </View>
+        )}
         {pendingImages.length > 0 && (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingBottom: 8 }}>
             {(() => {
@@ -597,9 +664,10 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
         )}
         <View style={{ borderRadius: 20, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.elevated, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 7 }}>
           <TextInput
+            ref={inputRef}
             value={input}
             onChangeText={setInput}
-            placeholder="输入消息…"
+            placeholder={editingMsg ? '修改后发送(生成新版本)…' : '输入消息…'}
             placeholderTextColor={colors.mutedForeground}
             style={{ minHeight: 34, maxHeight: 108, color: colors.foreground, fontSize: 14, lineHeight: 19, paddingHorizontal: 2, paddingVertical: 4 }}
             multiline
