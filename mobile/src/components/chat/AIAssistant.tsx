@@ -184,10 +184,9 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
       });
       return;
     }
-    let parentId: string | undefined;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].dbId) { parentId = messages[i].dbId; break; }
-    }
+    // 父 = 对话末端的消息：只认 DB id，尚未落库的临时 msg-* 一律丢空
+    // （发给后端会写入指向不存在消息的外键）。移动端没有 web 的 greeting 锚点。
+    const parentId = messages[messages.length - 1]?.dbId;
     sendMessage(bookId, msg, parentId, undefined, attachmentIds.length ? attachmentIds : undefined, webSearch, localAttachments);
   };
 
@@ -279,10 +278,9 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
     const attachments = prev.attachments;
     if (!text && !attachments?.length) return;
     const assistantDbId = messages[idx].dbId || messages[idx].id;
-    let parentId: string | undefined;
-    for (let i = idx - 2; i >= 0; i--) {
-      if (messages[i].dbId) { parentId = messages[i].dbId; break; }
-    }
+    // 重试要顶替被重试的那一轮：新消息与被重试的前一条用户消息同父，
+    // 否则会被插到别处、旧回复也不被替换（原「往前找 dbId」会跳过本地父而错位）
+    const parentId = prev.parentMessageId;
     retryMessage(assistantMsgId);
     // replaceAssistantDbId 告知后端删除旧回复并重新生成
     // 注:本端 sendMessage 第 6 参是 enableWebSearch、第 7 参才是 localAttachments

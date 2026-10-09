@@ -650,8 +650,13 @@ export const useChatStore = create<ChatState>()((set, get) => {
       applyFinishPatch(set, sid, assistantMsgId, event)
     })
 
+    // 本地锚点 greeting 不是 DB 消息：它只服务于前端的分支归属，
+    // 发给后端要折算成 undefined，否则库里会存一个指向不存在消息的 parentMessageId
+    // （老数据里首条消息就残留了这种值）。临时 msg-* 在调用方已被过滤，这里只处理 greeting。
+    const dbParentId = parentMessageId === 'greeting' ? undefined : parentMessageId
+
     const controller = sendMessageStream(
-      { sessionId: sid, accountBookId, message, parentMessageId, replaceAssistantDbId, attachmentIds, enableWebSearch },
+      { sessionId: sid, accountBookId, message, parentMessageId: dbParentId, replaceAssistantDbId, attachmentIds, enableWebSearch },
       handleEvent,
       handleDone,
     )

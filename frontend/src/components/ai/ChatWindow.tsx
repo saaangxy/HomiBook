@@ -194,7 +194,16 @@ export function ChatWindow() {
           ...(m.injections?.length ? { injections: m.injections } : {}),
         }
       })
-      setSessionData(id, parsed.length > 0 ? parsed : [greetingMsg])
+      // 老数据里首条消息的 parent 为空（当时前端还没用 greeting 做锚点），它自成「根」；
+      // 而 buildActivePath 在根级别不做择一 ⇒ 编辑首条时新旧两条会并列、没有版本切换。
+      // 这里把「无父的 user 消息」统一挂到 greeting 下并把 greeting 补进集合，让它重新参与分支择一。
+      const needsGreeting = parsed.some(
+        (m) => m.parentMessageId === 'greeting' || (m.role === 'user' && !m.parentMessageId),
+      )
+      const normalized = needsGreeting
+        ? parsed.map((m) => (m.role === 'user' && !m.parentMessageId ? { ...m, parentMessageId: 'greeting' } : m))
+        : parsed
+      setSessionData(id, needsGreeting ? [greetingMsg, ...normalized] : (parsed.length > 0 ? parsed : [greetingMsg]))
     } catch {
       // 拉取失败:清掉占位条目,否则下次切回来会被 hasCachedSession 当成「已缓存」而不再拉取
       clearSessionData(id)
@@ -259,11 +268,11 @@ export function ChatWindow() {
     if ((!msg && pendingFiles.length === 0 && !hasPreset) || !currentBookId || isCurrentStreaming) return
     setInput('')
 
-    // 向前找最后一个有 dbId 的消息，避免把临时 msg-* ID 当作 parentId 发给后端
-    let parentId: string | undefined
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].dbId) { parentId = messages[i].dbId; break }
-    }
+    // 父 = 对话末端的消息：有 dbId 直接用；是本地锚点 greeting 就保留（前端靠它归属分支）。
+    // 尚未落库的临时 msg-* 一律丢空 —— 发给后端会写入指向不存在消息的外键（84d70a1 修的就是它）。
+    // 只认最后一条，比「往前找第一个有 dbId 的」更准：发送时流一定已结束，末端要么有 dbId、要么是 greeting。
+    const tail = messages[messages.length - 1]
+    const parentId = tail?.dbId || (tail?.id === 'greeting' ? 'greeting' : undefined)
 
     // 附件一律当普通附件发出(模型只对图片做视觉直读,其余进附件清单)。
     // preset 是已经在别处上传好的附件(工具栏「导入账单」入口:账单文件先落成附件,再把 attachmentId 交给 AI)。
@@ -313,11 +322,11 @@ export function ChatWindow() {
     // 编辑重发同样要带上原附件:否则改完文字后图片/文件就丢了
     const attachments = idx >= 0 ? messages[idx].attachments : undefined
     const attachmentIds = attachments?.map((a) => a.id)
-    // 向前找最后一个有 dbId 的消息
-    let parentId: string | undefined
-    for (let i = idx - 1; i >= 0; i--) {
-      if (messages[i].dbId) { parentId = messages[i].dbId; break }
-    }
+    // 编辑重发 = 在原位置「新开一条分支」：新消息必须与被编辑消息同父，
+    // 否则两条会各成一支（既不出现版本切换，也不互相替换）。
+    // 所以直接用被编辑消息自己的 parentMessageId，不再「往前找带 dbId 的消息」——
+    // 那种查找会跳过 greeting / 本地父，导致新旧的父不一致（版本分支消失）。
+    const parentId = idx >= 0 ? messages[idx].parentMessageId : undefined
 
     if (!currentSessionId) {
       const title = newText.length > 30 ? newText.slice(0, 30) + '...' : newText
@@ -350,11 +359,9 @@ export function ChatWindow() {
     if (!text && !attachments?.length) return
 
     const assistantDbId = messages[idx].dbId || messages[idx].id
-    // 向前找最后一个有 dbId 的消息（跳过被重试的助手消息和其前面的用户消息）
-    let parentId: string | undefined
-    for (let i = idx - 2; i >= 0; i--) {
-      if (messages[i].dbId) { parentId = messages[i].dbId; break }
-    }
+    // 重试同理：新的用户消息要顶替被重试的那一轮（与被重试的前一条用户消息同父），
+    // 否则会插到别处、旧回复也不被替换。用 prevUserMsg 自己的 parentMessageId。
+    const parentId = prevUserMsg.parentMessageId
 
     // 先清理本地状态
     retryMessage(assistantMsgId)
