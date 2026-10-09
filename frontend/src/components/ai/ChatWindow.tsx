@@ -310,6 +310,9 @@ export function ChatWindow() {
   const handleEditSubmit = (msgId: string, newText: string) => {
     if (!currentBookId || isCurrentStreaming) return
     const idx = messages.findIndex((m) => m.id === msgId)
+    // 编辑重发同样要带上原附件:否则改完文字后图片/文件就丢了
+    const attachments = idx >= 0 ? messages[idx].attachments : undefined
+    const attachmentIds = attachments?.map((a) => a.id)
     // 向前找最后一个有 dbId 的消息
     let parentId: string | undefined
     for (let i = idx - 1; i >= 0; i--) {
@@ -321,12 +324,12 @@ export function ChatWindow() {
       createSession({ accountBookId: currentBookId, title }).then((res) => {
         setSessions([res.session, ...sessions])
         setCurrentSession(res.session.id)
-        sendMessage(currentBookId, newText, parentId)
+        sendMessage(currentBookId, newText, parentId, undefined, attachmentIds, attachments)
       })
       return
     }
 
-    sendMessage(currentBookId, newText, parentId)
+    sendMessage(currentBookId, newText, parentId, undefined, attachmentIds, attachments)
   }
 
   // 重试：清理本地状态后重新生成
@@ -340,7 +343,11 @@ export function ChatWindow() {
       .filter((b) => b.type === 'text')
       .map((b) => b.content)
       .join('\n')
-    if (!text) return
+    // 附件随原消息一起重发:否则新插入的用户消息没有附件 —— 模型既看不到图,也收不到
+    // 附件清单(表现为「重试后 AI 忘了刚才那张图/那个账单文件」)。纯图片消息(无文本)
+    // 同样允许重试(后端 schema 要求「文本或附件至少一个」)。
+    const attachments = prevUserMsg.attachments
+    if (!text && !attachments?.length) return
 
     const assistantDbId = messages[idx].dbId || messages[idx].id
     // 向前找最后一个有 dbId 的消息（跳过被重试的助手消息和其前面的用户消息）
@@ -352,7 +359,7 @@ export function ChatWindow() {
     // 先清理本地状态
     retryMessage(assistantMsgId)
     // 再发送新消息（replaceAssistantDbId 告诉后端删除旧消息）
-    sendMessage(currentBookId, text, parentId, assistantDbId)
+    sendMessage(currentBookId, text, parentId, assistantDbId, attachments?.map((a) => a.id), attachments)
   }
 
   // ---- 导入 ----

@@ -16,6 +16,7 @@ import { saveImportMappingTool } from './save-import-mapping.js'
 import { previewImportTool } from './preview-import.js'
 import { confirmImportTool } from './confirm-import.js'
 import { ocrReceiptTool } from './ocr-receipt.js'
+import { viewImageTool } from './view-image.js'
 // 固定收支/贷款
 import { queryRecurringTool } from './query-recurring.js'
 import { createRecurringTool } from './create-recurring.js'
@@ -124,6 +125,7 @@ export const TOOL_GROUPS: { label: string; tools: ToolDef[] }[] = [
       previewImportTool,
       confirmImportTool,
       ocrReceiptTool,
+      viewImageTool,
     ],
   },
   {

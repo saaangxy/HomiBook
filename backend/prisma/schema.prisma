@@ -149,6 +149,14 @@ model RecordAttachment {
   path             String                   // 文件存储路径
   originalFilename String                   // 原始文件名
   createdAt        DateTime                 @default(now())
+  // ---- 图片内容的「文字化」结果(见 services/ai/image-context.ts) ----
+  // 首轮用多模态/视觉模型读图,把描述、OCR 全文、关键结构化字段写到这些列上;
+  // 之后的历史轮次只带「attachmentId + 摘要」,不再每轮重发 base64(省 token 且不打断前缀缓存)。
+  // visionAt 非空即表示已生成(缓存命中,不再重复调用视觉模型)。
+  visionSummary    String?
+  visionText       String?
+  visionMeta       String?                  // JSON 字符串:金额/日期/交易方/关键对象等
+  visionAt         DateTime?
   record           Record?                  @relation(fields: [recordId], references: [id], onDelete: Cascade)
   chatMessages     ChatMessageAttachment[]  // 引用此附件的聊天消息
 }

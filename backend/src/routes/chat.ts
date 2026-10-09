@@ -14,7 +14,8 @@ import { ALL_TOOLS, TOOL_GROUPS, storeImportOverrides, peekImportOverrides } fro
 import { buildConfirmPreview } from '../services/ai/confirm-preview.js'
 import { sendMessageSchema, createSessionSchema, updateSessionSchema, confirmActionSchema, updateAIConfigSchema, createProviderConfigSchema, updateProviderConfigSchema } from '../schemas/chat.js'
 import { detectSkills } from '../services/ai/skills/index.js'
-import { INJECT_ROLE, buildAttachmentSection, foldInjections, persistInjectionIfChanged, summarizeInjection } from '../services/ai/context-inject.js'
+import { INJECT_ROLE, buildAttachmentSection, foldInjections, inheritInjections, persistInjectionIfChanged, summarizeInjection } from '../services/ai/context-inject.js'
+import { ensureImageTextContexts } from '../services/ai/image-context.js'
 import { dedupeToolCalls, nextToolCallId } from '../services/ai/tool-call-id.js'
 import { loadMemoriesForPrompt, listMemories, deleteMemory, updateMemory } from '../services/ai/memory.js'
 import { estimateTokens } from '../services/ai/token-estimate.js'
@@ -226,6 +227,8 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
     aiTools[tool.name] = {
       description: tool.description,
       inputSchema: jsonSchema(tool.parameters as Record<string, unknown>),
+      // 工具可自带 toModelOutput:把结果转成模型可见的内容(如 view_image 把图片按需注入当轮)
+      ...(tool.toModelOutput ? { toModelOutput: tool.toModelOutput } : {}),
       execute: async (args: any) => {
         const start = Date.now()
         // id 必须唯一:并行调用同名工具时时间戳相同,重复 id 会让上游拒绝整个会话(见 tool-call-id.ts)
@@ -884,7 +887,15 @@ export async function chatRoutes(app: FastifyInstance) {
     })
 
     // 重试：删除被替换的助手消息及其所有后继（按 parentMessageId 链向下删除）
+    // 顺带记下「被替换的那条用户消息」—— 它的注入消息要继承给新消息（见 inheritInjections）
+    let retriedUserId: string | null = null
     if (parsed.data.replaceAssistantDbId) {
+      const replaced = await prisma.chatMessage.findUnique({
+        where: { id: parsed.data.replaceAssistantDbId },
+        select: { parentMessageId: true },
+      })
+      retriedUserId = replaced?.parentMessageId ?? null
+
       let idsToDelete = [parsed.data.replaceAssistantDbId]
       while (idsToDelete.length > 0) {
         await prisma.chatMessage.deleteMany({ where: { id: { in: idsToDelete } } })
@@ -917,8 +928,17 @@ export async function chatRoutes(app: FastifyInstance) {
       historyIds.push(...chainIds)
     }
 
+    // 图片附件先做「文字化」:描述/OCR 全文/关键字段随附件信息一起注入,并缓存到附件记录上。
+    // 这样后续轮次的历史里只剩文本,模型仍「记得」图片内容,不必每轮重发 base64
+    // (见 services/ai/image-context.ts)。非图片附件(账单 csv/xlsx 等)不参与。
+    const imageAttachments = attachments.filter(a => IMAGE_EXT_RE.test(a.originalFilename))
+    const imageTextContexts = await ensureImageTextContexts(
+      imageAttachments.map(a => ({ id: a.id, path: a.url, originalFilename: a.originalFilename })),
+      userId,
+    )
+
     // 附件清单改走「注入消息」下发(以前只拼在请求文本里不落库,下一轮重放文本不同会在此处丢缓存)
-    const attachmentSection = buildAttachmentSection(attachments)
+    const attachmentSection = buildAttachmentSection(attachments, imageTextContexts)
     // 技能检测仍用「用户原文 + 附件信息」(导入/图片账单等技能靠其中的标记触发)
     const fullMessage = attachmentSection ? `${message}\n\n${attachmentSection}` : message
 
@@ -936,6 +956,14 @@ export async function chatRoutes(app: FastifyInstance) {
       await prisma.chatMessageAttachment.createMany({
         data: attachments.map(a => ({ messageId: userMsgDb.id, attachmentId: a.id })),
       })
+    }
+
+    // 重试：把「被替换的那条用户消息」的注入（日期/记忆/技能）继承到新消息上。
+    // 不做的话新一轮只能拿到「附件清单」那一段 —— 日期/记忆/技能是会话级差量、不会重复写，
+    // 而旧消息已不在历史链上，模型这一轮就完全看不到它们了。
+    // 附件段由下面 persistInjectionIfChanged 重新生成（继承时会剥掉，见 inheritInjections）。
+    if (retriedUserId && retriedUserId !== userMsgDb.id) {
+      await inheritInjections(retriedUserId, userMsgDb.id).catch(() => {})
     }
 
     // 查询账本名称用于提示词
@@ -978,7 +1006,7 @@ export async function chatRoutes(app: FastifyInstance) {
     const baseURL = activeConfig?.baseURL || (await loadBaseURL(route.provider))
 
     // 多模态主模型：消息含图片附件时直接注入图片，并禁用 OCR 工具（改用多模态直读技能提示词）
-    const imageAttachments = attachments.filter(a => IMAGE_EXT_RE.test(a.originalFilename))
+    // 注:imageAttachments 已在构造附件注入段时算出(那里要先做图片文字化)
     const isMultimodalImage = !!activeConfig?.multimodal && imageAttachments.length > 0
     if (isMultimodalImage) {
       effectiveDisabledTools = [...new Set([...effectiveDisabledTools, 'ocr_receipt'])]

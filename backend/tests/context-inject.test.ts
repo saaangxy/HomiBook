@@ -4,6 +4,7 @@ import {
   foldInjections,
   parseInjectedState,
   planInjection,
+  stripAttachmentSection,
   summarizeInjection,
   type InjectedState,
 } from '../src/services/ai/context-inject.js'
@@ -133,6 +134,29 @@ describe('summarizeInjection(写入与解析成对维护)', () => {
     expect(names(`${IMPORT_MESSAGE_PREFIX}微信账单文件`)).toContain('import-transactions')
   })
 
+  it('带图片文字化结果时,摘要随附件段一起注入(后续轮次凭它「记得」图片)', () => {
+    const section = buildAttachmentSection(
+      [{ id: 'a1', originalFilename: '小票.png' }],
+      new Map([['a1', {
+        summary: '一张星巴克小票,合计 38.00 元',
+        text: '星巴克\n合计 38.00\n2026-09-17',
+        meta: { amount: 38, counterparty: '星巴克' },
+      }]]),
+    )
+
+    expect(section).toContain('attachmentId: a1')
+    expect(section).toContain('内容摘要: 一张星巴克小票,合计 38.00 元')
+    expect(section).toContain('识别文本: 星巴克')
+    expect(section).toContain('关键信息: {"amount":38')
+    // 摘要里的空行不能把注入段切成多块(summarizeInjection 按 \n\n 分段),否则附件段会被截断
+    expect(section).not.toMatch(/\n{3,}/)
+    expect(summarizeInjection(section).hasAttachments).toBe(true)
+
+    // 没有文字化结果时退回原来的纯清单形态
+    // 注:段尾的说明文本本身含「内容摘要」这个词,故用带冒号的形态断言
+    expect(buildAttachmentSection([{ id: 'a2', originalFilename: 'x.png' }])).not.toContain('内容摘要: ')
+  })
+
   it('只注入记忆(未跨天)时日期为 null,记忆仍可解析', () => {
     const state: InjectedState = { date: '2026-09-17', memoryIds: [], skills: [] }
     const plan = planInjection(state, { today: '2026-09-17', memories: [MEM_A], skills: [] })
@@ -171,5 +195,27 @@ describe('foldInjections(注入折叠,两个装配路径共用)', () => {
     const messages = [{ role: 'user', content: [{ type: 'text', text: 'Q' }] }]
     foldInjections(messages, ['u1'], [{ parentMessageId: 'u1', content: 'X' }])
     expect(Array.isArray(messages[0].content)).toBe(true)
+  })
+})
+
+describe('stripAttachmentSection(重试继承注入时剥掉附件段)', () => {
+  it('只剥附件段,日期/记忆/技能段原样保留', () => {
+    const content = [
+      '[系统追加的上下文,仅供你参考,不要在回复中复述]',
+      '今天是 2026-10-08。',
+      '以下是用户的长期记忆(供参考):\n- [偏好] 外卖归入餐饮',
+      buildAttachmentSection([{ id: 'a1', originalFilename: '小票.png' }]),
+    ].join('\n\n')
+
+    const kept = stripAttachmentSection(content)
+    expect(kept).toContain('今天是 2026-10-08。')
+    expect(kept).toContain('外卖归入餐饮')
+    expect(kept).not.toContain('attachmentId: a1')
+    expect(kept).not.toContain('[附件信息]')
+  })
+
+  it('没有附件段时原样返回', () => {
+    const content = '[系统追加的上下文,仅供你参考,不要在回复中复述]\n\n今天是 2026-10-08。'
+    expect(stripAttachmentSection(content)).toBe(content)
   })
 })

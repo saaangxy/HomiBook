@@ -35,13 +35,96 @@ const ATTACHMENT_MARK = '[附件信息]'
  * 「用户原文 + 本段」,这里出现该标记会让每条带附件的消息都激活导入技能。
  */
 const ATTACHMENT_SCOPE_NOTE =
-  '说明:以上 attachmentId 是这些附件在系统里的唯一标识 —— 图片识别、账单导入、流水附件关联都用它;调用工具时直接引用,不要用文件名或其它 id。'
+  '说明:以上 attachmentId 是这些附件在系统里的唯一标识 —— 图片识别、账单导入、流水附件关联都用它;调用工具时直接引用,不要用文件名或其它 id。' +
+  '图片的「内容摘要/识别文本/关键信息」是系统预先读出的文字内容:后续轮次凭这些文字作答即可,不要重复识别;' +
+  '仅当用户追问图片的视觉细节(版面排版、位置、印章、商品外观等)时,才调用 view_image(把要确认的细节写进 question),由视觉模型看图后作答。'
 
-/** 构造附件清单注入段(空数组返回空串,表示本轮不注入) */
-export function buildAttachmentSection(attachments: { id: string; originalFilename: string }[]): string {
+/** 图片文字化结果的最小形状(完整定义见 services/ai/image-context.ts;此处只取用得到的字段) */
+export interface AttachmentTextContext {
+  summary: string
+  text: string
+  meta: Record<string, unknown> | null
+}
+
+/** 注入段里的正文上限:够模型「记得」即可,细节留给 view_image */
+const ATTACHMENT_TEXT_LIMIT = 600
+
+/**
+ * 构造附件清单注入段(空数组返回空串,表示本轮不注入)。
+ *
+ * 带 contexts 时会把图片的**文字化结果**一并写入 —— 这段文本会随注入消息落库,
+ * 所以后续轮次从 DB 重放历史时模型仍「记得」图片内容(图片本体只在首轮以 base64 下发)。
+ */
+export function buildAttachmentSection(
+  attachments: { id: string; originalFilename: string }[],
+  contexts?: Map<string, AttachmentTextContext>,
+): string {
   if (attachments.length === 0) return ''
-  const lines = attachments.map((a) => `attachmentId: ${a.id}\n文件名: ${a.originalFilename}`)
+  const lines = attachments.map((a) => {
+    const head = `attachmentId: ${a.id}\n文件名: ${a.originalFilename}`
+    const ctx = contexts?.get(a.id)
+    if (!ctx) return head
+    const parts = [head, `内容摘要: ${oneLine(ctx.summary)}`]
+    if (ctx.text) parts.push(`识别文本: ${oneLine(ctx.text, ATTACHMENT_TEXT_LIMIT)}`)
+    if (ctx.meta && Object.keys(ctx.meta).length > 0) parts.push(`关键信息: ${JSON.stringify(ctx.meta)}`)
+    return parts.join('\n')
+  })
   return `${ATTACHMENT_MARK}\n${lines.join('\n')}\n${ATTACHMENT_SCOPE_NOTE}`
+}
+
+/** 去掉注入文本里的「附件清单」段(其余段原样保留) */
+export function stripAttachmentSection(content: string): string {
+  // 与 summarizeInjection 同一套分段口径(`\n\n`);附件段内部不会出现空行
+  // (buildAttachmentSection 用 oneLine 压过),所以按段过滤是安全的。
+  const sections = content.split('\n\n').filter((s) => !s.trimStart().startsWith(ATTACHMENT_MARK))
+  return sections.join('\n\n')
+}
+
+/** 注入文本除前缀外是否还有实际内容 */
+function hasContentBeyondPrefix(text: string): boolean {
+  const body = text.startsWith(INJECT_PREFIX) ? text.slice(INJECT_PREFIX.length) : text
+  return body.trim().length > 0
+}
+
+/**
+ * 重试:把「被替换的那条用户消息」的注入消息转挂到新的用户消息上。
+ *
+ * 为什么必须做:日期/记忆/技能都是**会话级差量**(已注入过就不再写),而重试走的是
+ * 「新建一条用户消息」的路径 —— 新一轮只会拿到「附件清单」那一段,日期/记忆/技能
+ * 则随旧消息一起被排除在历史链之外,模型这一轮就完全看不到它们了(表现为:重试后
+ * AI 忘了用户偏好/长期记忆)。
+ *
+ * 附件段会被**剥掉**:它必须由新一轮重新生成 —— 图片的文字化摘要可能是在两次之间
+ * 才生成出来的(`image-context.ts`),继承旧段会让新摘要永远进不了上下文。
+ */
+export async function inheritInjections(fromUserId: string, toUserId: string): Promise<void> {
+  const injects = await prisma.chatMessage.findMany({
+    where: { role: INJECT_ROLE, parentMessageId: fromUserId },
+    select: { id: true, content: true },
+  }).catch(() => [])
+
+  for (const inj of injects) {
+    const kept = stripAttachmentSection(inj.content)
+    if (!hasContentBeyondPrefix(kept)) {
+      // 只剩前缀(原本只有附件段)⇒ 交给新一轮的附件注入,旧消息直接删掉
+      await prisma.chatMessage.delete({ where: { id: inj.id } }).catch(() => {})
+      continue
+    }
+    await prisma.chatMessage.update({
+      where: { id: inj.id },
+      data: { content: kept, parentMessageId: toUserId, tokenCount: estimateTokens(kept) },
+    }).catch(() => {})
+  }
+}
+
+/**
+ * 压成干净的多行文本:连续空行折叠为一个换行(避免摘要里的空行把注入段切成多块,
+ * summarizeInjection 是按 `\n\n` 分段的),可选截断。
+ */
+function oneLine(text: string, limit?: number): string {
+  const compact = text.trim().replace(/\n{2,}/g, '\n')
+  if (!limit || compact.length <= limit) return compact
+  return compact.slice(0, limit) + '…'
 }
 
 /**

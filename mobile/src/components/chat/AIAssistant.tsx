@@ -273,7 +273,11 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
     const prev = messages[idx - 1];
     if (prev.role !== 'user') return;
     const text = prev.blocks.filter((b) => b.type === 'text').map((b) => b.content).join('\n');
-    if (!text) return;
+    // 附件随原消息一起重发:否则新插入的用户消息没有附件 —— 模型既看不到图,也收不到
+    // 附件清单(表现为「重试后 AI 忘了刚才那张图/那个账单文件」)。纯图片消息(无文本)
+    // 同样允许重试(后端 schema 要求「文本或附件至少一个」)。
+    const attachments = prev.attachments;
+    if (!text && !attachments?.length) return;
     const assistantDbId = messages[idx].dbId || messages[idx].id;
     let parentId: string | undefined;
     for (let i = idx - 2; i >= 0; i--) {
@@ -281,7 +285,8 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
     }
     retryMessage(assistantMsgId);
     // replaceAssistantDbId 告知后端删除旧回复并重新生成
-    sendMessage(bookId, text, parentId, assistantDbId);
+    // 注:本端 sendMessage 第 6 参是 enableWebSearch、第 7 参才是 localAttachments
+    sendMessage(bookId, text, parentId, assistantDbId, attachments?.map((a) => a.id), undefined, attachments);
   };
 
   /** 打开会话抽屉:顺手记下「今天」用于分组标题(见 todayKey 注释) */

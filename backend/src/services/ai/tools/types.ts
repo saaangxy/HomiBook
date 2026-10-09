@@ -23,4 +23,15 @@ export interface ToolDef {
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   validateArgs?: (args: any) => ToolResult | null
+  /**
+   * AI SDK:把工具结果转换成「模型可见的内容」(可含图片 part)。
+   *
+   * ⚠️ 当前**没有任何工具使用它**。原打算给 view_image 用(把图片作为 tool-result 的 content
+   * 当轮下发),但 openai-compatible 的 tool 消息**不支持图片 content** —— base64 会被当作文本
+   * 塞进 messages,实测单次请求炸到 320 万 token、上游直接 400(整轮对话中断)。
+   * 后改为「视觉问答」(让视觉模型看图后返回文字,见 tools/view-image.ts),与供应商能力解耦。
+   * 保留此字段,供将来对接原生支持多模态 tool-result 的供应商。
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  toModelOutput?: (opts: { toolCallId: string; input: any; output: any }) => unknown
 }
