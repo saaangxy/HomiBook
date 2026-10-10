@@ -52,6 +52,75 @@ const ANALYZE_PROMPT = `请阅读这张图片,输出 JSON(只输出 JSON):
 - meta 只放确凿读到的值,不要猜测`
 
 /**
+ * 「视觉问答」的系统提示。
+ * 注意:这里**不限定回答长度** —— 用户可能要求「逐条完整列出」,与「简短作答」是冲突的,
+ * 会导致输出随机被压短(实测同一张长图,两次调用的结果长度差异很大)。
+ */
+const VISION_QA_SYSTEM =
+  '你正在回答关于这张图片的具体问题。请直接看图作答,按问题的要求组织回答(要求逐条列出就逐条列出、要求完整转录就完整转录);' +
+  '看不清或图中没有就照实说,不要猜测。'
+
+/** 视觉调用结果:成功给文本,失败给可展示的原因 */
+type VisionCallResult = { text: string; finishReason: string } | { error: string }
+
+/**
+ * 调视觉模型(带「空回答自动重试一次」)。`ensureOne`(图片文字化)与 `askImage`(视觉问答)共用。
+ *
+ * 为什么要重试:超限长图会被切成多片一次性发出,请求耗时长、输出也长,上游在这种负载下
+ * **偶发返回空文本**(实测同一张图第二次调用即正常)。空结果对用户就是「未给出有效回答」,
+ * 重试一次是最直接的兜底。
+ *
+ * 同时把 finishReason 与 usage 打进日志 —— 否则事后无法区分「上游返回空」与
+ * 「输出被 maxOutputTokens 截断」(后者正是 finishReason === 'length')。
+ */
+async function callVisionText(opts: {
+  provider: string
+  model: string
+  apiKey: string
+  baseURL?: string
+  system: string
+  text: string
+  parts: { image: string; mediaType: string }[]
+}): Promise<VisionCallResult> {
+  // 模型初始化单独兜底:配置异常(供应商/模型名非法)不该以未捕获异常的形式冒到工具层
+  let model
+  try {
+    model = createModel(opts.provider as ProviderType, opts.model, {
+      apiKey: opts.apiKey,
+      baseURL: opts.baseURL,
+    })
+  } catch (e) {
+    return { error: `视觉模型初始化失败:${e instanceof Error ? e.message : String(e)}` }
+  }
+  let lastError = '未知原因'
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const result = await generateText({
+        model,
+        system: opts.system,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'text', text: opts.text },
+            ...opts.parts.map((p) => ({ type: 'image' as const, image: p.image, mediaType: p.mediaType })),
+          ],
+        }],
+        maxOutputTokens: 10000,
+        temperature: 0.1,
+      })
+      const text = result.text.trim()
+      if (text) return { text, finishReason: result.finishReason }
+      lastError = `finishReason=${result.finishReason}`
+      console.warn(`[视觉] 第 ${attempt} 次返回空文本: finishReason=${result.finishReason} usage=${JSON.stringify(result.usage)}`)
+    } catch (e) {
+      lastError = e instanceof Error ? e.message : String(e)
+      console.warn(`[视觉] 第 ${attempt} 次调用失败: ${lastError}`)
+    }
+  }
+  return { error: `视觉模型两次都未返回内容（${lastError}），请稍后再试` }
+}
+
+/**
  * 生成(或取缓存)单张图片的文字化结果。失败返回 null —— 调用方按「没有摘要」降级即可,
  * 不能因为图片读不出来而阻断整轮对话。
  */
@@ -79,7 +148,7 @@ async function ensureOne(
     return null
   }
 
-  // 2b. 出站准备:格式白名单 + 完整性校验 + 超限切片/缩放(与主流程共用同一套实现)。
+  // 2b. 出站准备:格式白名单 + 超限切片/缩放(与主流程共用同一套实现)。
   // 漏掉尺寸适配会被上游按单边上限拒绝 —— 表现就是整张图读不出摘要。
   const prep = await prepareVisionImage(img.buf)
   if ('error' in prep) {
@@ -92,25 +161,22 @@ async function ensureOne(
   if (!vision) return null
 
   try {
-    const model = createModel(vision.provider as ProviderType, vision.model, {
+    // 视觉调用统一走 callVisionText(空回答自动重试一次 + finishReason/usage 诊断日志)
+    const call = await callVisionText({
+      provider: vision.provider,
+      model: vision.model,
       apiKey: vision.apiKey,
       baseURL: vision.baseURL,
-    })
-    const result = await generateText({
-      model,
       system: ANALYZE_SYSTEM,
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'text', text: `${ANALYZE_PROMPT}${describeSlices(prep.count)}` },
-          ...prep.parts.map((p) => ({ type: 'image' as const, image: p.image, mediaType: p.mediaType })),
-        ],
-      }],
-      maxOutputTokens: 5000,
-      temperature: 0.1,
+      text: `${ANALYZE_PROMPT}${describeSlices(prep.count)}`,
+      parts: prep.parts,
     })
-    console.log(`图片的文字化结果: ${result.text}`)
-    const parsed = parseAnalyzeResult(result.text)
+    if ('error' in call) {
+      console.warn(`[image-context] 图片文字化失败 ${attachment.originalFilename}:${call.error}`)
+      return null
+    }
+    console.log(`图片的文字化结果: ${call.text}`)
+    const parsed = parseAnalyzeResult(call.text)
     if (!parsed.summary) return null
 
     // 4. 落库缓存(失败不影响本轮使用)
@@ -220,7 +286,7 @@ export async function askImage(
   const img = loadImageForVision(attachment)
   if ('error' in img) return { error: img.error }
 
-  // 出站准备:格式白名单 + 完整性 + 超限切片(与主流程同一套实现);
+  // 出站准备:格式白名单 + 超限切片(与主流程同一套实现);
   // 长截图不切片会被上游按单边上限拒绝 —— 用户表现为「查看图片细节失败」
   const prep = await prepareVisionImage(img.buf)
   if ('error' in prep) return { error: prep.error }
@@ -239,28 +305,17 @@ export async function askImage(
     cached?.visionText ? `此前已提取的文本(仅供参考):${cached.visionText.slice(0, 1500)}` : '',
   ].filter(Boolean).join('\n')
 
-  try {
-    const model = createModel(vision.provider as ProviderType, vision.model, {
-      apiKey: vision.apiKey,
-      baseURL: vision.baseURL,
-    })
-    const result = await generateText({
-      model,
-      system: '你正在回答关于这张图片的具体问题。请直接看图作答,聚焦被问的细节;看不清或图中没有就照实说,不要猜测。回答简短(3 句以内)。',
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'text', text: `${background ? `${background}\n\n` : ''}问题:${question}${describeSlices(prep.count)}` },
-          ...prep.parts.map((p) => ({ type: 'image' as const, image: p.image, mediaType: p.mediaType })),
-        ],
-      }],
-      maxOutputTokens: 5000,
-      temperature: 0.1,
-    })
-    const answer = result.text.trim()
-    console.log(`视觉模型回复 ${answer}`);
-    return { answer: answer || '（视觉模型未给出有效回答）' }
-  } catch (e: any) {
-    return { error: `查看图片失败:${e?.message || '未知错误'}` }
-  }
+  // 视觉调用统一走 callVisionText:空回答会自动重试一次;两次都空才报错(附 finishReason,便于定位)
+  const call = await callVisionText({
+    provider: vision.provider,
+    model: vision.model,
+    apiKey: vision.apiKey,
+    baseURL: vision.baseURL,
+    system: VISION_QA_SYSTEM,
+    text: `${background ? `${background}\n\n` : ''}问题:${question}${describeSlices(prep.count)}`,
+    parts: prep.parts,
+  })
+  if ('error' in call) return { error: call.error }
+  console.log(`视觉模型回复 ${call.text}`)
+  return { answer: call.text }
 }
