@@ -5,7 +5,7 @@ import path from 'path'
 import { prisma } from '../app.js'
 import { authenticate, requireAdmin } from '../middleware/auth.js'
 import { createModel, ALL_PROVIDERS, DEFAULT_BASE_URLS, type ProviderType } from '../services/ai/providers.js'
-import { detectImageFormat, isImageComplete, getImageSize, VISION_MEDIA_TYPES, IMAGE_FORMAT_LABELS } from '../services/ai/image-format.js'
+import { detectImageFormat, getImageSize, VISION_MEDIA_TYPES, IMAGE_FORMAT_LABELS } from '../services/ai/image-format.js'
 import { needsTiling, fitOversizedImage, VISION_MAX_SIDE } from '../services/ai/image-tile.js'
 import { routeIntent, classifyWithKeywords } from '../services/ai/model-router.js'
 import { assertIsMember, loadUserProviderConfig } from '../services/ai/security.js'
@@ -109,11 +109,6 @@ async function injectImagesToLastUserMessage(messages: any[], imageAttachments: 
         console.log(`[多模态] 图片 ${att.originalFilename} | ${buf.length}B | ${size ? `${size.width}x${size.height}` : '尺寸未知'} | 表头 ${buf.subarray(0, 16).toString('hex')} | 判定格式 ${fmt}(${IMAGE_FORMAT_LABELS[fmt]}) | ${mediaType ? '发送' : '跳过'}`)
         if (!mediaType) {
           unsupported.push(`${att.originalFilename}（实际为 ${IMAGE_FORMAT_LABELS[fmt]}）`)
-          continue
-        }
-        if (!isImageComplete(fmt, buf)) {
-          console.warn(`[多模态] 跳过损坏/不完整的图片 ${att.originalFilename}(${buf.length}B, ${fmt} 缺少结束标记):上游解码会失败`)
-          unsupported.push(`${att.originalFilename}（文件不完整或已损坏）`)
           continue
         }
         const ext = path.extname(att.originalFilename).toLowerCase()

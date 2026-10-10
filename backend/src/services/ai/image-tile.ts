@@ -1,6 +1,6 @@
 import type { Page } from 'puppeteer'
 import { getBrowser } from './browser-fetch.js'
-import { detectImageFormat, getImageSize, isImageComplete, VISION_MEDIA_TYPES, IMAGE_FORMAT_LABELS } from './image-format.js'
+import { detectImageFormat, getImageSize, VISION_MEDIA_TYPES, IMAGE_FORMAT_LABELS } from './image-format.js'
 
 /**
  * 超限图片适配:切片或缩放。
@@ -137,10 +137,6 @@ export async function prepareVisionImage(buf: Buffer): Promise<PreparedVisionIma
   if (!mediaType) {
     return { error: `图片格式不支持（实际为 ${IMAGE_FORMAT_LABELS[fmt]}），视觉模型仅支持 JPEG/PNG/GIF/WebP，请转换后重试` }
   }
-  if (!isImageComplete(fmt, buf)) {
-    return { error: '图片文件不完整或已损坏（缺少结束标记），上游解码会失败，请重新上传' }
-  }
-
   const size = getImageSize(fmt, buf)
   if (size && needsTiling(size)) {
     const images = await fitOversizedImage(buf, mediaType, size)

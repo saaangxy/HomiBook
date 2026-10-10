@@ -24,7 +24,7 @@ interface ConfirmPreview {
   description?: string;
   columns?: string[];
   rows?: PreviewCell[][];
-  changes?: { id: string; date: string; fields: { label: string; before: string; after: string }[] }[];
+  changes?: { id: string; date: string; summary?: string; fields: { label: string; before: string; after: string }[] }[];
   budgetFields?: { label: string; value: string }[];
   text?: string;
 }
@@ -177,8 +177,12 @@ function ConfirmPreviewView({ preview, submitted, submitting, onConfirm }: {
       {/* record-changes:变更对比(前值划线 → 新值) */}
       {parsed?.type === 'record-changes' && parsed.changes?.map((ch) => (
         <View key={ch.id} style={{ borderRadius: 8, borderWidth: 1, borderColor: colors.hairline, overflow: 'hidden' }}>
+          {/* 标题行:日期 + 辨识摘要(批量修改常是同日同分类的一批,只给日期看不出改的是哪条) */}
           <View style={{ paddingHorizontal: 8, paddingVertical: 4, backgroundColor: colors.muted }}>
             <Text style={{ fontSize: 10.5, color: colors.mutedForeground }}>{ch.date ? `日期: ${ch.date}` : ''}</Text>
+            {ch.summary ? (
+              <Text numberOfLines={1} style={{ fontSize: 10.5, color: colors.foreground }}>{ch.summary}</Text>
+            ) : null}
           </View>
           {ch.fields.map((f) => (
             <View key={f.label} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderTopWidth: 1, borderTopColor: colors.hairline }}>

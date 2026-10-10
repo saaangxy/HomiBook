@@ -50,38 +50,6 @@ export function detectImageFormat(buf: Buffer): ImageFormat {
 }
 
 /**
- * 图片结构完整性浅校验(零依赖)。
- * 魔数只能证明「开头像 JPEG」:上传被截断/写坏的文件依然以合法魔数开头,却会在上游解码阶段失败,
- * 报错形态正是 "You have uploaded an unsupported image";故额外用各格式的结束标记判断文件是否写完整。
- */
-export function isImageComplete(fmt: ImageFormat, buf: Buffer): boolean {
-  switch (fmt) {
-    case 'jpeg': {
-      // 以 EOI(FF D9) 结束;个别编码器尾部补少量字节,故在末尾 128 字节内查找
-      if (buf.length < 4) return false
-      const eoi = buf.lastIndexOf(Buffer.from([0xff, 0xd9]), buf.length - 1)
-      return eoi !== -1 && eoi >= buf.length - 128
-    }
-    case 'png': {
-      // IEND 块 + 固定 4 字节 CRC 收尾
-      if (buf.length < 12) return false
-      const iend = buf.lastIndexOf('IEND')
-      return iend !== -1 && iend >= buf.length - 32
-    }
-    case 'gif':
-      // 文件尾标记 0x3B
-      return buf.length >= 4 && buf[buf.length - 1] === 0x3b
-    case 'webp': {
-      // RIFF 头声明的长度(文件长度 - 8)应能覆盖整个文件,截断时声明长度会大于实际长度
-      return buf.length >= 12 && buf.readUInt32LE(4) + 8 <= buf.length
-    }
-    default:
-      // 非白名单格式不参与完整性判断(会按「格式不支持」直接跳过)
-      return true
-  }
-}
-
-/**
  * 读取图片像素尺寸(仅解析文件头,不解码像素)。
  * 用于判断是否触发视觉模型的单边尺寸上限;格式无法判定返回 null。
  */

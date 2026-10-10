@@ -37,6 +37,8 @@ interface ConfirmPreview {
   changes?: {
     id: string
     date: string
+    /** 这条流水的辨识摘要(账户 · 分类 · 类型 金额 · 备注);老数据可能没有 */
+    summary?: string
     fields: { label: string; before: string; after: string }[]
   }[]
   budgetFields?: { label: string; value: string }[]
@@ -585,8 +587,10 @@ function ConfirmPreviewView({
         <div className="space-y-2">
           {preview.changes.map((ch) => (
             <div key={ch.id} className="rounded border overflow-hidden">
-              <div className="bg-muted/30 px-2 py-1 text-[11px] text-muted-foreground">
-                {ch.date ? `日期: ${ch.date}` : ''}
+              {/* 标题行:日期 + 辨识摘要 —— 批量修改常是同日、同分类的一批,只给日期看不出改的是哪一条 */}
+              <div className="bg-muted/30 px-2 py-1 text-[11px] text-muted-foreground flex flex-wrap items-center gap-x-2">
+                {ch.date ? <span>日期: {ch.date}</span> : null}
+                {ch.summary ? <span className="text-foreground/80">{ch.summary}</span> : null}
               </div>
               <table className="w-full text-[11px]">
                 <tbody>

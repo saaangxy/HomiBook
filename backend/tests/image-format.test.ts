@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { detectImageFormat, isImageComplete, getImageSize, VISION_MEDIA_TYPES, IMAGE_FORMAT_LABELS } from '../src/services/ai/image-format.js'
+import { detectImageFormat, getImageSize, VISION_MEDIA_TYPES, IMAGE_FORMAT_LABELS } from '../src/services/ai/image-format.js'
 import { needsTiling, tileHeight, planImageFit, VISION_MAX_SIDE } from '../src/services/ai/image-tile.js'
 
 // 视觉模型(DeepSeek 视觉模型等)按「文件内容字节」判定图片格式,不认扩展名与声明的 MIME,
-// 故按魔数判定真实格式:非 JPEG/PNG/GIF/WebP 一律不放行(否则上游 400 unsupported image);
-// 另外魔数合法但文件被截断的图片在上游解码阶段同样会失败,所以再做一次结束标记校验。
+// 故按魔数判定真实格式:非 JPEG/PNG/GIF/WebP 一律不放行(否则上游 400 unsupported image)。
+// 注:图片尾部(结束标记是否紧贴末尾 / 是否缺标记)不做校验也不做规整 —— 结束标记之后的字节
+// 本就不影响解码,缺标记的图上游也能解;真遇到上游拒收再补机制。
 
 // 仅头部合法(截断/未写完的形态)
 const jpegHead = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46])
@@ -12,10 +13,6 @@ const pngHead = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x0
 const gifHead = Buffer.from('GIF89a\x10\x00\x10\x00', 'latin1')
 const webpHead = Buffer.concat([Buffer.from('RIFF'), Buffer.from([0x24, 0x00, 0x00, 0x00]), Buffer.from('WEBP')])
 
-// 完整形态(带结束标记)
-const jpegFull = Buffer.concat([jpegHead, Buffer.from([0xff, 0xd9])])
-const pngFull = Buffer.concat([pngHead, Buffer.from('IEND'), Buffer.from([0xae, 0x42, 0x60, 0x82])])
-const gifFull = Buffer.concat([gifHead, Buffer.from([0x3b])])
 // RIFF 声明长度 = 文件长度 - 8:body 4 字节 → 总长 16 → 声明 8
 const webpFull = Buffer.concat([Buffer.from('RIFF'), Buffer.from([0x08, 0x00, 0x00, 0x00]), Buffer.from('WEBP'), Buffer.from([0x00, 0x00, 0x00, 0x00])])
 
@@ -67,32 +64,6 @@ describe('detectImageFormat(按内容魔数判定)', () => {
     for (const fmt of ['jpeg', 'png', 'gif', 'webp', 'bmp', 'heic', 'avif', 'tiff', 'svg', 'unknown'] as const) {
       expect(IMAGE_FORMAT_LABELS[fmt]).toBeTruthy()
     }
-  })
-})
-
-describe('isImageComplete(结束标记校验)', () => {
-  it('带结束标记的完整文件通过', () => {
-    expect(isImageComplete('jpeg', jpegFull)).toBe(true)
-    expect(isImageComplete('png', pngFull)).toBe(true)
-    expect(isImageComplete('gif', gifFull)).toBe(true)
-    expect(isImageComplete('webp', webpFull)).toBe(true)
-  })
-
-  it('头部合法但被截断的文件判为不完整', () => {
-    expect(isImageComplete('jpeg', jpegHead)).toBe(false)      // 缺 FFD9
-    expect(isImageComplete('png', pngHead)).toBe(false)        // 缺 IEND
-    expect(isImageComplete('gif', gifHead)).toBe(false)        // 缺 0x3B
-    expect(isImageComplete('webp', webpHead)).toBe(false)      // RIFF 声明长度大于实际字节
-  })
-
-  it('极短文件不会误判为完整', () => {
-    expect(isImageComplete('jpeg', Buffer.from([0xff, 0xd8]))).toBe(false)
-    expect(isImageComplete('png', Buffer.from([0x89, 0x50]))).toBe(false)
-  })
-
-  it('非白名单格式不参与完整性判断', () => {
-    expect(isImageComplete('heic', heic)).toBe(true)
-    expect(isImageComplete('unknown', Buffer.alloc(0))).toBe(true)
   })
 })
 

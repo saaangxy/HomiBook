@@ -23,6 +23,12 @@ export interface ConfirmPreview {
   changes?: {
     id: string
     date: string
+    /**
+     * 这条流水的辨识摘要(账户 · 分类 · 类型 金额 · 备注)。
+     * 批量修改的确认卡常出现同日、同分类的多条,只给日期用户无法判断改的是哪一条;
+     * 取值一律用**修改前**的原值(它标识的是「哪条流水」,而不是改成了什么)
+     */
+    summary?: string
     fields: { label: string; before: string; after: string }[]
   }[]
   budgetFields?: { label: string; value: string }[]
@@ -482,6 +488,24 @@ async function buildBatchUpdatePreview(args: any, accountBookId: string): Promis
     { key: 'payer', label: '交易方', format: (v) => v || '-' },
   ]
 
+  // 账户文案(转账取「转出 → 转入」)
+  const accountText = (r: any) =>
+    r.type === 'TRANSFER'
+      ? `${r.fromAccount?.name || '-'} → ${r.toAccount?.name || '-'}`
+      : r.account?.name || '-'
+
+  // 每条流水的辨识摘要:全部取**修改前**的原值 —— 批量修改的确认卡常常是同日、同分类的一批,
+  // 只显示日期无法判断改的是哪一条(用户反馈「批量修改流水卡片信息不足无法看出是哪条流水」)
+  const summarize = (r: any) => {
+    const parts = [
+      accountText(r),
+      categoryMap.get(r.categoryCode || '') || '无分类',
+      `${TYPE_LABELS[r.type] || r.type} ${Number(r.amount).toFixed(2)}`,
+    ]
+    if (r.remark) parts.push(r.remark)
+    return parts.join(' · ')
+  }
+
   const changes: ConfirmPreview['changes'] = []
   for (const u of updates) {
     const record = recordMap.get(u.recordId)
@@ -505,7 +529,7 @@ async function buildBatchUpdatePreview(args: any, accountBookId: string): Promis
       }
     }
     if (fields.length > 0) {
-      changes!.push({ id: record.id, date: dateStr(record.date), fields })
+      changes!.push({ id: record.id, date: dateStr(record.date), summary: summarize(record), fields })
     }
   }
 
