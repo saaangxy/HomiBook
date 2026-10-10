@@ -587,11 +587,14 @@ function ConfirmPreviewView({
         <div className="space-y-2">
           {preview.changes.map((ch) => (
             <div key={ch.id} className="rounded border overflow-hidden">
-              {/* 标题行:日期 + 辨识摘要 —— 批量修改常是同日、同分类的一批,只给日期看不出改的是哪一条 */}
-              <div className="bg-muted/30 px-2 py-1 text-[11px] text-muted-foreground flex flex-wrap items-center gap-x-2">
-                {ch.date ? <span>日期: {ch.date}</span> : null}
-                {ch.summary ? <span className="text-foreground/80">{ch.summary}</span> : null}
-              </div>
+              {/* 标题行:日期 + 辨识摘要 —— 批量修改常是同日、同分类的一批,只给日期看不出改的是哪一条。
+                  两者都没有时(如修改账户/固定收支,信息在卡片描述里)不渲染,避免留一条空灰条 */}
+              {(ch.date || ch.summary) && (
+                <div className="bg-muted/30 px-2 py-1 text-[11px] text-muted-foreground flex flex-wrap items-center gap-x-2">
+                  {ch.date ? <span>日期: {ch.date}</span> : null}
+                  {ch.summary ? <span className="text-foreground/80">{ch.summary}</span> : null}
+                </div>
+              )}
               <table className="w-full text-[11px]">
                 <tbody>
                   {ch.fields.map((f) => (
@@ -621,8 +624,10 @@ function ConfirmPreviewView({
         </div>
       )}
 
-      {/* generic 或解析失败：JSON 渲染为表格 */}
-      {(!preview || preview.type === 'generic') && (
+      {/* generic 或解析失败：JSON 渲染为表格。
+          text 为空时不再渲染 —— 这类卡片(「未能执行」)把原因放在 description 里,
+          若仍走 here 会拿整个 preview 对象当数据源,渲染出 type/title/description 这类内部字段 */}
+      {(!preview || preview.type === 'generic') && preview?.text !== '' && (
         <GenericPreview raw={rawPreview || ''} toolName={toolName} />
       )}
 

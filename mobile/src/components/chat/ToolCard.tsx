@@ -177,13 +177,16 @@ function ConfirmPreviewView({ preview, submitted, submitting, onConfirm }: {
       {/* record-changes:变更对比(前值划线 → 新值) */}
       {parsed?.type === 'record-changes' && parsed.changes?.map((ch) => (
         <View key={ch.id} style={{ borderRadius: 8, borderWidth: 1, borderColor: colors.hairline, overflow: 'hidden' }}>
-          {/* 标题行:日期 + 辨识摘要(批量修改常是同日同分类的一批,只给日期看不出改的是哪条) */}
-          <View style={{ paddingHorizontal: 8, paddingVertical: 4, backgroundColor: colors.muted }}>
-            <Text style={{ fontSize: 10.5, color: colors.mutedForeground }}>{ch.date ? `日期: ${ch.date}` : ''}</Text>
-            {ch.summary ? (
-              <Text numberOfLines={1} style={{ fontSize: 10.5, color: colors.foreground }}>{ch.summary}</Text>
-            ) : null}
-          </View>
+          {/* 标题行:日期 + 辨识摘要(批量修改常是同日同分类的一批,只给日期看不出改的是哪条)。
+              两者都没有时不渲染(信息在卡片描述里),避免留一条空灰条 */}
+          {(ch.date || ch.summary) ? (
+            <View style={{ paddingHorizontal: 8, paddingVertical: 4, backgroundColor: colors.muted }}>
+              {ch.date ? <Text style={{ fontSize: 10.5, color: colors.mutedForeground }}>日期: {ch.date}</Text> : null}
+              {ch.summary ? (
+                <Text numberOfLines={1} style={{ fontSize: 10.5, color: colors.foreground }}>{ch.summary}</Text>
+              ) : null}
+            </View>
+          ) : null}
           {ch.fields.map((f) => (
             <View key={f.label} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderTopWidth: 1, borderTopColor: colors.hairline }}>
               <Text style={{ fontSize: 10.5, color: colors.mutedForeground, width: 60 }}>{f.label}</Text>
@@ -207,8 +210,9 @@ function ConfirmPreviewView({ preview, submitted, submitting, onConfirm }: {
         </View>
       )}
 
-      {/* generic 或解析失败:JSON 表格 */}
-      {(!parsed || parsed.type === 'generic') && (() => {
+      {/* generic 或解析失败:JSON 表格。
+          text 为空时不渲染(「未能执行」的原因在 description 里;否则会拿整个 preview 当数据源) */}
+      {(!parsed || parsed.type === 'generic') && parsed?.text !== '' && (() => {
         const table = toTableData(preview || '');
         if (!table) {
           return <Text style={{ fontSize: 10.5, color: colors.mutedForeground }}>{preview}</Text>;

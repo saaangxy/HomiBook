@@ -235,7 +235,7 @@ async function buildBatchDeletePreview(args: any, accountBookId: string): Promis
   const preview: ConfirmPreview = {
     type: 'records-table',
     title: `确认批量删除 ${records.length} 条流水记录`,
-    description: `此操作不可撤销，账户余额将相应调整${notFound.length > 0 ? `\n未找到的记录: ${notFound.join(', ')}` : ''}`,
+    description: `此操作不可撤销，账户余额将相应调整${notFound.length > 0 ? `\n有 ${notFound.length} 条记录未找到（可能已被删除），本次不会处理它们` : ''}`,
     columns: ['日期', '类型', '账户', '分类', '金额', '备注'],
     rows: records.map((r) =>
       recordToRow({
@@ -303,10 +303,13 @@ async function buildCreatePreview(args: any, accountBookId: string): Promise<str
     accountText = `${accountMap.get(args.fromAccountId) || args.fromAccountId || '-'} → ${accountMap.get(args.toAccountId) || args.toAccountId || '-'}`
   }
 
+  // 附件数:工具会把 attachmentIds 关联到这条记录,卡片上要让用户看得见
+  const attCount = Array.isArray(args.attachmentIds) ? args.attachmentIds.length : 0
+
   const preview: ConfirmPreview = {
     type: 'records-table',
     title: '确认创建以下流水记录',
-    columns: ['日期', '类型', '账户', '分类', '金额', '备注'],
+    columns: ['日期', '类型', '账户', '分类', '金额', '备注', '附件'],
     rows: [[
       { text: args.date || '-' },
       { text: TYPE_LABELS[args.type] || args.type, color: args.type === 'INCOME' ? 'green' : args.type === 'EXPENSE' ? 'red' : undefined },
@@ -314,6 +317,7 @@ async function buildCreatePreview(args: any, accountBookId: string): Promise<str
       { text: categoryMap.get(args.categoryCode) || args.categoryCode || '-' },
       { text: Number(args.amount).toFixed(2), color: args.type === 'INCOME' ? 'green' : args.type === 'EXPENSE' ? 'red' : undefined },
       { text: args.remark || '-' },
+      { text: attCount > 0 ? `${attCount} 个` : '-' },
     ]],
   }
   return JSON.stringify(preview)
@@ -432,9 +436,13 @@ async function buildBatchCreatePreview(args: any, accountBookId: string): Promis
     ]]
   })
 
+  // 批量创建的附件是**整体**的(工具只把它关联到第 1 条记录),不加列而是在说明里点明,避免误解为每条都有
+  const attCount = Array.isArray(args.attachmentIds) ? args.attachmentIds.length : 0
+
   const preview: ConfirmPreview = {
     type: 'records-table',
     title: `确认批量创建 ${records.length} 条流水记录`,
+    description: attCount > 0 ? `${attCount} 个附件将关联到第 1 条记录` : undefined,
     columns: ['日期', '类型', '账户', '分类', '金额', '备注'],
     rows: rows.flat(),
   }
@@ -754,11 +762,44 @@ async function buildDeleteBudgetPreview(args: any, _bookId: string): Promise<str
   return JSON.stringify(preview)
 }
 
+/** 兜底卡片的标题:工具名 → 中文名(本地维护,避免与 tools/index 形成反向依赖) */
+const TOOL_TITLES: Record<string, string> = {
+  delete_record: '删除流水记录',
+  batch_delete_records: '批量删除流水记录',
+  clone_record: '克隆流水记录',
+  create_record: '创建流水记录',
+  update_record: '修改流水记录',
+  batch_create_records: '批量创建流水记录',
+  batch_update_records: '批量修改流水记录',
+  set_budget: '设定预算',
+  copy_budgets: '复制预算',
+  batch_create_budgets: '批量创建预算',
+  create_recurring: '创建固定收支',
+  update_recurring: '修改固定收支',
+  toggle_recurring: '启用/停用固定收支',
+  delete_recurring: '删除固定收支',
+  create_account: '创建账户',
+  update_account: '修改账户',
+  adjust_balance: '调整账户余额',
+  delete_account: '删除账户',
+  delete_budget: '删除预算',
+  save_import_mapping: '保存导入映射',
+}
+
+/**
+ * 兜底卡片:工具没走专属预览(将来新增工具忘了加 case)或数据异常(记录不存在 / 未找到匹配记录)时使用。
+ *
+ * 以前 title 是空字符串、正文直接把参数 dump 成 JSON —— 用户看到的是一张**没有标题、读不懂**的卡片。
+ * 现在:标题为「中文工具名 · 未能执行」;参数里的 error 单独作为说明行,不再混在 JSON 里。
+ */
 function buildGenericPreview(toolName: string, args: any): string {
+  const error = typeof args?.error === 'string' ? args.error : null
   const preview: ConfirmPreview = {
     type: 'generic',
-    title: ``,
-    text: JSON.stringify(args, null, 2),
+    title: `${TOOL_TITLES[toolName] || toolName} · 未能执行`,
+    ...(error ? { description: error } : {}),
+    // 有明确原因时不再 dump 参数;否则保留 JSON 便于排查
+    text: error ? '' : JSON.stringify(args, null, 2),
   }
   return JSON.stringify(preview)
 }
