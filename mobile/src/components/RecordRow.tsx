@@ -7,19 +7,18 @@ import { Text } from '@/components/ui/Text';
 import { AttachmentViewer } from '@/components/ui/AttachmentViewer';
 import { formatMoney } from '@/lib/format';
 import { RECORD_TYPE_LABELS as TYPE_LABEL } from '@homibook/core';
+import { useRecords } from '@/stores/records';
+import { accountLabel, isMultiOwnerAccounts } from '@/lib/account';
 
 interface RecordRowProps {
   record: RecordItem;
   showDivider?: boolean;
-  /** 账户展示名(可选)。record.accountName 只有账户名,多归属人账本下同名账户分不开,
-   *  由调用方传入 accountLabel 的结果(如统计明细页) */
-  accountText?: string;
 }
 
 // 流水卡片:商家/标题(粗体) + 类型|分类|账户(浅灰) + 备注(浅灰) + 右侧金额
 // 有附件时在标题旁显示回形针角标,点击直接弹出附件查看器(网格展示/预览/下载)
 // memo:流水列表 cell 内可能挂十几次,父级重渲染(筛选/汇总变化)时按 record 引用跳过
-export const RecordRow = memo(function RecordRow({ record, showDivider = false, accountText }: RecordRowProps) {
+export const RecordRow = memo(function RecordRow({ record, showDivider = false }: RecordRowProps) {
   const { colors } = useTheme();
   const [viewerOpen, setViewerOpen] = useState(false);
   const isIncome = record.type === 'INCOME';
@@ -29,8 +28,17 @@ export const RecordRow = memo(function RecordRow({ record, showDivider = false, 
   const title = record.counterparty?.trim() || record.categoryName || '未分类';
   const typeLabel = TYPE_LABEL[record.type] ?? '';
   const categoryName = record.categoryName ?? '未分类';
-  // 账户名:调用方(如统计明细)传入带归属人的展示名时优先用;否则回退流水数据里的账户名
-  const accountName = accountText ?? record.accountName ?? '';
+  // 账户列表:用于把账户名区分为「账户名 · 归属人」。
+  // 放在这里而不是让各调用方传:RecordRow 有首页/流水/日历/统计明细 4 个使用点,
+  // 由组件内部统一反查,口径才一致(代价是 4 处都会订阅 accounts,列表规模小,可接受)
+  const accounts = useRecords().accounts;
+  const multiOwnerAccounts = isMultiOwnerAccounts(accounts);
+  // 账户名:流水数据只有账户名(record.accountName),多归属人账本下同名账户(如各人的「微信」)
+  // 分不开 —— 按 accountId 反查账户列表补上归属人;查不到(账户已归档/删除)时回退流水自带的名字
+  const accountName = (() => {
+    const acc = record.accountId ? accounts.find((a) => a.id === record.accountId) : undefined;
+    return acc ? accountLabel(acc, multiOwnerAccounts) : (record.accountName ?? '');
+  })();
   const attachments = record.attachments ?? [];
   const attCount = attachments.length;
 

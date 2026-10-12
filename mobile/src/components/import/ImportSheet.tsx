@@ -530,8 +530,12 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
   const serverBlocked = !serverCheck || !serverCheck.canProceed;
 
   const buildImportData = () => {
-    /** 账户 id / 新建账户名 → 展示名(确认页账户列展示「映射后账户名」) */
-    const accountNameOf = (id?: string | null) => (id ? (accounts.find((a) => a.id === id)?.name ?? id) : undefined);
+    /** 账户 id / 新建账户名 → 展示名(确认页账户列展示「映射后账户名」;多归属人账本带上归属人) */
+    const accountNameOf = (id?: string | null) => {
+      if (!id) return undefined;
+      const a = accounts.find((x) => x.id === id);
+      return a ? accountLabel(a, multiOwnerAccounts) : id;
+    };
 
     // 待创建账户(合并同名) + 归属人
     const rawCreations = (preview?.unmatchedAccounts ?? [])
@@ -1060,6 +1064,12 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
                   </Text>
                   {Object.entries(preview.accountMappings ?? {}).map(([csvName, targetName]) => {
                     const overridden = accountRes[csvName];
+                    // 展示名带归属人(与 web「已匹配的账户」同口径):用户决议的账户 id 优先,否则按名字在账户池里找
+                    const matchedId = overridden?.action === 'existing' ? overridden.accountId : undefined;
+                    const matched = (matchedId ? accounts.find((a) => a.id === matchedId) : undefined)
+                      ?? ownerPool.find((a) => a.name === targetName)
+                      ?? accounts.find((a) => a.name === targetName);
+                    const targetLabel = matched ? accountLabel(matched, multiOwnerAccounts) : targetName;
                     return (
                       <Pressable
                         key={csvName}
@@ -1069,9 +1079,7 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
                         <Text style={{ fontSize: 12, fontWeight: '500', flex: 1 }} numberOfLines={1}>{csvName}</Text>
                         <Text variant="muted" style={{ fontSize: 12 }}>→</Text>
                         <Text style={{ fontSize: 12, color: overridden ? colors.primary : colors.income }} numberOfLines={1}>
-                          {overridden?.action === 'existing'
-                            ? (accounts.find((a) => a.id === overridden.accountId)?.name ?? targetName)
-                            : targetName}
+                          {targetLabel}
                         </Text>
                         {overridden ? <Text style={{ fontSize: 10, color: colors.mutedForeground }}>已改</Text> : null}
                       </Pressable>

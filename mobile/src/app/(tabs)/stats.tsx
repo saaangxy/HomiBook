@@ -740,11 +740,7 @@ export default function StatsPage() {
             style={{ maxHeight: 480 }}
             data={detailRecords}
             keyExtractor={(r) => r.id}
-            renderItem={({ item }) => {
-              // 账户列:流水数据只有账户名,多归属人账本下按 accountId 反查补上归属人
-              const acc = item.accountId ? accounts.find((a) => a.id === item.accountId) : undefined;
-              return <RecordRow record={item} accountText={acc ? accountLabel(acc, multiOwnerAccounts) : undefined} />;
-            }}
+            renderItem={({ item }) => <RecordRow record={item} />}
             ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
             onEndReached={() => {
               if (detail && !detailLoading && detailPage * PAGE_SIZE < detailTotal) {
