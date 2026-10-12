@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils'
+import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
 import { markSubmitted, isSubmitted } from '@/lib/ai-submit'
 import { getToolDisplayName } from '@/lib/tool-names'
 import type { ToolCallEntry, SuggestionOption } from '@/stores/chat'
@@ -206,6 +207,8 @@ const budgetTypeLabel = (t?: string) => (BUDGET_TYPE_LABELS as Record<string, st
 
 /** 账户列表表格 */
 function AccountTable({ accounts, totalBalance }: { accounts: any[]; totalBalance?: number }) {
+  // 多归属人账本下同名账户(如各人的「微信」)要靠归属人区分
+  const multiOwner = isMultiOwnerAccounts(accounts)
   return (
     <div className="space-y-1">
       {totalBalance != null && (
@@ -222,7 +225,7 @@ function AccountTable({ accounts, totalBalance }: { accounts: any[]; totalBalanc
         <TableBody>
           {accounts.map((a, i) => (
             <TableRow key={i} className="hover:bg-accent/50">
-              <TableCell className="text-xs whitespace-nowrap">{a.name}</TableCell>
+              <TableCell className="text-xs whitespace-nowrap">{accountLabel(a, multiOwner)}</TableCell>
               <TableCell className="text-xs text-muted-foreground">{accountTypeLabel(a.type)}</TableCell>
               <TableCell className={cn('text-xs text-right font-medium', (a.balance ?? 0) < 0 && 'text-red-600')}>{(a.balance ?? 0).toFixed(2)}</TableCell>
             </TableRow>

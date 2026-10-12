@@ -688,9 +688,14 @@ export async function recordRoutes(app: FastifyInstance) {
         } else {
             const accts = await prisma.account.findMany({
                 where: {id: {in: keys}},
-                select: {id: true, name: true},
+                select: {id: true, name: true, ownerId: true, owner: {select: {nickname: true, email: true}}},
             })
-            for (const a of accts) labelMap[a.id] = a.name
+            // 多归属人账本下同名账户要用归属人区分(与前端 accountLabel 同口径)
+            const multiOwner = new Set(accts.map((a) => a.ownerId)).size > 1
+            for (const a of accts) {
+                const ownerName = a.owner?.nickname || a.owner?.email
+                labelMap[a.id] = multiOwner && ownerName ? `${a.name} · ${ownerName}` : a.name
+            }
         }
 
         return Object.entries(groupMap).map(([key, amount]) => ({

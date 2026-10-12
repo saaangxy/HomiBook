@@ -24,6 +24,7 @@ import type { AccountItem } from '@/api/account'
 import type { DictItem } from '@/api/settings'
 import type { BookMember } from '@/api/book'
 import { cn } from '@/lib/utils'
+import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
 import { formatMoney } from '@homibook/core'
 
 // 收支类型标签与语义色(单一来源 @/lib/record-type ← core)
@@ -65,6 +66,16 @@ export function RecordRow(props: RecordRowProps) {
   const effectiveType = (editChanges.get(record.id)?.type || record.type) as RecordType
   const catGroup = getCategoryGroup(effectiveType)
   const rowCategories = allCategories.filter((c) => c.group === catGroup)
+
+  // 多归属人账本下同名账户(如各人的「微信」)要靠归属人区分
+  const multiOwner = isMultiOwnerAccounts(accounts)
+  /**
+   * 账户展示:优先从账户列表取(流水自带的 account 只有名字、不含归属人),取不到时退回流水里的名字。
+   */
+  const displayAccount = (id?: string | null, fallback?: string) => {
+    const a = id ? accounts.find((x) => x.id === id) : undefined
+    return a ? accountLabel(a, multiOwner) : (fallback || '-')
+  }
 
   const getEditValue = (field: string): string => {
     const changes = editChanges.get(record.id)
@@ -121,29 +132,29 @@ export function RecordRow(props: RecordRowProps) {
         <div className="flex items-center gap-1">
           <Select value={getEditValue('fromAccountId')} onValueChange={(v) => change('fromAccountId', v)}>
             <SelectTrigger className="h-7 text-xs flex-1 min-w-0"><SelectValue placeholder="转出" /></SelectTrigger>
-            <SelectContent>{accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent>
+            <SelectContent>{accounts.map((a) => <SelectItem key={a.id} value={a.id}>{accountLabel(a, multiOwner)}</SelectItem>)}</SelectContent>
           </Select>
           <span className="text-[10px] text-muted-foreground shrink-0">→</span>
           <Select value={getEditValue('toAccountId')} onValueChange={(v) => change('toAccountId', v)}>
             <SelectTrigger className="h-7 text-xs flex-1 min-w-0"><SelectValue placeholder="转入" /></SelectTrigger>
-            <SelectContent>{accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent>
+            <SelectContent>{accounts.map((a) => <SelectItem key={a.id} value={a.id}>{accountLabel(a, multiOwner)}</SelectItem>)}</SelectContent>
           </Select>
         </div>
       ) : (
         <Select value={getEditValue('accountId')} onValueChange={(v) => change('accountId', v)}>
           <SelectTrigger className="h-7 text-xs w-full"><SelectValue placeholder="账户" /></SelectTrigger>
-          <SelectContent>{accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent>
+          <SelectContent>{accounts.map((a) => <SelectItem key={a.id} value={a.id}>{accountLabel(a, multiOwner)}</SelectItem>)}</SelectContent>
         </Select>
       )
     ) : (
       record.type === 'TRANSFER' && record.fromAccount ? (
         <span>
-          <span className={RECORD_TYPE_TEXT_CLASS.EXPENSE}>{record.fromAccount.name}</span>
+          <span className={RECORD_TYPE_TEXT_CLASS.EXPENSE}>{displayAccount(record.fromAccountId, record.fromAccount.name)}</span>
           {' → '}
-          <span className={RECORD_TYPE_TEXT_CLASS.INCOME}>{record.toAccount?.name}</span>
+          <span className={RECORD_TYPE_TEXT_CLASS.INCOME}>{displayAccount(record.toAccountId, record.toAccount?.name)}</span>
         </span>
       ) : (
-        <span>{record.account.name}</span>
+        <span>{displayAccount(record.accountId, record.account.name)}</span>
       )
     )
 

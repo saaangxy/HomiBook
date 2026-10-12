@@ -1805,7 +1805,8 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                   {(() => {
                     // 账户列展示「映射后账户名」,原始 CSV 名放进 tooltip;筛选下拉也按展示名。
                     // 「将新建」的账户还没有 id,行里带的是目标名/原始 CSV 名,故再查一层 sourceAccountName → 目标名。
-                    const accountNameById = new Map([...accounts, ...ownerPool].map(a => [a.id, a.name]))
+                    // 展示名带归属人:多成员账本下同名账户(如各人的「微信」)在确认表与筛选项里要靠它区分
+                    const accountNameById = new Map([...accounts, ...ownerPool].map(a => [a.id, accountLabel(a, multiOwnerAccounts)]))
                     const createdNameByCsvName = new Map<string, string>()
                     for (const ac of accountCreations) {
                       for (const sn of ac.csvName.split(', ')) createdNameByCsvName.set(sn, ac.name)

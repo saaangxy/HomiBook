@@ -8,6 +8,7 @@ import { getToolDisplayName } from '@/services/chat';
 import { ACCOUNT_TYPE_LABELS, BUDGET_TYPE_LABELS, IMPORT_SOURCE_LABELS, RECORD_TYPE_LABELS, resolveToolCallStatus, isAwaitingUserAction, type ToolCallEntry } from '@homibook/core';
 import { settingsApi } from '@/services/settings';
 import { MiniTable, computeColWidths } from './MiniTable';
+import { accountLabel, isMultiOwnerAccounts } from '@/lib/account';
 import { ImportPreviewCard } from './ImportPreviewCard';
 import type { Ledger } from '@/types';
 
@@ -371,7 +372,7 @@ export function ToolCard({ toolCall, bookId }: { toolCall: ToolCallEntry; bookId
               <MiniTable
                 columns={['账户', '类型', '余额']}
                 aligns={['left', 'left', 'right']}
-                rows={rd.accounts.map((a: any) => [a.name, accountTypeLabel(a.type), (a.balance ?? 0).toFixed(2)])}
+                rows={rd.accounts.map((a: any) => [accountLabel(a, isMultiOwnerAccounts(rd.accounts)), accountTypeLabel(a.type), (a.balance ?? 0).toFixed(2)])}
                 maxHeight={220}
               />
             </View>

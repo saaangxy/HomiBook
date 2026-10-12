@@ -14,6 +14,7 @@ import { TagCombobox } from '@/components/TagCombobox'
 import { recordApi } from '@/api/record'
 import { RECORD_TYPE_LABELS } from '@/lib/record-type'
 import type { AccountItem } from '@/api/account'
+import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
 import type { BookMember } from '@/api/book'
 import type { RecordItem, RecordType } from '@/api/record'
 
@@ -38,6 +39,8 @@ function getCategoryGroup(type: RecordType) {
 
 /** 批量更新流水弹窗(留空字段不更新)。从 RecordsPage 拆出。 */
 export function BatchEditDialog({ open, selectedIds, records, currentBookId, accounts, bookMembers, onClose, onDone }: Props) {
+  // 多归属人账本下同名账户要靠归属人区分(下拉里光看名字分不清是谁的)
+  const multiOwner = isMultiOwnerAccounts(accounts)
   const [batchDate, setBatchDate] = useState('')
   const [batchType, setBatchType] = useState('')
   const [batchAccountId, setBatchAccountId] = useState('')
@@ -145,7 +148,7 @@ export function BatchEditDialog({ open, selectedIds, records, currentBookId, acc
                 <Select value={batchFromAccountId} onValueChange={setBatchFromAccountId} disabled={!batchType}>
                   <SelectTrigger className="bg-background border-border h-9"><SelectValue placeholder="留空则不更新" /></SelectTrigger>
                   <SelectContent>
-                    {accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                    {accounts.map((a) => <SelectItem key={a.id} value={a.id}>{accountLabel(a, multiOwner)}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -155,7 +158,7 @@ export function BatchEditDialog({ open, selectedIds, records, currentBookId, acc
                 <Select value={batchToAccountId} onValueChange={setBatchToAccountId} disabled={!batchType}>
                   <SelectTrigger className="bg-background border-border h-9"><SelectValue placeholder="留空则不更新" /></SelectTrigger>
                   <SelectContent>
-                    {accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                    {accounts.map((a) => <SelectItem key={a.id} value={a.id}>{accountLabel(a, multiOwner)}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -166,7 +169,7 @@ export function BatchEditDialog({ open, selectedIds, records, currentBookId, acc
               <Select value={batchAccountId} onValueChange={setBatchAccountId} disabled={!batchType}>
                 <SelectTrigger className="bg-background border-border h-9"><SelectValue placeholder={batchType ? '留空则不更新账户' : '请先选择类型'} /></SelectTrigger>
                 <SelectContent>
-                  {accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                  {accounts.map((a) => <SelectItem key={a.id} value={a.id}>{accountLabel(a, multiOwner)}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>

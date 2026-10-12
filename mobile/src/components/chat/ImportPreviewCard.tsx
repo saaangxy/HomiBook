@@ -137,7 +137,7 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
     if (res?.action === 'create' && res.name) return res.name;
     if (res?.action === 'existing' && res.accountId) {
       const acc = accounts.find((a) => a.id === res.accountId);
-      if (acc) return acc.name;
+      if (acc) return accountLabel(acc, multiOwnerAccounts);
     }
     const created = newAccountCreations.find((c) => c.sourceAccountName === row.accountName);
     if (created) return created.name;
@@ -153,7 +153,7 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
     if (res?.action === 'create' && res.name) return res.name;
     if (res?.action === 'existing' && res.accountId) {
       const acc = accounts.find((a) => a.id === res.accountId);
-      if (acc) return acc.name;
+      if (acc) return accountLabel(acc, multiOwnerAccounts);
     }
     const created = newAccountCreations.find((c) => c.sourceAccountName === row.toAccountName);
     if (created) return created.name;

@@ -102,12 +102,19 @@ async function getAccountNameMap(ids: string[], accountBookId?: string): Promise
       ...(accountBookId ? { accountBookId } : {}),
       OR: [{ id: { in: unique } }, { accountNo: { in: unique } }],
     },
-    select: { id: true, name: true, accountNo: true },
+    select: { id: true, name: true, accountNo: true, ownerId: true, owner: { select: { nickname: true, email: true } } },
   })
+  // 多归属人账本才在名字后带归属人(与前端 accountLabel 同口径):
+  // 确认卡上出现同名的「微信」时,不带归属人用户根本分不清是哪一条
+  const multiOwner = new Set(accounts.map((a) => a.ownerId)).size > 1
+  const labelOf = (a: (typeof accounts)[number]) => {
+    const ownerName = a.owner?.nickname || a.owner?.email
+    return multiOwner && ownerName ? `${a.name} · ${ownerName}` : a.name
+  }
   const map = new Map<string, string>()
   for (const a of accounts) {
-    map.set(a.id, a.name)
-    if (a.accountNo) map.set(a.accountNo, a.name)
+    map.set(a.id, labelOf(a))
+    if (a.accountNo) map.set(a.accountNo, labelOf(a))
   }
   return map
 }

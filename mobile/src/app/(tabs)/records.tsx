@@ -23,6 +23,7 @@ import { exportRecordsCsv, type ExportMode } from '@/services/import';
 import { formatMoneyShort } from '@/lib/format';
 import type { RecordItem } from '@/types';
 import { RECORD_TYPE_LABELS as TYPE_LABEL } from '@homibook/core';
+import { accountLabel, isMultiOwnerAccounts } from '@/lib/account';
 /** 列表分页大小:一次只加载 20 条,滚动到底自动加载下一页 */
 const PAGE_SIZE = 20;
 
@@ -279,11 +280,15 @@ export default function RecordsScreen() {
       label: TYPE_LABEL[t],
       onClear: () => setFilters((f) => ({ ...f, types: f.types.filter((x) => x !== t) })),
     })),
-    ...filters.accountIds.map((id) => ({
-      key: `a-${id}`,
-      label: accounts.find((a) => a.id === id)?.name ?? id,
-      onClear: () => setFilters((f) => ({ ...f, accountIds: f.accountIds.filter((x) => x !== id) })),
-    })),
+    ...filters.accountIds.map((id) => {
+      const acc = accounts.find((a) => a.id === id);
+      return {
+        key: `a-${id}`,
+        // 账户筛选胶囊:多归属人账本下同名账户靠归属人区分
+        label: acc ? accountLabel(acc, isMultiOwnerAccounts(accounts)) : id,
+        onClear: () => setFilters((f) => ({ ...f, accountIds: f.accountIds.filter((x) => x !== id) })),
+      };
+    }),
     ...filters.categoryCodes.map((code) => ({
       key: `c-${code}`,
       label: catLabelMap[code] ?? code,

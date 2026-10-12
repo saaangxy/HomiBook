@@ -23,6 +23,7 @@ import { fetchBudgetTags, fetchRecordTags } from '@/services/records';
 import { useRecords } from '@/stores/records';
 import { formatMoney, formatMoneyShort } from '@/lib/format';
 import type { AccountItem, LoanInterestMethod, LoanPreview, RecordType, RecurringTransaction, RepaymentPlan } from '@/types';
+import { accountLabel, isMultiOwnerAccounts } from '@/lib/account';
 import {
   LOAN_INTEREST_METHOD_LABELS as METHOD_LABELS,
   RECORD_TYPES,
@@ -588,7 +589,7 @@ export default function RecurringScreen() {
               const selected = accountId === a.id;
               return (
                 <Pressable key={a.id} onPress={() => setAccountId(a.id)} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? alpha(colors.primary, 0.1) : colors.muted }}>
-                  <Text style={{ fontSize: 12, color: selected ? colors.primary : colors.mutedForeground, fontWeight: selected ? '600' : '400' }}>{a.name}</Text>
+                  <Text style={{ fontSize: 12, color: selected ? colors.primary : colors.mutedForeground, fontWeight: selected ? '600' : '400' }}>{accountLabel(a, isMultiOwnerAccounts(accounts))}</Text>
                 </Pressable>
               );
             })}
@@ -603,7 +604,7 @@ export default function RecurringScreen() {
                   const selected = toAccountId === a.id;
                   return (
                     <Pressable key={a.id} onPress={() => setToAccountId(a.id)} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? alpha(colors.primary, 0.1) : colors.muted }}>
-                      <Text style={{ fontSize: 12, color: selected ? colors.primary : colors.mutedForeground, fontWeight: selected ? '600' : '400' }}>{a.name}</Text>
+                      <Text style={{ fontSize: 12, color: selected ? colors.primary : colors.mutedForeground, fontWeight: selected ? '600' : '400' }}>{accountLabel(a, isMultiOwnerAccounts(accounts))}</Text>
                     </Pressable>
                   );
                 })}

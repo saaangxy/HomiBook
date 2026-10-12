@@ -206,7 +206,7 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
     if (res?.action === 'create' && res.name) return res.name
     if (res?.action === 'existing' && res.accountId) {
       const acc = accounts.find(a => a.id === res.accountId)
-      if (acc) return acc.name
+      if (acc) return accountLabel(acc, multiOwnerAccounts)
     }
     const created = (data.newAccountCreations || []).find(c => c.sourceAccountName === row.accountName)
     if (created) return created.name
@@ -221,7 +221,7 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
     if (res?.action === 'create' && res.name) return res.name
     if (res?.action === 'existing' && res.accountId) {
       const acc = accounts.find(a => a.id === res.accountId)
-      if (acc) return acc.name
+      if (acc) return accountLabel(acc, multiOwnerAccounts)
     }
     const created = (data.newAccountCreations || []).find(c => c.sourceAccountName === row.toAccountName)
     if (created) return created.name
