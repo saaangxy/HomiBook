@@ -6,7 +6,9 @@ export const queryAccountsTool: ToolDef = {
   name: 'query_accounts',
   displayName: '查询账户',
   promptHint: '查看账户余额和变动',
-  description: '查询账户列表及其余额。',
+  description:
+    '查询账户列表及其余额。多成员账本下同一名称可能有多个账户（如各人的「微信」），' +
+    '用返回的 ownerName 区分，向用户确认/展示账户时必须带上归属人。',
   parameters: {
     type: 'object',
     properties: {},
@@ -16,7 +18,7 @@ export const queryAccountsTool: ToolDef = {
     await assertIsMember(ctx.accountBookId, ctx.userId)
 
     return retryable(async () => {
-      const accounts = await prisma.account.findMany({
+      const rows = await prisma.account.findMany({
         where: { accountBookId: ctx.accountBookId, status: 'ACTIVE' },
         select: {
           id: true,
@@ -26,9 +28,17 @@ export const queryAccountsTool: ToolDef = {
           balance: true,
           accountNo: true,
           bankName: true,
+          ownerId: true,
+          owner: { select: { nickname: true, email: true } },
         },
         orderBy: { name: 'asc' },
       })
+      // 归属人展示名:多成员账本下同一名称可能有多个账户(如各人的「微信」),没有它模型无法区分,
+      // 生成的「请选择账户」选项就会撞名(与 REST /api/accounts 的 ownerName 同口径)
+      const accounts = rows.map(({ owner, ...a }) => ({
+        ...a,
+        ownerName: owner?.nickname || owner?.email || null,
+      }))
 
       const totalBalance = accounts.reduce((sum, a) => sum + a.balance, 0)
 

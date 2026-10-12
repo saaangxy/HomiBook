@@ -11,7 +11,7 @@
  */
 import { prisma } from '../../app.js'
 import { dateKey } from '../../lib/date-time.js'
-import { applyCategoryMappings, inferAccount, matchAccountByName, type ParsedRow } from './shared.js'
+import { applyCategoryMappings, inferAccount, matchAccountByName, type AccountCandidate, type ParsedRow } from './shared.js'
 
 // ======================== 账户匹配 ========================
 
@@ -22,7 +22,8 @@ export interface UnmatchedImportAccount {
   suggestedName: string
   bankName?: string
   accountNo?: string
-  candidates?: { id: string; name: string }[]
+  /** 歧义候选(带归属人,前端选择器靠它区分同名账户) */
+  candidates?: AccountCandidate[]
 }
 
 export interface ResolvedImportAccounts {
@@ -59,15 +60,20 @@ export async function resolveImportAccounts(
 
   // 加载活跃账户(多成员账本下只匹配本人账户)
   const namesToLookup = Array.from(accountNames).filter(n => !mappedCsvNameToId.has(n))
-  const allAccounts = await prisma.account.findMany({
+  const accountRows = await prisma.account.findMany({
     where: { accountBookId: bookId, status: 'ACTIVE', ...(ownerId ? { ownerId } : {}) },
-    select: { id: true, name: true },
+    select: { id: true, name: true, ownerId: true, owner: { select: { nickname: true, email: true } } },
   })
+  // 账户池带归属人展示名:歧义候选要靠它区分同名账户(与 shared.ts 的账户池同口径)
+  const allAccounts = accountRows.map(({ owner, ...a }) => ({
+    ...a,
+    ownerName: owner?.nickname || owner?.email || undefined,
+  }))
 
   // 用包含匹配查找,记录多候选的账户
   const nameToId = new Map<string, string>()
   const nameMatched: Record<string, string> = {}
-  const candidatesMap = new Map<string, { id: string; name: string }[]>()
+  const candidatesMap = new Map<string, AccountCandidate[]>()
   for (const name of namesToLookup) {
     const result = matchAccountByName(name, allAccounts, ownerId)
     if (result.matched) {

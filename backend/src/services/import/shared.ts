@@ -31,9 +31,15 @@ export interface ParsedRow {
   rowIndex: number
 }
 
+/**
+ * 歧义候选账户。带归属人展示名 —— 多成员账本下同名账户(如各人的「微信」)只有靠它区分,
+ * 前端选择器(accountLabel)与 AI 建议选项都依赖这个字段。
+ */
+export type AccountCandidate = { id: string; name: string; ownerId?: string; ownerName?: string }
+
 export type AccountMatchResult =
   | { matched: true; id: string; name: string }
-  | { matched: false; ambiguous: true; candidates: { id: string; name: string }[] }
+  | { matched: false; ambiguous: true; candidates: AccountCandidate[] }
   | { matched: false; ambiguous: false }
 
 export interface UnmatchedAccount {
@@ -42,7 +48,7 @@ export interface UnmatchedAccount {
   suggestedName: string
   bankName?: string
   accountNo?: string
-  candidates?: { id: string; name: string }[]
+  candidates?: AccountCandidate[]
   /** AI 提供的解析信息（preview 模式带回，供前端展示预填充状态） */
   aiResolution?: { sourceAccountName: string; action: 'existing' | 'create'; targetAccountId?: string; targetAccountName?: string; accountType?: string }
 }
@@ -113,7 +119,7 @@ export function inferAccount(paymentMethod: string): { type: string; defaultName
  */
 export function matchAccountByName(
   name: string,
-  allAccounts: { id: string; name: string; ownerId?: string }[],
+  allAccounts: { id: string; name: string; ownerId?: string; ownerName?: string }[],
   ownerId?: string,
 ): AccountMatchResult {
   return matchAccountInPoolDetailed(name, allAccounts, ownerId)
@@ -146,10 +152,15 @@ export async function applyAccountMappings(
   const nameRecord: Record<string, string> = {}
 
   // 加载活跃账户（DB 评分 + AI 覆盖共用；多成员账本下只匹配本人账户）
-  const allAccounts = await prisma.account.findMany({
+  const accountRows = await prisma.account.findMany({
     where: { accountBookId: bookId, status: 'ACTIVE', ...(ownerId ? { ownerId } : {}) },
-    select: { id: true, name: true },
+    select: { id: true, name: true, ownerId: true, owner: { select: { nickname: true, email: true } } },
   })
+  // 账户池带归属人展示名(对应 core 的 PoolAccount.ownerName):歧义候选要靠它区分同名账户
+  const allAccounts = accountRows.map(({ owner, ...a }) => ({
+    ...a,
+    ownerName: owner?.nickname || owner?.email || undefined,
+  }))
 
   // DB 映射评分
   if (sourceNames.length > 0) {

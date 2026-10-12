@@ -191,6 +191,12 @@ export interface PoolAccount {
   id: string;
   name: string;
   ownerId?: string;
+  /**
+   * 归属人展示名。多成员账本下不同成员可以有同名账户(如各人的「微信」),
+   * 歧义候选必须带上它,上层(前端选择器 / AI 建议选项)才区分得开。
+   * 由调用方从 DB 补(见 backend/src/services/import/shared.ts 的账户池构建)。
+   */
+  ownerName?: string;
 }
 
 export type AccountPoolMatchResult =
