@@ -1,16 +1,39 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
-import * as Notifications from 'expo-notifications';
+import { isRunningInExpoGo } from 'expo';
+import type { NotificationResponse } from 'expo-notifications';
 
 // 自动记账结果提醒(本机通知)。
 //
 // 用 expo-notifications 而不是自研原生:以后要做定时提醒 / 远程推送 / 点击带路由参数都现成,
 // 业务侧只依赖本文件 —— 换实现不影响调用方。
 //
-// 两个必须显式处理的点(缺了就会「发了但看不到 / 点了没反应」):
+// 三个必须显式处理的点(缺了就会「发了但看不到 / 点了没反应 / 启动直接崩」):
 //   1) **前台展示**:expo-notifications 默认不在前台展示通知,而自动记账的触发点恰是「回到前台」,
 //      必须用 setNotificationHandler 打开 banner/list;
-//   2) **点击跳转**:通知 data 里带 recordIds,由 NotificationIntakeBridge 消费后打开对应流水。
+//   2) **点击跳转**:通知 data 里带 recordIds,由 NotificationIntakeBridge 消费后打开对应流水;
+//   3) **按需加载**:SDK 53 起远程推送从 Expo Go(Android)移除,而该模块的副作用代码在
+//      **加载期**就 throw(见 loadNotifications),静态 import 会让整个 App 起不来。
+
+type NotificationsModule = typeof import('expo-notifications');
+
+let modulePromise: Promise<NotificationsModule | null> | null = null;
+
+/**
+ * 取通知模块;返回 null 表示当前环境不可用(Web / Android Expo Go / 加载异常),调用方静默降级。
+ * Android Expo Go 下**不发起 import** —— 该模块加载期即抛错,不是 try/catch 能包住的调用错误。
+ */
+function loadNotifications(): Promise<NotificationsModule | null> {
+  modulePromise ??= (async () => {
+    if (Platform.OS === 'web' || (Platform.OS === 'android' && isRunningInExpoGo())) return null;
+    try {
+      return await import('expo-notifications');
+    } catch {
+      return null;
+    }
+  })();
+  return modulePromise;
+}
 
 /** Android 通知渠道 id */
 const CHANNEL_ID = 'homibook.bookkeeping';
@@ -35,7 +58,7 @@ export function subscribeNotificationTarget(cb: (ids: string[]) => void): () => 
 }
 
 /** 解析通知里的目标 id */
-function idsOf(response: Notifications.NotificationResponse | null): string[] | null {
+function idsOf(response: NotificationResponse | null): string[] | null {
   const raw = response?.notification.request.content.data?.recordIds;
   return Array.isArray(raw) ? raw.map(String) : null;
 }
@@ -46,6 +69,8 @@ function idsOf(response: Notifications.NotificationResponse | null): string[] | 
  */
 export async function getInitialNotificationTarget(): Promise<string[] | null> {
   try {
+    const Notifications = await loadNotifications();
+    if (!Notifications) return null;
     const response = await Notifications.getLastNotificationResponseAsync();
     if (!response) return null;
     const notifId = response.notification.request.identifier;
@@ -67,6 +92,9 @@ let setupDone = false;
 export async function setupNotifications(): Promise<void> {
   if (setupDone || Platform.OS === 'web') return;
   setupDone = true;
+
+  const Notifications = await loadNotifications();
+  if (!Notifications) return;
 
   try {
     if (Platform.OS === 'android') {
@@ -105,6 +133,8 @@ export async function setupNotifications(): Promise<void> {
 /** 确保通知权限(Android 13+ / iOS 需运行时申请);返回当前是否可用 */
 export async function ensureNotificationPermission(): Promise<boolean> {
   try {
+    const Notifications = await loadNotifications();
+    if (!Notifications) return false;
     const current = await Notifications.getPermissionsAsync();
     if (current.granted) return true;
     if (!current.canAskAgain) return false;
@@ -131,6 +161,9 @@ function directionWord(type: string): string {
 export async function postBookkeepingNotifications(
   items: { recordId: string; type: string; amount: number; accountName: string | null }[],
 ): Promise<void> {
+  const Notifications = await loadNotifications();
+  if (!Notifications) return;
+
   for (const item of items) {
     if (!item.recordId) continue;
     try {
