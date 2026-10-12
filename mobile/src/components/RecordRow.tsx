@@ -11,12 +11,15 @@ import { RECORD_TYPE_LABELS as TYPE_LABEL } from '@homibook/core';
 interface RecordRowProps {
   record: RecordItem;
   showDivider?: boolean;
+  /** 账户展示名(可选)。record.accountName 只有账户名,多归属人账本下同名账户分不开,
+   *  由调用方传入 accountLabel 的结果(如统计明细页) */
+  accountText?: string;
 }
 
 // 流水卡片:商家/标题(粗体) + 类型|分类|账户(浅灰) + 备注(浅灰) + 右侧金额
 // 有附件时在标题旁显示回形针角标,点击直接弹出附件查看器(网格展示/预览/下载)
 // memo:流水列表 cell 内可能挂十几次,父级重渲染(筛选/汇总变化)时按 record 引用跳过
-export const RecordRow = memo(function RecordRow({ record, showDivider = false }: RecordRowProps) {
+export const RecordRow = memo(function RecordRow({ record, showDivider = false, accountText }: RecordRowProps) {
   const { colors } = useTheme();
   const [viewerOpen, setViewerOpen] = useState(false);
   const isIncome = record.type === 'INCOME';
@@ -26,7 +29,8 @@ export const RecordRow = memo(function RecordRow({ record, showDivider = false }
   const title = record.counterparty?.trim() || record.categoryName || '未分类';
   const typeLabel = TYPE_LABEL[record.type] ?? '';
   const categoryName = record.categoryName ?? '未分类';
-  const accountName = record.accountName ?? '';
+  // 账户名:调用方(如统计明细)传入带归属人的展示名时优先用;否则回退流水数据里的账户名
+  const accountName = accountText ?? record.accountName ?? '';
   const attachments = record.attachments ?? [];
   const attCount = attachments.length;
 

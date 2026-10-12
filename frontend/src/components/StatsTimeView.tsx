@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/table'
 import { recordApi, type RecordSummary, type RecordItem } from '@/api/record'
 import { accountApi, type AccountItem } from '@/api/account'
+import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
 import { formatMoney } from '@homibook/core'
 import { adminApi, type AdminUser } from '@/api/admin'
 import { budgetApi } from '@/api/budget'
@@ -281,6 +282,14 @@ export function StatsTimeView({ bookId, mode }: Props) {
     recordApi.getTags(bookId).then(setAvailableTags).catch(() => {})
   }, [bookId])
 
+  // 多归属人账本下同名账户(如各人的「微信」)要靠归属人区分
+  const multiOwnerAccounts = isMultiOwnerAccounts(accounts)
+  /** 明细表账户名:流水自带的 account 只有名字、不含归属人,这里按 id 反查补上 */
+  const detailAccountName = (r: { accountId?: string | null; account?: { name?: string } | null }) => {
+    const acc = r.accountId ? accounts.find((a) => a.id === r.accountId) : undefined
+    return acc ? accountLabel(acc, multiOwnerAccounts) : (r.account?.name || '-')
+  }
+
   const t = useChartTheme()
 
   const { stackedBarOption, stackedBarHeight } = useMemo(() => {
@@ -497,7 +506,7 @@ export function StatsTimeView({ bookId, mode }: Props) {
             <div className="min-w-36">
               <Label className="text-xs text-muted-foreground mb-1 block">账户</Label>
               <MultiSelect
-                items={accounts.filter((a) => a.status === 'ACTIVE').map((a) => ({ value: a.id, label: a.name }))}
+                items={accounts.filter((a) => a.status === 'ACTIVE').map((a) => ({ value: a.id, label: accountLabel(a, multiOwnerAccounts) }))}
                 selected={freeAccountIds}
                 onChange={setFreeAccountIds}
                 placeholder="全部"
@@ -681,7 +690,7 @@ export function StatsTimeView({ bookId, mode }: Props) {
               <SelectContent>
                 <SelectItem value="all">全部账户</SelectItem>
                 {accounts.filter((a) => a.status === 'ACTIVE').map((a) => (
-                  <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                  <SelectItem key={a.id} value={a.id}>{accountLabel(a, multiOwnerAccounts)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -737,7 +746,7 @@ export function StatsTimeView({ bookId, mode }: Props) {
                   {barDetailRecords.map((r) => (
                     <TableRow key={r.id}>
                       <TableCell className="text-xs whitespace-nowrap py-2">{r.date?.slice(0, 10)}</TableCell>
-                      <TableCell className="text-xs whitespace-nowrap py-2">{r.account?.name}</TableCell>
+                      <TableCell className="text-xs whitespace-nowrap py-2">{detailAccountName(r)}</TableCell>
                       <TableCell className="text-xs whitespace-nowrap py-2">{r.categoryCode || '-'}</TableCell>
                       <TableCell className="text-xs whitespace-nowrap py-2">{r.ownerName}</TableCell>
                       <TableCell className="text-xs whitespace-nowrap py-2">{r.payer || '-'}</TableCell>

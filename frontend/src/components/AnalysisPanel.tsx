@@ -99,12 +99,25 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
   const [selected, setSelected] = useState<SelectedInfo>(null)
   const t = useChartTheme()
 
+  // 账户数据:饼图分组标签与明细筛选共用(须在 pieOptions 之前声明,useMemo 里要用到)
+  const [detailAccounts, setDetailAccounts] = useState<AccountItem[]>([])
+  const multiOwnerAccounts = isMultiOwnerAccounts(detailAccounts)
+  /**
+   * 分组标签:账户分组的 label 由后端给「账户名」,多归属人账本下同名账户(如各人的「微信」)
+   * 在饼图图例里分不开 —— 按 key(账户 id)反查账户补上归属人;其它分组原样返回。
+   */
+  const groupLabelOf = useCallback((groupBy: string, d: { key: string; label: string }) => {
+    if (groupBy !== 'accountId') return d.label
+    const acc = detailAccounts.find((a) => a.id === d.key)
+    return acc ? accountLabel(acc, multiOwnerAccounts) : d.label
+  }, [detailAccounts, multiOwnerAccounts])
+
   const { pieOptions, pieMaxHeight } = useMemo(() => {
     const options: Record<string, { option: EChartsOption; chartHeight: number } | null> = {}
     let maxH = 260 // 原始高度
     for (const groupBy of STAT_GROUP_BYS) {
       const rawData = groupData[groupBy] || []
-      const data = rawData.map((d) => ({ name: d.label, value: d.amount })).sort((a, b) => b.value - a.value)
+      const data = rawData.map((d) => ({ name: groupLabelOf(groupBy, d), value: d.amount })).sort((a, b) => b.value - a.value)
       if (data.length > 0) {
         const result = buildPie(data, t)
         options[groupBy] = result
@@ -114,7 +127,7 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
       }
     }
     return { pieOptions: options, pieMaxHeight: maxH }
-  }, [groupData, t])
+  }, [groupData, t, groupLabelOf])
 
   // 详情弹窗
   const [detailOpen, setDetailOpen] = useState(false)
@@ -134,8 +147,11 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
   const [detailTags, setDetailTags] = useState<string[]>([])
   const [availableTags, setAvailableTags] = useState<string[]>([])
   // 下拉数据
-  const [detailAccounts, setDetailAccounts] = useState<AccountItem[]>([])
-  const multiOwnerAccounts = isMultiOwnerAccounts(detailAccounts)
+  /** 明细表账户名:流水自带的 account 只有名字、不含归属人,按 id 反查补上 */
+  const detailAccountName = (r: { accountId?: string | null; account?: { name?: string } | null }) => {
+    const acc = r.accountId ? detailAccounts.find((a) => a.id === r.accountId) : undefined
+    return acc ? accountLabel(acc, multiOwnerAccounts) : (r.account?.name || '-')
+  }
   const [detailUsers, setDetailUsers] = useState<AdminUser[]>([])
 
   useEffect(() => {
@@ -166,7 +182,7 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
 
   const handlePieClick = (groupBy: string, data: GroupData) => (params: any) => {
     if (!params || !params.name) return
-    const item = data.find((d) => d.label === params.name)
+    const item = data.find((d) => groupLabelOf(groupBy, d) === params.name)
     if (item) {
       setSelected({ groupBy, key: item.key, label: item.label, amount: item.amount })
     }
@@ -257,7 +273,7 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {STAT_GROUP_BYS.map((groupBy) => {
               const rawData = groupData[groupBy] || []
-              const data = rawData.map((d) => ({ name: d.label, value: d.amount })).sort((a, b) => b.value - a.value)
+              const data = rawData.map((d) => ({ name: groupLabelOf(groupBy, d), value: d.amount })).sort((a, b) => b.value - a.value)
               const isSelected = selected?.groupBy === groupBy
               return (
                 <div key={groupBy} className="flex flex-col">
@@ -316,13 +332,13 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
         <DialogContent className="max-w-3xl max-h-[85vh]">
           <DialogHeader>
             <DialogTitle className="text-sm flex items-center gap-2 flex-wrap">
-              <span>{selected?.label}</span>
+              <span>{selected ? groupLabelOf(selected.groupBy, selected) : ''}</span>
               <span className="font-normal text-muted-foreground">{formatMoney(selected?.amount ?? 0)}</span>
             </DialogTitle>
             {/* 继承的查询参数 */}
             <div className="flex items-center gap-1.5 flex-wrap mt-1">
               <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{TYPE_LABEL[activeType] || activeType}</span>
-              <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{selected?.label}</span>
+              <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{selected ? groupLabelOf(selected.groupBy, selected) : ''}</span>
               {dateFrom && <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{dateFrom} ~ {dateTo || dateFrom}</span>}
             </div>
           </DialogHeader>
@@ -394,7 +410,7 @@ export function AnalysisPanel({ bookId, dateFrom, dateTo, accountId, ownerId, ta
                   {detailRecords.map((r) => (
                     <TableRow key={r.id}>
                       <TableCell className="text-xs whitespace-nowrap py-2">{r.date?.slice(0, 10)}</TableCell>
-                      <TableCell className="text-xs whitespace-nowrap py-2">{r.account?.name}</TableCell>
+                      <TableCell className="text-xs whitespace-nowrap py-2">{detailAccountName(r)}</TableCell>
                       <TableCell className="text-xs whitespace-nowrap py-2">{r.categoryCode || '-'}</TableCell>
                       <TableCell className="text-xs whitespace-nowrap py-2">{r.ownerName}</TableCell>
                       <TableCell className="text-xs whitespace-nowrap py-2">{r.payer || '-'}</TableCell>

@@ -222,6 +222,16 @@ export default function StatsPage() {
   const [timeLoading, setTimeLoading] = useState(false);
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [pieSelected, setPieSelected] = useState<{ groupBy: 'category' | 'ownerId' | 'accountId'; item: GroupSummaryItem } | null>(null);
+
+  /**
+   * 饼图/选中块的标签:账户分组的 label 由后端给「账户名」,多归属人账本下同名账户
+   * (如各人的「微信」)在环形图里分不开 —— 按 key(账户 id)反查账户补上归属人;其它分组原样返回。
+   */
+  const pieLabelOf = (groupBy: 'category' | 'ownerId' | 'accountId', d: GroupSummaryItem) => {
+    if (groupBy !== 'accountId') return d.label;
+    const acc = accounts.find((a) => a.id === d.key);
+    return acc ? accountLabel(acc, multiOwnerAccounts) : d.label;
+  };
   const [barSelected, setBarSelected] = useState<{ periodIdx: number; catIdx: number } | null>(null);
 
   const isTimeTab = tab === 'yearly' || tab === 'monthly' || (tab === 'free' && freeSearched);
@@ -349,7 +359,7 @@ export default function StatsPage() {
       ...(sel.groupBy === 'accountId' ? { accountId: sel.item.key } : {}),
       ...(sel.groupBy === 'ownerId' ? { ownerId: sel.item.key } : {}),
     };
-    setDetail({ title: `${sel.item.label}`, params });
+    setDetail({ title: pieLabelOf(sel.groupBy, sel.item), params });
     loadDetailPage(1, params);
   };
 
@@ -638,7 +648,7 @@ export default function StatsPage() {
                     <Text style={{ fontSize: 12, color: colors.mutedForeground, textAlign: 'center', paddingVertical: 20 }}>暂无数据</Text>
                   ) : (
                     <DonutChart
-                      data={data.map((d) => ({ name: d.label, value: d.amount }))}
+                      data={data.map((d) => ({ name: pieLabelOf(groupBy, d), value: d.amount }))}
                       size={Math.min(CW, 180)}
                       selectedIndex={selIdx >= 0 ? selIdx : null}
                       onSelect={(i) => setPieSelected({ groupBy, item: data[i] })}
@@ -646,7 +656,7 @@ export default function StatsPage() {
                   )}
                   {sel && (
                     <SelectionBlock
-                      label={sel.label}
+                      label={pieLabelOf(groupBy, sel)}
                       amount={sel.amount}
                       color={cc.COLORS[(selIdx >= 0 ? selIdx : 0) % cc.COLORS.length]}
                       onCancel={() => setPieSelected(null)}
@@ -730,7 +740,11 @@ export default function StatsPage() {
             style={{ maxHeight: 480 }}
             data={detailRecords}
             keyExtractor={(r) => r.id}
-            renderItem={({ item }) => <RecordRow record={item} />}
+            renderItem={({ item }) => {
+              // 账户列:流水数据只有账户名,多归属人账本下按 accountId 反查补上归属人
+              const acc = item.accountId ? accounts.find((a) => a.id === item.accountId) : undefined;
+              return <RecordRow record={item} accountText={acc ? accountLabel(acc, multiOwnerAccounts) : undefined} />;
+            }}
             ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
             onEndReached={() => {
               if (detail && !detailLoading && detailPage * PAGE_SIZE < detailTotal) {
