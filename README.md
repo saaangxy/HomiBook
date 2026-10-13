@@ -74,16 +74,11 @@
 
 ## 📸 页面预览
 
-<!--
-截图待补充：运行应用后在浏览器截图，保存到 screenshots/ 目录并替换下方路径
-命名规范见 screenshots/README.md
-
-![首页](screenshots/home.png)
-![统计分析](screenshots/stats.png)
-![流水日历](screenshots/calendar.png)
-![流水管理](screenshots/records.png)
-![AI 记账助手](screenshots/ai-assistant.png)
--->
+[首页](screenshots/home.png)
+[统计分析](screenshots/stats.png)
+[流水日历](screenshots/calendar.png)
+[流水管理](screenshots/records.png)
+[AI 记账助手](screenshots/ai-assistant.png)
 
 ## 🛠 技术栈
 
