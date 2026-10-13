@@ -136,6 +136,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      # 取出仓库里的 .github/release-notes/<tag>.md 作为发布说明。
+      # 必须放在下面按 hashFiles 判断之前:hashFiles 是对 runner 上已 checkout 的文件求值,
+      # 本 job 若不 checkout 则 workspace 只有 apk,它会恒为空 —— 那样两个分支都判成「没有说明文件」,
+      # 永远退回自动生成,等于白改。
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: apk
@@ -151,7 +156,17 @@ jobs:
           done
           ls -l homibook-*.apk
 
-      - name: Create GitHub Release
+      # 发布说明优先用仓库里手工维护的 .github/release-notes/<tag>.md(如 v1.1.3.md);
+      # 该文件缺失时回退到 GitHub 自动生成 —— 直接写死 body_path 会在忘记建文件时让发布步骤报错
+      - name: Create GitHub Release (手写发布说明)
+        if: hashFiles(format('.github/release-notes/{0}.md', github.ref_name)) != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          files: homibook-*.apk
+          body_path: .github/release-notes/${{ github.ref_name }}.md
+
+      - name: Create GitHub Release (自动生成说明)
+        if: hashFiles(format('.github/release-notes/{0}.md', github.ref_name)) == ''
         uses: softprops/action-gh-release@v2
         with:
           files: homibook-*.apk
