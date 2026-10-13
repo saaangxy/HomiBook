@@ -1,10 +1,12 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
 import { Card, CardContent } from '@/components/ui/card'
 import { Spinner } from '@/components/ui/spinner'
 import { recordApi, type RecordSummary } from '@/api/record'
 import { accountApi, type AccountItem } from '@/api/account'
+import { MultiSelect } from '@/components/ui/multi-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
 import { recurringApi, type RecurringTransaction } from '@/api/recurring'
 import { useBookStore } from '@/stores/book'
@@ -24,6 +26,16 @@ import {
   type RadarMetric,
 } from '@/lib/financial-health'
 import { formatMoney, isAssetAccountType, isEmergencyAccountType } from '@homibook/core'
+
+/**
+ * 账户余额变化的时间范围。后端 granularity 只支持 daily / monthly:
+ * 一年按日会有 365 个点太密,故用月度;短周期用日粒度才看得出变化。
+ */
+const BALANCE_RANGES = [
+  { key: '60d', label: '近60天', days: 59, granularity: 'daily' as const },
+  { key: '180d', label: '近半年', days: 179, granularity: 'daily' as const },
+  { key: '1y', label: '近一年', days: 364, granularity: 'monthly' as const },
+]
 
 const RADAR_TIPS: Record<string, string> = {
   '应急能力': '紧急备用金 ÷ 月均支出，反映应对突发开支的现金缓冲。健康区间 ≥6 个月',
@@ -260,6 +272,11 @@ export function StatsOverview() {
   // 账户余额
   const [balDates, setBalDates] = useState<string[]>([])
   const [balSeries, setBalSeries] = useState<{ name: string; data: number[] }[]>([])
+  // 账户余额变化选中的账户(默认取前 5 个 ACTIVE,之后由用户决定)
+  const [accounts, setAccounts] = useState<AccountItem[]>([])
+  const [balanceAccountIds, setBalanceAccountIds] = useState<string[]>([])
+  const balanceDefaultedRef = useRef(false)
+  const [balanceRange, setBalanceRange] = useState<(typeof BALANCE_RANGES)[number]['key']>('60d')
 
   // 雷达图
   const [radarMetrics, setRadarMetrics] = useState<{ name: string; value: number }[]>([])
@@ -281,6 +298,42 @@ export function StatsOverview() {
     () => (radarMetrics.length > 0 ? buildRadarOption(radarMetrics, t) : null),
     [radarMetrics, t],
   )
+
+  /**
+   * 账户余额变化（近60天，按日）：独立于 loadData —— 切换选中账户时只重拉这一张图，
+   * 不触发整页 loading（月度趋势/净值/雷达都不需要重算）。
+   */
+  useEffect(() => {
+    // 未选账户时不请求、也不清空 —— 渲染层会显示「请选择账户」，避免在 effect 体内同步 setState
+    if (!currentBookId || balanceAccountIds.length === 0) return
+    let cancelled = false
+    const now = dayjs()
+    const range = BALANCE_RANGES.find((r) => r.key === balanceRange) ?? BALANCE_RANGES[0]
+    accountApi.balanceHistory({
+      bookId: currentBookId,
+      accountIds: balanceAccountIds.join(','),
+      granularity: range.granularity,
+      dateFrom: now.subtract(range.days, 'day').format('YYYY-MM-DD'),
+      dateTo: now.format('YYYY-MM-DD'),
+    }).then((dailyHist) => {
+      if (cancelled) return
+      if (dailyHist.length === 0) {
+        setBalDates([])
+        setBalSeries([])
+        return
+      }
+      const multiOwner = isMultiOwnerAccounts(accounts)
+      setBalDates(dailyHist[0].balances.map((b) => b.date))
+      setBalSeries(dailyHist.map((a) => {
+        const acct = accounts.find((x) => x.id === a.accountId)
+        return {
+          name: acct ? accountLabel(acct, multiOwner) : a.accountName,
+          data: a.balances.map((b) => b.balance),
+        }
+      }))
+    }).catch(() => { /* 忽略:图区自会显示暂无数据 */ })
+    return () => { cancelled = true }
+  }, [currentBookId, balanceAccountIds, accounts, balanceRange])
 
   const loadData = useCallback(async () => {
     if (!currentBookId) return
@@ -308,6 +361,12 @@ export function StatsOverview() {
       // 资产净值趋势：汇总所有账户余额
       const activeAccts = accounts.filter((a) => a.status === 'ACTIVE')
       const acctIds = activeAccts.map((a) => a.id)
+      setAccounts(accounts)
+      // 首次自动选中前 5 个(与改动前行为一致);之后由用户在卡片上自选,清空也尊重
+      if (!balanceDefaultedRef.current) {
+        balanceDefaultedRef.current = true
+        setBalanceAccountIds(acctIds.slice(0, 5))
+      }
       if (acctIds.length > 0) {
         const hist = await accountApi.balanceHistory({
           bookId: currentBookId,
@@ -323,26 +382,6 @@ export function StatsOverview() {
           )
           setNwDates(dates)
           setNwBalances(totalBalances)
-        }
-        // 账户余额变化（按日，最近60天）
-        const dailyFrom = now.subtract(59, 'day').format('YYYY-MM-DD')
-        const dailyHist = await accountApi.balanceHistory({
-          bookId: currentBookId,
-          accountIds: acctIds.slice(0, 5).join(','),
-          granularity: 'daily',
-          dateFrom: dailyFrom,
-          dateTo,
-        })
-        if (dailyHist.length > 0) {
-          const multiOwner = isMultiOwnerAccounts(accounts)
-          setBalDates(dailyHist[0].balances.map((b) => b.date))
-          setBalSeries(dailyHist.map((a) => {
-            const acct = accounts.find((x) => x.id === a.accountId)
-            return {
-              name: acct ? accountLabel(acct, multiOwner) : a.accountName,
-              data: a.balances.map((b) => b.balance),
-            }
-          }))
         }
       }
 
@@ -432,11 +471,35 @@ export function StatsOverview() {
             <div className="lg:col-span-2">
               <Card className="rounded-xl overflow-hidden h-full">
                 <CardContent className="p-4">
-                  <div className="flex items-center gap-2 mb-3">
+                  <div className="flex items-center gap-2 mb-3 flex-wrap">
                     <BarChart3 size={18} className="text-primary" />
-                    <h3 className="text-sm font-semibold">账户余额变化（近60天）</h3>
+                    <h3 className="text-sm font-semibold">账户余额变化</h3>
+                    <div className="ml-auto flex items-center gap-2">
+                      {/* 时间范围:后端粒度只支持 daily/monthly,短周期按日、一年按月度 */}
+                      <Select value={balanceRange} onValueChange={(v) => setBalanceRange(v as typeof balanceRange)}>
+                        <SelectTrigger className="h-8 w-24 text-xs"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {BALANCE_RANGES.map((r) => (
+                            <SelectItem key={r.key} value={r.key} className="text-xs">{r.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {/* 要对比的账户(账户多时多线会挤在一起),默认前 5 个 */}
+                      <div className="w-44">
+                        <MultiSelect
+                          items={accounts
+                            .filter((a) => a.status === 'ACTIVE')
+                            .map((a) => ({ value: a.id, label: accountLabel(a, isMultiOwnerAccounts(accounts)) }))}
+                          selected={balanceAccountIds}
+                          onChange={setBalanceAccountIds}
+                          placeholder="选择账户"
+                        />
+                      </div>
+                    </div>
                   </div>
-                  {balSeries.length === 0 ? (
+                  {balanceAccountIds.length === 0 ? (
+                    <div className="flex items-center justify-center h-80 text-xs text-muted-foreground">请选择账户</div>
+                  ) : balSeries.length === 0 ? (
                     <div className="flex items-center justify-center h-80 text-xs text-muted-foreground">暂无数据</div>
                   ) : (
                     <div style={{ height: 320 }}>

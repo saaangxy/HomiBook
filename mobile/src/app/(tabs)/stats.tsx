@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useIsFocused } from 'expo-router';
 import {
   RefreshControl, ScrollView, View, Pressable, ActivityIndicator, FlatList,
@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated from 'react-native-reanimated';
 import {
   TrendingUp, TrendingDown, Wallet, PieChart as PieIcon,
-  Activity, Search, ChevronLeft, ChevronRight, Users, X,
+  Activity, Search, ChevronLeft, ChevronRight, ChevronDown, Users, X,
 } from 'lucide-react-native';
 import type { StatGranularity } from '@homibook/core';
 import { useTheme, alpha, useChartColors } from '@/theme';
@@ -37,6 +37,16 @@ const TABS: { key: StatsTab; label: string }[] = [
   { key: 'yearly', label: '年度' },
   { key: 'monthly', label: '月度' },
   { key: 'free', label: '自由' },
+];
+
+/**
+ * 账户余额变化的时间范围。后端 granularity 只支持 daily / monthly:
+ * 一年按日会有 365 个点太密,故用月度;短周期用日粒度才看得出变化。
+ */
+const BALANCE_RANGES = [
+  { key: '60d', label: '近60天', days: 59, granularity: 'daily' as const },
+  { key: '180d', label: '近半年', days: 179, granularity: 'daily' as const },
+  { key: '1y', label: '近一年', days: 364, granularity: 'monthly' as const },
 ];
 
 // ════════════════════════════════════════
@@ -130,9 +140,47 @@ export default function StatsPage() {
   const [netWorth, setNetWorth] = useState<{ dates: string[]; values: number[] }>({ dates: [], values: [] });
   const [balance, setBalance] = useState<{ dates: string[]; series: { name: string; data: number[] }[] }>({ dates: [], series: [] });
   const [radar, setRadar] = useState<RadarMetric[]>([]);
+  // 账户余额变化选中的账户(默认取前 5 个 ACTIVE,之后由用户决定)
+  const [balanceAccountIds, setBalanceAccountIds] = useState<string[]>([]);
+  const balanceDefaultedRef = useRef(false);
+  const [balanceRange, setBalanceRange] = useState<(typeof BALANCE_RANGES)[number]['key']>('60d');
+  // 账户选择弹层开关
+  const [balancePickerOpen, setBalancePickerOpen] = useState(false);
+
 
   /** 概览首屏加载态:只在第一次数据到齐前为 true,之后的切页/记账刷新都是静默更新 */
   const [overviewLoading, setOverviewLoading] = useState(true);
+
+  /**
+   * 账户余额变化(近60天,按日):独立于 loadOverview —— 切换选中账户时只重拉这一张图,
+   * 不触发整屏 loading(月度趋势/净值/雷达都无需重算)。
+   */
+  useEffect(() => {
+    // 未选账户时不请求(渲染层显示「请选择账户」),避免在 effect 体内同步 setState
+    if (!bookId || balanceAccountIds.length === 0) return;
+    let cancelled = false;
+    const range = BALANCE_RANGES.find((r) => r.key === balanceRange) ?? BALANCE_RANGES[0];
+    const nowD = new Date();
+    const p2 = (n: number) => String(n).padStart(2, '0');
+    const dateTo = `${nowD.getFullYear()}-${p2(nowD.getMonth() + 1)}-${p2(nowD.getDate())}`;
+    const startD = new Date(nowD.getFullYear(), nowD.getMonth(), nowD.getDate() - range.days);
+    const dateFrom = `${startD.getFullYear()}-${p2(startD.getMonth() + 1)}-${p2(startD.getDate())}`;
+    fetchBalanceHistory(bookId, {
+      accountIds: balanceAccountIds.join(','), granularity: range.granularity, dateFrom, dateTo,
+    }).then((dailyHist) => {
+      if (cancelled) return;
+      if (dailyHist.length === 0) { setBalance({ dates: [], series: [] }); return; }
+      const multiOwner = isMultiOwnerAccounts(accounts);
+      setBalance({
+        dates: dailyHist[0].balances.map((b) => b.date),
+        series: dailyHist.map((a) => {
+          const acct = accounts.find((x) => x.id === a.accountId);
+          return { name: acct ? accountLabel(acct, multiOwner) : a.accountName, data: a.balances.map((b) => b.balance) };
+        }),
+      });
+    }).catch(() => { /* 忽略:图区自会显示暂无数据 */ });
+    return () => { cancelled = true; };
+  }, [bookId, balanceAccountIds, accounts, balanceRange]);
 
   // 概览数据(近12个月口径,对齐 web StatsOverview.load)
   const loadOverview = useCallback(async () => {
@@ -142,8 +190,7 @@ export default function StatsPage() {
     const dateTo = `${nowD.getFullYear()}-${p2(nowD.getMonth() + 1)}-${p2(nowD.getDate())}`;
     const startD = new Date(nowD.getFullYear(), nowD.getMonth() - 11, 1);
     const dateFrom = `${startD.getFullYear()}-${p2(startD.getMonth() + 1)}-01`;
-    const dailyD = new Date(nowD.getFullYear(), nowD.getMonth(), nowD.getDate() - 59);
-    const dailyFrom = `${dailyD.getFullYear()}-${p2(dailyD.getMonth() + 1)}-${p2(dailyD.getDate())}`;
+    // (账户余额变化的 dailyFrom 已随逻辑移到下方独立 effect)
     const [trendRes, accountsRes, loans, passive, insurance] = await Promise.all([
       fetchMonthlyTrend(bookId, dateFrom, dateTo),
       fetchAccounts(bookId).catch(() => []),
@@ -153,7 +200,7 @@ export default function StatsPage() {
       fetchSummary(bookId, { type: 'EXPENSE', categoryCode: '保险', dateFrom, dateTo }),
     ]);
     setTrend(trendRes);
-    // 资产净值趋势 + 账户余额变化(近60天):ACTIVE 账户余额历史(对齐 web)
+    // 资产净值趋势:汇总所有 ACTIVE 账户余额(月度,对齐 web)
     const active = accountsRes.filter((a) => a.status === 'ACTIVE');
     if (active.length > 0) {
       const hist = await fetchBalanceHistory(bookId, { accountIds: active.map((a) => a.id).join(','), granularity: 'monthly', dateFrom, dateTo });
@@ -163,22 +210,13 @@ export default function StatsPage() {
       } else {
         setNetWorth({ dates: [], values: [] });
       }
-      const dailyHist = await fetchBalanceHistory(bookId, { accountIds: active.slice(0, 5).map((a) => a.id).join(','), granularity: 'daily', dateFrom: dailyFrom, dateTo });
-      if (dailyHist.length > 0) {
-        const multiOwner = isMultiOwnerAccounts(accountsRes);
-        setBalance({
-          dates: dailyHist[0].balances.map((b) => b.date),
-          series: dailyHist.map((a) => {
-            const acct = accountsRes.find((x) => x.id === a.accountId);
-            return { name: acct ? accountLabel(acct, multiOwner) : a.accountName, data: a.balances.map((b) => b.balance) };
-          }),
-        });
-      } else {
-        setBalance({ dates: [], series: [] });
-      }
     } else {
       setNetWorth({ dates: [], values: [] });
-      setBalance({ dates: [], series: [] });
+    }
+    // 账户余额变化(近60天)已改由下方独立 effect 按「用户选中的账户」拉取,这里只做首次默认选中
+    if (!balanceDefaultedRef.current) {
+      balanceDefaultedRef.current = true;
+      setBalanceAccountIds(active.slice(0, 5).map((a) => a.id));
     }
     // 财务健康评估(7维)
     setRadar(computeRadarMetrics({
@@ -430,8 +468,45 @@ export default function StatsPage() {
         <AreaLineChart data={netWorth.values} labels={netWorthLabels} color={colors.primary} height={224} />
       </ChartCard>
 
-      <ChartCard title="账户余额变化(近60天)">
-        <MultiLineChart series={balance.series} labels={balanceLabels} />
+      <ChartCard title="账户余额变化">
+        {/* 时间范围:后端粒度只支持 daily/monthly,短周期按日、一年按月度 */}
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          {BALANCE_RANGES.map((r) => {
+            const on = balanceRange === r.key;
+            return (
+              <Pressable
+                key={r.key}
+                onPress={() => setBalanceRange(r.key)}
+                style={{
+                  paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1,
+                  borderColor: on ? colors.primary : colors.border,
+                  backgroundColor: on ? alpha(colors.primary, 0.12) : colors.card,
+                }}
+              >
+                <Text style={{ fontSize: 12, color: on ? colors.primary : colors.mutedForeground }}>{r.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        {/* 账户名偏长,摊在卡片里很占地方:这里只显示「已选 N 个账户」,具体选哪些在弹层里看 */}
+        <Pressable
+          onPress={() => setBalancePickerOpen(true)}
+          style={{
+            alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 4,
+            paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1,
+            borderColor: colors.border, backgroundColor: colors.muted,
+          }}
+        >
+          <Text style={{ fontSize: 12, color: balanceAccountIds.length > 0 ? colors.foreground : colors.mutedForeground }}>
+            {balanceAccountIds.length > 0 ? `已选 ${balanceAccountIds.length} 个账户` : '选择账户'}
+          </Text>
+          <ChevronDown size={12} color={colors.mutedForeground} />
+        </Pressable>
+        {balanceAccountIds.length === 0 ? (
+          <Text variant="muted" style={{ fontSize: 12, textAlign: 'center', paddingVertical: 40 }}>请选择账户</Text>
+        ) : (
+          <MultiLineChart series={balance.series} labels={balanceLabels} />
+        )}
       </ChartCard>
 
       <ChartCard title="财务健康评估(7维)">
@@ -726,6 +801,41 @@ export default function StatsPage() {
         {tab === 'monthly' && renderTimeView('monthly')}
         {tab === 'free' && renderTimeView('free')}
       </ScrollView>
+
+      {/* 账户余额变化:账户多选弹层(卡片里只展示已选,避免 20+ 个 chip 摊满整屏) */}
+      <FormSheet visible={balancePickerOpen} title="选择账户" onClose={() => setBalancePickerOpen(false)} scrollBody>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <Text variant="muted" style={{ fontSize: 12 }}>已选 {balanceAccountIds.length} / {activeAccounts.length}</Text>
+          <View style={{ flexDirection: 'row', gap: 16 }}>
+            <Pressable onPress={() => setBalanceAccountIds(activeAccounts.map((a) => a.id))}>
+              <Text style={{ fontSize: 12, color: colors.primary }}>全选</Text>
+            </Pressable>
+            <Pressable onPress={() => setBalanceAccountIds([])}>
+              <Text style={{ fontSize: 12, color: colors.mutedForeground }}>清空</Text>
+            </Pressable>
+          </View>
+        </View>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingBottom: 8 }}>
+          {activeAccounts.map((a) => {
+            const on = balanceAccountIds.includes(a.id);
+            return (
+              <Pressable
+                key={a.id}
+                onPress={() => setBalanceAccountIds((list) => (on ? list.filter((x) => x !== a.id) : [...list, a.id]))}
+                style={{
+                  paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, borderWidth: 1,
+                  borderColor: on ? colors.primary : colors.border,
+                  backgroundColor: on ? alpha(colors.primary, 0.12) : colors.card,
+                }}
+              >
+                <Text style={{ fontSize: 12, color: on ? colors.primary : colors.mutedForeground }}>
+                  {accountLabel(a, multiOwnerAccounts)}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </FormSheet>
 
       {/* 图表选中项的流水详情弹层(对齐 web Dialog:标题 + 流水列表,上滑分页) */}
       <FormSheet visible={!!detail} title={detail?.title ?? '流水详情'} onClose={() => setDetail(null)}>
