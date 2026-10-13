@@ -51,6 +51,7 @@ const DEFAULT_DICTIONARIES: Array<{ group: string; code: string; label: string; 
   { group: 'transaction_category_expense', code: '保险', label: '保险', order: 12 },
   { group: 'transaction_category_expense', code: '宠物', label: '宠物', order: 13 },
   { group: 'transaction_category_expense', code: '人情往来', label: '人情往来', order: 14 },
+  { group: 'transaction_category_expense', code: '生活服务', label: '生活服务', order: 15 },
   { group: 'transaction_category_expense', code: '其他支出', label: '其他支出', order: 99 },
   // 交易分类 - 不计收支（转账）
   { group: 'transaction_category_transfer', code: '转账', label: '转账', order: 0 },
