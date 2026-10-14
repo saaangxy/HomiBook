@@ -5,7 +5,7 @@ import { ArrowUpRight, ArrowDownRight, ArrowLeftRight, SlidersHorizontal, X, Cop
 import { useTheme, alpha, haptics } from '@/theme';
 import { useUIShell, usePageRefresh } from '@/components/chrome/chrome';
 import { useRecords } from '@/stores/records';
-import { fetchRecordsPaged } from '@/services/records';
+import { fetchRecordsPaged, fetchSummary } from '@/services/records';
 import { Screen } from '@/components/Screen';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
@@ -21,7 +21,7 @@ import { showToast } from '@/components/chrome/Toast';
 import { FormSheet } from '@/components/chrome/FormSheet';
 import { exportRecordsCsv, type ExportMode } from '@/services/import';
 import { formatMoneyShort } from '@/lib/format';
-import type { RecordItem } from '@/types';
+import type { RecordItem, RecordSummary } from '@/types';
 import { RECORD_TYPE_LABELS as TYPE_LABEL } from '@homibook/core';
 import { accountLabel, isMultiOwnerAccounts } from '@/lib/account';
 /** 列表分页大小:一次只加载 20 条,滚动到底自动加载下一页 */
@@ -93,7 +93,12 @@ export default function RecordsScreen() {
   const { colors } = useTheme();
   const { openRecord, currentLedger } = useUIShell();
   const bookId = currentLedger.id;
-  const { summary, accounts, categories, refresh, cloneRecord, deleteRecord } = useRecords();
+  const { accounts, categories, refresh, cloneRecord, deleteRecord } = useRecords();
+  /**
+   * 顶部汇总:不再用 store 的全量 summary —— 与 web 流水管理页同口径,
+   * 由本页调后端聚合并带上当前筛选条件(筛完顶部数字跟着变)。
+   */
+  const [summary, setSummary] = useState<RecordSummary>({ income: 0, expense: 0, transfer: 0, netIncome: 0 });
   // 刷新时机:切到本页时(isFocused)检查筛选签名 —— 条件变化才重新加载,同条件回切走静默刷新(无感知延迟)
   const isFocused = useIsFocused();
   const [filters, setFilters] = useState<RecordFilters>(emptyFilters);
@@ -164,6 +169,28 @@ export default function RecordsScreen() {
     if (loadedKeyRef.current !== filterKey) load();
     else load({ silent: true });
   }, [isFocused, bookId, filterKey, load]);
+
+  /**
+   * 顶部四项汇总:与 web 流水管理页同口径 —— 调后端聚合(不受分页上限影响),
+   * 并沿用当前筛选条件,筛完数字立即跟着变(原先顶部恒为 store 的全量值,与列表不一致)。
+   */
+  const loadSummary = useCallback(async () => {
+    if (!bookId) return;
+    try {
+      setSummary(await fetchSummary(bookId, {
+        type: query.types.length > 0 ? query.types.join(',') : undefined,
+        accountId: query.accountId,
+        categoryCode: query.categoryCode,
+        dateFrom: query.dateFrom,
+        dateTo: query.dateTo,
+        amountFrom: query.amountFrom,
+        amountTo: query.amountTo,
+        remark: query.remark,
+      }));
+    } catch { /* 汇总失败不阻塞列表 */ }
+  }, [bookId, query]);
+
+  useEffect(() => { loadSummary(); }, [loadSummary]);
 
   const loadMore = useCallback(() => {
     // 同步 ref 判断:同一 tick 的重复 onEndReached 只有第一次能通过

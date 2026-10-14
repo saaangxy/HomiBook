@@ -172,7 +172,11 @@ export async function fetchCalendar(bookId: string, year: number, month: number)
   return res ?? [];
 }
 
-export async function fetchSummary(bookId: string, opts?: { dateFrom?: string; dateTo?: string; type?: string; categoryCode?: string; accountId?: string; ownerId?: string }): Promise<RecordSummary> {
+export async function fetchSummary(bookId: string, opts?: {
+  dateFrom?: string; dateTo?: string; type?: string; categoryCode?: string; accountId?: string; ownerId?: string;
+  /** 金额区间 / 关键词(摘要备注):流水页顶部汇总要跟随这些筛选,与列表同一套条件 */
+  amountFrom?: number; amountTo?: number; remark?: string;
+}): Promise<RecordSummary> {
   const res = await http.get<CoreSummary>('/api/records/summary', {
     query: {
       bookId,
@@ -184,6 +188,9 @@ export async function fetchSummary(bookId: string, opts?: { dateFrom?: string; d
       categoryCode: opts?.categoryCode,
       accountId: opts?.accountId,
       ownerId: opts?.ownerId,
+      amountFrom: opts?.amountFrom,
+      amountTo: opts?.amountTo,
+      remark: opts?.remark,
     },
   });
   return {

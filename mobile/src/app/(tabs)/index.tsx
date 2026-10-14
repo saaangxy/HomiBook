@@ -12,11 +12,11 @@ import { Text } from '@/components/ui/Text';
 import { RecordRow } from '@/components/RecordRow';
 import { FadeInView } from '@/components/FadeInView';
 import { LoadingState } from '@/components/ui/LoadingState';
-import { fetchBudgets, fetchMonthlyTrend } from '@/services/records';
+import { fetchBudgets, fetchMonthlyTrend, fetchSummary } from '@/services/records';
 import { useRecords } from '@/stores/records';
 import { useUIShell, usePageRefresh } from '@/components/chrome/chrome';
 import { formatMoney, formatMoneyShort } from '@/lib/format';
-import type { BudgetItem } from '@/types';
+import type { BudgetItem, RecordSummary } from '@/types';
 
 type Period = '本月' | '当年';
 
@@ -31,7 +31,17 @@ export default function HomeScreen() {
   const [budgetExp, setBudgetExp] = useState(false);
   const [yearIncome, setYearIncome] = useState(0);
   const [yearExpense, setYearExpense] = useState(0);
-  const { records, summary, refresh, loading: recordsLoading } = useRecords();
+  /** 本月收支(后端聚合):store 的 summary 是全量口径,「本月收入/支出/结余」必须单独按当月取 */
+  const [monthSummary, setMonthSummary] = useState<RecordSummary>({ income: 0, expense: 0, transfer: 0, netIncome: 0 });
+  // 本月日期范围 —— 与 web 首页同口径(dateFrom=当月1日, dateTo=当月最后一天)
+  const monthRange = useMemo(() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = d.getMonth() + 1;
+    const p = (n: number) => String(n).padStart(2, '0');
+    return { dateFrom: `${y}-${p(m)}-01`, dateTo: `${y}-${p(m)}-${new Date(y, m, 0).getDate()}` };
+  }, []);
+  const { records, refresh, loading: recordsLoading } = useRecords();
   /** 预算/年度收支的首屏加载态(与 store 的流水加载态一起决定是否显示占位) */
   const [extraLoading, setExtraLoading] = useState(true);
   // 刷新时机:切到本页时(isFocused)重拉预算与年度收支
@@ -55,6 +65,7 @@ export default function HomeScreen() {
             setYearIncome(t.income.reduce((s, x) => s + x, 0));
             setYearExpense(t.expense.reduce((s, x) => s + x, 0));
           }),
+          fetchSummary(bookId, monthRange).then(setMonthSummary),
         ]);
       } else {
         await refresh();
@@ -62,7 +73,7 @@ export default function HomeScreen() {
     } finally {
       setRefreshing(false);
     }
-  }, [refresh, currentLedger.id]);
+  }, [refresh, currentLedger.id, monthRange]);
 
   useEffect(() => {
     const bookId = currentLedger.id;
@@ -75,8 +86,10 @@ export default function HomeScreen() {
         setYearIncome(t.income.reduce((s, x) => s + x, 0));
         setYearExpense(t.expense.reduce((s, x) => s + x, 0));
       }),
+      // 本月收支:与 web 首页「本月收入/支出/结余」同口径(带当月 dateFrom/dateTo)
+      fetchSummary(bookId, monthRange).then(setMonthSummary),
     ]).catch(() => {}).finally(() => setExtraLoading(false));
-  }, [isFocused, currentLedger.id]); // 切到本页时,预算进度与年度收支即时重算
+  }, [isFocused, currentLedger.id, monthRange]); // 切到本页时,预算进度与年度收支即时重算
 
   // 记一笔/编辑保存后由 RecordModal 直接调用:重拉预算与年度收支
   const reloadPage = useCallback(() => {
@@ -87,7 +100,8 @@ export default function HomeScreen() {
       setYearIncome(t.income.reduce((s, x) => s + x, 0));
       setYearExpense(t.expense.reduce((s, x) => s + x, 0));
     });
-  }, [currentLedger.id]);
+    fetchSummary(bookId, monthRange).then(setMonthSummary);
+  }, [currentLedger.id, monthRange]);
   usePageRefresh(reloadPage);
   const recent = records.slice(0, 4);
 
@@ -101,8 +115,9 @@ export default function HomeScreen() {
   const totalUsed = monthlyBudgets.reduce((s, b) => s + b.actualAmount, 0);
   const pct = totalBudget ? Math.min(100, Math.round((totalUsed / totalBudget) * 100)) : 0;
 
-  const income = summary.income;
-  const expense = summary.expense;
+  // 「本月」口径:store 的 summary 是全量聚合,这张卡必须用当月单独取的值
+  const income = monthSummary.income;
+  const expense = monthSummary.expense;
 
   /** 首屏占位:流水 store 与预算/年度收支全部到齐前,不渲染数据块(避免 ¥0 → 真实值的整体重排) */
   const bootLoading = recordsLoading || extraLoading;
@@ -165,7 +180,7 @@ export default function HomeScreen() {
                 key: '本月' as Period,
                 label: '月度',
                 income, expense,
-                net: summary.netIncome,
+                net: monthSummary.netIncome,
               },
               {
                 key: '当年' as Period,

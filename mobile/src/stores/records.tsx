@@ -1,12 +1,15 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { createRecord, deleteRecordApi, fetchAccounts, fetchCategories, fetchRecords, updateRecordApi, type RecordCreatePayload } from '@/services/records';
+import { createRecord, deleteRecordApi, fetchAccounts, fetchCategories, fetchRecords, fetchSummary, updateRecordApi, type RecordCreatePayload } from '@/services/records';
 import { useLedgerStore } from '@/stores/ledger';
 import { registerAccountCache } from '@/stores/account-cache';
 import type { AccountItem, Category, RecordItem, RecordSummary } from '@/types';
 
 interface RecordsValue {
   records: RecordItem[];
-  /** 由 records 派生(收入/支出/转账/净收入),与列表永远一致 */
+  /**
+   * 全量汇总(收入/支出/转账/净收入):来自后端 /summary 聚合,与分页列表无关。
+   * 净收入 = 收入 − 支出(转账不计入收支,单列)。
+   */
   summary: RecordSummary;
   accounts: AccountItem[];
   categories: Category[];
@@ -44,6 +47,8 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
   const [accounts, setAccounts] = useState<AccountItem[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  /** 全量汇总:后端聚合,不再由客户端对列表求和(那会受分页上限影响) */
+  const [summary, setSummary] = useState<RecordSummary>({ income: 0, expense: 0, transfer: 0, netIncome: 0 });
   // 以当前账本为数据维度;无账本(未登录/未加载)时不请求
   const { currentLedger } = useLedgerStore();
   const bookId = currentLedger.id;
@@ -54,13 +59,19 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
       setRecords([]);
       setAccounts([]);
       setCategories([]);
+      setSummary({ income: 0, expense: 0, transfer: 0, netIncome: 0 });
       setLoading(false);
       return;
     }
-    const [r, a, c] = await Promise.all([fetchRecords(bookId), fetchAccounts(bookId), fetchCategories()]);
+    // 汇总由后端聚合:原先是客户端对 fetchRecords 的结果求和,而它默认 pageSize=100,
+    // 流水超过 100 条时只统计最近 100 条 —— 与首页/统计页的后端口径必然对不上。
+    const [r, a, c, s] = await Promise.all([
+      fetchRecords(bookId), fetchAccounts(bookId), fetchCategories(), fetchSummary(bookId),
+    ]);
     setRecords(r);
     setAccounts(a);
     setCategories(c);
+    setSummary(s);
     setLoading(false);
   }, [bookId]);
 
@@ -81,17 +92,7 @@ export function RecordsProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const summary = useMemo<RecordSummary>(() => {
-    let income = 0;
-    let expense = 0;
-    let transfer = 0;
-    for (const r of records) {
-      if (r.type === 'INCOME') income += r.amount;
-      else if (r.type === 'EXPENSE') expense += r.amount;
-      else transfer += r.amount;
-    }
-    return { income, expense, transfer, netIncome: income - expense };
-  }, [records]);
+
 
   const value = useMemo<RecordsValue>(
     () => ({
