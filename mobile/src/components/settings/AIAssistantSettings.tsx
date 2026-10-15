@@ -433,7 +433,19 @@ export function AIAssistantSettings() {
                   <LabeledInput label="温度 (可选)" value={form.temperature} onChangeText={(v) => setForm((f) => ({ ...f, temperature: v }))} keyboardType="decimal-pad" placeholder="0.7" />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <LabeledInput label="最大输出 Token (可选)" value={form.maxTokens} onChangeText={(v) => setForm((f) => ({ ...f, maxTokens: v }))} keyboardType="numeric" placeholder="4096" />
+                  <LabeledInput
+                    label="最大输出 Token (可选)"
+                    value={form.maxTokens}
+                    onChangeText={(v) => {
+                      // 输入时即校验:只允许数字并钳到 32000(与后端 context-compress.ts 的 MAX_OUTPUT_TOKENS 一致)。
+                      // 填过大会把输入空间挤没,上游直接 400(上下文超限)。
+                      const digits = v.replace(/\D/g, '');
+                      const clamped = digits ? String(Math.min(Number(digits), 32000)) : '';
+                      setForm((f) => ({ ...f, maxTokens: clamped }));
+                    }}
+                    keyboardType="numeric"
+                    placeholder="4096"
+                  />
                 </View>
               </View>
               <LabeledInput label="上下文窗口 (可选)" value={form.contextWindow} onChangeText={(v) => setForm((f) => ({ ...f, contextWindow: v }))} keyboardType="numeric" placeholder="如 32768" />
