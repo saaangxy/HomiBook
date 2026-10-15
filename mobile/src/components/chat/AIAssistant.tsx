@@ -204,10 +204,18 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
       });
       return;
     }
-    // 父 = 对话末端消息:有 dbId 直接用;是本地锚点 greeting 就保留(前端靠它归属分支,
-    // 丢了它会落成「根」,分支消息就会并列渲染)。临时 msg-* 一律丢空(不能落库)。
-    const tail = messages[messages.length - 1];
-    const parentId = tail?.dbId || (tail?.id === GREETING_ID ? GREETING_ID : undefined);
+    // 父 = 对话末端**有实体**的消息:从末尾往前找第一条有 dbId 的(本地锚点 greeting 也算),
+    // 临时 msg-* 跳过(不能落库,会写悬空外键)。
+    //
+    // 不能只认最后一条:上游报错时错误以**流内 error part** 到达,后端只推 error 事件不落库,
+    // 末条 assistant 永远没有 dbId → parentId 丢空 → 落库成 null → 刷新后与首条用户消息
+    // 成了同一父下的多版本分支(消息"跑"到会话开头)。
+    let parentId: string | undefined;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.dbId) { parentId = m.dbId; break; }
+      if (m.id === GREETING_ID) { parentId = GREETING_ID; break; }
+    }
     sendMessage(bookId, msg, parentId, undefined, attachmentIds.length ? attachmentIds : undefined, webSearch, localAttachments);
   };
 

@@ -268,11 +268,20 @@ export function ChatWindow() {
     if ((!msg && pendingFiles.length === 0 && !hasPreset) || !currentBookId || isCurrentStreaming) return
     setInput('')
 
-    // 父 = 对话末端的消息：有 dbId 直接用；是本地锚点 greeting 就保留（前端靠它归属分支）。
-    // 尚未落库的临时 msg-* 一律丢空 —— 发给后端会写入指向不存在消息的外键（84d70a1 修的就是它）。
-    // 只认最后一条，比「往前找第一个有 dbId 的」更准：发送时流一定已结束，末端要么有 dbId、要么是 greeting。
-    const tail = messages[messages.length - 1]
-    const parentId = tail?.dbId || (tail?.id === 'greeting' ? 'greeting' : undefined)
+    // 父 = 对话末端**有实体**的消息：从末尾往前找第一条有 dbId 的（本地锚点 greeting 也算）。
+    // 尚未落库的临时 msg-* 跳过 —— 发给后端会写入指向不存在消息的外键（84d70a1 修的就是它）。
+    //
+    // 原实现是「只认最后一条」，前提是「发送时流一定已结束，末端要么有 dbId、要么是 greeting」。
+    // 该前提在上游报错时不成立：错误以**流内 error part** 到达，后端只推 error 事件、**不落库**
+    // （routes/chat.ts 的 error part 分支），于是末条 assistant 永远没有 dbId → parentId 被丢空 →
+    // 落库成 parentMessageId=null → 刷新后被前端归一化成 greeting 的子节点，和首条用户消息
+    // 成了同一父下的多版本分支（消息"跑"到会话开头）。
+    let parentId: string | undefined
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i]
+      if (m.dbId) { parentId = m.dbId; break }
+      if (m.id === 'greeting') { parentId = 'greeting'; break }
+    }
 
     // 附件一律当普通附件发出(模型只对图片做视觉直读,其余进附件清单)。
     // preset 是已经在别处上传好的附件(工具栏「导入账单」入口:账单文件先落成附件,再把 attachmentId 交给 AI)。
