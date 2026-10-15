@@ -229,7 +229,8 @@ export function AIAssistantSettings() {
         apiKey: formApiKey,
         baseURL: formBaseURL,
         temperature: formTemperature ? Number(formTemperature) : null,
-        maxTokens: formMaxTokens ? Number(formMaxTokens) : null,
+        // 上限与后端 context-compress.ts 的 MAX_OUTPUT_TOKENS 一致:填过大会挤掉输入空间导致上游 400
+        maxTokens: formMaxTokens ? Math.min(Number(formMaxTokens), 32000) : null,
         contextWindow: formContextWindow ? Number(formContextWindow) : null,
         multimodal: formMultimodal,
         models: formModels,
@@ -791,8 +792,9 @@ export function AIAssistantSettings() {
               </div>
             </div>
 
-            {/* 温度 & MaxTokens */}
-            <div className="grid grid-cols-2 gap-3">
+            {/* 温度 / 最大输出 Token / 上下文窗口 —— 单列排布:
+                「最大输出 Token」带一行说明,并有自己并排,两列会高低不齐(说明把那一格撑高,相邻格错位) */}
+            <div className="space-y-3">
               <div className="space-y-1.5">
                 <Label className="text-xs">温度（可选）</Label>
                 <Input
@@ -807,16 +809,19 @@ export function AIAssistantSettings() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs">最大 Token（可选）</Label>
+                <Label className="text-xs">最大输出 Token（可选）</Label>
                 <Input
                   type="number"
                   value={formMaxTokens}
                   onChange={(e) => setFormMaxTokens(e.target.value)}
                   min={1}
-                  max={1000000}
+                  max={32000}
                   placeholder="4096"
                   className="text-xs"
                 />
+                <p className="text-[10px] text-muted-foreground leading-snug">
+                  单次回复的最大长度，<span className="font-medium">不是上下文窗口</span>。留空用默认，上限 32000
+                </p>
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">上下文窗口（可选）</Label>

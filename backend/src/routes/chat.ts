@@ -19,7 +19,7 @@ import { ensureImageTextContexts } from '../services/ai/image-context.js'
 import { dedupeToolCalls, nextToolCallId } from '../services/ai/tool-call-id.js'
 import { loadMemoriesForPrompt, listMemories, deleteMemory, updateMemory } from '../services/ai/memory.js'
 import { estimateTokens } from '../services/ai/token-estimate.js'
-import { compressContext, computeHistoryBudget, stripThinkTags } from '../services/ai/context-compress.js'
+import { compressContext, computeHistoryBudget, stripThinkTags, MAX_OUTPUT_TOKENS } from '../services/ai/context-compress.js'
 import { zSchema } from '../lib/schema-helpers.js'
 import { dateKey } from '../lib/date-time.js'
 import { z } from 'zod'
@@ -590,7 +590,9 @@ async function continueWithLLM(reply: any, sessionId: string, accountBookId: str
   const systemPrompt = buildSystemPrompt(prefs, accountBookId, bookName, prefs.disabledTools)
 
   // 三级上下文压缩
-  const maxTokens = activeConfig?.maxTokens ?? prefs.maxTokens
+  // 输出预留必须钳制:模型配置里可能被填成上下文窗口量级(实测 393216),
+  // 它既是发给上游的 maxOutputTokens,又要从窗口里减掉,不钳会直接把输入空间挤没。
+  const maxTokens = Math.min(activeConfig?.maxTokens ?? prefs.maxTokens, MAX_OUTPUT_TOKENS)
   const disabledSet = new Set(prefs.disabledTools)
   const enabledTools: Record<string, any> = {}
   for (const tool of ALL_TOOLS) {
@@ -1083,7 +1085,8 @@ export async function chatRoutes(app: FastifyInstance) {
     foldInjections(messages, messageIds, injects)
 
     // 三级上下文压缩
-    const maxTokens = activeConfig?.maxTokens ?? prefs.maxTokens
+    // 同上:重试/续写路径同样要钳制
+    const maxTokens = Math.min(activeConfig?.maxTokens ?? prefs.maxTokens, MAX_OUTPUT_TOKENS)
     const disabledSet = new Set(effectiveDisabledTools)
     const enabledTools: Record<string, any> = {}
     for (const tool of ALL_TOOLS) {

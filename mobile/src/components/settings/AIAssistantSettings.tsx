@@ -175,7 +175,8 @@ export function AIAssistantSettings() {
         apiKey: form.apiKey,
         baseURL: form.baseURL,
         temperature: form.temperature ? Number(form.temperature) : null,
-        maxTokens: form.maxTokens ? Number(form.maxTokens) : null,
+        // 上限与后端 context-compress.ts 的 MAX_OUTPUT_TOKENS 一致:填过大会挤掉输入空间导致上游 400
+        maxTokens: form.maxTokens ? Math.min(Number(form.maxTokens), 32000) : null,
         contextWindow: form.contextWindow ? Number(form.contextWindow) : null,
         multimodal: form.multimodal,
         models: form.models,
@@ -432,7 +433,7 @@ export function AIAssistantSettings() {
                   <LabeledInput label="温度 (可选)" value={form.temperature} onChangeText={(v) => setForm((f) => ({ ...f, temperature: v }))} keyboardType="decimal-pad" placeholder="0.7" />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <LabeledInput label="最大 Token (可选)" value={form.maxTokens} onChangeText={(v) => setForm((f) => ({ ...f, maxTokens: v }))} keyboardType="numeric" placeholder="4096" />
+                  <LabeledInput label="最大输出 Token (可选)" value={form.maxTokens} onChangeText={(v) => setForm((f) => ({ ...f, maxTokens: v }))} keyboardType="numeric" placeholder="4096" />
                 </View>
               </View>
               <LabeledInput label="上下文窗口 (可选)" value={form.contextWindow} onChangeText={(v) => setForm((f) => ({ ...f, contextWindow: v }))} keyboardType="numeric" placeholder="如 32768" />

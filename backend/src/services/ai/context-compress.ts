@@ -9,6 +9,16 @@ import {generateText} from 'ai'
 import type {LanguageModelV3} from '@ai-sdk/provider'
 import {estimateMessagesTokens, estimateTokens, estimateToolsTokens} from './token-estimate.js'
 
+/**
+ * 输出预留的硬上限。
+ *
+ * 模型配置里的 maxTokens 是「最大输出 token」,但很容易被按模型的**上下文窗口**来填
+ * (实测有配置填了 393216)。它既会作为 maxOutputTokens 发给上游,又要在预算里从窗口里减掉,
+ * 于是输入空间被挤到几乎为零,上游直接 400(输入+输出 > 窗口)。
+ * 钳到合理上限即可 —— 超出的部分服务端忽略,不改用户配置。
+ */
+export const MAX_OUTPUT_TOKENS = 32000
+
 /** 计算历史消息的 token 预算 */
 export function computeHistoryBudget(
   contextWindow: number | null | undefined,
@@ -17,11 +27,15 @@ export function computeHistoryBudget(
   tools: Record<string, any>,
 ): number {
   const window = contextWindow ?? 32768
-  const safetyMargin = 500
-  const summaryReserve = 300 // 为注入的摘要预留
+  // 双保险:调用方已钳制过一次,这里再钳一次,避免别处直接调用时漏掉
+  const outputReserve = Math.min(maxTokens, MAX_OUTPUT_TOKENS)
   const systemPromptTokens = estimateTokens(systemPrompt)
   const toolsTokens = estimateToolsTokens(tools)
-  const budget = window - maxTokens - systemPromptTokens - toolsTokens - safetyMargin - summaryReserve
+  // 安全边际按窗口比例取(原先固定 500):中文估算与实际 tokenizer 有约 10% 偏差,
+  // 在几十万 token 的预算上固定 500 根本不够,会估着估着就越界。
+  const safetyMargin = Math.max(500, Math.floor(window * 0.05))
+  const summaryReserve = 300 // 为注入的摘要预留
+  const budget = window - outputReserve - systemPromptTokens - toolsTokens - safetyMargin - summaryReserve
   return  Math.max(budget, 1024) // 至少保留 1024 token 给历史
 }
 
