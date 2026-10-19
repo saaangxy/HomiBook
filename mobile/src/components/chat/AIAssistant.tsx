@@ -3,7 +3,7 @@ import { ActivityIndicator, BackHandler, FlatList, Image, NativeScrollEvent, Nat
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import Markdown from 'react-native-markdown-display';
-import { Bot, Brain, ChevronDown, ChevronLeft, ChevronRight, FileText, FileUp, Globe, ImagePlus, List, Pencil, Plus, RefreshCw, Send, Sparkles, StopCircle, Trash2, X } from 'lucide-react-native';
+import { Bot, Brain, Camera, ChevronDown, ChevronLeft, ChevronRight, FileText, FileUp, Globe, ImagePlus, List, Pencil, Plus, RefreshCw, Send, Sparkles, StopCircle, Trash2, X } from 'lucide-react-native';
 import { useTheme, alpha, haptics } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { LoadingState } from '@/components/ui/LoadingState';
@@ -285,6 +285,23 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
         const up = await uploadImage(asset.uri, fileName, asset.mimeType || 'application/octet-stream');
         setPendingImages((p) => [...p, { id: up.id, uri: resolveRemoteUrl(up.fullUrl || up.url), fullUrl: up.fullUrl || up.url, originalFilename: fileName }]);
       }
+    } catch (e: any) {
+      showToast(`上传失败: ${e?.message || '未知错误'}`);
+    }
+  };
+
+  /** 拍照上传:与 handlePickFile 同链路,来源为相机(图片记账/小票识别场景) */
+  const handleCamera = async () => {
+    try {
+      const ImagePicker = await import('expo-image-picker');
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) { showToast('需要相机权限'); return; }
+      const result = await ImagePicker.launchCameraAsync({ quality: 0.8 });
+      if (result.canceled || !result.assets?.length) return;
+      const asset = result.assets[0];
+      const fileName = asset.fileName || `camera-${Date.now()}.jpg`;
+      const up = await uploadImage(asset.uri, fileName, asset.mimeType || 'image/jpeg');
+      setPendingImages((p) => [...p, { id: up.id, uri: resolveRemoteUrl(up.fullUrl || up.url), fullUrl: up.fullUrl || up.url, originalFilename: fileName }]);
     } catch (e: any) {
       showToast(`上传失败: ${e?.message || '未知错误'}`);
     }
@@ -703,6 +720,9 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
           >
             <Pressable hitSlop={8} onPress={handlePickFile} style={composerBtn}>
               <ImagePlus size={17} color={colors.mutedForeground} />
+            </Pressable>
+            <Pressable hitSlop={8} onPress={handleCamera} style={composerBtn}>
+              <Camera size={17} color={colors.mutedForeground} />
             </Pressable>
             <Pressable hitSlop={8} onPress={() => setImportSheetOpen(true)} style={composerBtn}>
               <FileUp size={17} color={colors.mutedForeground} />

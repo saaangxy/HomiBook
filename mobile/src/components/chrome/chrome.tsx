@@ -36,6 +36,10 @@ interface UIShellValue {
   pendingShare: PendingShare | null;
   pushPendingShare: (share: PendingShare) => void;
   consumePendingShare: () => void;
+  /** 流水管理页的导入弹窗(首页快捷入口跨页触发) */
+  importSheetOpen: boolean;
+  openImportSheet: () => void;
+  closeImportSheet: () => void;
 }
 
 const UIShellContext = createContext<UIShellValue | null>(null);
@@ -57,6 +61,9 @@ const UISHELL_FALLBACK: UIShellValue = {
   recordOpen: false,
   openRecord: () => {},
   closeRecord: () => {},
+  importSheetOpen: false,
+  openImportSheet: () => {},
+  closeImportSheet: () => {},
   editingRecord: null,
   aiOpen: false,
   openAI: () => {},
@@ -74,6 +81,7 @@ export function UIShellProvider({ children }: { children: ReactNode }) {
   const [recordOpen, setRecordOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<RecordItem | null>(null);
   const [aiOpen, setAiOpen] = useState(false);
+  const [importSheetOpen, setImportSheetOpen] = useState(false);
   const [pendingShare, setPendingShare] = useState<PendingShare | null>(null);
 
   const value = useMemo<UIShellValue>(
@@ -119,8 +127,11 @@ export function UIShellProvider({ children }: { children: ReactNode }) {
         text: share.text ?? prev?.text,
       })),
       consumePendingShare: () => setPendingShare(null),
+      importSheetOpen,
+      openImportSheet: () => setImportSheetOpen(true),
+      closeImportSheet: () => setImportSheetOpen(false),
     }),
-    [ledger, sidebarOpen, ledgerOpen, recordOpen, editingRecord, aiOpen, pendingShare],
+    [ledger, sidebarOpen, ledgerOpen, recordOpen, editingRecord, aiOpen, pendingShare, importSheetOpen],
   );
 
   return (

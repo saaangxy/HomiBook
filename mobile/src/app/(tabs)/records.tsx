@@ -91,7 +91,7 @@ const DayCard = memo(function DayCard({ date, records, index, onClone, onDelete,
 // 列表走后端分页(20 条/页);记一笔/编辑保存后由 RecordModal 触发静默重拉第一页
 export default function RecordsScreen() {
   const { colors } = useTheme();
-  const { openRecord, currentLedger } = useUIShell();
+  const { openRecord, currentLedger, importSheetOpen, closeImportSheet } = useUIShell();
   const bookId = currentLedger.id;
   const { accounts, categories, refresh, cloneRecord, deleteRecord } = useRecords();
   /**
@@ -191,6 +191,14 @@ export default function RecordsScreen() {
   }, [bookId, query]);
 
   useEffect(() => { loadSummary(); }, [loadSummary]);
+
+  // 首页「导入」快捷入口跨页触发:消费全局开关并复位(避免切回页面时再次弹出)
+  useEffect(() => {
+    if (importSheetOpen) {
+      setImportOpen(true);
+      closeImportSheet();
+    }
+  }, [importSheetOpen, closeImportSheet]);
 
   const loadMore = useCallback(() => {
     // 同步 ref 判断:同一 tick 的重复 onEndReached 只有第一次能通过

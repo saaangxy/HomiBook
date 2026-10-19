@@ -43,6 +43,13 @@
       ],
       "expo-secure-store",
       "expo-sharing",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "允许 HomiBook 访问你的相册，用于选择小票/收据图片进行记账",
+          "cameraPermission": "允许 HomiBook 使用相机，用于拍摄小票/收据进行记账"
+        }
+      ],
       "./plugins/with-android-tweaks",
       "./plugins/with-notification-listener",
       "expo-notifications",
