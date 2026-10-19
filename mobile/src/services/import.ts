@@ -244,6 +244,8 @@ export interface ExportFilters {
   bookId: string;
   types?: string[];
   accountIds?: string[];
+  /** 转账的转入账户(与列表筛选同口径) */
+  toAccountIds?: string[];
   categoryCodes?: string[];
   dateFrom?: string;
   dateTo?: string;
@@ -260,6 +262,7 @@ export async function exportRecordsCsv(filters: ExportFilters, mode: ExportMode)
   qs.set('bookId', filters.bookId);
   if (filters.types?.length) qs.set('type', filters.types.join(','));
   if (filters.accountIds?.length) qs.set('accountId', filters.accountIds.join(','));
+  if (filters.toAccountIds?.length) qs.set('toAccountId', filters.toAccountIds.join(','));
   if (filters.categoryCodes?.length) qs.set('categoryCode', filters.categoryCodes.join(','));
   if (filters.dateFrom) qs.set('dateFrom', filters.dateFrom);
   if (filters.dateTo) qs.set('dateTo', filters.dateTo);

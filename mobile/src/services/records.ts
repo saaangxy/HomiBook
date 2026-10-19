@@ -99,6 +99,8 @@ export interface RecordQuery {
   dateTo?: string;
   types?: string[]; // 逗号分隔多选
   accountId?: string;
+  /** 转账的转入账户(逗号分隔多选,仅转账记录有效) */
+  toAccountId?: string;
   categoryCode?: string;
   amountFrom?: number;
   amountTo?: number;
@@ -120,6 +122,7 @@ export async function fetchRecords(bookId: string, opts?: RecordQuery): Promise<
         dateTo: opts?.dateTo || undefined,
         type: opts?.types?.length ? opts.types.join(',') : undefined,
         accountId: opts?.accountId,
+        toAccountId: opts?.toAccountId,
         categoryCode: opts?.categoryCode,
         amountFrom: opts?.amountFrom,
         amountTo: opts?.amountTo,
@@ -145,6 +148,7 @@ export async function fetchRecordsPaged(bookId: string, opts?: RecordQuery): Pro
         dateTo: opts?.dateTo || undefined,
         type: opts?.types?.length ? opts.types.join(',') : undefined,
         accountId: opts?.accountId,
+        toAccountId: opts?.toAccountId,
         categoryCode: opts?.categoryCode,
         amountFrom: opts?.amountFrom,
         amountTo: opts?.amountTo,
@@ -174,6 +178,8 @@ export async function fetchCalendar(bookId: string, year: number, month: number)
 
 export async function fetchSummary(bookId: string, opts?: {
   dateFrom?: string; dateTo?: string; type?: string; categoryCode?: string; accountId?: string; ownerId?: string;
+  /** 转账的转入账户(逗号分隔多选,仅转账记录有效) */
+  toAccountId?: string;
   /** 金额区间 / 关键词(摘要备注):流水页顶部汇总要跟随这些筛选,与列表同一套条件 */
   amountFrom?: number; amountTo?: number; remark?: string;
 }): Promise<RecordSummary> {
@@ -187,6 +193,7 @@ export async function fetchSummary(bookId: string, opts?: {
       type: opts?.type,
       categoryCode: opts?.categoryCode,
       accountId: opts?.accountId,
+      toAccountId: opts?.toAccountId,
       ownerId: opts?.ownerId,
       amountFrom: opts?.amountFrom,
       amountTo: opts?.amountTo,

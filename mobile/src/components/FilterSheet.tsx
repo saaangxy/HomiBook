@@ -8,12 +8,14 @@ import { Button } from '@/components/ui/Button';
 import { DatePicker } from '@/components/ui/DatePicker';
 import { useAppearProgress } from '@/components/ui/useAppearAnimation';
 import { useRecords } from '@/stores/records';
-import type { RecordItem, RecordType } from '@/types';
+import type { RecordType } from '@/types';
 import { accountLabel, isMultiOwnerAccounts } from '@/lib/account';
 
 export interface RecordFilters {
   types: RecordType[];
   accountIds: string[];
+  /** 转账的转入账户(转账记录的 accountId 存的是源账户,两者分开筛) */
+  toAccountIds: string[];
   categoryCodes: string[];
   dateFrom: string; // '' = 不限
   dateTo: string;
@@ -25,6 +27,7 @@ export interface RecordFilters {
 export const emptyFilters: RecordFilters = {
   types: [],
   accountIds: [],
+  toAccountIds: [],
   categoryCodes: [],
   dateFrom: '',
   dateTo: '',
@@ -38,32 +41,12 @@ export function countActiveFilters(f: RecordFilters): number {
   return (
     f.types.length +
     f.accountIds.length +
+    f.toAccountIds.length +
     f.categoryCodes.length +
     (f.dateFrom || f.dateTo ? 1 : 0) +
     (f.minAmount || f.maxAmount ? 1 : 0) +
     (f.keyword.trim() ? 1 : 0)
   );
-}
-
-/** 本地过滤(与后端查询语义对齐,接真实 API 后由服务端承担) */
-export function applyRecordFilters(records: RecordItem[], f: RecordFilters): RecordItem[] {
-  const kw = f.keyword.trim().toLowerCase();
-  const min = f.minAmount ? Number(f.minAmount) : null;
-  const max = f.maxAmount ? Number(f.maxAmount) : null;
-  return records.filter((r) => {
-    if (f.types.length && !f.types.includes(r.type)) return false;
-    if (f.accountIds.length && !f.accountIds.includes(r.accountId) && !(r.toAccountId && f.accountIds.includes(r.toAccountId))) return false;
-    if (f.categoryCodes.length && !(r.categoryCode && f.categoryCodes.includes(r.categoryCode))) return false;
-    if (f.dateFrom && r.date < f.dateFrom) return false;
-    if (f.dateTo && r.date > f.dateTo) return false;
-    if (min !== null && r.amount < min) return false;
-    if (max !== null && r.amount > max) return false;
-    if (kw) {
-      const hay = `${r.remark ?? ''} ${r.categoryName ?? ''} ${r.accountName ?? ''} ${r.counterparty ?? ''} ${r.ownerName ?? ''}`.toLowerCase();
-      if (!hay.includes(kw)) return false;
-    }
-    return true;
-  });
 }
 
 interface FilterSheetProps {
@@ -178,7 +161,19 @@ export function FilterSheet({ visible, initial, onApply, onClose }: FilterSheetP
             <Text variant="label">类型(可多选)</Text>
             <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
               {TYPE_OPTIONS.map((t) => (
-                <Pressable key={t.value} onPress={() => { setDraft((d) => ({ ...d, types: toggle(d.types, t.value) })); haptics.tap(); }} style={chip(draft.types.includes(t.value))}>
+                <Pressable
+                  key={t.value}
+                  onPress={() => {
+                    setDraft((d) => {
+                      const types = toggle(d.types, t.value);
+                      // 类型里不再含转账时,「转入账户」无从命中,顺手清掉避免留下空结果
+                      const toAccountIds = types.length > 0 && !types.includes('TRANSFER') ? [] : d.toAccountIds;
+                      return { ...d, types, toAccountIds };
+                    });
+                    haptics.tap();
+                  }}
+                  style={chip(draft.types.includes(t.value))}
+                >
                   <Text style={chipText(draft.types.includes(t.value))}>{t.label}</Text>
                 </Pressable>
               ))}
@@ -193,6 +188,20 @@ export function FilterSheet({ visible, initial, onApply, onClose }: FilterSheetP
                 </Pressable>
               ))}
             </View>
+
+            {/* 转账转入账户:转账记录的「账户」列存的是源账户,转入账户要单独筛 */}
+            {(draft.types.length === 0 || draft.types.includes('TRANSFER')) && (
+              <>
+                <Text variant="label">目标账户(转账转入,可多选)</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+                  {accounts.map((a) => (
+                    <Pressable key={a.id} onPress={() => { setDraft((d) => ({ ...d, toAccountIds: toggle(d.toAccountIds, a.id) })); haptics.tap(); }} style={chip(draft.toAccountIds.includes(a.id))}>
+                      <Text style={chipText(draft.toAccountIds.includes(a.id))}>{accountLabel(a, multiOwnerAccounts)}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </>
+            )}
 
             {/* 分类 */}
             <Text variant="label">分类(可多选)</Text>

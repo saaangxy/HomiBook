@@ -808,6 +808,10 @@ export async function importExportRoutes(app: FastifyInstance) {
     if (query.accountId) {
       where.accountId = { in: query.accountId.split(',') }
     }
+    // 转账的 accountId 存的是源账户,转入账户单独筛(与列表筛选同口径)
+    if (query.toAccountId) {
+      where.toAccountId = { in: query.toAccountId.split(',') }
+    }
     if (query.categoryCode) {
       where.categoryCode = { in: query.categoryCode.split(',') }
     }

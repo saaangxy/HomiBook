@@ -65,7 +65,8 @@ import {
 
 interface FilterState {
   types: string[]         // 多选类型 INCOME/EXPENSE/TRANSFER
-  accountIds: string[]    // 多选账户
+  accountIds: string[]    // 多选账户(转账时是源账户)
+  toAccountIds: string[]  // 多选转账转入账户(转账记录的 accountId 存的是源账户)
   categoryCodes: string[] // 多选分类
   dateFrom: string
   dateTo: string
@@ -94,6 +95,14 @@ function filterValueLabel(key: keyof FilterState, value: string[] | string, acco
         return a ? accountLabel(a, multiOwner) : id
       })
       return `账户: ${labels.join(', ')}`
+    }
+    case 'toAccountIds': {
+      const ids = value as string[]
+      const labels = ids.map((id) => {
+        const a = accounts.find((a) => a.id === id)
+        return a ? accountLabel(a, multiOwner) : id
+      })
+      return `转入账户: ${labels.join(', ')}`
     }
     case 'categoryCodes': {
       const ids = value as string[]
@@ -143,6 +152,7 @@ export function RecordsPage() {
   const [filters, setFilters] = useState<FilterState>({
     types: [],
     accountIds: [],
+    toAccountIds: [],
     categoryCodes: [],
     dateFrom: '',
     dateTo: '',
@@ -241,6 +251,7 @@ export function RecordsPage() {
         bookId: currentBookId,
         type: filters.types.length > 0 ? filters.types.join(',') : undefined,
         accountId: filters.accountIds.length > 0 ? filters.accountIds.join(',') : undefined,
+        toAccountId: filters.toAccountIds.length > 0 ? filters.toAccountIds.join(',') : undefined,
         categoryCode: filters.categoryCodes.length > 0 ? filters.categoryCodes.join(',') : undefined,
         dateFrom: filters.dateFrom || undefined,
         dateTo: filters.dateTo || undefined,
@@ -252,7 +263,7 @@ export function RecordsPage() {
         tags: filters.tags.length > 0 ? filters.tags.join(',') : undefined,
       }))
     } catch { /* ignore */ }
-  }, [currentBookId, filters.types, filters.accountIds, filters.categoryCodes, filters.dateFrom, filters.dateTo, filters.ownerIds, filters.payer, filters.amountFrom, filters.amountTo, filters.remark, filters.tags])
+  }, [currentBookId, filters.types, filters.accountIds, filters.toAccountIds, filters.categoryCodes, filters.dateFrom, filters.dateTo, filters.ownerIds, filters.payer, filters.amountFrom, filters.amountTo, filters.remark, filters.tags])
 
   // 加载列表
   const loadRecords = useCallback(async () => {
@@ -266,6 +277,7 @@ export function RecordsPage() {
         pageSize,
         type: filters.types.length > 0 ? filters.types.join(',') : undefined,
         accountId: filters.accountIds.length > 0 ? filters.accountIds.join(',') : undefined,
+        toAccountId: filters.toAccountIds.length > 0 ? filters.toAccountIds.join(',') : undefined,
         categoryCode: filters.categoryCodes.length > 0 ? filters.categoryCodes.join(',') : undefined,
         dateFrom: filters.dateFrom || undefined,
         dateTo: filters.dateTo || undefined,
@@ -289,7 +301,7 @@ export function RecordsPage() {
   useEffect(() => { loadSummary() }, [loadSummary])
 
   const resetFilters = () => {
-    const empty: FilterState = { types: [], accountIds: [], categoryCodes: [], dateFrom: '', dateTo: '', ownerIds: [], payer: '', amountFrom: '', amountTo: '', remark: '', tags: [] }
+    const empty: FilterState = { types: [], accountIds: [], toAccountIds: [], categoryCodes: [], dateFrom: '', dateTo: '', ownerIds: [], payer: '', amountFrom: '', amountTo: '', remark: '', tags: [] }
     setFilters(empty)
     setDraftFilters({ ...empty })
     setPage(1)
@@ -307,7 +319,7 @@ export function RecordsPage() {
   }
 
   const removeFilter = (key: keyof FilterState) => {
-    const emptyVal = key === 'types' || key === 'accountIds' || key === 'categoryCodes' || key === 'ownerIds' || key === 'tags' ? [] : ''
+    const emptyVal = key === 'types' || key === 'accountIds' || key === 'toAccountIds' || key === 'categoryCodes' || key === 'ownerIds' || key === 'tags' ? [] : ''
     setFilters((prev) => ({ ...prev, [key]: emptyVal }))
     setDraftFilters((prev) => ({ ...prev, [key]: emptyVal }))
     setPage(1)
@@ -436,6 +448,7 @@ export function RecordsPage() {
     const params: Record<string, string | number> = { bookId: currentBookId }
     if (filters.types.length > 0) params.type = filters.types.join(',')
     if (filters.accountIds.length > 0) params.accountId = filters.accountIds.join(',')
+    if (filters.toAccountIds.length > 0) params.toAccountId = filters.toAccountIds.join(',')
     if (filters.categoryCodes.length > 0) params.categoryCode = filters.categoryCodes.join(',')
     if (filters.dateFrom) params.dateFrom = filters.dateFrom
     if (filters.dateTo) params.dateTo = filters.dateTo
@@ -826,7 +839,12 @@ export function RecordsPage() {
                   { value: 'TRANSFER', label: '转账' },
                 ]}
                 selected={draftFilters.types}
-                onChange={(v) => setDraftFilters((p) => ({ ...p, types: v }))}
+                onChange={(v) => setDraftFilters((p) => ({
+                  ...p,
+                  types: v,
+                  // 类型里不再含转账时,「转入账户」无从命中,顺手清掉避免留下空结果
+                  toAccountIds: v.length > 0 && !v.includes('TRANSFER') ? [] : p.toAccountIds,
+                }))}
                 placeholder="全部类型"
               />
             </div>
@@ -841,6 +859,19 @@ export function RecordsPage() {
                 placeholder="全部账户"
               />
             </div>
+
+            {/* 转账转入账户(多选):转账记录的「账户」列存的是源账户,转入账户要单独筛 */}
+            {(draftFilters.types.length === 0 || draftFilters.types.includes('TRANSFER')) && (
+              <div>
+                <Label className="text-xs text-muted-foreground mb-1.5 block">目标账户（转账转入）</Label>
+                <MultiSelect
+                  items={accounts.map((a) => ({ value: a.id, label: accountLabel(a, multiOwnerAccounts) }))}
+                  selected={draftFilters.toAccountIds}
+                  onChange={(v) => setDraftFilters((p) => ({ ...p, toAccountIds: v }))}
+                  placeholder="全部目标账户"
+                />
+              </div>
+            )}
 
             {/* 分类（多选，不关联类型） */}
             <div>

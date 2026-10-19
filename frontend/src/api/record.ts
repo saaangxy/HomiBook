@@ -48,6 +48,8 @@ export const recordApi = {
     pageSize?: number
     type?: string        // 逗号分隔多选
     accountId?: string
+    /** 转账的转入账户(逗号分隔多选,仅转账记录有效) */
+    toAccountId?: string
     categoryCode?: string
     dateFrom?: string
     dateTo?: string
@@ -65,6 +67,8 @@ export const recordApi = {
     bookId: string
     type?: string
     accountId?: string
+    /** 转账的转入账户(逗号分隔多选,仅转账记录有效) */
+    toAccountId?: string
     categoryCode?: string
     dateFrom?: string
     dateTo?: string

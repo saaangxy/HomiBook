@@ -6,6 +6,8 @@ import { dayStartOf, dayEnd, dayStart } from '../lib/date-time.js'
 export interface RecordFilter {
   type?: string
   accountId?: string
+  /** 转账的转入账户(转账记录的 accountId 存的是源账户,两者需分开筛) */
+  toAccountId?: string
   categoryCode?: string
   ownerId?: string
   dateFrom?: string
@@ -49,6 +51,8 @@ export function buildRecordWhere(bookId: string, filter: RecordFilter) {
 
   if (filter.type) applyMultiSelect(where, 'type', filter.type)
   if (filter.accountId) applyMultiSelect(where, 'accountId', filter.accountId)
+  // 转账的 accountId 存的是源账户,「转入账户」是另一列,单独筛(toAccountId 只有转账记录有值)
+  if (filter.toAccountId) applyMultiSelect(where, 'toAccountId', filter.toAccountId)
   if (filter.categoryCode) applyMultiSelect(where, 'categoryCode', filter.categoryCode)
   if (filter.ownerId) applyMultiSelect(where, 'ownerId', filter.ownerId)
 

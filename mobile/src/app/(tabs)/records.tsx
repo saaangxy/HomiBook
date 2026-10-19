@@ -125,10 +125,8 @@ export default function RecordsScreen() {
   /** 列表「代」:首页重拉(筛选/账本切换/下拉刷新)后自增,用于丢弃在途的旧分页响应 */
   const listGenRef = useRef(0);
 
-  // 后端查询条件(多选账户/分类后端仅支持单值,取唯一值传后端,其余客户端补过滤)
+  // 后端查询条件(账户/分类/转入账户均支持逗号分隔多选,与 web 一致)
   const query = useMemo(() => {
-    const singleAccount = filters.accountIds.length === 1 ? filters.accountIds[0] : undefined;
-    const singleCategory = filters.categoryCodes.length === 1 ? filters.categoryCodes[0] : undefined;
     return {
       types: filters.types,
       dateFrom: filters.dateFrom || undefined,
@@ -136,8 +134,10 @@ export default function RecordsScreen() {
       amountFrom: filters.minAmount ? Number(filters.minAmount) : undefined,
       amountTo: filters.maxAmount ? Number(filters.maxAmount) : undefined,
       remark: filters.keyword.trim() || undefined,
-      accountId: singleAccount,
-      categoryCode: singleCategory,
+      accountId: filters.accountIds.length > 0 ? filters.accountIds.join(',') : undefined,
+      // 转入账户:转账记录的 accountId 存的是源账户,转入账户单独筛
+      toAccountId: filters.toAccountIds.length > 0 ? filters.toAccountIds.join(',') : undefined,
+      categoryCode: filters.categoryCodes.length > 0 ? filters.categoryCodes.join(',') : undefined,
     };
   }, [filters]);
 
@@ -180,6 +180,7 @@ export default function RecordsScreen() {
       setSummary(await fetchSummary(bookId, {
         type: query.types.length > 0 ? query.types.join(',') : undefined,
         accountId: query.accountId,
+        toAccountId: query.toAccountId,
         categoryCode: query.categoryCode,
         dateFrom: query.dateFrom,
         dateTo: query.dateTo,
@@ -286,6 +287,7 @@ export default function RecordsScreen() {
           bookId,
           types: filters.types,
           accountIds: filters.accountIds,
+          toAccountIds: filters.toAccountIds,
           categoryCodes: filters.categoryCodes,
           dateFrom: filters.dateFrom || undefined,
           dateTo: filters.dateTo || undefined,
@@ -314,6 +316,15 @@ export default function RecordsScreen() {
         // 账户筛选胶囊:多归属人账本下同名账户靠归属人区分
         label: acc ? accountLabel(acc, isMultiOwnerAccounts(accounts)) : id,
         onClear: () => setFilters((f) => ({ ...f, accountIds: f.accountIds.filter((x) => x !== id) })),
+      };
+    }),
+    // 转入账户单独成胶囊:与「账户」是两个维度,只命中转账,文案前缀区分
+    ...filters.toAccountIds.map((id) => {
+      const acc = accounts.find((a) => a.id === id);
+      return {
+        key: `ta-${id}`,
+        label: `转入:${acc ? accountLabel(acc, isMultiOwnerAccounts(accounts)) : id}`,
+        onClear: () => setFilters((f) => ({ ...f, toAccountIds: f.toAccountIds.filter((x) => x !== id) })),
       };
     }),
     ...filters.categoryCodes.map((code) => ({
