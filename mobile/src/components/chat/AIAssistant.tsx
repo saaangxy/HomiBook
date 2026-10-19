@@ -3,7 +3,7 @@ import { ActivityIndicator, BackHandler, FlatList, Image, NativeScrollEvent, Nat
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import Markdown from 'react-native-markdown-display';
-import { Bot, Brain, Camera, ChevronDown, ChevronLeft, ChevronRight, FileText, FileUp, Globe, ImagePlus, List, Pencil, Plus, RefreshCw, Send, Sparkles, StopCircle, Trash2, X } from 'lucide-react-native';
+import { ArrowDown, Bot, Brain, Camera, ChevronDown, ChevronLeft, ChevronRight, FileText, FileUp, Globe, ImagePlus, List, Pencil, Plus, RefreshCw, Send, Sparkles, StopCircle, Trash2, X } from 'lucide-react-native';
 import { useTheme, alpha, haptics } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { LoadingState } from '@/components/ui/LoadingState';
@@ -92,6 +92,10 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
   const listRef = useRef<FlatList>(null);
   // 列表是否接近底部:仅接近底部时自动跟随滚动,用户上翻(查看历史/批量确认工具卡)时内容变化不再强制滚到底
   const isAtBottomRef = useRef(true);
+  // 是否贴底(state 版,用于控制「回到底部」按钮显隐)
+  const [atBottom, setAtBottom] = useState(true);
+  // 刚打开/切换会话:后续几批消息到达都要重新贴底,直到用户自己上翻
+  const forceBottomRef = useRef(true);
   // 手指是否按在列表上:按住期间绝不程序化滚动 —— Android 原生 ScrollView 在滚动时会抢走触摸响应,
   // 使按下的卡片/按钮收不到 onPress。文本增量已由 setStreamPaused 冻结,但工具卡等结构性事件
   // 仍会即时改变布局,故保留这层保护。
@@ -152,15 +156,33 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
     consumePendingShare();
   }, [shareIntake, pendingShare, consumePendingShare]);
 
-  // 切换会话时恢复自动跟随(新会话内容加载后滚到底部)
+  // 切换会话:恢复自动跟随,并在新会话内容加载后落到底部(打开会话应看到最新消息,而不是顶部)
   useEffect(() => {
     isAtBottomRef.current = true;
+    forceBottomRef.current = true;
+    // 放到下一帧,避免在 effect 体内同步 setState(react-hooks/set-state-in-effect)
+    const raf = requestAnimationFrame(() => setAtBottom(true));
+    return () => cancelAnimationFrame(raf);
   }, [currentSessionId]);
+
+  // 消息到达(首屏 / 切会话分批加载):贴底。用延时而非立即 scrollToEnd —— 首次渲染时内容高度还没测量完
+  useEffect(() => {
+    if (messagesLoading || !forceBottomRef.current) return;
+    const timer = setTimeout(() => {
+      if (!forceBottomRef.current) return;
+      listRef.current?.scrollToEnd({ animated: false });
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [messagesLoading, messages.length, currentSessionId]);
 
   // 滚动位置跟踪:判断用户是否处于底部附近(留 80px 容差)
   const handleScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-    isAtBottomRef.current = contentOffset.y + layoutMeasurement.height >= contentSize.height - 80;
+    const near = contentOffset.y + layoutMeasurement.height >= contentSize.height - 80;
+    isAtBottomRef.current = near;
+    // 用户主动上翻后不再强行贴底
+    if (!near) forceBottomRef.current = false;
+    setAtBottom(near);
   };
 
   // 内容尺寸变化(含流式增量)时跟随到底部;用户已上翻、或手指正按在列表上时不打扰
@@ -616,8 +638,10 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
       </View>
 
       {/* 消息列表 */}
+      <View style={{ flex: 1 }}>
       <FlatList
         ref={listRef}
+        style={{ flex: 1 }}
         data={messages}
         keyExtractor={(m) => m.id}
         renderItem={renderMessage}
@@ -661,6 +685,28 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
           )
         }
       />
+      {/* 上翻阅读历史时出现:一键回到最新消息 */}
+      {!atBottom && (
+        <Pressable
+          onPress={() => {
+            isAtBottomRef.current = true;
+            forceBottomRef.current = true;
+            setAtBottom(true);
+            listRef.current?.scrollToEnd({ animated: true });
+          }}
+          hitSlop={6}
+          style={{
+            position: 'absolute', right: 16, bottom: 14,
+            flexDirection: 'row', alignItems: 'center', gap: 4,
+            paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999,
+            borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card,
+          }}
+        >
+          <ArrowDown size={13} color={colors.mutedForeground} />
+          <Text style={{ fontSize: 12, color: colors.mutedForeground }}>回到底部</Text>
+        </Pressable>
+      )}
+      </View>
 
       {/* 输入区(仿网页组合式输入框:文本框在上,工具行在下,发送靠右) */}
       <View style={{ paddingHorizontal: 12, paddingTop: 6, paddingBottom: 8, borderTopWidth: 1, borderTopColor: colors.hairline }}>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { setStreamPaused, useChatStore, useSessionView } from '@/stores/chat'
 import { useBookStore } from '@/stores/book'
 import { fetchSessions, fetchMessages, createSession, updateSession, deleteSession as deleteSessionApi } from '@/api/chat'
@@ -19,7 +19,7 @@ import {
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
   AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Send, StopCircle, Upload, Paperclip, FileText, X, Globe, Menu, Plus, Loader2 } from 'lucide-react'
+import { Send, StopCircle, Upload, Paperclip, FileText, X, Globe, Menu, Plus, Loader2, ArrowDown } from 'lucide-react'
 import { parseContentIntoBlocks, buildImportMessage } from '@homibook/core'
 import { type MessageBlock, type ChatSession } from '@/stores/chat'
 import { useIsMobile } from '@/hooks/use-mobile'
@@ -34,6 +34,28 @@ const MAX_ATTACH_BYTES = MAX_ATTACH_MB * 1024 * 1024
 export function ChatWindow() {
   const [input, setInput] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
+  /**
+   * 真正的滚动容器是 radix ScrollArea 的 Viewport —— 给内容 div 设 scrollTop 是无效的,
+   * 这也是「打开会话时停在顶部」的根因(旧实现一直滚的是内容 div)。
+   */
+  const viewportOf = useCallback(
+    () => scrollRef.current?.closest('[data-radix-scroll-area-viewport]') as HTMLElement | null,
+    [],
+  )
+  /** 是否贴着底部(控制「回到底部」按钮显隐) */
+  const [atBottom, setAtBottom] = useState(true)
+  const isAtBottomRef = useRef(true)
+  /** 刚打开/切换会话:后续几批消息到达都要重新贴底,直到用户自己上翻 */
+  const forceBottomRef = useRef(true)
+
+  const scrollToBottom = useCallback((smooth = false) => {
+    const el = viewportOf()
+    if (!el) return
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
+    isAtBottomRef.current = true
+    setAtBottom(true)
+  }, [viewportOf])
+
   const isMobile = useIsMobile()
   const [sessionOpen, setSessionOpen] = useState(false)
 
@@ -416,12 +438,42 @@ export function ChatWindow() {
     }
   }
 
-  // 自动滚动到底部
+  // 监听真实滚动容器:维护「是否贴底」,并在用户上翻后取消强制贴底
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    const el = viewportOf()
+    if (!el) return
+    const onScroll = () => {
+      const near = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+      isAtBottomRef.current = near
+      if (!near) forceBottomRef.current = false
+      setAtBottom(near)
     }
-  }, [messages])
+    onScroll()
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [viewportOf])
+
+  // 打开/切换会话:落到底部(消息分批到达,后续批次由下面的 effect 接着贴)
+  useEffect(() => {
+    forceBottomRef.current = true
+    const raf = requestAnimationFrame(() => scrollToBottom(false))
+    return () => cancelAnimationFrame(raf)
+  }, [currentSessionId, scrollToBottom])
+
+  // 消息变化(含流式增量):贴底时跟随;刚切会话时无论原来滚到哪都跟随
+  useEffect(() => {
+    if (!forceBottomRef.current && !isAtBottomRef.current) return
+    // 放到下一帧,等本次 DOM 更新完成后再量 scrollHeight
+    const raf = requestAnimationFrame(() => scrollToBottom(false))
+    // 图片/代码块/markdown 布局稳定后会再长高,补一次贴底
+    const timer = window.setTimeout(() => {
+      if (forceBottomRef.current || isAtBottomRef.current) scrollToBottom(false)
+    }, 150)
+    return () => {
+      cancelAnimationFrame(raf)
+      window.clearTimeout(timer)
+    }
+  }, [messages, scrollToBottom])
 
   // 按住消息列表/输入区工具行期间暂停流式增量刷新(见 stores/chat 顶部「流式增量刷新调度」):
   // 流式每 50ms 就会改变消息高度,DOM 位移会让 mousedown/mouseup 落在不同元素上 → click 丢失。
@@ -504,7 +556,8 @@ export function ChatWindow() {
           </div>
         )}
         {/* 消息列表 */}
-        <ScrollArea className="flex-1">
+        <div className="relative flex-1 min-h-0">
+        <ScrollArea className="h-full">
           <div ref={scrollRef} className="p-4 space-y-4" onPointerDown={() => setStreamPaused(true)}>
             {/* 历史消息加载中:切会话时先占位,避免先白屏一下再整块出现 */}
             {messagesLoading && messages.length === 0 && (
@@ -544,6 +597,19 @@ export function ChatWindow() {
             })}
           </div>
         </ScrollArea>
+        {/* 上翻阅读历史时出现:一键回到最新消息 */}
+        {!atBottom && (
+          <button
+            type="button"
+            onClick={() => scrollToBottom(true)}
+            className="absolute bottom-3 right-4 z-10 flex h-8 items-center gap-1 rounded-full border bg-background/95 px-3 text-xs text-muted-foreground shadow-md backdrop-blur transition-colors hover:text-foreground"
+            title="回到底部"
+          >
+            <ArrowDown size={13} />
+            回到底部
+          </button>
+        )}
+        </div>
 
         {/* 输入区：主流聊天布局（输入框在上，工具栏在下） */}
         <div className="border-t p-3">
