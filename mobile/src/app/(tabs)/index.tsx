@@ -165,7 +165,6 @@ export default function HomeScreen() {
     },
     {
       key: '当年' as Period,
-      label: '年度',
       periodLabel: `${now.getFullYear()}年`,
       income: yearIncome,
       expense: yearExpense,

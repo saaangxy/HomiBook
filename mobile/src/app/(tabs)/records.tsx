@@ -192,14 +192,6 @@ export default function RecordsScreen() {
 
   useEffect(() => { loadSummary(); }, [loadSummary]);
 
-  // 首页「导入」快捷入口跨页触发:消费全局开关并复位(避免切回页面时再次弹出)
-  useEffect(() => {
-    if (importSheetOpen) {
-      setImportOpen(true);
-      closeImportSheet();
-    }
-  }, [importSheetOpen, closeImportSheet]);
-
   const loadMore = useCallback(() => {
     // 同步 ref 判断:同一 tick 的重复 onEndReached 只有第一次能通过
     if (!bookId || loading || loadingMoreRef.current || page >= totalPages) return;
@@ -564,8 +556,9 @@ export default function RecordsScreen() {
       {bookId ? <DedupSheet visible={dedupOpen} onClose={() => setDedupOpen(false)} bookId={bookId} /> : null}
       {bookId ? (
         <ImportSheet
-          visible={importOpen}
-          onClose={() => setImportOpen(false)}
+          // 首页「导入」快捷入口经全局开关跨页触发:直接作为可见性来源,避免 effect 内 setState
+          visible={importOpen || importSheetOpen}
+          onClose={() => { setImportOpen(false); closeImportSheet(); }}
           bookId={bookId}
           dictCodes={categories.map((c) => ({ code: c.code, label: c.label, group: c.type === 'EXPENSE' ? 'transaction_category_expense' : c.type === 'INCOME' ? 'transaction_category_income' : 'transaction_category_transfer' }))}
         />
