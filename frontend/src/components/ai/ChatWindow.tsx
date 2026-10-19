@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { setStreamPaused, useChatStore, useSessionView } from '@/stores/chat'
 import { useBookStore } from '@/stores/book'
 import { fetchSessions, fetchMessages, createSession, updateSession, deleteSession as deleteSessionApi } from '@/api/chat'
@@ -72,6 +72,69 @@ export function ChatWindow() {
   const isCurrentStreaming = useChatStore((s) =>
     s.sessionCache[s.currentSessionId ?? '']?.isStreaming ?? false
   )
+
+  // ── 右侧消息导航:按用户发送的消息快速定位 ──
+  /** 用户消息列表(按列表顺序),右侧导航条据此渲染缩略标记 */
+  const navItems = useMemo(() => {
+    const items: { id: string; index: number; text: string }[] = []
+    messages.forEach((m, index) => {
+      if (m.role !== 'user') return
+      const text = m.blocks
+        .filter((b): b is Extract<MessageBlock, { type: 'text' }> => b.type === 'text')
+        .map((b) => b.content)
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+      items.push({ id: m.id, index, text: text || (m.attachments?.length ? '（图片/附件）' : '（空消息）') })
+    })
+    return items
+  }, [messages])
+
+  /** 选中项 + 气泡位置(只在跨条时更新,拖动中的平滑跟随由 DOM 直接改) */
+  const [navActive, setNavActive] = useState<{ k: number; y: number } | null>(null)
+  const navActiveRef = useRef<number | null>(null)
+  const navRef = useRef<HTMLDivElement>(null)
+  const navWrapRef = useRef<HTMLDivElement>(null)
+  const bubbleRef = useRef<HTMLDivElement>(null)
+
+  /** 手指/指针 y → 最近的用户消息序号(导航条按消息数等距排布) */
+  const handleNavPointer = (e: React.PointerEvent<HTMLDivElement>) => {
+    const el = navRef.current
+    if (!el || navItems.length === 0) return
+    const rect = el.getBoundingClientRect()
+    // 扣掉标记区上下各 12px 内边距(py-3),让首/末条与边缘对齐
+    const ratio = Math.min(1, Math.max(0, (e.clientY - rect.top - 12) / Math.max(1, rect.height - 24)))
+    const k = Math.round(ratio * (navItems.length - 1))
+
+    // 气泡跟手:直接改 DOM,避免每帧 setState 重渲染整棵聊天区(含所有 Markdown 气泡)
+    const wrap = navWrapRef.current
+    const top = wrap
+      ? Math.max(8, Math.min(e.clientY - wrap.getBoundingClientRect().top - 26, wrap.clientHeight - 80))
+      : 12
+    if (bubbleRef.current) bubbleRef.current.style.top = `${top}px`
+
+    // 只有跨到另一条消息才 setState
+    if (navActiveRef.current === k) return
+    navActiveRef.current = k
+    setNavActive({ k, y: top })
+  }
+
+  /** 松手才真正跳转(拖动过程中只预览内容) */
+  const endNav = () => {
+    const k = navActiveRef.current
+    navActiveRef.current = null
+    setNavActive(null)
+    if (k === null) return
+    const item = navItems[k]
+    const el = scrollRef.current?.querySelector<HTMLElement>(`[data-chat-msg-index="${item?.index}"]`)
+    const vp = viewportOf()
+    if (!item || !el || !vp) return
+    vp.scrollTo({ top: el.getBoundingClientRect().top - vp.getBoundingClientRect().top + vp.scrollTop - 8, behavior: 'smooth' })
+    // 跳过去后不要让「贴底」逻辑把人拉回底部
+    forceBottomRef.current = false
+    isAtBottomRef.current = false
+    setAtBottom(false)
+  }
 
   const { currentBookId } = useBookStore()
 
@@ -453,6 +516,20 @@ export function ChatWindow() {
     return () => el.removeEventListener('scroll', onScroll)
   }, [viewportOf])
 
+  // 切换会话 / 历史加载完成:内容区滑入 + 淡入(与移动端同口径:220ms、从 0.3 起步不闪白)。
+  // 用 Web Animations API 直接打在内容节点上 —— 不重挂消息树、不触发额外渲染
+  useEffect(() => {
+    if (messagesLoading) return
+    const el = scrollRef.current
+    el?.animate?.(
+      [
+        { opacity: 0.3, transform: 'translateY(10px)' },
+        { opacity: 1, transform: 'translateY(0)' },
+      ],
+      { duration: 220, easing: 'ease-out' },
+    )
+  }, [currentSessionId, messagesLoading])
+
   // 打开/切换会话:落到底部(消息分批到达,后续批次由下面的 effect 接着贴)
   useEffect(() => {
     forceBottomRef.current = true
@@ -566,7 +643,7 @@ export function ChatWindow() {
                 正在加载聊天记录...
               </div>
             )}
-            {messages.map((msg) => {
+            {messages.map((msg, msgIndex) => {
               // 检查当前消息所在位置的所有版本（同一 parentMessageId 的消息）
               const allVersions = msg.parentMessageId
                 ? allMessages
@@ -578,7 +655,7 @@ export function ChatWindow() {
                     }))
                 : []
               return (
-                <div key={msg.id}>
+                <div key={msg.id} data-chat-msg-index={msgIndex}>
                   <MessageBubble
                     message={msg}
                     onRetry={msg.role === 'assistant' && msg.id !== 'greeting' && !msg.isStreaming
@@ -597,12 +674,43 @@ export function ChatWindow() {
             })}
           </div>
         </ScrollArea>
+        {/* 右侧消息导航:每条「用户发送」的消息一个缩略标记(紧凑居中排列),按住上下滑动可快速定位 */}
+        {navItems.length >= 2 && (
+          <div ref={navWrapRef} className="pointer-events-none absolute right-1 top-0 bottom-0 z-10 flex w-5 items-center justify-center">
+            <div
+              ref={navRef}
+              onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); handleNavPointer(e) }}
+              onPointerMove={(e) => { if (e.currentTarget.hasPointerCapture(e.pointerId)) handleNavPointer(e) }}
+              onPointerUp={endNav}
+              onPointerCancel={endNav}
+              className="pointer-events-auto flex cursor-pointer touch-none select-none flex-col items-end gap-[3px] py-3"
+              title="消息导航"
+            >
+              {navItems.map((it, k) => (
+                <span
+                  key={it.id}
+                  className={`h-[2.5px] rounded-full transition-all ${navActive?.k === k ? 'w-3.5 bg-primary' : 'w-2 bg-foreground/25'}`}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+        {/* 拖动中的内容气泡:跟随指针位置,展示该条发送的消息内容 */}
+        {navActive && navItems[navActive.k] && (
+          <div
+            ref={bubbleRef}
+            className="pointer-events-none absolute right-7 z-20 max-w-[60%] rounded-xl border bg-card px-3 py-2 text-xs leading-relaxed text-foreground shadow-md"
+            style={{ top: navActive.y }}
+          >
+            {navItems[navActive.k].text}
+          </div>
+        )}
         {/* 上翻阅读历史时出现:一键回到最新消息 */}
         {!atBottom && (
           <button
             type="button"
             onClick={() => scrollToBottom(true)}
-            className="absolute bottom-3 right-4 z-10 flex h-8 items-center gap-1 rounded-full border bg-background/95 px-3 text-xs text-muted-foreground shadow-md backdrop-blur transition-colors hover:text-foreground"
+            className="absolute bottom-3 right-4 z-20 flex h-8 items-center gap-1 rounded-full border bg-background/95 px-3 text-xs text-muted-foreground shadow-md backdrop-blur transition-colors hover:text-foreground"
             title="回到底部"
           >
             <ArrowDown size={13} />

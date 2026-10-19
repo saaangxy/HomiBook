@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, BackHandler, FlatList, Image, NativeScrollEvent, NativeSyntheticEvent, Platform, Pressable, SectionList, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { useAnimatedStyle } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import Markdown from 'react-native-markdown-display';
 import { ArrowDown, Bot, Brain, Camera, ChevronDown, ChevronLeft, ChevronRight, FileText, FileUp, Globe, ImagePlus, List, Pencil, Plus, RefreshCw, Send, Sparkles, StopCircle, Trash2, X } from 'lucide-react-native';
 import { useTheme, alpha, haptics } from '@/theme';
@@ -96,6 +96,13 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
   const [atBottom, setAtBottom] = useState(true);
   // 刚打开/切换会话:后续几批消息到达都要重新贴底,直到用户自己上翻
   const forceBottomRef = useRef(true);
+  /** 切会话时内容区的滑入/淡入(初始 1 = 正常显示,切会话时从 0.3/12px 动画到 1/0) */
+  const enterOpacity = useSharedValue(1);
+  const enterY = useSharedValue(0);
+  const sessionEnterStyle = useAnimatedStyle(() => ({
+    opacity: enterOpacity.value,
+    transform: [{ translateY: enterY.value }],
+  }));
   // 手指是否按在列表上:按住期间绝不程序化滚动 —— Android 原生 ScrollView 在滚动时会抢走触摸响应,
   // 使按下的卡片/按钮收不到 onPress。文本增量已由 setStreamPaused 冻结,但工具卡等结构性事件
   // 仍会即时改变布局,故保留这层保护。
@@ -128,6 +135,20 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
   }, [sessions, todayKey]);
   // 服务端返回的附件/图片 url 多为相对路径,统一转完整地址(含 host 校准,见 http.resolveRemoteUrl)
   const isStreaming = useChatStore((s) => s.sessionCache[s.currentSessionId ?? '']?.isStreaming ?? false);
+
+  /** 用户发送的消息(按列表顺序):右侧导航条据此渲染缩略标记,拖动时用 text 做气泡预览 */
+  const navItems = useMemo(() => {
+    const items: { id: string; index: number; text: string }[] = [];
+    messages.forEach((m, index) => {
+      if (m.role !== 'user') return;
+      items.push({
+        id: m.id,
+        index,
+        text: getMessageText(m).trim() || (m.attachments?.length ? '（图片/附件）' : '（空消息）'),
+      });
+    });
+    return items;
+  }, [messages]);
 
   useEffect(() => {
     loadSessions();
@@ -165,6 +186,16 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
     return () => cancelAnimationFrame(raf);
   }, [currentSessionId]);
 
+  // 切换会话 / 历史加载完成:内容区滑入 + 淡入。
+  // 用 0.3 而不是 0 起步 —— 切会话的数据替换在同一帧完成,完全透明会闪一下白
+  useEffect(() => {
+    if (messagesLoading) return;
+    enterOpacity.set(0.3);
+    enterY.set(12);
+    enterOpacity.set(withTiming(1, { duration: 220 }));
+    enterY.set(withTiming(0, { duration: 220 }));
+  }, [currentSessionId, messagesLoading, enterOpacity, enterY]);
+
   // 消息到达(首屏 / 切会话分批加载):贴底。用延时而非立即 scrollToEnd —— 首次渲染时内容高度还没测量完
   useEffect(() => {
     if (messagesLoading || !forceBottomRef.current) return;
@@ -183,6 +214,68 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
     // 用户主动上翻后不再强行贴底
     if (!near) forceBottomRef.current = false;
     setAtBottom(near);
+  };
+
+  // ── 右侧消息导航:按用户发送的消息快速跳转 ──
+  /** 拖动中选中的用户消息序号(对应 navItems);null = 未拖动 */
+  const [navActive, setNavActive] = useState<number | null>(null);
+  /** 导航条实测高度(用于把手指 y 换算成消息序号) */
+  const [navBarH, setNavBarH] = useState(0);
+  /** 消息区高度(气泡跟随时的边界限制) */
+  const [listH, setListH] = useState(0);
+  const navActiveRef = useRef<number | null>(null);
+  /** 拖动位置的 shared value:气泡用动画驱动跟随,不触发 React 重渲染 */
+  const navY = useSharedValue(0);
+  const navBubbleStyle = useAnimatedStyle(() => {
+    // navY 是「内层标记区」内的坐标,而内层在列表里垂直居中 —— 必须补上这段偏移,
+    // 否则气泡会整体高出半个列表(手指在中部、气泡跑到顶部)
+    const barTop = Math.max(0, (listH - navBarH) / 2);
+    return { top: Math.max(8, Math.min(barTop + navY.value - 24, Math.max(8, listH - 80))) };
+  });
+
+  /**
+   * 导航条上下内边距:标记视觉上紧凑居中,但触摸区要留够 ——
+   * 纯标记高度只有几条横线,手指很难点中,所以用内边距把响应区撑大
+   */
+  const NAV_PAD_Y = 22;
+  /**
+   * 标记间距:消息少时放宽(每条更好停准),消息多时收紧(整条轨道不超出可视区)。
+   * 每条消息的可选高度 ≈ 标记高 + 间距,取值 12 时约 15px,手指够用。
+   */
+  const navGap = navItems.length <= 10 ? 12 : navItems.length <= 18 ? 9 : 6;
+
+  /** 手指 y → 最近的用户消息序号 */
+  const navIndexAt = (y: number) => {
+    if (navItems.length === 0 || navBarH <= 0) return 0;
+    const usable = Math.max(1, navBarH - NAV_PAD_Y * 2);
+    const ratio = Math.min(1, Math.max(0, (y - NAV_PAD_Y) / usable));
+    return Math.round(ratio * (navItems.length - 1));
+  };
+
+  const handleNavTouch = (y: number) => {
+    // 气泡位置每帧都要跟手:走 shared value(UI 线程),不做 setState
+    navY.set(y);
+    const k = navIndexAt(y);
+    // 只有跨到另一条消息才 setState:拖动过程中每帧重渲染整个消息列表会明显掉帧
+    if (navActiveRef.current === k) return;
+    navActiveRef.current = k;
+    setNavActive(k);
+  };
+
+  /** 松手才真正跳转(拖动过程中只预览内容,避免列表来回抖) */
+  const handleNavRelease = () => {
+    const k = navActiveRef.current;
+    navActiveRef.current = null;
+    setNavActive(null);
+    if (k === null) return;
+    const item = navItems[k];
+    if (!item) return;
+    // 跳过去后不要让「贴底」逻辑把人拉回底部
+    forceBottomRef.current = false;
+    isAtBottomRef.current = false;
+    setAtBottom(false);
+    // 平滑滑动到目标消息(原先瞬时跳转,看不出「切换」的过程)
+    listRef.current?.scrollToIndex({ index: item.index, animated: true, viewPosition: 0 });
   };
 
   // 内容尺寸变化(含流式增量)时跟随到底部;用户已上翻、或手指正按在列表上时不打扰
@@ -638,7 +731,7 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
       </View>
 
       {/* 消息列表 */}
-      <View style={{ flex: 1 }}>
+      <Animated.View style={[{ flex: 1 }, sessionEnterStyle]} onLayout={(e) => setListH(e.nativeEvent.layout.height)}>
       <FlatList
         ref={listRef}
         style={{ flex: 1 }}
@@ -656,6 +749,13 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
         onTouchCancel={handleListTouchEnd}
         onScrollEndDrag={handleListTouchEnd}
         onMomentumScrollEnd={handleListTouchEnd}
+        // scrollToIndex 只能定位已渲染的行:先按平均高度估算偏移,下一帧再精确定位
+        onScrollToIndexFailed={(info) => {
+          listRef.current?.scrollToOffset({ offset: info.averageItemLength * info.index, animated: true });
+          setTimeout(() => {
+            listRef.current?.scrollToIndex({ index: info.index, animated: true, viewPosition: 0 });
+          }, 180);
+        }}
         ListEmptyComponent={
           messagesLoading ? (
             <LoadingState paddingVertical={80} text="正在加载聊天记录..." />
@@ -685,6 +785,57 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
           )
         }
       />
+      {/* 右侧消息导航:每条「用户发送」的消息一个缩略标记(紧凑居中,不再按整条轨道均分),按住上下滑动定位 */}
+      {navItems.length >= 2 && (
+        <View
+          pointerEvents="box-none"
+          style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 44, justifyContent: 'center', alignItems: 'flex-end', zIndex: 20 }}
+        >
+          <View
+            onLayout={(e) => setNavBarH(e.nativeEvent.layout.height)}
+            onStartShouldSetResponder={() => true}
+            onMoveShouldSetResponder={() => true}
+            onResponderGrant={(e) => handleNavTouch(e.nativeEvent.locationY)}
+            onResponderMove={(e) => handleNavTouch(e.nativeEvent.locationY)}
+            onResponderRelease={handleNavRelease}
+            onResponderTerminate={handleNavRelease}
+            // 同向再放宽一圈,避免贴着边缘按不准
+            hitSlop={{ top: 16, bottom: 16, left: 12, right: 4 }}
+            style={{ paddingVertical: NAV_PAD_Y, paddingLeft: 26, paddingRight: 6, gap: navGap, alignItems: 'flex-end' }}
+          >
+            {navItems.map((it, k) => (
+              <View
+                key={it.id}
+                style={{
+                  width: navActive === k ? 14 : 8,
+                  height: navActive === k ? 4 : 3,
+                  borderRadius: 2,
+                  backgroundColor: navActive === k ? colors.primary : alpha(colors.foreground, 0.28),
+                }}
+              />
+            ))}
+          </View>
+        </View>
+      )}
+      {/* 拖动中的内容气泡:跟随手指位置(shared value 驱动,不触发列表重渲染),展示该条发送的消息内容 */}
+      {navActive !== null && navItems[navActive] && (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            {
+              position: 'absolute', right: 32, zIndex: 21,
+              maxWidth: '72%', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12,
+              backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+              shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 4,
+            },
+            navBubbleStyle,
+          ]}
+        >
+          <Text style={{ fontSize: 12, lineHeight: 18, color: colors.foreground }} numberOfLines={3}>
+            {navItems[navActive].text}
+          </Text>
+        </Animated.View>
+      )}
       {/* 上翻阅读历史时出现:一键回到最新消息 */}
       {!atBottom && (
         <Pressable
@@ -696,7 +847,7 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
           }}
           hitSlop={6}
           style={{
-            position: 'absolute', right: 16, bottom: 14,
+            position: 'absolute', right: 16, bottom: 14, zIndex: 30,
             flexDirection: 'row', alignItems: 'center', gap: 4,
             paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999,
             borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card,
@@ -706,7 +857,7 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
           <Text style={{ fontSize: 12, color: colors.mutedForeground }}>回到底部</Text>
         </Pressable>
       )}
-      </View>
+      </Animated.View>
 
       {/* 输入区(仿网页组合式输入框:文本框在上,工具行在下,发送靠右) */}
       <View style={{ paddingHorizontal: 12, paddingTop: 6, paddingBottom: 8, borderTopWidth: 1, borderTopColor: colors.hairline }}>
