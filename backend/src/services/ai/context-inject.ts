@@ -39,6 +39,17 @@ const ATTACHMENT_SCOPE_NOTE =
   '图片的「内容摘要/识别文本/关键信息」是系统预先读出的文字内容:后续轮次凭这些文字作答即可,不要重复识别;' +
   '仅当用户追问图片的视觉细节(版面排版、位置、印章、商品外观等)时,才调用 view_image(把要确认的细节写进 question),由视觉模型看图后作答。'
 
+/**
+ * 多模态主模型场景:本轮图片**以图像形式直接下发**,没有预提取的文字。
+ * 这里不能再写「系统已预先读出文字」,否则模型会以为自己拿到了摘要而跳过看图。
+ * 措辞对后续轮次同样成立(首轮之后历史里只剩这段文字,追问细节要靠 view_image)。
+ */
+const ATTACHMENT_SCOPE_NOTE_DIRECT =
+  '说明:以上 attachmentId 是这些附件在系统里的唯一标识 —— 图片识别、账单导入、流水附件关联都用它;调用工具时直接引用,不要用文件名或其它 id。' +
+  '本轮图片已作为图像随消息提供,请直接看图作答,不要调用 ocr_receipt 重复识别。' +
+  '回答前请先对每张图片调用一次 save_image_content,把你看到的内容(摘要/图中文字/关键字段)记下来 —— 后续轮次凭它记得图片;' +
+  '若需要确认视觉细节(版面排版、位置、印章、商品外观等),调用 view_image(把要确认的细节写进 question)。'
+
 /** 图片文字化结果的最小形状(完整定义见 services/ai/image-context.ts;此处只取用得到的字段) */
 export interface AttachmentTextContext {
   summary: string
@@ -58,6 +69,8 @@ const ATTACHMENT_TEXT_LIMIT = 600
 export function buildAttachmentSection(
   attachments: { id: string; originalFilename: string }[],
   contexts?: Map<string, AttachmentTextContext>,
+  /** 多模态主模型本轮直读图片(没有预提取摘要)时置 true,换用「看图作答」的措辞 */
+  directImageVision = false,
 ): string {
   if (attachments.length === 0) return ''
   const lines = attachments.map((a) => {
@@ -69,7 +82,7 @@ export function buildAttachmentSection(
     if (ctx.meta && Object.keys(ctx.meta).length > 0) parts.push(`关键信息: ${JSON.stringify(ctx.meta)}`)
     return parts.join('\n')
   })
-  return `${ATTACHMENT_MARK}\n${lines.join('\n')}\n${ATTACHMENT_SCOPE_NOTE}`
+  return `${ATTACHMENT_MARK}\n${lines.join('\n')}\n${directImageVision ? ATTACHMENT_SCOPE_NOTE_DIRECT : ATTACHMENT_SCOPE_NOTE}`
 }
 
 /** 去掉注入文本里的「附件清单」段(其余段原样保留) */
@@ -78,6 +91,119 @@ export function stripAttachmentSection(content: string): string {
   // (buildAttachmentSection 用 oneLine 压过),所以按段过滤是安全的。
   const sections = content.split('\n\n').filter((s) => !s.trimStart().startsWith(ATTACHMENT_MARK))
   return sections.join('\n\n')
+}
+
+function parseMetaJson(raw: string | null): Record<string, unknown> | null {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 用 RecordAttachment.vision* 里的图片摘要补全历史中的附件段。
+ *
+ * 背景:多模态主模型首轮直接看图,由 save_image_content 把看到的内容写进附件缓存;
+ * 但当时生成的注入段只有文件名。后续轮次从 DB 重放历史时,靠这里把摘要补回去,
+ * 模型才「记得」图片内容(否则只知道有个附件,连是照片还是小票都不清楚)。
+ *
+ * 附件来源:
+ *   - 当前轮 → 调用方从**代码上下文**传入(就是本轮请求的 attachments);
+ *   - 历史轮 → ChatMessageAttachment 关联表。
+ * 完全不解析注入文本里的 attachmentId(文本格式一变就会静默失效)。
+ *
+ * 特性:不写库、幂等;没有摘要的附件保持原样(措辞仍是「直接看图」);
+ * 历史里没有任何附件段时直接返回,零开销。
+ */
+export async function enrichAttachmentSections(
+  messages: { role: string; content: unknown }[],
+  messageIds: string[],
+  /** 当前轮的附件(来自代码上下文)。续写/确认路径没有新的用户消息,可不传 */
+  current?: { messageId: string; attachments: { id: string; originalFilename: string }[] },
+): Promise<void> {
+
+  // 1) 定位含附件段的消息(index 是 messages 下标;messageId 直接存下来,避免后面再从别的数组按下标取)
+  const targets: { index: number; sectionIdx: number; messageId: string }[] = []
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i]
+    if (msg.role !== 'user' || typeof msg.content !== 'string') continue
+    if (!msg.content.includes(ATTACHMENT_MARK)) continue
+    const sections = msg.content.split('\n\n')
+    const sectionIdx = sections.findIndex((s) => s.trimStart().startsWith(ATTACHMENT_MARK))
+    if (sectionIdx >= 0) targets.push({ index: i, sectionIdx, messageId: messageIds[i] || '' })
+  }
+  if (targets.length === 0) return
+
+  // 2) 关联表:messageId → 附件(结构化来源)。当前轮用调用方传入的,不必查表
+  const usedMessageIds = [
+    ...new Set(
+      targets
+        .filter((t) => !current || t.messageId !== current.messageId)
+        .map((t) => t.messageId)
+        .filter(Boolean),
+    ),
+  ]
+  const links = usedMessageIds.length > 0
+    ? await prisma.chatMessageAttachment
+        .findMany({
+          where: { messageId: { in: usedMessageIds } },
+          select: { messageId: true, attachment: { select: { id: true, originalFilename: true } } },
+        })
+        .catch(() => [])
+    : []
+  const byMessage = new Map<string, { id: string; originalFilename: string }[]>()
+  for (const link of links) {
+    const item = { id: link.attachment.id, originalFilename: link.attachment.originalFilename }
+    const list = byMessage.get(link.messageId)
+    if (list) list.push(item)
+    else byMessage.set(link.messageId, [item])
+  }
+
+  // 3) 当前轮用代码上下文,历史轮用关联表;关联表也没有 ⇒ 跳过该消息(不再反解析文本)
+  const resolved = targets
+    .map((t) => {
+      const isCurrent = !!current && t.messageId === current.messageId
+      return {
+        ...t,
+        attachments: isCurrent ? current.attachments : (byMessage.get(t.messageId) ?? []),
+      }
+    })
+    .filter((t) => t.attachments.length > 0)
+
+  const ids = [...new Set(resolved.flatMap((r) => r.attachments.map((a) => a.id)))]
+  if (ids.length === 0) return
+
+  // 4) 一次查缓存(只取已生成摘要的)
+  const rows = await prisma.recordAttachment
+    .findMany({
+      where: { id: { in: ids }, visionAt: { not: null } },
+      select: { id: true, visionSummary: true, visionText: true, visionMeta: true },
+    })
+    .catch(() => [])
+
+  const contexts = new Map<string, AttachmentTextContext>()
+  for (const row of rows) {
+    if (!row.visionSummary) continue
+    contexts.set(row.id, {
+      summary: row.visionSummary,
+      text: row.visionText || '',
+      meta: parseMetaJson(row.visionMeta),
+    })
+  }
+  if (contexts.size === 0) return
+
+  // 5) 只重建「该消息的附件确实有摘要」的段:新图(尚无摘要)保持原段,
+  //    否则会把多模态首轮的「先调用 save_image_content」指引一起抹掉
+  for (const target of resolved) {
+    if (!target.attachments.some((a) => contexts.has(a.id))) continue
+    const sections = (messages[target.index].content as string).split('\n\n')
+    if (sections[target.sectionIdx] === undefined) continue
+    sections[target.sectionIdx] = buildAttachmentSection(target.attachments, contexts, false)
+    messages[target.index].content = sections.join('\n\n')
+  }
 }
 
 /** 注入文本除前缀外是否还有实际内容 */

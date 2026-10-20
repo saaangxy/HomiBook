@@ -23,7 +23,7 @@ import { IMPORT_AI_SOURCES, IMPORT_SOURCE_LABELS, buildImportMessage, parseImpor
 
 
 // 拆分出的子组件(工具卡/导入预览卡)
-import { ToolCard } from './ToolCard';
+import { ToolCard, ImageReadHint } from './ToolCard';
 import { ImportFileCard } from './ImportPreviewCard';
 
 // AI 财务助手聊天主体(可嵌入:AI 弹窗 / 记一笔弹窗 AI tab)
@@ -540,7 +540,10 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
         return <MarkdownBody key={block.id} content={block.content} inverted={isUser} />;
       }
       case 'tool-call':
-        return <ToolCard key={block.id} toolCall={block} bookId={bookId} />;
+        // 读图工具只给一行轻量进度(它不落库,历史里不会出现),不渲染完整工具卡
+        return block.toolName === 'save_image_content'
+          ? <ImageReadHint key={block.id} status={block.status} />
+          : <ToolCard key={block.id} toolCall={block} bookId={bookId} />;
       default:
         return null;
     }

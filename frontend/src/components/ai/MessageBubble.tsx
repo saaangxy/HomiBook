@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import type { Message, MessageBlock } from '@/stores/chat'
 import { parseImportMessage, type ChatInjection } from '@homibook/core'
 import { useAuthStore } from '@/stores/auth'
-import { ToolCallCard } from './ToolCallCard'
+import { ToolCallCard, SaveImageHint } from './ToolCallCard'
 import { Bot, Brain, ChevronDown, ChevronLeft, ChevronRight, Copy, FileSpreadsheet, FileText, RefreshCw, Pencil, Check, Loader2, Sparkles } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
@@ -326,7 +326,10 @@ export function MessageBubble({ message, onRetry, onEditSubmit, versions, onSwit
                   )
                 }
                 case 'tool-call':
-                  return <ToolCallCard key={block.id} toolCall={block} />
+                  // 读图工具只给一行轻量进度(不落库,历史里不会出现),不渲染完整工具卡
+                  return block.toolName === 'save_image_content'
+                    ? <SaveImageHint key={block.id} status={block.status} />
+                    : <ToolCallCard key={block.id} toolCall={block} />
                 default:
                   return null
               }

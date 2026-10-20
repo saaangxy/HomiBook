@@ -10,12 +10,12 @@ import { needsTiling, fitOversizedImage, VISION_MAX_SIDE } from '../services/ai/
 import { routeIntent, classifyWithKeywords } from '../services/ai/model-router.js'
 import { assertIsMember, loadUserProviderConfig } from '../services/ai/security.js'
 import { logToolCall } from '../services/ai/audit.js'
-import { ALL_TOOLS, TOOL_GROUPS, storeImportOverrides, peekImportOverrides } from '../services/ai/tools/index.js'
+import { ALL_TOOLS, ALWAYS_ENABLED_TOOL_NAMES, TOOL_GROUPS, storeImportOverrides, peekImportOverrides } from '../services/ai/tools/index.js'
 import { buildConfirmPreview } from '../services/ai/confirm-preview.js'
 import { sendMessageSchema, createSessionSchema, updateSessionSchema, confirmActionSchema, updateAIConfigSchema, createProviderConfigSchema, updateProviderConfigSchema } from '../schemas/chat.js'
 import { detectSkills } from '../services/ai/skills/index.js'
-import { INJECT_ROLE, buildAttachmentSection, collectInjections, foldInjections, persistInjectionIfChanged, summarizeInjection, takeOverInjections } from '../services/ai/context-inject.js'
-import { ensureImageTextContexts } from '../services/ai/image-context.js'
+import { INJECT_ROLE, buildAttachmentSection, collectInjections, enrichAttachmentSections, foldInjections, persistInjectionIfChanged, summarizeInjection, takeOverInjections } from '../services/ai/context-inject.js'
+import { ensureImageTextContexts, type ImageTextContext } from '../services/ai/image-context.js'
 import { dedupeToolCalls, nextToolCallId } from '../services/ai/tool-call-id.js'
 import { loadMemoriesForPrompt, listMemories, deleteMemory, updateMemory } from '../services/ai/memory.js'
 import { estimateTokens } from '../services/ai/token-estimate.js'
@@ -51,6 +51,8 @@ interface StreamAssistantOptions {
   autoConfirmCreate: boolean
   disabledTools: string[]
   initialSSEEvents?: { event: string; data: any }[]
+  /** 本轮带图且尚无摘要缓存:首步强制调用 save_image_content(只写文字，不产生第二次识图) */
+  forceImageSummary?: boolean
 }
 
 // 将 AI SDK 异常规范化为简洁可读的提示,避免整段堆栈(如 zod 校验失败的原始 JSON)直达客户端 UI
@@ -142,8 +144,11 @@ async function injectImagesToLastUserMessage(messages: any[], imageAttachments: 
   return msgs
 }
 
+/** 只给前端一个「读图中」状态、不落库的工具:历史回看时不留痕 */
+const UI_HINT_ONLY_TOOLS = new Set(['save_image_content'])
+
 async function streamAssistantResponse(opts: StreamAssistantOptions) {
-  const { reply, sessionId, accountBookId, userId, systemPrompt, messages, parentMessageId, provider, model, apiKey, baseURL, temperature, maxTokens, maxSteps, autoConfirmCreate, disabledTools } = opts
+  const { reply, sessionId, accountBookId, userId, systemPrompt, messages, parentMessageId, provider, model, apiKey, baseURL, temperature, maxTokens, maxSteps, autoConfirmCreate, disabledTools, forceImageSummary } = opts
 
   reply.raw.writeHead(200, {
     'Content-Type': 'text/event-stream',
@@ -218,7 +223,7 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
   const disabledSet = new Set(disabledTools)
   const aiTools: Record<string, any> = {}
   for (const tool of ALL_TOOLS) {
-    if (disabledSet.has(tool.name)) continue
+    if (disabledSet.has(tool.name) && !ALWAYS_ENABLED_TOOL_NAMES.has(tool.name)) continue
     aiTools[tool.name] = {
       description: tool.description,
       inputSchema: jsonSchema(tool.parameters as Record<string, unknown>),
@@ -229,7 +234,11 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
         // id 必须唯一:并行调用同名工具时时间戳相同,重复 id 会让上游拒绝整个会话(见 tool-call-id.ts)
         const toolCallId = nextToolCallId(tool.name)
         sendSSE('tool-call', { toolCallId, toolName: tool.name, args })
-        toolCallEntries.push({ toolCallId, toolName: tool.name, args, status: 'pending', textOffset: fullText.length })
+        // 读图类工具只给前端一个「读图中」状态:不写进 toolCallEntries ⇒ 不落 assistant.toolCalls,
+        // 历史回看不留痕;SSE 照常推,当轮界面才有进度可显示
+        if (!UI_HINT_ONLY_TOOLS.has(tool.name)) {
+          toolCallEntries.push({ toolCallId, toolName: tool.name, args, status: 'pending', textOffset: fullText.length })
+        }
         activeToolCount++
         try {
           // ---- switch_book：展示账本列表，暂停等待用户选择切换 ----
@@ -354,6 +363,16 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
       maxOutputTokens: maxTokens,
       stopWhen: stepCountIs(maxSteps),
       abortSignal: abortController.signal,
+      // 首步强制记录图片内容:模型本轮已经看到图,让它把内容写下来即可 ——
+      // 既保证后续轮次「记得」图片,又不会像另调视觉模型那样多一次识图
+      ...(forceImageSummary
+        ? {
+            prepareStep: ({ stepNumber }: { stepNumber: number }) =>
+              stepNumber === 0
+                ? { toolChoice: { type: 'tool' as const, toolName: 'save_image_content' } }
+                : {},
+          }
+        : {}),
       onStepFinish: () => {
         // 所有 tool 的 execute() 已执行完、tool-result 已全部 enqueue
         // 此时 controller 空闲，安全调用 abort 阻止下一步 LLM 调用
@@ -364,6 +383,7 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
     })
 
     for await (const part of result.fullStream) {
+      console.info(`收到sse响应: ${part}`)
       if (part.type === 'text-delta') {
         // ai@6 的 fullStream text/reasoning-delta part 字段名均为 text(经实测确认,非 delta)
         const deltaText = (part as any).text ?? ''
@@ -564,6 +584,8 @@ async function buildChatMessages(sessionId: string, pendingToolResults: { toolCa
 
   // 折叠规则与主消息流程一致(见 context-inject.ts 顶部说明)
   foldInjections(messages, messageIds, injects)
+  // 附件段补摘要(与主消息流程同一套规则:两条装配路径的文本必须一致)
+  await enrichAttachmentSections(messages, messageIds)
 
   return { messages, messageIds }
 }
@@ -596,7 +618,7 @@ async function continueWithLLM(reply: any, sessionId: string, accountBookId: str
   const disabledSet = new Set(prefs.disabledTools)
   const enabledTools: Record<string, any> = {}
   for (const tool of ALL_TOOLS) {
-    if (disabledSet.has(tool.name)) continue
+    if (disabledSet.has(tool.name) && !ALWAYS_ENABLED_TOOL_NAMES.has(tool.name)) continue
     enabledTools[tool.name] = { description: tool.description, inputSchema: tool.parameters }
   }
   const historyBudget = computeHistoryBudget(activeConfig?.contextWindow, maxTokens, systemPrompt, enabledTools)
@@ -925,17 +947,79 @@ export async function chatRoutes(app: FastifyInstance) {
       historyIds.push(...chainIds)
     }
 
-    // 图片附件先做「文字化」:描述/OCR 全文/关键字段随附件信息一起注入,并缓存到附件记录上。
-    // 这样后续轮次的历史里只剩文本,模型仍「记得」图片内容,不必每轮重发 base64
-    // (见 services/ai/image-context.ts)。非图片附件(账单 csv/xlsx 等)不参与。
+    // ── 模型路由(提前解析)──
+    // 必须在「图片文字化」之前:多模态主模型本轮会直接看图,不需要再花一次视觉调用做摘要
+    let route
+    if (hasSimple) {
+      const simpleApiKey = simpleConfig?.apiKey || ''
+      route = await routeIntent(message, simpleProvider as ProviderType, prefs.simpleModel, complexProvider as ProviderType, prefs.complexModel, { apiKey: simpleApiKey })
+    } else {
+      // 简单模型未配置，直接用关键词判断是否需要复杂模型
+      const intent = classifyWithKeywords(message)
+      route = {
+        intent,
+        provider: intent === 'complex' ? complexProvider : simpleProvider,
+        model: intent === 'complex' ? prefs.complexModel : prefs.simpleModel,
+      } as { intent: 'simple' | 'complex'; provider: string; model: string }
+    }
+
+    // 校验所选路由的模型是否已配置
+    if (!route.model || !route.provider) {
+      const taskType = route.intent === 'complex' ? '复杂任务' : '简单任务'
+      return reply.status(400).send({ message: `未配置${taskType}模型，请在 AI 设置中选择模型后重试` })
+    }
+
+    const activeConfig = route.provider === simpleProvider ? simpleConfig : complexConfig
+    const apiKey = activeConfig?.apiKey || ''
+    const baseURL = activeConfig?.baseURL || (await loadBaseURL(route.provider))
+
+    // 网络搜索开关：关闭时将搜索工具加入禁用列表
+    const webSearchTools = ['web_search', 'read_webpage']
+    let effectiveDisabledTools = enableWebSearch === false
+      ? [...new Set([...(prefs.disabledTools || []), ...webSearchTools])]
+      : (prefs.disabledTools || [])
+
+    // ── 图片附件 ──
     const imageAttachments = attachments.filter(a => IMAGE_EXT_RE.test(a.originalFilename))
-    const imageTextContexts = await ensureImageTextContexts(
-      imageAttachments.map(a => ({ id: a.id, path: a.url, originalFilename: a.originalFilename })),
-      userId,
-    )
+    // 多模态主模型：消息含图片附件时直接注入图片，并禁用 OCR 工具（改用多模态直读技能提示词）
+    const isMultimodalImage = !!activeConfig?.multimodal && imageAttachments.length > 0
+    if (isMultimodalImage) {
+      effectiveDisabledTools = [...new Set([...effectiveDisabledTools, 'ocr_receipt'])]
+    }
+
+    /**
+     * 图片「文字化」(摘要/OCR 全文/关键字段)只为**后续轮次**能记得图片内容。
+     * 多模态主模型本轮会直接看图 —— 若在这里 await,同一张图会先被视觉模型看一遍、再被主模型看一遍,
+     * 首响被硬生生拖长数秒(大图还要切片,更慢)。因此多模态场景直接跳过,
+     * 用户追问视觉细节时由 view_image 工具按需重读(该链路的缓存仍在)。
+     * 纯文本主模型看不到图,仍需提前提取,保持等待。
+     */
+    const imageTextContexts: Map<string, ImageTextContext> = isMultimodalImage
+      ? new Map()
+      : await ensureImageTextContexts(
+          imageAttachments.map(a => ({ id: a.id, path: a.url, originalFilename: a.originalFilename })),
+          userId,
+        )
+
+    /**
+     * 有图、且至少一张还没有摘要缓存 ⇒ 首步强制调用 save_image_content。
+     * 用「无缓存」做条件:同一张图再次发送时不必重复强制(用户可能只是追加提问)。
+     * 该工具不可禁用(见 ALWAYS_ENABLED_TOOLS)
+     */
+    let forceImageSummary = false
+    if (isMultimodalImage && imageAttachments.length > 0) {
+      const cachedRows = await prisma.recordAttachment
+        .findMany({
+          where: { id: { in: imageAttachments.map(a => a.id) }, visionAt: { not: null } },
+          select: { id: true },
+        })
+        .catch(() => [])
+      forceImageSummary = cachedRows.length < imageAttachments.length
+    }
 
     // 附件清单改走「注入消息」下发(以前只拼在请求文本里不落库,下一轮重放文本不同会在此处丢缓存)
-    const attachmentSection = buildAttachmentSection(attachments, imageTextContexts)
+    // 多模态场景传 true:本轮图片是直接下发的,提示词要改成「看图作答」而不是「凭摘要作答」
+    const attachmentSection = buildAttachmentSection(attachments, imageTextContexts, isMultimodalImage)
     // 技能检测仍用「用户原文 + 附件信息」(导入/图片账单等技能靠其中的标记触发)
     const fullMessage = attachmentSection ? `${message}\n\n${attachmentSection}` : message
 
@@ -1008,44 +1092,7 @@ export async function chatRoutes(app: FastifyInstance) {
     })
     const bookName = book?.name || accountBookId
 
-    // 网络搜索开关：关闭时将搜索工具加入禁用列表
-    const webSearchTools = ['web_search', 'read_webpage']
-    let effectiveDisabledTools = enableWebSearch === false
-      ? [...new Set([...(prefs.disabledTools || []), ...webSearchTools])]
-      : (prefs.disabledTools || [])
     const activeSkills = detectSkills(fullMessage)
-
-    // 模型路由
-    let route
-    if (hasSimple) {
-      const simpleApiKey = simpleConfig?.apiKey || ''
-      route = await routeIntent(message, simpleProvider as ProviderType, prefs.simpleModel, complexProvider as ProviderType, prefs.complexModel, { apiKey: simpleApiKey })
-    } else {
-      // 简单模型未配置，直接用关键词判断是否需要复杂模型
-      const intent = classifyWithKeywords(message)
-      route = {
-        intent,
-        provider: intent === 'complex' ? complexProvider : simpleProvider,
-        model: intent === 'complex' ? prefs.complexModel : prefs.simpleModel,
-      } as { intent: 'simple' | 'complex'; provider: string; model: string }
-    }
-
-    // 校验所选路由的模型是否已配置
-    if (!route.model || !route.provider) {
-      const taskType = route.intent === 'complex' ? '复杂任务' : '简单任务'
-      return reply.status(400).send({ message: `未配置${taskType}模型，请在 AI 设置中选择模型后重试` })
-    }
-
-    const activeConfig = route.provider === simpleProvider ? simpleConfig : complexConfig
-    const apiKey = activeConfig?.apiKey || ''
-    const baseURL = activeConfig?.baseURL || (await loadBaseURL(route.provider))
-
-    // 多模态主模型：消息含图片附件时直接注入图片，并禁用 OCR 工具（改用多模态直读技能提示词）
-    // 注:imageAttachments 已在构造附件注入段时算出(那里要先做图片文字化)
-    const isMultimodalImage = !!activeConfig?.multimodal && imageAttachments.length > 0
-    if (isMultimodalImage) {
-      effectiveDisabledTools = [...new Set([...effectiveDisabledTools, 'ocr_receipt'])]
-    }
 
     // 上下文注入(日期/记忆/技能):只追加差量、落库为 inject 消息,再折叠回本轮用户消息。
     // 这些内容以前拼在系统提示词里,一变就让其后整段历史缓存失效;现在变化只影响新追加的那一条。
@@ -1083,6 +1130,12 @@ export async function chatRoutes(app: FastifyInstance) {
       })
       .catch(() => [])
     foldInjections(messages, messageIds, injects)
+    // 历史里的附件段按缓存补摘要:多模态首轮的摘要是主模型用 save_image_content 写的,
+    // 注入段落库时还没有 —— 这里补回,后续轮次才「记得」图片(不写库、幂等)
+    await enrichAttachmentSections(messages, messageIds, {
+      messageId: userMsgDb.id,
+      attachments: attachments.map(a => ({ id: a.id, originalFilename: a.originalFilename })),
+    })
 
     // 三级上下文压缩
     // 同上:重试/续写路径同样要钳制
@@ -1090,7 +1143,7 @@ export async function chatRoutes(app: FastifyInstance) {
     const disabledSet = new Set(effectiveDisabledTools)
     const enabledTools: Record<string, any> = {}
     for (const tool of ALL_TOOLS) {
-      if (disabledSet.has(tool.name)) continue
+      if (disabledSet.has(tool.name) && !ALWAYS_ENABLED_TOOL_NAMES.has(tool.name)) continue
       enabledTools[tool.name] = { description: tool.description, inputSchema: tool.parameters }
     }
     const historyBudget = computeHistoryBudget(activeConfig?.contextWindow, maxTokens, systemPrompt, enabledTools)
@@ -1138,6 +1191,7 @@ export async function chatRoutes(app: FastifyInstance) {
       maxSteps: prefs.maxSteps,
       autoConfirmCreate: prefs.autoConfirmCreate,
       disabledTools: effectiveDisabledTools,
+      forceImageSummary,
     })
   })
 

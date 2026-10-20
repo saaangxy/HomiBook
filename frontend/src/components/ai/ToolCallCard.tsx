@@ -256,6 +256,20 @@ function cellColorClass(color?: 'green' | 'red') {
   return ''
 }
 
+/** 读图过程提示:save_image_content 不落库(历史不会出现),当轮只给一行轻量状态 */
+export function SaveImageHint({ status }: { status: ToolCallEntry['status'] }) {
+  const failed = status === 'error'
+  const done = status === 'success'
+  return (
+    <div className="flex items-center gap-1.5 py-0.5 text-xs text-muted-foreground">
+      {failed ? <XCircle size={12} className="text-destructive" />
+        : done ? <CheckCircle2 size={12} />
+          : <Loader2 size={12} className="animate-spin" />}
+      <span>{failed ? '图片内容读取失败' : done ? '已读取图片内容' : '正在读取图片内容…'}</span>
+    </div>
+  )
+}
+
 export function ToolCallCard({ toolCall }: Props) {
   const [expanded, setExpanded] = useState(false)
 

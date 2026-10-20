@@ -234,6 +234,36 @@ function ConfirmPreviewView({ preview, submitted, submitting, onConfirm }: {
   );
 }
 
+/**
+ * 读图过程提示:save_image_content 只写附件缓存、不落库,历史里不会出现。
+ * 当轮给一行轻量状态(不占版面),避免用户觉得「发完图卡住了」。
+ */
+export function ImageReadHint({ status }: { status: ToolCallEntry['status'] }) {
+  const { colors } = useTheme();
+  if (status === 'error') {
+    return (
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 2 }}>
+        <XCircle size={12} color={colors.expense} />
+        <Text variant="muted" style={{ fontSize: 11.5 }}>图片内容读取失败</Text>
+      </View>
+    );
+  }
+  if (status === 'success') {
+    return (
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 2 }}>
+        <CheckCircle2 size={12} color={colors.mutedForeground} />
+        <Text variant="muted" style={{ fontSize: 11.5 }}>已读取图片内容</Text>
+      </View>
+    );
+  }
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 2 }}>
+      <ActivityIndicator size="small" color={colors.mutedForeground} />
+      <Text variant="muted" style={{ fontSize: 11.5 }}>正在读取图片内容…</Text>
+    </View>
+  );
+}
+
 export function ToolCard({ toolCall, bookId }: { toolCall: ToolCallEntry; bookId: string }) {
   const { colors } = useTheme();
   const [expanded, setExpanded] = useState(false);

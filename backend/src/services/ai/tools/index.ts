@@ -17,6 +17,7 @@ import { previewImportTool } from './preview-import.js'
 import { confirmImportTool } from './confirm-import.js'
 import { ocrReceiptTool } from './ocr-receipt.js'
 import { viewImageTool } from './view-image.js'
+import { saveImageContentTool } from './save-image-content.js'
 // 固定收支/贷款
 import { queryRecurringTool } from './query-recurring.js'
 import { createRecurringTool } from './create-recurring.js'
@@ -146,7 +147,18 @@ export const TOOL_GROUPS: { label: string; tools: ToolDef[] }[] = [
   },
 ]
 
-export const ALL_TOOLS: ToolDef[] = TOOL_GROUPS.flatMap(g => g.tools)
+/**
+ * 不可禁用的工具:不出现在工具管理列表(`GET /tools` 只读 TOOL_GROUPS),
+ * 且绕过 disabledTools 过滤。
+ *
+ * save_image_content 是「后续轮次记得图片」这一环:禁用之后模型只能重新识图,
+ * 正好违背「不多调一次模型」的初衷,所以不提供开关。
+ */
+export const ALWAYS_ENABLED_TOOLS: ToolDef[] = [saveImageContentTool]
+
+export const ALWAYS_ENABLED_TOOL_NAMES = new Set(ALWAYS_ENABLED_TOOLS.map(t => t.name))
+
+export const ALL_TOOLS: ToolDef[] = [...TOOL_GROUPS.flatMap(g => g.tools), ...ALWAYS_ENABLED_TOOLS]
 
 // ---- 用户导入覆盖数据存储 ----
 // 前端 ImportPreviewInteractive 组件中用户修改后的映射规则
