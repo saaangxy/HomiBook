@@ -45,6 +45,7 @@ export const saveImageContentTool: ToolDef = {
     args: { attachmentId?: string; summary?: string; text?: string; meta?: Record<string, unknown> },
     ctx,
   ) => {
+    // console.log(`记录图片内容 ${args.attachmentId} ${args.summary} ${args.text}`)
     const { userId, accountBookId } = ctx
     await assertIsMember(accountBookId, userId)
 

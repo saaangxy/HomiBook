@@ -383,18 +383,20 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
     })
 
     for await (const part of result.fullStream) {
-      console.info(`收到sse响应: ${part}`)
       if (part.type === 'text-delta') {
+        console.info(`收到sse响应: ${JSON.stringify(part)}`)
         // ai@6 的 fullStream text/reasoning-delta part 字段名均为 text(经实测确认,非 delta)
         const deltaText = (part as any).text ?? ''
         fullText += deltaText
         sendSSE('text-delta', { delta: deltaText })
       } else if (part.type === 'reasoning-delta') {
+        console.info(`收到sse响应: ${JSON.stringify(part)}`)
         // DeepSeek 等推理模型的思考内容:累积存库并转发给前端渲染 thinking 块
         const deltaText = (part as any).text ?? ''
         reasoningContent += deltaText
         sendSSE('reasoning-delta', { delta: deltaText })
       } else if (part.type === 'error') {
+        console.info(`收到sse响应: ${JSON.stringify(part)}`)
         // AI SDK 把 API 错误作为流内 error part 发出，不会走 throw
         const errPart = part as { type: 'error'; error: unknown }
         sendSSE('error', { message: friendlyAIErrorMessage(errPart.error) })
