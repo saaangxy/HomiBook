@@ -244,18 +244,33 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
    */
   const navGap = navItems.length <= 10 ? 12 : navItems.length <= 18 ? 9 : 6;
 
-  /** 手指 y → 最近的用户消息序号 */
-  const navIndexAt = (y: number) => {
-    if (navItems.length === 0 || navBarH <= 0) return 0;
+  /** 导航条在窗口中的顶部坐标(用 pageY 换算相对位置) */
+  const navBarRef = useRef<View>(null);
+  const navTopRef = useRef(0);
+  /**
+   * 为什么不用 locationY:Android 上 responder 被滚动容器抢走、重新 grant 时
+   * locationY 可能归零 —— 表现就是「一直往下滑却跳回第一条」。pageY 是屏幕坐标,不受影响。
+   */
+  const measureNavBar = () => {
+    navBarRef.current?.measureInWindow((_x, y) => {
+      if (y > 0) navTopRef.current = y;
+    });
+  };
+
+  /** 屏幕坐标 pageY → 最近的用户消息序号;布局未就绪返回 null(不能当成第 0 条) */
+  const navIndexAt = (pageY: number): number | null => {
+    if (navItems.length === 0 || navBarH <= 0) return null;
+    const y = pageY - navTopRef.current;
     const usable = Math.max(1, navBarH - NAV_PAD_Y * 2);
     const ratio = Math.min(1, Math.max(0, (y - NAV_PAD_Y) / usable));
     return Math.round(ratio * (navItems.length - 1));
   };
 
-  const handleNavTouch = (y: number) => {
+  const handleNavTouch = (pageY: number) => {
+    const k = navIndexAt(pageY);
+    if (k === null) return;
     // 气泡位置每帧都要跟手:走 shared value(UI 线程),不做 setState
-    navY.set(y);
-    const k = navIndexAt(y);
+    navY.set(pageY - navTopRef.current);
     // 只有跨到另一条消息才 setState:拖动过程中每帧重渲染整个消息列表会明显掉帧
     if (navActiveRef.current === k) return;
     navActiveRef.current = k;
@@ -752,9 +767,11 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
         onTouchCancel={handleListTouchEnd}
         onScrollEndDrag={handleListTouchEnd}
         onMomentumScrollEnd={handleListTouchEnd}
-        // scrollToIndex 只能定位已渲染的行:先按平均高度估算偏移,下一帧再精确定位
+        // scrollToIndex 只能定位已渲染的行:先按平均高度估算一条落点,等目标行渲染后再精确对齐。
+        // 平均高度拿不到(为 0)时必须用兜底值 —— 否则 offset=0 会先闪回第一条,再往下滚
         onScrollToIndexFailed={(info) => {
-          listRef.current?.scrollToOffset({ offset: info.averageItemLength * info.index, animated: true });
+          const avg = info.averageItemLength > 0 ? info.averageItemLength : 80;
+          listRef.current?.scrollToOffset({ offset: avg * info.index, animated: true });
           setTimeout(() => {
             listRef.current?.scrollToIndex({ index: info.index, animated: true, viewPosition: 0 });
           }, 180);
@@ -795,11 +812,12 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
           style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 44, justifyContent: 'center', alignItems: 'flex-end', zIndex: 20 }}
         >
           <View
-            onLayout={(e) => setNavBarH(e.nativeEvent.layout.height)}
+            ref={navBarRef}
+            onLayout={(e) => { setNavBarH(e.nativeEvent.layout.height); measureNavBar(); }}
             onStartShouldSetResponder={() => true}
             onMoveShouldSetResponder={() => true}
-            onResponderGrant={(e) => handleNavTouch(e.nativeEvent.locationY)}
-            onResponderMove={(e) => handleNavTouch(e.nativeEvent.locationY)}
+            onResponderGrant={(e) => handleNavTouch(e.nativeEvent.pageY)}
+            onResponderMove={(e) => handleNavTouch(e.nativeEvent.pageY)}
             onResponderRelease={handleNavRelease}
             onResponderTerminate={handleNavRelease}
             // 同向再放宽一圈,避免贴着边缘按不准
@@ -826,7 +844,7 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
           pointerEvents="none"
           style={[
             {
-              position: 'absolute', right: 32, zIndex: 21,
+              position: 'absolute', right: 64, zIndex: 21,
               maxWidth: '72%', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12,
               backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
               shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 4,

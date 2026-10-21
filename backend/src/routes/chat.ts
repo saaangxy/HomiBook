@@ -460,6 +460,106 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
   }
 }
 
+// ---- /send 的流程拆分(纯提取,不改顺序与副作用) ----
+
+/** 查询本次请求引用的附件（只取后续读取/展示需要的字段） */
+async function loadChatAttachments(
+  attachmentIds: string[] | undefined,
+): Promise<{ id: string; url: string; originalFilename: string }[]> {
+  if (!attachmentIds || attachmentIds.length === 0) return []
+  const rows = await prisma.recordAttachment.findMany({
+    where: { id: { in: attachmentIds } },
+    select: { id: true, path: true, originalFilename: true },
+  })
+  return rows.map(a => ({ id: a.id, url: a.path, originalFilename: a.originalFilename }))
+}
+
+/**
+ * 重试：删除被替换的助手消息及其所有后继（按 parentMessageId 逐层向下）。
+ * 返回「被替换的那条用户消息」id —— 它的注入消息要继承给新消息。
+ */
+async function deleteAssistantSubtree(replaceAssistantDbId: string): Promise<string | null> {
+  const replaced = await prisma.chatMessage.findUnique({
+    where: { id: replaceAssistantDbId },
+    select: { parentMessageId: true },
+  })
+  const retriedUserId = replaced?.parentMessageId ?? null
+
+  let idsToDelete = [replaceAssistantDbId]
+  while (idsToDelete.length > 0) {
+    await prisma.chatMessage.deleteMany({ where: { id: { in: idsToDelete } } })
+    const children = await prisma.chatMessage.findMany({
+      where: { parentMessageId: { in: idsToDelete } },
+      select: { id: true },
+    })
+    idsToDelete = children.map((c) => c.id)
+  }
+  return retriedUserId
+}
+
+/** 从 parentMessageId 沿链回溯到根，得到纯文本历史（history 与 historyIds 严格一一对应） */
+function buildHistoryChain(
+  allMessages: { id: string; role: string; content: string; parentMessageId: string | null }[],
+  parentId: string | null,
+): { history: { role: 'user' | 'assistant'; content: string }[]; historyIds: string[] } {
+  const history: { role: 'user' | 'assistant'; content: string }[] = []
+  const historyIds: string[] = []
+  if (!parentId) return { history, historyIds }
+
+  let currentId: string | null = parentId
+  while (currentId) {
+    const msg = allMessages.find((m) => m.id === currentId)
+    if (!msg) break
+    if (msg.role === 'user' || msg.role === 'assistant') {
+      history.unshift({ role: msg.role, content: msg.content })
+      historyIds.unshift(msg.id)
+    }
+    currentId = msg.parentMessageId
+  }
+  return { history, historyIds }
+}
+
+/**
+ * 解析本轮使用的模型：配了简单模型就用它做意图分类，否则退回关键词判断。
+ * 校验失败返回 `{ error }`，由调用方转成 400（辅助函数不直接 reply）。
+ */
+async function resolveModelRoute(opts: {
+  message: string
+  hasSimple: boolean
+  simpleProvider: string
+  complexProvider: string
+  simpleModel: string
+  complexModel: string
+  simpleApiKey: string
+}): Promise<
+  | { route: { intent: 'simple' | 'complex'; provider: string; model: string } }
+  | { error: string }
+> {
+  let route: { intent: 'simple' | 'complex'; provider: string; model: string }
+  if (opts.hasSimple) {
+    route = await routeIntent(
+      opts.message,
+      opts.simpleProvider as ProviderType,
+      opts.simpleModel,
+      opts.complexProvider as ProviderType,
+      opts.complexModel,
+      { apiKey: opts.simpleApiKey },
+    )
+  } else {
+    const intent = classifyWithKeywords(opts.message)
+    route = {
+      intent,
+      provider: intent === 'complex' ? opts.complexProvider : opts.simpleProvider,
+      model: intent === 'complex' ? opts.complexModel : opts.simpleModel,
+    }
+  }
+  if (!route.model || !route.provider) {
+    const taskType = route.intent === 'complex' ? '复杂任务' : '简单任务'
+    return { error: `未配置${taskType}模型，请在 AI 设置中选择模型后重试` }
+  }
+  return { route }
+}
+
 // ---- 共享辅助：查找并验证待处理工具消息 ----
 
 interface PendingToolMsg {
@@ -866,17 +966,10 @@ export async function chatRoutes(app: FastifyInstance) {
       return reply.status(e.statusCode || 403).send({ message: e.message })
     }
 
-    // 处理附件：查询附件信息并附加到消息文本中供 AI 识别
-    let attachments: { id: string; url: string; originalFilename: string }[] = []
-    if (attachmentIds && attachmentIds.length > 0) {
-      const dbAttachments = await prisma.recordAttachment.findMany({
-        where: { id: { in: attachmentIds } },
-        select: { id: true, path: true, originalFilename: true },
-      })
-      attachments = dbAttachments.map(a => ({ id: a.id, url: a.path, originalFilename: a.originalFilename }))
-    }
+    // ── 1) 附件 ──
+    const attachments = await loadChatAttachments(attachmentIds)
 
-    // 获取或创建会话
+    // ── 2) 会话与模型配置 ──
     const session = await getOrCreateSession(sid, userId, message)
 
     // 加载用户配置
@@ -896,10 +989,10 @@ export async function chatRoutes(app: FastifyInstance) {
       return reply.status(400).send({ message: '请先在 AI 设置中配置模型后再发送消息' })
     }
 
-    // 检索长期记忆
+    // ── 3) 长期记忆 ──
     const memories = await loadMemoriesForPrompt(userId, message, 8)
 
-    // 加载会话所有消息（用于构建历史链）
+    // ── 3b) 会话消息快照(历史链与重试删除都要用) ──
     const allMessages = await prisma.chatMessage.findMany({
       where: { sessionId: session.id },
       orderBy: { createdAt: 'asc' },
@@ -907,74 +1000,33 @@ export async function chatRoutes(app: FastifyInstance) {
       take: 1000,
     })
 
-    // 重试：删除被替换的助手消息及其所有后继（按 parentMessageId 链向下删除）
-    // 顺带记下「被替换的那条用户消息」—— 它的注入消息要继承给新消息（见 inheritInjections）
-    let retriedUserId: string | null = null
-    if (parsed.data.replaceAssistantDbId) {
-      const replaced = await prisma.chatMessage.findUnique({
-        where: { id: parsed.data.replaceAssistantDbId },
-        select: { parentMessageId: true },
-      })
-      retriedUserId = replaced?.parentMessageId ?? null
+    // ── 4) 重试:删掉被替换的助手消息子树;记下被替换的用户消息(它的注入要继承) ──
+    const retriedUserId = parsed.data.replaceAssistantDbId
+      ? await deleteAssistantSubtree(parsed.data.replaceAssistantDbId)
+      : null
 
-      let idsToDelete = [parsed.data.replaceAssistantDbId]
-      while (idsToDelete.length > 0) {
-        await prisma.chatMessage.deleteMany({ where: { id: { in: idsToDelete } } })
-        const children = await prisma.chatMessage.findMany({
-          where: { parentMessageId: { in: idsToDelete } },
-          select: { id: true },
-        })
-        idsToDelete = children.map((c) => c.id)
-      }
-    }
-
-    // 构建消息历史：从 parentMessageId 沿链回溯到根
-    const history: { role: 'user' | 'assistant'; content: string }[] = []
-    const historyIds: string[] = []
+    // ── 5) 历史链 ──
     const parentId = parsed.data.parentMessageId || null
-    if (parentId) {
-      const chain: { role: 'user' | 'assistant'; content: string }[] = []
-      const chainIds: string[] = []
-      let currentId: string | null = parentId
-      while (currentId) {
-        const msg = allMessages.find((m) => m.id === currentId)
-        if (!msg) break
-        if (msg.role === 'user' || msg.role === 'assistant') {
-          chain.unshift({ role: msg.role, content: msg.content })
-          chainIds.unshift(msg.id)
-        }
-        currentId = msg.parentMessageId
-      }
-      history.push(...chain)
-      historyIds.push(...chainIds)
-    }
+    const { history, historyIds } = buildHistoryChain(allMessages, parentId)
 
-    // ── 模型路由(提前解析)──
-    // 必须在「图片文字化」之前:多模态主模型本轮会直接看图,不需要再花一次视觉调用做摘要
-    let route
-    if (hasSimple) {
-      const simpleApiKey = simpleConfig?.apiKey || ''
-      route = await routeIntent(message, simpleProvider as ProviderType, prefs.simpleModel, complexProvider as ProviderType, prefs.complexModel, { apiKey: simpleApiKey })
-    } else {
-      // 简单模型未配置，直接用关键词判断是否需要复杂模型
-      const intent = classifyWithKeywords(message)
-      route = {
-        intent,
-        provider: intent === 'complex' ? complexProvider : simpleProvider,
-        model: intent === 'complex' ? prefs.complexModel : prefs.simpleModel,
-      } as { intent: 'simple' | 'complex'; provider: string; model: string }
-    }
-
-    // 校验所选路由的模型是否已配置
-    if (!route.model || !route.provider) {
-      const taskType = route.intent === 'complex' ? '复杂任务' : '简单任务'
-      return reply.status(400).send({ message: `未配置${taskType}模型，请在 AI 设置中选择模型后重试` })
-    }
+    // ── 6) 模型路由(必须在图片文字化之前:多模态主模型本轮直接看图,不必再花一次视觉调用) ──
+    const routeResult = await resolveModelRoute({
+      message,
+      hasSimple: !!hasSimple,
+      simpleProvider,
+      complexProvider,
+      simpleModel: prefs.simpleModel,
+      complexModel: prefs.complexModel,
+      simpleApiKey: simpleConfig?.apiKey || '',
+    })
+    if ('error' in routeResult) return reply.status(400).send({ message: routeResult.error })
+    const route = routeResult.route
 
     const activeConfig = route.provider === simpleProvider ? simpleConfig : complexConfig
     const apiKey = activeConfig?.apiKey || ''
     const baseURL = activeConfig?.baseURL || (await loadBaseURL(route.provider))
 
+    // ── 7) 工具开关与图片附件判定 ──
     // 网络搜索开关：关闭时将搜索工具加入禁用列表
     const webSearchTools = ['web_search', 'read_webpage']
     let effectiveDisabledTools = enableWebSearch === false
@@ -989,6 +1041,7 @@ export async function chatRoutes(app: FastifyInstance) {
       effectiveDisabledTools = [...new Set([...effectiveDisabledTools, 'ocr_receipt'])]
     }
 
+    // ── 8) 图片文字化(仅纯文本主模型需要) ──
     /**
      * 图片「文字化」(摘要/OCR 全文/关键字段)只为**后续轮次**能记得图片内容。
      * 多模态主模型本轮会直接看图 —— 若在这里 await,同一张图会先被视觉模型看一遍、再被主模型看一遍,
@@ -1019,12 +1072,14 @@ export async function chatRoutes(app: FastifyInstance) {
       forceImageSummary = cachedRows.length < imageAttachments.length
     }
 
-    // 附件清单改走「注入消息」下发(以前只拼在请求文本里不落库,下一轮重放文本不同会在此处丢缓存)
+    // ── 9) 附件清单注入段 ──
+    // 改走「注入消息」下发(以前只拼在请求文本里不落库,下一轮重放文本不同会在此处丢缓存)
     // 多模态场景传 true:本轮图片是直接下发的,提示词要改成「看图作答」而不是「凭摘要作答」
     const attachmentSection = buildAttachmentSection(attachments, imageTextContexts, isMultimodalImage)
     // 技能检测仍用「用户原文 + 附件信息」(导入/图片账单等技能靠其中的标记触发)
     const fullMessage = attachmentSection ? `${message}\n\n${attachmentSection}` : message
 
+    // ── 10) 落库用户消息 + 附件关联 ──
     // 数据库只存用户原文;附件信息随后随注入消息折叠回这条消息
     history.push({ role: 'user', content: message })
 
@@ -1041,6 +1096,7 @@ export async function chatRoutes(app: FastifyInstance) {
       })
     }
 
+    // ── 11) 注入继承(重试 / 编辑重发) ──
     // 重试：接管被替换那条用户消息的注入内容（日期/记忆/技能）。
     // 这些是会话级差量、新一轮不会再写，而旧消息已不在历史链上 —— 不接管模型这一轮就看不到它们了。
     // 取回的文本随后作为 extraSections 交给 persistInjectionIfChanged，与新一轮的附件段**合并成同一条**
@@ -1087,7 +1143,7 @@ export async function chatRoutes(app: FastifyInstance) {
       await prisma.chatMessage.delete({ where: { id: retriedUserId } }).catch(() => {})
     }
 
-    // 查询账本名称用于提示词
+    // ── 12) 账本名 / 技能检测 ──
     const book = await prisma.accountBook.findUnique({
       where: { id: accountBookId },
       select: { name: true },
@@ -1096,7 +1152,8 @@ export async function chatRoutes(app: FastifyInstance) {
 
     const activeSkills = detectSkills(fullMessage)
 
-    // 上下文注入(日期/记忆/技能):只追加差量、落库为 inject 消息,再折叠回本轮用户消息。
+    // ── 13) 上下文注入落库(日期/记忆/技能/附件段) ──
+    // 只追加差量、落库为 inject 消息,随后折叠回本轮用户消息。
     // 这些内容以前拼在系统提示词里,一变就让其后整段历史缓存失效;现在变化只影响新追加的那一条。
     const sessionState = await prisma.chatSession
       .findUnique({ where: { id: session.id }, select: { injectedContext: true } })
@@ -1118,12 +1175,12 @@ export async function chatRoutes(app: FastifyInstance) {
       },
     })
 
-    // 系统提示词为纯静态(动态上下文已走注入消息)
+    // ── 14) 系统提示词(纯静态,动态上下文已走注入消息) ──
     const systemPrompt = buildSystemPrompt(prefs, accountBookId, bookName, effectiveDisabledTools)
 
     const messages = [...history]
     const messageIds = [...historyIds]
-    // 与 buildChatMessages 使用同一折叠规则,保证下一轮从 DB 重放时文本一致
+    // ── 15) 折叠注入 + 附件摘要补全(与 buildChatMessages 同一套规则) ──
     const injects = await prisma.chatMessage
       .findMany({
         where: { sessionId: session.id, role: INJECT_ROLE },
@@ -1139,8 +1196,8 @@ export async function chatRoutes(app: FastifyInstance) {
       attachments: attachments.map(a => ({ id: a.id, originalFilename: a.originalFilename })),
     })
 
-    // 三级上下文压缩
-    // 同上:重试/续写路径同样要钳制
+    // ── 16) 上下文压缩 ──
+    // 输出预留必须钳制:模型配置里可能被填成上下文窗口量级(重试/续写路径同样适用)
     const maxTokens = Math.min(activeConfig?.maxTokens ?? prefs.maxTokens, MAX_OUTPUT_TOKENS)
     const disabledSet = new Set(effectiveDisabledTools)
     const enabledTools: Record<string, any> = {}
@@ -1168,11 +1225,12 @@ export async function chatRoutes(app: FastifyInstance) {
       }).catch(() => {})
     }
 
-    // 多模态：压缩只处理纯文本，故在压缩后把图片 base64 注入最后一条用户消息
+    // ── 17) 注入本轮图片 base64(必须在压缩之后:压缩只处理文本,末尾消息一定保留) ──
     const finalMessages = isMultimodalImage
       ? await injectImagesToLastUserMessage(compressed.messages, imageAttachments)
       : compressed.messages
 
+    // ── 18) 流式响应 ──
     await streamAssistantResponse({
       reply,
       sessionId: session.id,
