@@ -316,6 +316,6 @@ export async function askImage(
     parts: prep.parts,
   })
   if ('error' in call) return { error: call.error }
-  console.log(`视觉模型回复 ${call.text}`)
+  console.debug(`视觉模型回复 ${call.text}`)
   return { answer: call.text }
 }

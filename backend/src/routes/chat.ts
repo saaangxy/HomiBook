@@ -1051,9 +1051,9 @@ export async function chatRoutes(app: FastifyInstance) {
     const availableTools = ALL_TOOLS.filter(
       t => !userDisabledTools.includes(t.name) || ALWAYS_ENABLED_TOOL_NAMES.has(t.name),
     )
-    // 注入段用:可用工具清单文本 + 指纹(首轮注入,用户改工具设置才重新注入)
+    // 注入段用:首轮给完整清单,之后按「已禁用/已恢复」发差量(见 planInjection)
     const toolsText = buildToolPromptLines(new Set(userDisabledTools))
-    const toolsKey = availableTools.map(t => t.name).sort().join(',')
+    const toolNames = availableTools.map(t => t.name)
 
     // ── 图片附件 ──
     const imageAttachments = attachments.filter(a => IMAGE_EXT_RE.test(a.originalFilename))
@@ -1191,7 +1191,8 @@ export async function chatRoutes(app: FastifyInstance) {
         bookName,
         language: prefs.language || 'zh-CN',
         toolsText,
-        toolsKey,
+        toolNames,
+        disabledToolCount: ALL_TOOLS.length - availableTools.length,
         // 继承的段(重试)放最前,与新一轮的附件段合并成同一条注入消息(与首次发送的形态一致)
         extraSections: [
           ...inheritedSections,

@@ -352,9 +352,12 @@ export interface InjectInput {
   bookName: string
   /** 回复语言(首轮注入,改设置才重新注入) */
   language: string
-  /** 可用工具清单文本与指纹(首轮注入,用户改工具开关才重新注入) */
+  /** 首轮注入用的完整工具清单(按分类,建立「能力地图」) */
   toolsText: string
-  toolsKey: string
+  /** 当前可用工具名:与上次比较得出「已禁用/已恢复」差量 */
+  toolNames: string[]
+  /** 当前禁用工具总数(差量文案里给模型一个规模感) */
+  disabledToolCount: number
   /**
    * 随本轮附带的临时上下文(如附件清单):不做去重、每轮原样带上,
    * 其目的在于「不再把它拼进不落库的请求文本」——那样下一轮重放时文本不同,缓存会在这条消息处失效。
@@ -449,12 +452,32 @@ export function planInjection(state: InjectedState, input: InjectInput): InjectP
     nextState.language = input.language
   }
 
-  // 6. 工具清单:用户改工具开关才重新注入。
-  //    指纹(toolsKey)只含用户设置层 —— 联网开关/多模态这类运行时状态走执行层拦截,
+  // 6. 工具清单:首轮给一次完整清单,之后只注入差量。
+  //    指纹只含用户设置层 —— 联网开关/多模态这类运行时状态走执行层拦截,
   //    否则开关一拨就每轮注入,反而把历史撑长。
-  if (state.toolsKey !== input.toolsKey && input.toolsText) {
-    sections.push(input.toolsText)
-    nextState.toolsKey = input.toolsKey
+  //    差量而非全量:否则历史里会堆多份互相矛盾的全量清单,模型可能拿旧的当现状。
+  const nextToolsKey = [...input.toolNames].sort().join(',')
+  if (state.toolsKey !== nextToolsKey && input.toolNames.length > 0) {
+    if (state.toolsKey === null) {
+      if (input.toolsText) sections.push(input.toolsText)
+    } else {
+      const prevTools = new Set(state.toolsKey.split(',').filter(Boolean))
+      const nextTools = new Set(input.toolNames)
+      const disabledNow = [...prevTools].filter((n) => !nextTools.has(n))
+      const enabledNow = [...nextTools].filter((n) => !prevTools.has(n))
+      if (disabledNow.length > 0 || enabledNow.length > 0) {
+        const lines: string[] = []
+        if (disabledNow.length > 0) lines.push(`- 已禁用：${disabledNow.join('、')}`)
+        if (enabledNow.length > 0) lines.push(`- 已恢复：${enabledNow.join('、')}`)
+        lines.push(
+          input.disabledToolCount > 0
+            ? `当前共有 ${input.disabledToolCount} 个工具不可用。`
+            : '当前没有禁用的工具。',
+        )
+        sections.push(`工具可用性变更：\n${lines.join('\n')}`)
+      }
+    }
+    nextState.toolsKey = nextToolsKey
   }
 
   // 7. 随本轮附带的上下文(如附件清单):不去重,放在最后(离本轮请求最近)
