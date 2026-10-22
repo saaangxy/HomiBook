@@ -92,6 +92,12 @@ interface ChatState {
   clearSessionData: (sessionId: string) => void
   /** 兼容查询:会话是否有本地缓存(有则切换时不必重新拉取) */
   hasCachedSession: (sessionId: string) => boolean
+  /**
+   * 联网搜索开关。放在 store 而不是组件本地:发送(/send)与确认后续写(/confirm)
+   * 两条请求都要带同一个状态,组件本地 state 在 store 的 decideTool 里读不到。
+   */
+  webSearchEnabled: boolean
+  setWebSearchEnabled: (enabled: boolean) => void
 
   sendMessage: (accountBookId: string, message: string, parentMessageId?: string, replaceAssistantDbId?: string, attachmentIds?: string[], attachments?: { id: string; url: string; originalFilename: string }[], enableWebSearch?: boolean) => void
   confirmAndContinue: (accountBookId: string, toolCallId: string, approved: boolean, data?: Record<string, unknown>) => void
@@ -546,7 +552,8 @@ export const useChatStore = create<ChatState>()((set, get) => {
     startContinuationStream(
       parentDbId, parentId,
       (handleEvent, handleDone) => confirmActionStream(
-        { decisions, accountBookId, sessionId: sid },
+        // 续写同样要带联网开关:后端用它做执行层拦截(与 /send 同一口径)
+        { decisions, accountBookId, sessionId: sid, enableWebSearch: get().webSearchEnabled },
         handleEvent, handleDone,
       ),
     )
@@ -562,6 +569,8 @@ export const useChatStore = create<ChatState>()((set, get) => {
   setSessions: (sessions) => set({ sessions }),
   setCurrentSession: (sessionId) => set({ currentSessionId: sessionId }),
   setError: (error) => set({ error }),
+  webSearchEnabled: true,
+  setWebSearchEnabled: (enabled) => set({ webSearchEnabled: enabled }),
 
   /**
    * 切换账号 / 登出时清空聊天内存态(与移动端 chat store 的 reset 同口径)。

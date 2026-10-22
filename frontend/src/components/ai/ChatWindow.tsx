@@ -63,6 +63,7 @@ export function ChatWindow() {
     sessions, currentSessionId,
     setSessions, setCurrentSession, sendMessage, retryMessage, selectBranch, stopStreaming,
     setSessionData, setSessionLoading, clearSessionData, hasCachedSession,
+    webSearchEnabled, setWebSearchEnabled,
   } = useChatStore()
   // 当前会话消息视图(活跃路径按分支选择派生,单一数据源在 sessionCache)
   const { messages, allMessages, loading: messagesLoading } = useSessionView()
@@ -158,7 +159,7 @@ export function ChatWindow() {
   const attachInputRef = useRef<HTMLInputElement>(null)
 
   // ---- 网络搜索开关 ----
-  const [webSearchEnabled, setWebSearchEnabled] = useState(true)
+  // 放在 chat store 里:发送(/send)与确认后续写(/confirm)两条请求都要带同一个状态
 
   /**
    * 统一的「加入待发送内容」入口:选择 / 粘贴 / 拖拽共用。
@@ -788,7 +789,7 @@ export function ChatWindow() {
                       ? 'bg-primary text-primary-foreground shadow-sm'
                       : 'text-muted-foreground hover:bg-muted',
                   )}
-                  onClick={() => setWebSearchEnabled(v => !v)}
+                  onClick={() => setWebSearchEnabled(!webSearchEnabled)}
                   title={webSearchEnabled ? '网络搜索已开启' : '网络搜索已关闭'}
                 >
                   <Globe size={13} />

@@ -319,6 +319,16 @@ export interface InjectedState {
   memoryIds: string[]
   /** 已注入的技能名(同一会话内只注入一次) */
   skills: string[]
+  /**
+   * 当前账本(切账本或改账本名时重新注入)。
+   * 账本信息以前插值在系统提示词里 —— 一变就让整段历史缓存失效,移到这里后只追加一条尾部消息。
+   */
+  bookId: string | null
+  bookName: string | null
+  /** 已注入的回复语言(改设置时重新注入) */
+  language: string | null
+  /** 已注入的工具清单指纹(用户改工具开关时重新注入;运行时开关不进这里,避免每轮变化) */
+  toolsKey: string | null
 }
 
 export interface MemoryForInject {
@@ -337,6 +347,14 @@ export interface InjectInput {
   today: string
   memories: MemoryForInject[]
   skills: SkillForInject[]
+  /** 当前账本(首轮注入,之后切账本/改名才重新注入) */
+  bookId: string
+  bookName: string
+  /** 回复语言(首轮注入,改设置才重新注入) */
+  language: string
+  /** 可用工具清单文本与指纹(首轮注入,用户改工具开关才重新注入) */
+  toolsText: string
+  toolsKey: string
   /**
    * 随本轮附带的临时上下文(如附件清单):不做去重、每轮原样带上,
    * 其目的在于「不再把它拼进不落库的请求文本」——那样下一轮重放时文本不同,缓存会在这条消息处失效。
@@ -349,7 +367,10 @@ export interface InjectPlan {
   nextState: InjectedState
 }
 
-const EMPTY_STATE: InjectedState = { date: null, memoryIds: [], skills: [] }
+const EMPTY_STATE: InjectedState = {
+  date: null, memoryIds: [], skills: [],
+  bookId: null, bookName: null, language: null, toolsKey: null,
+}
 
 /** 解析会话上记录的注入指纹(损坏或缺失时按「什么都没注入过」处理) */
 export function parseInjectedState(raw: string | null | undefined): InjectedState {
@@ -360,6 +381,11 @@ export function parseInjectedState(raw: string | null | undefined): InjectedStat
       date: typeof parsed.date === 'string' ? parsed.date : null,
       memoryIds: Array.isArray(parsed.memoryIds) ? parsed.memoryIds.filter((v): v is string => typeof v === 'string') : [],
       skills: Array.isArray(parsed.skills) ? parsed.skills.filter((v): v is string => typeof v === 'string') : [],
+      // 老会话没有这些字段 ⇒ 下一轮会各补注入一次(相当于初始化),无需数据库迁移
+      bookId: typeof parsed.bookId === 'string' ? parsed.bookId : null,
+      bookName: typeof parsed.bookName === 'string' ? parsed.bookName : null,
+      language: typeof parsed.language === 'string' ? parsed.language : null,
+      toolsKey: typeof parsed.toolsKey === 'string' ? parsed.toolsKey : null,
     }
   } catch {
     return { ...EMPTY_STATE }
@@ -380,6 +406,10 @@ export function planInjection(state: InjectedState, input: InjectInput): InjectP
     date: state.date,
     memoryIds: [...state.memoryIds],
     skills: [...state.skills],
+    bookId: state.bookId,
+    bookName: state.bookName,
+    language: state.language,
+    toolsKey: state.toolsKey,
   }
 
   // 1. 日期:跨天才注入
@@ -405,7 +435,29 @@ export function planInjection(state: InjectedState, input: InjectInput): InjectP
     nextState.skills = [...state.skills, ...freshSkills.map((s) => s.name)]
   }
 
-  // 4. 随本轮附带的上下文(如附件清单):不去重,放在最后(离本轮请求最近)
+  // 4. 账本:切账本 / 改账本名才重新注入
+  //    (以前插值在系统提示词里 —— 一变就让其后整段历史缓存失效)
+  if (state.bookId !== input.bookId || state.bookName !== input.bookName) {
+    sections.push(`当前操作账本：「${input.bookName}」(ID: ${input.bookId})。跨账本操作请用 switch_book。`)
+    nextState.bookId = input.bookId
+    nextState.bookName = input.bookName
+  }
+
+  // 5. 回复语言:改设置才重新注入
+  if (state.language !== input.language) {
+    sections.push(input.language === 'en' ? 'Reply in English.' : '使用中文回复。')
+    nextState.language = input.language
+  }
+
+  // 6. 工具清单:用户改工具开关才重新注入。
+  //    指纹(toolsKey)只含用户设置层 —— 联网开关/多模态这类运行时状态走执行层拦截,
+  //    否则开关一拨就每轮注入,反而把历史撑长。
+  if (state.toolsKey !== input.toolsKey && input.toolsText) {
+    sections.push(input.toolsText)
+    nextState.toolsKey = input.toolsKey
+  }
+
+  // 7. 随本轮附带的上下文(如附件清单):不去重,放在最后(离本轮请求最近)
   for (const extra of input.extraSections ?? []) {
     if (extra) sections.push(extra)
   }

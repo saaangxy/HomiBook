@@ -78,6 +78,7 @@ export async function compressContext(params: CompressContextParams): Promise<Co
 
   const simplifiedTokens = estimateMessagesTokens(simplified)
   if (simplifiedTokens <= historyBudget) {
+    console.debug("Tier 2: 旧消息工具结果精简")
     return { messages: simplified, systemPrompt: promptWithSummary, newSummary: currentSummary, newSummaryUpToMessageId: currentSummaryUpToId }
   }
 
@@ -112,6 +113,7 @@ export async function compressContext(params: CompressContextParams): Promise<Co
   }
 
   const keptTokens = estimateMessagesTokens(keptMessages)
+  console.debug("Tier 3: 最旧消息 LLM 摘要")
   return { messages: keptMessages, systemPrompt: promptWithSummary, newSummary: currentSummary, newSummaryUpToMessageId: currentSummaryUpToId }
 }
 

@@ -93,6 +93,12 @@ interface ChatState {
   renameSession: (sessionId: string, title: string) => Promise<void>;
 
   sendMessage: (accountBookId: string, message: string, parentMessageId?: string, replaceAssistantDbId?: string, attachmentIds?: string[], enableWebSearch?: boolean, localAttachments?: Message['attachments']) => void;
+  /**
+   * 联网搜索开关。放在 store 而不是组件本地:发送(/send)与确认后续写(/confirm)
+   * 两条请求都要带同一个状态,组件本地 state 在 store 的 decideTool 里读不到。
+   */
+  webSearchEnabled: boolean;
+  setWebSearchEnabled: (enabled: boolean) => void;
   confirmAndContinue: (accountBookId: string, toolCallId: string, approved: boolean, data?: Record<string, unknown>) => void;
   respondToSuggestion: (accountBookId: string, toolCallId: string, values: Record<string, string> | null) => void;
   switchBook: (accountBookId: string, toolCallId: string, bookId: string) => void;
@@ -527,7 +533,11 @@ function decideTool(
 
   startContinuationStream(
     set, get, parentDbId, parentId,
-    (handleEvent, handleDone, signal) => confirmActionStream({ decisions, accountBookId, sessionId: sid }, handleEvent, handleDone, signal),
+    // 续写同样要带联网开关:后端用它做执行层拦截(与 /send 同一口径)
+    (handleEvent, handleDone, signal) => confirmActionStream(
+      { decisions, accountBookId, sessionId: sid, enableWebSearch: get().webSearchEnabled },
+      handleEvent, handleDone, signal,
+    ),
   );
 }
 
@@ -538,6 +548,8 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   sessionCache: {},
   error: null,
   abortControllers: {},
+  webSearchEnabled: true,
+  setWebSearchEnabled: (enabled) => set({ webSearchEnabled: enabled }),
 
   setError: (error) => set({ error }),
 

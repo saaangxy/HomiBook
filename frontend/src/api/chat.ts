@@ -158,7 +158,13 @@ export async function deleteSession(id: string) {
 }
 
 export function confirmActionStream(
-  params: { decisions: { toolCallId: string; approved: boolean; data?: Record<string, unknown> }[]; accountBookId: string; sessionId?: string },
+  params: {
+    decisions: { toolCallId: string; approved: boolean; data?: Record<string, unknown> }[]
+    accountBookId: string
+    sessionId?: string
+    /** 联网开关:与 /send 同口径,后端续写时据此在执行层拦截 web 工具 */
+    enableWebSearch?: boolean
+  },
   onEvent: (event: SSEEvent) => void,
   onDone: () => void,
 ): AbortController {

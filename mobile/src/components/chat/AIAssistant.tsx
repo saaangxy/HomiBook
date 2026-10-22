@@ -70,7 +70,9 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
   const bookId = currentLedger.id;
 
   const [input, setInput] = useState('');
-  const [webSearch, setWebSearch] = useState(true);
+  // 联网开关放在 chat store:发送与确认后续写(/confirm)两条请求都要带同一状态
+  const webSearchEnabled = useChatStore((s) => s.webSearchEnabled);
+  const setWebSearchEnabled = useChatStore((s) => s.setWebSearchEnabled);
   /** 编辑态:非 null 表示正在编辑这条用户消息(复用下方输入框,提交走与 web 一致的「同父分支」逻辑) */
   const [editingMsg, setEditingMsg] = useState<Message | null>(null);
   const inputRef = useRef<TextInput>(null);
@@ -330,7 +332,7 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
       : undefined;
     if (!currentSessionId) {
       newSession(bookId).then((s) => {
-        if (s) sendMessage(bookId, msg, undefined, undefined, attachmentIds.length ? attachmentIds : undefined, webSearch, localAttachments);
+        if (s) sendMessage(bookId, msg, undefined, undefined, attachmentIds.length ? attachmentIds : undefined, webSearchEnabled, localAttachments);
       });
       return;
     }
@@ -346,7 +348,7 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
       if (m.dbId) { parentId = m.dbId; break; }
       if (m.id === GREETING_ID) { parentId = GREETING_ID; break; }
     }
-    sendMessage(bookId, msg, parentId, undefined, attachmentIds.length ? attachmentIds : undefined, webSearch, localAttachments);
+    sendMessage(bookId, msg, parentId, undefined, attachmentIds.length ? attachmentIds : undefined, webSearchEnabled, localAttachments);
   };
 
   /**
@@ -948,11 +950,11 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
             {/* 联网搜索开关(激活态胶囊) */}
             <Pressable
               hitSlop={6}
-              onPress={() => setWebSearch((v) => !v)}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, backgroundColor: webSearch ? alpha(colors.primary, 0.14) : 'transparent' }}
+              onPress={() => setWebSearchEnabled(!webSearchEnabled)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, backgroundColor: webSearchEnabled ? alpha(colors.primary, 0.14) : 'transparent' }}
             >
-              <Globe size={15} color={webSearch ? colors.primary : colors.mutedForeground} />
-              <Text style={{ fontSize: 11.5, color: webSearch ? colors.primary : colors.mutedForeground, fontWeight: webSearch ? '600' : '400' }}>联网</Text>
+              <Globe size={15} color={webSearchEnabled ? colors.primary : colors.mutedForeground} />
+              <Text style={{ fontSize: 11.5, color: webSearchEnabled ? colors.primary : colors.mutedForeground, fontWeight: webSearchEnabled ? '600' : '400' }}>联网</Text>
             </Pressable>
             <View style={{ flex: 1 }} />
             {isStreaming ? (

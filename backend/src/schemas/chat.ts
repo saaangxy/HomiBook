@@ -45,6 +45,8 @@ export const confirmActionSchema = z.object({
     approved: z.boolean().describe('是否批准'),
     data: z.object({}).passthrough().optional().describe('附加数据（导入 overrides / suggest_options 的 values / switch_book 的 bookId）'),
   })).min(1).describe('决策列表'),
+  /** 本轮联网开关:与 /send 同口径,续写时同样要在执行层拦截 web 工具(不传视为开启) */
+  enableWebSearch: z.boolean().optional().describe('是否启用网络搜索工具'),
 })
 
 // 更新助手配置
