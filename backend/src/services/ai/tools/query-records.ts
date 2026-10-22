@@ -8,7 +8,10 @@ interface QueryRecordsArgs {
   keyword?: string
   type?: RecordType
   categoryCode?: string
+  /** 账户(转账时是转出账户) */
   accountId?: string
+  /** 转账的目标(转入)账户 */
+  toAccountId?: string
   startDate?: string
   endDate?: string
   minAmount?: number
@@ -19,15 +22,18 @@ interface QueryRecordsArgs {
 export const queryRecordsTool: ToolDef = {
   name: 'query_records',
   displayName: '查询流水',
-  promptHint: '支持按日期、金额、分类、账户、关键词等筛选',
-  description: '查询流水记录。支持按关键词、类型、分类、账户、日期范围、金额范围筛选。',
+  promptHint: '支持按日期、金额、分类、账户(含转账转入账户)、关键词等筛选',
+  description:
+    '查询流水记录。支持按关键词、类型、分类、账户、转账转入账户、日期范围、金额范围筛选。' +
+    '查询「转入到某个账户」的转账时用 toAccountId（accountId 对转账而言是转出账户）。',
   parameters: {
     type: 'object',
     properties: {
       keyword: { type: 'string', description: '搜索关键词，匹配备注和交易方' },
       type: { type: 'string', enum: [...RECORD_TYPES], description: '流水类型' },
       categoryCode: { type: 'string', description: '分类编码，如 餐饮、交通' },
-      accountId: { type: 'string', description: '账户 ID' },
+      accountId: { type: 'string', description: '账户 ID（转账时代表转出账户）' },
+      toAccountId: { type: 'string', description: '转账的目标（转入）账户 ID；查询「转入到某账户」的转账时使用' },
       startDate: { type: 'string', description: '开始日期，格式 YYYY-MM-DD' },
       endDate: { type: 'string', description: '结束日期，格式 YYYY-MM-DD' },
       minAmount: { type: 'number', description: '最小金额' },
@@ -49,6 +55,8 @@ export const queryRecordsTool: ToolDef = {
       if (args.type) where.type = args.type
       if (args.categoryCode) where.categoryCode = args.categoryCode
       if (args.accountId) where.accountId = args.accountId
+      // 转账记录的 accountId 存的是转出账户,「转入账户」是另一列
+      if (args.toAccountId) where.toAccountId = args.toAccountId
       if (args.minAmount !== undefined || args.maxAmount !== undefined) {
         const gte = args.minAmount !== undefined ? Number(args.minAmount) : undefined
         const lte = args.maxAmount !== undefined ? Number(args.maxAmount) : undefined
@@ -75,6 +83,8 @@ export const queryRecordsTool: ToolDef = {
         where,
         include: {
           account: { select: { name: true } },
+          // 转账时需要转入账户名,否则模型看不出 A → B 的方向
+          toAccount: { select: { name: true } },
         },
         orderBy: { date: 'desc' },
         take: Math.min(args.limit ?? 50, 200),
@@ -100,6 +110,7 @@ export const queryRecordsTool: ToolDef = {
           categoryCode: r.categoryCode,
           payer: r.payer,
           accountName: r.account.name,
+          ...(r.toAccount ? { toAccountName: r.toAccount.name } : {}),
         })),
       })
     }, 'query_records')
