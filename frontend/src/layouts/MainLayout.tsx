@@ -188,8 +188,10 @@ export function MainLayout() {
           </div>
         </header>
 
-        {/* 内容区域 */}
-        <div className="flex-1 overflow-auto p-3 md:p-8 pb-24 md:pb-8">
+        {/* 内容区域:移动端底部导航是 fixed(64px),只靠 pb 只在「滚到底」时留白,
+            可视区域内仍会被它盖住(聊天窗口的输入/上传按钮就吃过这个亏)。
+            这里用 mb 让内容区**真正让出** nav 的高度,滚动到底也不会有遮挡。 */}
+        <div className="flex-1 overflow-auto p-3 md:p-8 pb-4 md:pb-8 mb-16 md:mb-0">
           <Outlet />
         </div>
       </main>

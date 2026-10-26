@@ -149,9 +149,12 @@ export function HomePage() {
         </div>
       )}
 
-      {/* AI 聊天:flex-1 吃掉「当前屏幕内」的剩余高度(外壳已是 h-svh,这里的高度是确定的) */}
+      {/* AI 聊天:桌面按「当前屏幕内的剩余高度」吃满(flex-1);
+          移动端窄屏下上方卡片会把剩余高度压到几十 px,这里给一个最小高度把聊天区撑开,
+          超出部分交给外层内容区(overflow-auto)滚动 —— 否则输入框几乎不可用。
+          svh 取「地址栏可见时」的最小视口,避免移动端浏览器地址栏收起/展开时高度跳动。 */}
       {currentBookId && aiEnabled && (
-        <div className="flex-1 min-h-0 flex flex-col">
+        <div className={isMobile ? 'flex-1 min-h-[75svh] flex flex-col' : 'flex-1 min-h-0 flex flex-col'}>
           <h2 className="shrink-0 text-base font-semibold mb-3">AI 助手</h2>
           {aiConfigured ? (
             <ChatWindow />
