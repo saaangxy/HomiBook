@@ -85,7 +85,7 @@ class BankNotificationListener : NotificationListenerService() {
     }
 
     val entry = JSONObject().apply {
-      put("key", sbn.key ?: "$pkg-${sbn.postTime}")
+      put("key", queueKey(sbn, title, text))
       put("pkg", pkg)
       put("source", source)
       put("title", title)
@@ -93,7 +93,28 @@ class BankNotificationListener : NotificationListenerService() {
       put("postedAt", sbn.postTime)
     }
     NotificationQueue.append(context, entry)
-    log("已入队 source=$source title=$title text=${text.take(60)}")
+    log("已入队 source=$source title=$title text=${text.take(60)} 队列=${NotificationQueue.load(context).length()}")
+
+    // 后台记账:不再等用户回到应用。拉起一次 JS headless 任务,
+    // 由 JS 侧决定是否真的跑(开关、节流、登录态、账本),这里不做业务判定。
+    // 带上 postTime:新交易即使紧跟在上一条之后也要触发,只有同一通知的重复回调才合并
+    TxnHeadlessTaskService.schedule(context, source, sbn.postTime)
+  }
+
+  /**
+   * 队列去重键(同时作为 JS 侧的 sourceId,用于「已处理」标记)。
+   *
+   * 系统通知的 key 是 `user|pkg|id|tag|uid`:同一个 App 复用固定通知 id 时 key **完全相同**,
+   * 银行/支付连发多笔就会在队列里互相覆盖(表现为「扫描列表只剩最新一条」),
+   * 而且 sourceId 相同会让「已处理」标记互相污染(第一笔入账后,后两笔被当成已处理跳过)。
+   *
+   * 这里拼上「标题 + 正文」的指纹:
+   * - 不同交易 → 文本不同 → 不同键,各自保留;
+   * - 同一条通知被系统重复回调(文本不变)→ 同键,幂等覆盖,不会堆积。
+   */
+  private fun queueKey(sbn: StatusBarNotification, title: String, text: String): String {
+    val raw = sbn.key ?: "${sbn.packageName}-${sbn.postTime}"
+    return "$raw#${Integer.toHexString("$title|$text".hashCode())}"
   }
 
   /** 调试日志:仅 debuggable 构建输出(adb logcat -s TxnReader);排查完可整块删除 */

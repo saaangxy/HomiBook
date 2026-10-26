@@ -31,6 +31,7 @@ import {
   adoptSuggestedAccountResolutions,
   autoDetectColumns,
   autoDetectTypeMapping,
+  canProceedImport,
   computeImportProgress,
   detectTypeValues,
   initAccountResolutions,
@@ -143,12 +144,43 @@ interface ImportSheetProps {
    * 关闭时由调用方清空,下次打开会重新应用。
    */
   presetPreview?: { source: string; preview: ImportPreviewResult } | null;
+  /**
+   * 预置预览的服务端裁决(短信 / 通知记账提供:→ /api/sms/check)。
+   * 短信路径没有文件,无法用 /records/import/check;由它把当前决议交给服务端,
+   * 服务端用与文件导入同一套 remapImportRows 判定能否继续。
+   * 缺省时退回本地判定(与 core canProceedImport 同源)。
+   */
+  presetServerCheck?: (input: {
+    ownerId?: string;
+    accountResolutions: {
+      sourceAccountName: string;
+      action: 'create' | 'existing';
+      targetAccountId?: string;
+      targetAccountName?: string;
+      accountType?: string;
+    }[];
+    categoryResolutions: {
+      sourceCategory: string;
+      targetCategoryCode: string;
+      recordType?: string;
+      payerContains?: string;
+      descriptionContains?: string;
+    }[];
+    unrecognizedResolutions: {
+      rowIndex: number;
+      type?: string;
+      accountId?: string;
+      toAccountId?: string;
+      categoryCode?: string;
+    }[];
+    confirmSkipUnrecognized: boolean;
+  }) => Promise<{ canProceed: boolean; blockReasons: string[] }>;
   /** 导入成功回调(短信页据此把已导入的候选移出列表) */
   onImported?: (result: { imported: number; accountsCreated: number }) => void;
 }
 
 // 流水导入向导(复刻 web ImportDialog):来源 → 上传 → (CSV 列映射) → 预览处理 → 确认 → 结果
-export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview, onImported }: ImportSheetProps) {
+export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview, presetServerCheck, onImported }: ImportSheetProps) {
   const { colors, palette } = useTheme();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
@@ -462,9 +494,12 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
     ownerId?: string;
     accountResolutions?: Record<string, AccountResolution>;
   }): Promise<boolean> => {
-    if (!file || !bookId) return false;
-    setServerCheck(null);
-    setChecking(true);
+    if (!bookId) {
+      setServerCheck({ canProceed: false, reasons: ['账本未就绪，请稍后重试'], skippedCount: 0 });
+      return false;
+    }
+
+    // 决议先构造:预置预览(服务端复核)与文件路径(上传复核)用的是同一份
     const effectiveOwner = override?.ownerId ?? selectedOwnerId;
     const ownerId = effectiveOwner === '__self__' ? undefined : effectiveOwner;
     const accountResForServer = Object.entries(override?.accountResolutions ?? accountRes).map(([sourceAccountName, r]) => ({
@@ -487,6 +522,58 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
         };
       });
     const unrecResForServer = Object.entries(unrecognizedRes).map(([rowIndex, r]) => ({ rowIndex: Number(rowIndex), ...r }));
+
+    // 预置预览(短信 / 通知记账)没有上传文件,/import/check 用不了。
+    // 由调用方提供 presetServerCheck(→ /api/sms/check),服务端用**同一套** remapImportRows 裁决,
+    // 保证「能否进入下一步」在文件导入与短信导入之间口径一致。
+    if (!file) {
+      if (presetServerCheck) {
+        setServerCheck(null);
+        setChecking(true);
+        try {
+          const res = await presetServerCheck({
+            ownerId,
+            accountResolutions: accountResForServer,
+            categoryResolutions: catResForServer,
+            unrecognizedResolutions: unrecResForServer,
+            confirmSkipUnrecognized: agreeSkipUnrecognized,
+          });
+          setServerCheck({
+            canProceed: res.canProceed,
+            reasons: res.blockReasons ?? [],
+            skippedCount: progress.willSkip,
+          });
+          return res.canProceed;
+        } catch {
+          setServerCheck({ canProceed: false, reasons: ['服务端校验失败，请重试'], skippedCount: 0 });
+          return false;
+        } finally {
+          setChecking(false);
+        }
+      }
+
+      // 兜底(调用方未提供服务端裁决):本地判定,与服务端共用 core canProceedImport,结论一致。
+      // 注意:少这一层的话,「待选择」的账户会被 buildImportData 静默按源账户名新建。
+      if (!canProceedImport(progress, { agreeSkipUnrecognized })) {
+        const reasons: string[] = [];
+        const accountsLeft = progress.accountsTotal - progress.accountsResolved;
+        const categoriesLeft = progress.categoriesTotal - progress.categoriesResolved;
+        if (accountsLeft > 0) {
+          reasons.push(`${accountsLeft} 个账户未指定,请选已有账户或点「全部采纳建议」`);
+        }
+        if (categoriesLeft > 0) reasons.push(`${categoriesLeft} 个分类未映射`);
+        if (progress.willSkip > 0 && !agreeSkipUnrecognized) {
+          reasons.push(`${progress.willSkip} 条未识别记录未补全,请补全或勾选「同意跳过」`);
+        }
+        setServerCheck({ canProceed: false, reasons, skippedCount: progress.willSkip });
+        return false;
+      }
+      setServerCheck({ canProceed: true, reasons: [], skippedCount: progress.willSkip });
+      return true;
+    }
+
+    setServerCheck(null);
+    setChecking(true);
 
     try {
       const res = await previewImport(file.uri, file.name, {

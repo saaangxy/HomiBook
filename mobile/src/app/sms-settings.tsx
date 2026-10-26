@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, AppState, Pressable, Switch, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BellRing, CheckCircle2, ChevronLeft, Lock, MessageSquareText, Sparkles, TriangleAlert, Zap } from 'lucide-react-native';
+import { BatteryCharging, BellRing, CheckCircle2, ChevronLeft, Lock, MessageSquareText, Rocket, Sparkles, TriangleAlert, Zap } from 'lucide-react-native';
 import { useTheme, alpha, haptics } from '@/theme';
 import { Screen } from '@/components/Screen';
 import { Card } from '@/components/ui/Card';
@@ -13,10 +13,13 @@ import { showToast } from '@/components/chrome/Toast';
 import {
   clearPendingNotifications,
   hasSmsPermission,
+  isIgnoringBatteryOptimizations,
   isNotificationAccessGranted,
   isTxnReaderSupported,
+  openAutoStartSettings,
   openNotificationAccessSettings,
   openSmsPermissionSettings,
+  requestIgnoreBatteryOptimizations,
   requestSmsPermission,
 } from '@/services/txn-reader';
 import { clearProcessedSmsIds } from '@/services/sms-processed';
@@ -33,7 +36,7 @@ import {
   type AutoHistoryEntry,
 } from '@/services/sms-auto';
 
-// 短信记账 · 权限与设置页(仅 Android):权限状态、通知使用权、自动记账开关与撤销、隐私说明、本机标记。
+// 短信记账 · 权限与设置页(仅 Android):权限状态、通知使用权、自动记账开关、隐私说明、本机标记。
 
 /** ISO 时间 → MM-DD HH:mm(按设备本地时区;避免依赖 Intl 的本地化差异) */
 function fmtDate(iso: string): string {
@@ -65,8 +68,10 @@ export default function SmsSettingsScreen() {
   // 首帧即读真实权限状态(惰性初始化,避免在 effect 里 setState 触发级联渲染)
   const [smsGranted, setSmsGranted] = useState(hasSmsPermission);
   const [notifGranted, setNotifGranted] = useState(isNotificationAccessGranted);
+  // 电池优化白名单:后台记账能否在灭屏后继续跑的关键(可检测、可申请)
+  const [batteryOk, setBatteryOk] = useState(isIgnoringBatteryOptimizations);
   const [asking, setAsking] = useState(false);
-  // 自动记账(默认关闭)与「最近一批」撤销入口
+  // 自动记账(默认关闭)与「最近自动记账」只读列表
   const [auto, setAuto] = useState<AutoBookkeepingSettings>({ enabled: false, notify: true });
   // 最近自动入账记录(本机保留 50 条,列表里只展示最近 10 条)
   const [history, setHistory] = useState<AutoHistoryEntry[]>([]);
@@ -78,6 +83,7 @@ export default function SmsSettingsScreen() {
   const refresh = useCallback(() => {
     setSmsGranted(hasSmsPermission());
     setNotifGranted(isNotificationAccessGranted());
+    setBatteryOk(isIgnoringBatteryOptimizations());
   }, []);
 
   useEffect(() => {
@@ -129,6 +135,20 @@ export default function SmsSettingsScreen() {
     openNotificationAccessSettings();
   };
 
+  /** 电池优化白名单:系统弹窗里允许后即可长期后台;返回前台会自动刷新状态 */
+  const askBatteryWhitelist = () => {
+    haptics.tap();
+    requestIgnoreBatteryOptimizations();
+    showToast('请选择「允许」;返回后会自动刷新状态');
+  };
+
+  /** 自启动:各家 ROM 私有开关,无法检测,只能把用户送到对应设置页 */
+  const openAutoStart = () => {
+    haptics.tap();
+    openAutoStartSettings();
+    showToast('请在列表里允许本应用自启动 / 后台运行');
+  };
+
   /** 权限在系统设置里改过后回前台会自动刷新;这里再给一个手动确认入口(状态行/按钮随之更新) */
   const recheckNotif = () => {
     haptics.tap();
@@ -149,7 +169,7 @@ export default function SmsSettingsScreen() {
     const next = { ...auto, enabled };
     setAuto(next);
     void saveAutoSettings(next);
-    if (enabled && !smsGranted) showToast('还需授予短信读取权限,自动记账才会生效');
+    if (enabled && !smsGranted && !notifGranted) showToast('还需开启短信读取权限或通知使用权,自动记账才会生效');
     if (enabled && next.notify) askNotifyPermission();
   };
 
@@ -229,7 +249,7 @@ export default function SmsSettingsScreen() {
             >
               <ChevronLeft size={18} color={colors.foreground} />
             </Pressable>
-            <Text style={{ fontSize: 20, fontWeight: '700' }}>短信记账</Text>
+            <Text style={{ fontSize: 20, fontWeight: '700' }}>短信 / 通知记账</Text>
           </View>
 
           {!supported ? (
@@ -264,10 +284,12 @@ export default function SmsSettingsScreen() {
                       <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>{asking ? '申请中...' : '申请读取短信权限'}</Text>
                     </Pressable>
                   )}
-                  {smsGranted && (
+                  {(smsGranted || notifGranted) && (
                     <Pressable onPress={() => { haptics.tap(); router.push('/sms-import'); }} style={primaryBtn}>
                       <MessageSquareText size={15} color="#fff" />
-                      <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>开始扫描短信记账</Text>
+                      <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>
+                        {smsGranted ? '开始扫描短信 / 通知' : '开始扫描交易通知'}
+                      </Text>
                     </Pressable>
                   )}
                   {/* 小米/红米:银行短信属于「通知类短信」,系统默认拒绝且应用无法申请 —— 只能引导手动开 */}
@@ -287,7 +309,7 @@ export default function SmsSettingsScreen() {
                     </>
                   )}
                   <Text style={noteStyle}>
-                    只读收件箱;验证码、账单、营销短信在本机直接排除。
+                    只读收件箱与本机通知队列;验证码、账单、营销内容在本机直接排除。
                   </Text>
                 </Card>
               </FadeInView>
@@ -332,7 +354,7 @@ export default function SmsSettingsScreen() {
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 15, fontWeight: '600' }}>自动记账</Text>
-                      <Text variant="muted" style={{ fontSize: 11.5, marginTop: 1 }}>打开应用时静默入账高置信度的交易</Text>
+                      <Text variant="muted" style={{ fontSize: 11.5, marginTop: 1 }}>通知到达即静默入账,无需打开应用</Text>
                     </View>
                     <Switch
                       value={auto.enabled}
@@ -342,39 +364,76 @@ export default function SmsSettingsScreen() {
                     />
                   </View>
 
-                  {/* 子开关:只在自动记账开启时出现,避免没开主开关就配置提醒 */}
+                  {/* 子项只在自动记账开启时出现,避免没开主开关就配置提醒/后台 */}
                   {auto.enabled ? (
-                    <View
-                      style={{
-                        flexDirection: 'row', alignItems: 'center', gap: 10,
-                        marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.hairline,
-                      }}
-                    >
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 13.5, fontWeight: '500' }}>入账后发送通知</Text>
+                    <>
+                      <View
+                        style={{
+                          flexDirection: 'row', alignItems: 'center', gap: 10,
+                          marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.hairline,
+                        }}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 13.5, fontWeight: '500' }}>入账后发送通知</Text>
+                          <Text variant="muted" style={{ fontSize: 11.5, marginTop: 2 }}>
+                            点通知可直接打开对应流水;关闭后只在应用内提示
+                          </Text>
+                        </View>
+                        <Switch
+                          value={auto.notify}
+                          onValueChange={toggleNotify}
+                          trackColor={{ true: colors.primary }}
+                          thumbColor="#fff"
+                        />
+                      </View>
+
+                      {/* 后台记账:跟随上面的主开关,这里只负责「让系统别冻结它」 */}
+                      <View
+                        style={{
+                          marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.hairline,
+                        }}
+                      >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <BatteryCharging size={15} color={colors.foreground} />
+                          <Text style={{ fontSize: 13.5, fontWeight: '500' }}>后台记账</Text>
+                        </View>
                         <Text variant="muted" style={{ fontSize: 11.5, marginTop: 2 }}>
-                          点通知可直接打开对应流水;关闭后只在应用内提示
+                          通知到达即入账,不需要打开应用;需系统允许后台运行
+                        </Text>
+                        <View style={{ marginTop: 10 }}>
+                          <StatusLine
+                            ok={batteryOk}
+                            okText="已加入电池优化白名单"
+                            pendingText="未加入白名单,灭屏后可能被系统冻结"
+                          />
+                        </View>
+                        {!batteryOk && (
+                          <Pressable onPress={askBatteryWhitelist} style={primaryBtn}>
+                            <BatteryCharging size={15} color="#fff" />
+                            <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>加入电池优化白名单</Text>
+                          </Pressable>
+                        )}
+                        <Pressable onPress={openAutoStart} style={ghostBtn}>
+                          <Rocket size={15} color={colors.foreground} />
+                          <Text style={{ fontSize: 13.5, fontWeight: '600', color: colors.foreground }}>
+                            检查自启动 / 后台运行权限
+                          </Text>
+                        </Pressable>
+                        <Text style={noteStyle}>
+                          部分手机(小米、华为、OPPO、vivo 等)会限制应用后台启动;若发现「通知到了却没入账」,
+                          请在这里允许自启动。系统不提供该开关的状态查询,只能由你手动确认。
                         </Text>
                       </View>
-                      <Switch
-                        value={auto.notify}
-                        onValueChange={toggleNotify}
-                        trackColor={{ true: colors.primary }}
-                        thumbColor="#fff"
-                      />
-                    </View>
+                    </>
                   ) : null}
 
                   <Text style={noteStyle}>
-                    只入账「已匹配到已有账户且置信度 ≥ {AUTO_MIN_CONFIDENCE}」的交易,其余留在扫描页确认。
-                    不建账户、不写映射规则,可整批撤销。
+                    自动入账「置信度 ≥ {AUTO_MIN_CONFIDENCE} 且已匹配到账本里已有账户」的交易。
+                    账本里没有对应账户时不会自动保存(也不会自动建账户),这笔会留在扫描页等确认;
                   </Text>
-                  <Text style={{ ...noteStyle, marginTop: 0 }}>
-                    应用被系统清理或长期未打开时可能延迟入账。
-                  </Text>
-                  {auto.enabled && !smsGranted ? (
+                  {auto.enabled && !smsGranted && !notifGranted ? (
                     <Text style={{ ...noteStyle, marginTop: 0, color: colors.expense }}>
-                      需先授予短信读取权限。
+                      需先开启短信读取权限或通知使用权。
                     </Text>
                   ) : null}
 

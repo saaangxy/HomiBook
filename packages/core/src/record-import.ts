@@ -49,11 +49,23 @@ export const IMPORT_SOURCE_DEFS: ImportSourceDef[] = [
   { key: 'csv', label: '其他CSV', description: '任意CSV文件,需手动配置列映射', accept: ['csv'] },
 ];
 
+/**
+ * 映射规则(分类映射 / 账户映射)的来源列表 = 文件导入来源 + 短信(含通知)。
+ *
+ * 与 IMPORT_SOURCE_DEFS **刻意分开**:短信没有文件上传与 accept 类型,
+ * 混进去会让「导入账单」向导多出一个点进去却要选文件的「短信」选项。
+ * 但映射规则管理必须能选到它 —— 短信/通知导入同样会写入 source='sms' 的规则。
+ */
+export const MAPPING_SOURCE_DEFS: { key: ImportSource; label: string }[] = [
+  ...IMPORT_SOURCE_DEFS.map((d) => ({ key: d.key, label: d.label })),
+  { key: SMS_IMPORT_SOURCE, label: '短信 / 通知' },
+];
+
 /** 来源 key → 展示标签(账单来源在消息/卡片中共用;键放宽为 string 便于动态来源名兜底) */
 export const IMPORT_SOURCE_LABELS: Record<string, string> = {
   ...Object.fromEntries(IMPORT_SOURCE_DEFS.map((d) => [d.key, d.label])),
   // 短信来源无文件上传步骤,不在 DEFS 中,但消息/卡片展示需要标签
-  [SMS_IMPORT_SOURCE]: '短信',
+  [SMS_IMPORT_SOURCE]: '短信 / 通知',
 };
 
 // ── 列映射字段定义 ──

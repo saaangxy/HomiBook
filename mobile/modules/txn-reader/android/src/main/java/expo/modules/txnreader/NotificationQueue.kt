@@ -44,7 +44,10 @@ internal object NotificationQueue {
     } else {
       next
     }
-    prefs(context).edit().putString(KEY_QUEUE, trimmed.toString()).apply()
+    // 同步落盘(commit)而不是 apply:紧接着就要拉起后台 headless 任务,
+    // 若还在异步写盘的窗口里进程被系统回收,这条通知就永久丢了(系统不提供通知历史)。
+    // 触发频率只有「交易类通知」,几毫秒的主线程外 IO 可以接受。
+    prefs(context).edit().putString(KEY_QUEUE, trimmed.toString()).commit()
   }
 
   fun clear(context: Context) {

@@ -56,6 +56,12 @@ export interface TxnReaderNativeModule {
   clearPendingNotifications(): void;
   /** 按 key 移除队列里的若干条(导入成功后把已入账的通知清掉) */
   removePendingNotifications(keys: string[]): Promise<void>;
+  /** 是否已加入「电池优化」白名单(未加入时系统可能冻结后台记账) */
+  isIgnoringBatteryOptimizations(): boolean;
+  /** 打开「忽略电池优化」授权弹窗(不支持时退化为电池优化设置列表) */
+  requestIgnoreBatteryOptimizations(): void;
+  /** 打开厂商「自启动 / 后台运行」权限页(无标准 API,也无法检测;都不可用时退化为应用详情页) */
+  openAutoStartSettings(): void;
 }
 
 export default requireOptionalNativeModule<TxnReaderNativeModule>('TxnReader');

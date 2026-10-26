@@ -43,6 +43,7 @@ import {
 } from '@/components/ui/table'
 import { Spinner } from '@/components/ui/spinner'
 import { importExportApi, type CategoryMapping } from '@/api/import-export'
+import { MAPPING_SOURCE_DEFS } from '@homibook/core'
 import { DictCombobox } from '@/components/DictCombobox'
 import { Plus, Pencil, Trash2, Link2, ChevronDown, Wrench } from 'lucide-react'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu'
@@ -202,10 +203,9 @@ export function CategoryMappingSettings() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent className="bg-card border-border">
-                <SelectItem value="alipay" className="text-xs">支付宝</SelectItem>
-                <SelectItem value="wechat" className="text-xs">微信</SelectItem>
-                <SelectItem value="jd" className="text-xs">京东</SelectItem>
-                <SelectItem value="csv" className="text-xs">其他CSV</SelectItem>
+                {MAPPING_SOURCE_DEFS.map((s) => (
+                  <SelectItem key={s.key} value={s.key} className="text-xs">{s.label}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
             {invalidCount > 0 && <span className="text-xs text-[#ef4444]">{invalidCount} 条无效</span>}

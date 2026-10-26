@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import type { Ledger } from '@/types';
 import { createBookApi, fetchBooks } from '@/services/records';
 import { secureGet, secureSet } from '@/services/storage';
+import { saveAutoBookBookId } from '@/services/auto-book-keys';
 import { useAuth } from '@/stores/auth';
 import { registerAccountCache } from '@/stores/account-cache';
 
@@ -38,6 +39,8 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
   // 保存当前服务器+账号选中的账本
   const saveLedgerId = (id: string) => {
     if (baseUrl && id) secureSet(ledgerKey(baseUrl, account), id);
+    // 后台记账(headless)读不到 React 上下文,额外落一份纯 id 供它使用
+    void saveAutoBookBookId(id);
   };
 
   // 登出/切换账号时清空账本,避免残留旧账号的账本 id 导致无权访问
@@ -45,6 +48,8 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     if (!isLoggedIn) {
       setLedgers([]);
       setCurrentLedgerId('');
+      // 后台任务没有账本就不该跑:顺手清掉,避免用旧账号的账本 id 打服务器
+      void saveAutoBookBookId('');
     }
   }, [isLoggedIn]);
 
@@ -55,6 +60,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
       registerAccountCache(() => {
         setLedgers([]);
         setCurrentLedgerId('');
+        void saveAutoBookBookId('');
       }),
     [],
   );

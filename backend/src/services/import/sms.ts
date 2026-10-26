@@ -26,6 +26,13 @@ export interface SmsCandidateInput {
   bankName?: string | null
   cardTail?: string | null
   accountName?: string | null
+  /**
+   * 客户端确认卡里的原始行号。
+   *
+   * 确认卡可能只提交用户勾选的部分行(未识别行默认不勾选),按提交顺序重新编号
+   * 会让 `unrecognizedResolutions` 的 key 整体错位 —— 所以有值时必须沿用。
+   */
+  rowIndex?: number
 }
 
 export interface SmsRowsResult {
@@ -95,8 +102,8 @@ export function smsCandidatesToRows(candidates: SmsCandidateInput[]): SmsRowsRes
       payer: c.payer?.trim() || null,
       remark,
       tags: [...SMS_TAGS],
-      // 短信无文件行号:用 1 起序号回填,仅作卡内展示与未识别记录的人工指定 key
-      rowIndex: i + 1,
+      // 短信无文件行号:优先用客户端给的原始行号(确认卡按它索引未识别记录),缺省按提交顺序
+      rowIndex: c.rowIndex ?? i + 1,
     })
   })
 

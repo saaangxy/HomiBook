@@ -12,7 +12,7 @@ import {
   type SmsTransactionCandidate,
 } from '@homibook/core';
 import { http } from './http';
-import { getPendingNotifications, listSms, type NativeSmsRecord } from './txn-reader';
+import { getPendingNotifications, hasSmsPermission, listSms, type NativeSmsRecord } from './txn-reader';
 import { getSmsFilterRules, loadSmsFilterRules } from './sms-rules';
 import type { ImportPreviewResult } from './import';
 
@@ -22,6 +22,11 @@ import type { ImportPreviewResult } from './import';
 
 /** 默认扫描区间(天) */
 export const SMS_SCAN_DAYS_DEFAULT = 30;
+
+/** 临时调试日志(仅开发版输出):排查「某条通知/短信为什么没成为候选」 */
+function logScan(...args: unknown[]): void {
+  if (typeof __DEV__ !== 'undefined' && __DEV__) console.log('[扫描]', ...args);
+}
 
 /** 「需确认」的置信度门槛(与核心注释里的自动记账门槛同一口径:低于它一律要求人工确认) */
 export const SMS_LOW_CONFIDENCE = 0.8;
@@ -136,6 +141,15 @@ export interface SmsScanResult {
 
 export interface ScanOptions {
   days?: number;
+  /**
+   * 通知队列的独立时间窗(缺省与 days 相同)。
+   *
+   * 通知队列和短信库的性质不同:队列里的每一条都**必须被处理**(入账后由
+   * removePendingNotifications 清掉),它本身就是一份待办清单。
+   * 若跟着自动记账的 3 天窗口裁剪,后台上限期间(进程被冻结)积压的通知
+   * 一旦超过窗口就会被永久跳过 —— 既不处理也不标记,再也不会入账。
+   */
+  notificationDays?: number;
   /** 短信读取总量上限(默认 SMS_FETCH_MAX,且不超过它) */
   limit?: number;
   accountBookId?: string | null;
@@ -226,6 +240,20 @@ async function fetchSmsInWindow(start: number, end: number, cap: number): Promis
 
 /** 短信渠道:只读收件箱,预筛 + 解析全在本机完成 */
 async function collectSms(opts: ScanOptions): Promise<Collected> {
+  /**
+   * 没有短信权限就直接返回空,不要去调原生 listSms —— 它会抛异常,
+   * 而 scanCandidates 是 Promise.all 并行扫「短信 + 通知」:
+   * 一个渠道抛错会把通知渠道的结果一起带走(只开通知使用权的用户会表现为「什么都不发生」)。
+   */
+  if (!hasSmsPermission()) {
+    logScan('短信渠道跳过:未授予 READ_SMS(只扫通知)');
+    return {
+      list: [], unrecognized: [], senders: [], scanned: 0,
+      hasServiceSender: false, fetchLimitHit: false, notificationQueued: 0,
+      matched: 0, skippedProcessed: 0, skippedByRules: 0,
+    };
+  }
+
   const days = opts.days ?? SMS_SCAN_DAYS_DEFAULT;
   const now = opts.now ?? new Date();
   const start = now.getTime() - days * 86_400_000;
@@ -312,11 +340,24 @@ async function collectSms(opts: ScanOptions): Promise<Collected> {
 }
 
 /**
+ * 通知 key 是否已处理。
+ *
+ * 新版原生 key 是 `系统key#文本指纹`(同一 App 复用通知 id 时避免互相覆盖),
+ * 升级前存的是不带指纹的系统 key —— 两种都要认,否则老通知会因为 key 变化集体「复活」。
+ */
+function isProcessedNotificationKey(key: string, processed?: Set<string>): boolean {
+  if (!processed) return false;
+  if (processed.has(key)) return true;
+  const base = key.split('#')[0];
+  return base !== key && processed.has(base);
+}
+
+/**
  * 通知渠道:读本机累积队列(白名单来源 + 金额线索已在原生侧粗筛)。
  * 通知往往把账户写在标题、金额写在正文,故拼接后再解析;来源名用作银行名兜底。
  */
 async function collectNotifications(opts: ScanOptions): Promise<Collected> {
-  const days = opts.days ?? SMS_SCAN_DAYS_DEFAULT;
+  const days = opts.notificationDays ?? opts.days ?? SMS_SCAN_DAYS_DEFAULT;
   const now = opts.now ?? new Date();
   const from = now.getTime() - days * 86_400_000;
 
@@ -343,6 +384,8 @@ async function collectNotifications(opts: ScanOptions): Promise<Collected> {
 
     const screen = screenSms(text);
     if (!screen.isTransaction) {
+      // 只为「没成为候选的」打一条:正常交易不刷屏,排查时能直接看到这条为什么被丢掉
+      logScan('通知未识别', { key: n.key.slice(0, 16), source: n.source, reason: screen.reason, text });
       if (!screen.reason.startsWith('exclude:') && screen.reason !== 'empty') {
         unrecognized.push({
           sourceId: n.key, text, sender: n.source,
@@ -363,12 +406,15 @@ async function collectNotifications(opts: ScanOptions): Promise<Collected> {
       bankNameFallback: n.source,
     });
     if (!parsed) {
+      // 预筛通过但字段抽不出来:原文一定保留在 unrecognized(可走 AI 兜底),这里记一笔便于定位
+      logScan('通知解析失败', { key: n.key.slice(0, 16), text });
       unrecognized.push({
         sourceId: n.key, text, sender: n.source,
         receivedAt: new Date(n.postedAt).toISOString(), channel: 'notification',
       });
       continue;
     }
+
     matched++;
     bumpSender(senders, { sender: n.source, channel: 'notification', kind: 'txn' });
 
@@ -378,7 +424,7 @@ async function collectNotifications(opts: ScanOptions): Promise<Collected> {
       continue;
     }
 
-    if (opts.processedIds?.has(n.key)) {
+    if (isProcessedNotificationKey(n.key, opts.processedIds)) {
       skippedProcessed++;
       continue;
     }
@@ -405,21 +451,43 @@ async function collectNotifications(opts: ScanOptions): Promise<Collected> {
  * 并把被折叠掉的来源记进 `mergedSources` —— 导入时它们要一起标记「已处理」并从通知队列移除。
  */
 function foldCandidates(list: SmsCandidate[]): { candidates: SmsCandidate[]; duplicates: number } {
-  const byKey = new Map<string, SmsCandidate>();
   const union = (a: { id: string; channel: SmsChannel }[], b: { id: string; channel: SmsChannel }[]) =>
     [...new Map([...a, ...b].map((s) => [s.id, s])).values()];
 
-  let duplicates = 0;
+  // 先按键分组:同键**不代表**是同一笔 —— dedupeKey 是「分钟 + 金额 + 方向 + 卡尾号 + 银行」,
+  // 一分钟内两次同价消费(地铁连刷、便利店两单)会撞键。
+  const groups = new Map<string, SmsCandidate[]>();
   for (const c of list) {
-    const prev = byKey.get(c.dedupeKey);
-    if (!prev) {
-      byKey.set(c.dedupeKey, c);
+    const arr = groups.get(c.dedupeKey);
+    if (arr) arr.push(c);
+    else groups.set(c.dedupeKey, [c]);
+  }
+
+  let duplicates = 0;
+  const candidates: SmsCandidate[] = [];
+  for (const arr of groups.values()) {
+    // 只有**跨渠道**才可能是「同一笔的两个来源」;同渠道撞键必然是两笔真实交易,必须各自保留。
+    // 所以这里只做「短信侧取最高 + 通知侧取最高,两者之间折叠」,
+    // 同渠道的其余条目原样保留(否则会出现「统计说通知 2 条、列表只有 1 条」)。
+    const smsList = arr.filter((c) => c.channel === 'sms').sort((a, b) => b.confidence - a.confidence);
+    const notifList = arr.filter((c) => c.channel === 'notification').sort((a, b) => b.confidence - a.confidence);
+
+    // 同渠道多出来的条目:都是独立候选,直接放回列表
+    candidates.push(...smsList.slice(1), ...notifList.slice(1));
+
+    if (smsList.length === 0 || notifList.length === 0) {
+      // 只有一个渠道:该渠道最高置信度那条也是独立候选
+      candidates.push(...smsList.slice(0, 1), ...notifList.slice(0, 1));
       continue;
     }
+
+    // 两个渠道都命中:视为同一笔的两个来源,折叠成一条
     duplicates++;
-    const winner = prev.confidence >= c.confidence ? prev : c;
-    const loser = winner === prev ? c : prev;
-    byKey.set(c.dedupeKey, {
+    const a = smsList[0];
+    const b = notifList[0];
+    const winner = a.confidence >= b.confidence ? a : b;
+    const loser = winner === a ? b : a;
+    candidates.push({
       ...winner,
       mergedSources: union(
         winner.mergedSources ?? [],
@@ -427,7 +495,8 @@ function foldCandidates(list: SmsCandidate[]): { candidates: SmsCandidate[]; dup
       ),
     });
   }
-  const candidates = [...byKey.values()].sort((a, b) => b.date.localeCompare(a.date));
+
+  candidates.sort((a, b) => b.date.localeCompare(a.date));
   return { candidates, duplicates };
 }
 
@@ -458,6 +527,18 @@ export async function scanCandidates(opts: ScanOptions = {}): Promise<SmsScanRes
   const skippedByRules = sms.skippedByRules + notification.skippedByRules;
   const senders = mergeSenderStats(sms.senders, notification.senders);
 
+  // 只留一行总账:任何一条渠道「为什么是 0」都能从这里往下追
+  logScan('扫描汇总', {
+    sms: sms.scanned,
+    通知队列: notification.notificationQueued,
+    候选: candidates.length,
+    通知候选: notification.list.length,
+    同笔合并: duplicates,
+    未识别: unrecognized.length,
+    已处理跳过: sms.skippedProcessed + notification.skippedProcessed,
+    规则跳过: skippedByRules,
+  });
+
   return {
     candidates,
     unrecognized,
@@ -478,21 +559,77 @@ export async function scanCandidates(opts: ScanOptions = {}): Promise<SmsScanRes
  * 候选 → 后端预览(账户匹配 + 分类映射 + 弱校验)。
  * 返回结构与文件导入的预览完全一致 → 可直接交给 ImportSheet 复用预览/确认 UI。
  */
+/** 候选 → 上送体(原文 raw 刻意不上送,隐私默认值) */
+function toWireCandidates(candidates: (SmsCandidate & { rowIndex?: number })[]) {
+  return candidates.map((c) => ({
+    sourceId: c.sourceId,
+    date: c.date,
+    type: c.type,
+    amount: c.amount,
+    payer: c.payer,
+    remark: c.remark,
+    tradeKind: c.tradeKind,
+    bankName: c.bankName,
+    cardTail: c.cardTail,
+    accountName: c.accountName,
+    // 只提交部分行(确认卡勾选)时,服务端靠它对齐未识别记录的 rowIndex
+    rowIndex: c.rowIndex,
+  }));
+}
+
 export function smsPreview(accountBookId: string, candidates: SmsCandidate[]): Promise<ImportPreviewResult> {
   return http.post<ImportPreviewResult>('/api/sms/preview', {
     accountBookId,
-    candidates: candidates.map((c) => ({
-      sourceId: c.sourceId,
-      date: c.date,
-      type: c.type,
-      amount: c.amount,
-      payer: c.payer,
-      remark: c.remark,
-      tradeKind: c.tradeKind,
-      bankName: c.bankName,
-      cardTail: c.cardTail,
-      accountName: c.accountName,
-      // 原文 raw 刻意不上送(隐私默认值)
-    })),
+    candidates: toWireCandidates(candidates),
+  });
+}
+
+/** 决议(与文件导入同形;ownerId 为空表示「本人」) */
+export interface SmsCheckResolutions {
+  ownerId?: string;
+  accountResolutions?: {
+    sourceAccountName: string;
+    action: 'create' | 'existing';
+    targetAccountId?: string;
+    targetAccountName?: string;
+    accountType?: string;
+  }[];
+  categoryResolutions?: {
+    sourceCategory: string;
+    targetCategoryCode: string;
+    recordType?: string;
+    payerContains?: string;
+    descriptionContains?: string;
+  }[];
+  unrecognizedResolutions?: {
+    rowIndex: number;
+    type?: string;
+    accountId?: string;
+    toAccountId?: string;
+    categoryCode?: string;
+  }[];
+  confirmSkipUnrecognized?: boolean;
+}
+
+export interface SmsCheckResult {
+  canProceed: boolean;
+  blockReasons: string[];
+  skippedUnrecognized?: number;
+}
+
+/**
+ * 决议复核:短信路径没有上传文件,不能用 /records/import/check(要 multipart),
+ * 所以由 /api/sms/check 复用服务端同一套 remapImportRows 做裁决。
+ * 「能否进入下一步」以它的返回为准,前端不再自行判定。
+ */
+export function smsCheck(
+  accountBookId: string,
+  candidates: (SmsCandidate & { rowIndex?: number })[],
+  resolutions: SmsCheckResolutions,
+): Promise<SmsCheckResult> {
+  return http.post<SmsCheckResult>('/api/sms/check', {
+    accountBookId,
+    candidates: toWireCandidates(candidates),
+    resolutions,
   });
 }

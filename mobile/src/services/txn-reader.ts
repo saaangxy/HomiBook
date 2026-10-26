@@ -74,6 +74,28 @@ export function clearPendingNotifications(): void {
 }
 
 /**
+ * 是否已加入「电池优化」白名单。
+ * 后台记账依赖通知监听服务常驻:未加入时部分系统会在灭屏/长期未使用后冻结进程,
+ * 表现为「白天能自动记账,过一夜就不记了」。
+ */
+export function isIgnoringBatteryOptimizations(): boolean {
+  return !!TxnReader && TxnReader.isIgnoringBatteryOptimizations();
+}
+
+/** 打开「忽略电池优化」授权弹窗;系统不支持时退化为电池优化设置列表 */
+export function requestIgnoreBatteryOptimizations(): void {
+  TxnReader?.requestIgnoreBatteryOptimizations();
+}
+
+/**
+ * 打开厂商「自启动 / 后台运行」权限页。
+ * 自启动没有标准 API,也**无法检测**,所以只能引导用户去看一眼,不能显示「已开启」。
+ */
+export function openAutoStartSettings(): void {
+  TxnReader?.openAutoStartSettings();
+}
+
+/**
  * 按 key 移除队列里的若干条:导入成功后调用,把已入账(含跨渠道折叠掉的重复来源)的通知清掉。
  * 不清的话它们只靠「已处理」标记在扫描阶段跳过,标记一清就又冒出来。
  */

@@ -21,3 +21,9 @@ android {
     abortOnError false
   }
 }
+
+dependencies {
+  // TxnHeadlessTaskService 用到 com.facebook.react.HeadlessJsTaskService / bridge.Arguments。
+  // expo-modules-core 是以 implementation 引入 react-android 的,不会传递到本模块,必须显式声明。
+  implementation "com.facebook.react:react-android"
+}

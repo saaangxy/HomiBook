@@ -59,7 +59,11 @@ export function CandidateDetailSheet({ visible, candidate, previewRow, checked, 
       warn: candidate.confidence < SMS_LOW_CONFIDENCE,
     },
     { label: '解析方式', value: candidate.parsedBy === 'ai' ? 'AI 兜底(模型抽取)' : '本地规则' },
-    { label: '来源', value: `${candidate.channel === 'notification' ? '通知' : '短信'} · ${candidate.sourceId}` },
+    {
+      label: '来源',
+      // 折叠掉的另一渠道也列出来:同一笔常同时有短信和 App 通知
+      value: `${candidate.mergedSources?.length ? '短信 + 通知(同一笔)' : (candidate.channel === 'notification' ? '通知' : '短信')} · ${candidate.sourceId}`,
+    },
     ...(previewRow?.possibleDuplicate
       ? [{ label: '重复检测', value: '疑似重复(同账户同日同额同向已存在)', warn: true }]
       : []),

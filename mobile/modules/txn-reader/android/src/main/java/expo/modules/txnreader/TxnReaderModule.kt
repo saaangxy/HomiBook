@@ -1,10 +1,12 @@
 package expo.modules.txnreader
 
 import android.Manifest
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.PowerManager
 import android.provider.Settings
 import android.provider.Telephony
 import expo.modules.kotlin.modules.Module
@@ -181,6 +183,100 @@ class TxnReaderModule : Module() {
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         )
       }
+    }
+
+    /**
+     * 是否已加入「电池优化」白名单。
+     *
+     * 后台记账依赖通知监听服务常驻:未加入白名单时,部分系统会在灭屏/长时间未使用后冻结进程,
+     * 通知监听随之失效(表现为「白天能自动记账,过一夜就不记了」)。
+     */
+    Function("isIgnoringBatteryOptimizations") {
+      val context = requireContext()
+      val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+      pm?.isIgnoringBatteryOptimizations(context.packageName) ?: false
+    }
+
+    /**
+     * 打开「忽略电池优化」授权弹窗。
+     *
+     * 需要 Manifest 声明 REQUEST_IGNORE_BATTERY_OPTIMIZATIONS(见 plugins/with-notification-listener.js),
+     * 否则系统会直接抛异常;此时退化为电池优化设置列表,让用户自己找到本应用。
+     */
+    Function("requestIgnoreBatteryOptimizations") {
+      val context = requireContext()
+      try {
+        context.startActivity(
+          Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+            .setData(Uri.parse("package:${context.packageName}"))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+      } catch (e: Exception) {
+        try {
+          context.startActivity(
+            Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+              .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+          )
+        } catch (e2: Exception) {
+          openAppDetails(context)
+        }
+      }
+    }
+
+    /**
+     * 打开「自启动 / 后台运行」权限页。
+     *
+     * 自启动没有标准 API,也**无法检测**当前是否已允许(各家 ROM 私有开关),
+     * 所以只能按厂商逐个尝试入口;全部不可用时退化为应用详情页,由用户自行在权限里找。
+     */
+    Function("openAutoStartSettings") {
+      val context = requireContext()
+      val candidates = listOf(
+        // 小米 / 红米
+        ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity"),
+        // 华为
+        ComponentName("com.huawei.systemmanager", "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity"),
+        // 荣耀(独立品牌后的包名)
+        ComponentName("com.hihonor.systemmanager", "com.hihonor.systemmanager.startupmgr.ui.StartupNormalAppListActivity"),
+        // OPPO(新旧两套)
+        ComponentName("com.coloros.safecenter", "com.coloros.safecenter.permission.startup.StartupAppListActivity"),
+        ComponentName("com.oplus.safecenter", "com.oplus.safecenter.startupapp.StartupAppListActivity"),
+        // vivo / iQOO
+        ComponentName("com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.BgStartUpManagerActivity"),
+        ComponentName("com.iqoo.secure", "com.iqoo.secure.ui.phoneoptimize.AddWhiteListActivity"),
+        // 三星
+        ComponentName("com.samsung.android.lool", "com.samsung.android.sm.battery.ui.BatteryActivity"),
+        // 一加
+        ComponentName("com.oneplus.security", "com.oneplus.security.chainlaunch.view.ChainLaunchAppListActivity"),
+        // 魅族
+        ComponentName("com.meizu.safe", "com.meizu.safe.permission.SmartBGActivity")
+      )
+      var opened = false
+      for (component in candidates) {
+        try {
+          context.startActivity(
+            Intent().setComponent(component).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+          )
+          opened = true
+          break
+        } catch (e: Exception) {
+          // 该 ROM 没有这个入口:继续试下一个
+        }
+      }
+      // 都打不开(原生 Android / 其它 ROM 把自启动并入应用信息页)
+      if (!opened) openAppDetails(context)
+    }
+  }
+
+  private fun openAppDetails(context: Context) {
+    try {
+      context.startActivity(
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+          .setData(Uri.fromParts("package", context.packageName, null))
+          .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      )
+    } catch (e: Exception) {
+      // 连应用详情页都打不开:放弃,不影响其它功能
     }
   }
 

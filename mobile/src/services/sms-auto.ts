@@ -3,7 +3,12 @@ import { SMS_IMPORT_SOURCE } from '@homibook/core';
 import { confirmImport, type ImportConfirmPayload } from './import';
 import { scanCandidates, smsPreview } from './sms-import';
 import { loadProcessedSmsIds, markSmsProcessed } from './sms-processed';
-import { hasSmsPermission, isTxnReaderSupported } from './txn-reader';
+import {
+  hasSmsPermission,
+  isNotificationAccessGranted,
+  isTxnReaderSupported,
+  removePendingNotifications,
+} from './txn-reader';
 
 // 自动记账(默认关闭):应用进入前台时静默扫描本机短信/通知,把「高置信度 + 已唯一匹配到已有账户」的交易直接入账。
 //
@@ -11,17 +16,25 @@ import { hasSmsPermission, isTxnReaderSupported } from './txn-reader';
 //   · 不新建账户、不写映射规则(未匹配/歧义账户一律留给手动扫描确认)
 //   · 服务端弱校验命中「疑似重复」的不入账
 //   · 只扫最近 AUTO_WINDOW_DAYS 天,不做全量回溯
-//   · 每次入账记下创建出的流水 id 与本批来源 id,设置页可一键撤销(删除流水 + 解除「已处理」标记)
+//   · 流水打「自动」标签,可在流水列表按标签筛选后批量删除;本机历史只用于展示,不参与撤销
 // 已知限制:Android 后台限制下无法做到「短信一到就入账」——应用被杀或长期未打开时会延迟(见方案文档风险表)。
 
 /** 自动入账的置信度门槛(与 core sms-parse 注释里的「自动记账建议门槛」一致) */
 export const AUTO_MIN_CONFIDENCE = 0.8;
-/** 自动扫描窗口(天) */
+/** 自动扫描窗口(天):短信只回溯最近 3 天,不做全量回溯 */
 const AUTO_WINDOW_DAYS = 3;
+/**
+ * 通知队列的独立窗口(天)。
+ *
+ * 通知队列是「入账后即清理」的待办清单,不按短信的 3 天裁剪 ——
+ * 否则后台被系统冻结期间积压的通知一旦超过 3 天,就会被窗口**永久跳过**
+ * (既不处理也不标记),表现为「这几笔永远没记上」。
+ */
+const AUTO_NOTIFICATION_WINDOW_DAYS = 30;
 /** 自动入账的流水打此标签,便于事后筛选与排查 */
 export const AUTO_RECORD_TAG = '自动';
 /** 两次自动扫描的最小间隔(前台频繁切换时不重复打服务器) */
-export const AUTO_MIN_INTERVAL_MS = 5 * 60 * 1000;
+export const AUTO_MIN_INTERVAL_MS = 10 * 1000;
 
 const SETTINGS_KEY = 'homibook.smsAuto';
 /** 最近自动入账记录:设置页「最近自动记账」查看用(不参与去重,也不用于撤销) */
@@ -139,21 +152,35 @@ function logAuto(...args: unknown[]): void {
  */
 export async function runAutoBookkeeping(bookId: string): Promise<AutoRunResult> {
   const settings = await loadAutoSettings();
-  if (!settings.enabled) return { imported: 0, pending: 0, reason: 'disabled' };
-  if (!isTxnReaderSupported) return { imported: 0, pending: 0, reason: 'unsupported' };
-  if (!hasSmsPermission()) return { imported: 0, pending: 0, reason: 'no-permission' };
+  const smsGranted = hasSmsPermission();
+  const notifGranted = isNotificationAccessGranted();
+  logAuto('开始', { bookId, enabled: settings.enabled, smsGranted, notifGranted });
+
+  if (!settings.enabled) {
+    logAuto('跳过:自动记账开关未开启');
+    return { imported: 0, pending: 0, reason: 'disabled' };
+  }
+  if (!isTxnReaderSupported) {
+    logAuto('跳过:当前平台不支持(TxnReader 不可用)');
+    return { imported: 0, pending: 0, reason: 'unsupported' };
+  }
+  // 短信与通知是两个独立渠道:只开通知使用权(银行 App 通知)同样应能自动记账
+  if (!smsGranted && !notifGranted) {
+    logAuto('跳过:短信读取权限与通知使用权都未开启');
+    return { imported: 0, pending: 0, reason: 'no-permission' };
+  }
 
   const processedIds = await loadProcessedSmsIds();
-  const scan = await scanCandidates({ days: AUTO_WINDOW_DAYS, accountBookId: bookId, processedIds });
+  const scan = await scanCandidates({
+    days: AUTO_WINDOW_DAYS,
+    // 通知队列放宽:积压的待办不能因为「超过短信窗口」被永久跳过
+    notificationDays: AUTO_NOTIFICATION_WINDOW_DAYS,
+    accountBookId: bookId,
+    processedIds,
+  });
 
   // 只把高置信度的送去做账户匹配(低置信度留给人工,没必要为了它们跑预览)
   const eligible = scan.candidates.filter((c) => c.confidence >= AUTO_MIN_CONFIDENCE);
-  logAuto('扫描完成 · 第一道闸(本地)', {
-    candidates: scan.candidates.length,
-    channels: scan.channels,
-    eligible: eligible.length,
-    lowConfidence: scan.candidates.filter((c) => c.confidence < AUTO_MIN_CONFIDENCE).length,
-  });
   if (eligible.length === 0) return { imported: 0, pending: scan.candidates.length, reason: 'nothing' };
 
   // rowIndex 由后端按「提交数组位置 + 1」生成:本地显式带上,才能把预览结果映射回候选
@@ -161,23 +188,13 @@ export async function runAutoBookkeeping(bookId: string): Promise<AutoRunResult>
   const preview = await smsPreview(bookId, eligible);
   // 自动入账的三道闸:已匹配到**已有**账户 + 非疑似重复(+ 上面已过的置信度门槛)
   const rows = preview.records.filter((r) => !!r.accountId && !r.possibleDuplicate && r.rowIndex != null);
-  logAuto('第二道闸(服务端匹配)', {
-    submitted: eligible.length,
-    passed: rows.length,
-    noAccount: preview.records.filter((r) => !r.accountId).length,
-    duplicate: preview.records.filter((r) => r.possibleDuplicate).length,
-    // 逐条原因(截断到 12 条,避免一次刷几十行):
-    // pass 通过 / no-account 没匹配到已有账户 / duplicate 疑似重复 / no-row 服务端没返回该行
-    detail: eligible.slice(0, 12).map((c, i) => {
-      const row = preview.records.find((r) => r.rowIndex === i + 1);
-      return {
-        amount: c.amount,
-        type: c.type,
-        account: c.accountName,
-        conf: c.confidence,
-        gate: !row ? 'no-row' : !row.accountId ? 'no-account' : row.possibleDuplicate ? 'duplicate' : 'pass',
-      };
-    }),
+  // 一行说清三道闸:哪一步把候选挡下的,看这四个数就够了
+  logAuto('闸门结果', {
+    候选: scan.candidates.length,
+    送匹配: eligible.length,
+    通过: rows.length,
+    无账户: preview.records.filter((r) => !r.accountId).length,
+    疑似重复: preview.records.filter((r) => r.possibleDuplicate).length,
   });
   const pendingCount = scan.candidates.length - rows.length;
   if (rows.length === 0) return { imported: 0, pending: pendingCount, reason: 'nothing' };
@@ -204,9 +221,16 @@ export async function runAutoBookkeeping(bookId: string): Promise<AutoRunResult>
 
   const res = await confirmImport(payload);
 
-  // 入账成功的来源才算「已处理」;pending 的保持可扫描,等用户手动确认
-  const sourceIds = picked.map((c) => c.sourceId);
-  await markSmsProcessed(sourceIds);
+  // 入账成功的来源才算「已处理」;pending 的保持可扫描,等用户手动确认。
+  // 跨渠道折叠掉的副本也要一并标记并清出通知队列 —— 只标保留的那条,
+  // 另一渠道(或队列里)的副本下一轮会以「疑似重复」再冒出来,越积越多。
+  const sources = picked.flatMap((c) => [
+    { id: c.sourceId, channel: c.channel },
+    ...(c.mergedSources ?? []),
+  ]);
+  await markSmsProcessed(sources.map((s) => s.id));
+  const notifKeys = sources.filter((s) => s.channel === 'notification').map((s) => s.id);
+  if (notifKeys.length > 0) void removePendingNotifications(notifKeys);
   // 本机留一份「最近自动入账记录」(设置页展示用):rows 与创建出的 id 顺序一一对应
   const at = Date.now();
   const created: AutoHistoryEntry[] = rows
@@ -220,11 +244,7 @@ export async function runAutoBookkeeping(bookId: string): Promise<AutoRunResult>
     }))
     .filter((e) => !!e.recordId);
   await appendAutoHistory(created);
-  logAuto('入账完成', {
-    imported: res.imported,
-    pending: pendingCount,
-    recordIds: res.ids?.length ?? 0,
-  });
+  logAuto('入账完成', { imported: res.imported, pending: pendingCount });
 
   return {
     imported: res.imported,

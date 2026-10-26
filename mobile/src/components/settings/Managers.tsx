@@ -11,7 +11,7 @@ import { Btn, Chips, ErrorText, LabeledInput, OptionModal, useInputStyle } from 
 import { useConfirm } from '@/components/chrome/ConfirmSheet';
 import { showToast } from '@/components/chrome/Toast';
 import * as Clipboard from 'expo-clipboard';
-import { IMPORT_SOURCE_DEFS, RECORD_TYPES, RECORD_TYPE_LABELS } from '@homibook/core';
+import { MAPPING_SOURCE_DEFS, RECORD_TYPES, RECORD_TYPE_LABELS } from '@homibook/core';
 
 export const DICT_GROUPS = [
   { key: 'account_type', label: '账户类型' },
@@ -22,7 +22,8 @@ export const DICT_GROUPS = [
 ];
 
 // 导入来源单一来源 @homibook/core(顺序/文案与 web 一致)
-const MAPPING_SOURCES = IMPORT_SOURCE_DEFS.map((s) => ({ value: s.key, label: s.label }));
+// 映射来源含「短信 / 通知」:短信导入同样会写入 source='sms' 的规则,必须能在这里查看/编辑
+const MAPPING_SOURCES = MAPPING_SOURCE_DEFS.map((s) => ({ value: s.key, label: s.label }));
 
 function HeadRow({ title, btnTitle, onBtn }: { title: string; btnTitle: string; onBtn: () => void }) {
   const { colors } = useTheme();

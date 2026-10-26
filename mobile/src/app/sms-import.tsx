@@ -2,13 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, Switch, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Check, ChevronLeft, MessageSquareText, RefreshCw, ShieldAlert, SlidersHorizontal, TriangleAlert } from 'lucide-react-native';
+import { Check, ChevronLeft, EyeOff, MessageSquareText, RefreshCw, ShieldAlert, SlidersHorizontal, TriangleAlert } from 'lucide-react-native';
 import { DEFAULT_SMS_FILTER_RULES, type SmsFilterRules } from '@homibook/core';
 import { useTheme, alpha, haptics, semanticTypeColor } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { Screen } from '@/components/Screen';
 import { Card } from '@/components/ui/Card';
 import { showToast } from '@/components/chrome/Toast';
+import { ConfirmSheet } from '@/components/chrome/ConfirmSheet';
 import { FormSheet } from '@/components/chrome/FormSheet';
 import { Btn, LabeledInput, useInputStyle } from '@/components/settings/shared';
 import { SenderPickerSheet } from '@/components/sms/SenderPickerSheet';
@@ -20,7 +21,7 @@ import {
   removePendingNotifications,
 } from '@/services/txn-reader';
 import {
-  needsConfirm, SMS_FETCH_MAX, SMS_SCAN_DAYS_DEFAULT, scanCandidates, smsPreview, type SmsCandidate,
+  needsConfirm, SMS_FETCH_MAX, SMS_SCAN_DAYS_DEFAULT, scanCandidates, smsCheck, smsPreview, type SmsCandidate,
 } from '@/services/sms-import';
 import { isSmsFilterRulesCustomized, loadSmsFilterRules, saveSmsFilterRules } from '@/services/sms-rules';
 import { extractCandidatesWithAi, loadSmsAiSettings } from '@/services/sms-ai';
@@ -160,7 +161,7 @@ export default function SmsImportScreen() {
     if (channels.sms + channels.notification > 0) parts.push(`命中 短信 ${channels.sms} · 通知 ${channels.notification}`);
     if (skipped.byRules > 0) parts.push(`筛选规则跳过 ${skipped.byRules} 条`);
     if (skipped.processed > 0) parts.push(`已跳过 ${skipped.processed} 条已处理`);
-    if (skipped.duplicates > 0) parts.push(`${skipped.duplicates} 条同笔已折叠`);
+    if (skipped.duplicates > 0) parts.push(`${skipped.duplicates} 条同笔已合并(短信 + 通知)`);
     if (aiInfo.parsed > 0) parts.push(`AI 补全 ${aiInfo.parsed} 条`);
     if (aiEnabled && aiInfo.pending > 0) parts.push(`AI 未能解析 ${aiInfo.pending} 条`);
     if (!aiEnabled && aiInfo.unrecognized > 0) parts.push(`${aiInfo.unrecognized} 条规则未识别(可在设置开启 AI 兜底)`);
@@ -224,13 +225,16 @@ export default function SmsImportScreen() {
       showToast('账本还在加载,请稍后重试');
       return;
     }
-    if (!hasSmsPermission()) {
-      setPermitted(false);
-      showToast('请先授予短信读取权限');
+    // 短信与通知是两个独立渠道:开启通知使用权后,没有 READ_SMS 也能扫到银行 App 的通知
+    const smsOk = hasSmsPermission();
+    const notifOk = isNotificationAccessGranted();
+    setPermitted(smsOk);
+    setNotifGranted(notifOk);
+    if (!smsOk && !notifOk) {
+      showToast('请先开启短信读取权限或通知使用权');
       router.push('/sms-settings');
       return;
     }
-    setPermitted(true);
     setScanning(true);
     try {
       const [processedIds, loadedRules, ai] = await Promise.all([
@@ -300,6 +304,36 @@ export default function SmsImportScreen() {
     } finally {
       setScanning(false);
     }
+  };
+
+  /**
+   * 忽略一条:标记「已处理」并从列表移除,后续扫描不再出现。
+   * 只动本机标记(短信/通知队列),不碰服务端 —— 之后想恢复可在设置页「清空本机标记」。
+   */
+  /** 待确认忽略的候选(用页面内的 ConfirmSheet,不用系统 Alert) */
+  const [ignoreTarget, setIgnoreTarget] = useState<LocalCandidate | null>(null);
+
+  const ignoreCandidate = (c: LocalCandidate) => {
+    haptics.tap();
+    setIgnoreTarget(c);
+  };
+
+  /** 确认后真正落地:标记「已处理」并从列表移除,后续扫描不再出现 */
+  const doIgnore = (c: LocalCandidate) => {
+    const sources = [{ id: c.sourceId, channel: c.channel }, ...(c.mergedSources ?? [])];
+    markSmsProcessed(sources.map((s) => s.id)).catch(() => {});
+    // 通知渠道还要从原生队列摘掉;短信没有队列,只能靠上面的「已处理」标记跳过
+    const notifKeys = sources.filter((s) => s.channel === 'notification').map((s) => s.id);
+    if (notifKeys.length > 0) void removePendingNotifications(notifKeys);
+    // 刻意不重排 rowIndex:preview / selected 都按行号索引,删掉一项不影响其余行的对应关系
+    setCandidates((prev) => prev.filter((x) => x.sourceId !== c.sourceId));
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.delete(c.rowIndex);
+      return next;
+    });
+    setIgnoreTarget(null);
+    showToast('已忽略,不再出现在扫描列表');
   };
 
   // 详情面板的目标行:直接从候选列表派生 —— 导入/移除后该行不存在时面板自动关闭
@@ -536,13 +570,13 @@ export default function SmsImportScreen() {
               <ChevronLeft size={13} color={colors.mutedForeground} style={{ transform: [{ rotate: '180deg' }] }} />
             </Pressable>
 
-            {!permitted ? (
+            {!(permitted || notifGranted) ? (
               <Pressable
                 onPress={() => router.push('/sms-settings')}
                 style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10, padding: 10, borderRadius: 10, backgroundColor: alpha(colors.expense, 0.08) }}
               >
                 <ShieldAlert size={15} color={colors.expense} />
-                <Text style={{ flex: 1, fontSize: 12, color: colors.expense }}>未授予短信读取权限,去开启</Text>
+                <Text style={{ flex: 1, fontSize: 12, color: colors.expense }}>未开启短信读取或通知使用权,去开启</Text>
                 <ChevronLeft size={14} color={colors.expense} style={{ transform: [{ rotate: '180deg' }] }} />
               </Pressable>
             ) : (
@@ -638,7 +672,8 @@ export default function SmsImportScreen() {
         <FlatList
           style={{ flex: 1 }}
           data={visible}
-          keyExtractor={(c) => c.sourceId}
+          // 渠道前缀兜底:历史上同一 App 复用通知 id 时 sourceId 会重复,FlatList 会把重复 key 的行吃掉
+          keyExtractor={(c) => `${c.channel}:${c.sourceId}`}
           contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12 }}
           ListEmptyComponent={
             <View style={{ alignItems: 'center', paddingTop: 40, gap: 8 }}>
@@ -659,6 +694,7 @@ export default function SmsImportScreen() {
               checked={selected.has(item.rowIndex)}
               onToggle={() => toggle(item.rowIndex)}
               onOpenDetail={() => { haptics.tap(); setDetailRow(item.rowIndex); }}
+              onIgnore={() => ignoreCandidate(item)}
             />
           )}
         />
@@ -700,6 +736,16 @@ export default function SmsImportScreen() {
         </View>
       </View>
 
+      {/* 忽略确认:用页面内的 ConfirmSheet(与删除字典项等危险操作同一套弹窗),不使用系统 Alert */}
+      <ConfirmSheet
+        visible={!!ignoreTarget}
+        title="忽略这条记录"
+        message="忽略后不会导入,也不再出现在扫描列表。之后可在设置里「清空本机标记」恢复。"
+        confirmLabel="忽略"
+        onConfirm={() => { if (ignoreTarget) doIgnore(ignoreTarget); }}
+        onClose={() => setIgnoreTarget(null)}
+      />
+
       {/* 确认流程复用文件导入向导(预置预览 → 直接落在「预览处理」步骤) */}
       <ImportSheet
         visible={sheetOpen}
@@ -707,6 +753,10 @@ export default function SmsImportScreen() {
         bookId={bookId}
         dictCodes={preset?.preview.allDictItems ?? []}
         presetPreview={preset}
+        // 短信路径没有文件:由 /api/sms/check 复用服务端 remapImportRows 做同一套裁决。
+        // 只提交「本次真的要导入的行」(与 buildSelectedPreview 的勾选一致)——
+        // 提交全量会把没勾选的未识别行也算成「未处理」,红字提示与列表对不上。
+        presetServerCheck={(input) => smsCheck(bookId, candidates.filter((c) => selected.has(c.rowIndex)), input)}
         onImported={(r) => {
           // 去重第 1 层:已导入的来源标记为「已处理」,下次扫描不再出现。
           // 同一笔的其它渠道来源(折叠时被丢弃的那条)也要一起标记 —— 否则标记只落在保留的那条上,
@@ -715,7 +765,12 @@ export default function SmsImportScreen() {
             [...(preset?.preview.records ?? []), ...(preset?.preview.unrecognizedRecords ?? [])].map((row) => row.rowIndex),
           );
           const imported = candidates.filter((c) => importedRows.has(c.rowIndex));
-          const remaining = candidates.filter((c) => !importedRows.has(c.rowIndex));
+          // 剩余候选重新编号:rowIndex 必须与服务端「按提交顺序 + 1」的口径一致,
+          // 否则筛选后的空洞(如 2,5,7)会和下次 preview 返回的 1,2,3 错位,
+          // 导致匹配信息串行、勾选/复核都落到错误的行上
+          const remaining = candidates
+            .filter((c) => !importedRows.has(c.rowIndex))
+            .map((c, i) => ({ ...c, rowIndex: i + 1 }));
           const sources = imported.flatMap((c) => [
             { id: c.sourceId, channel: c.channel },
             ...(c.mergedSources ?? []),
@@ -725,6 +780,8 @@ export default function SmsImportScreen() {
           const notifKeys = sources.filter((s) => s.channel === 'notification').map((s) => s.id);
           if (notifKeys.length > 0) void removePendingNotifications(notifKeys);
           setCandidates(remaining);
+          // rowIndex 已重排,旧的勾选集合全部失效
+          setSelected(new Set());
           showToast(`已导入 ${r.imported} 条${r.accountsCreated > 0 ? `,新建账户 ${r.accountsCreated} 个` : ''}`);
           // 剩余候选重新过一遍弱校验(刚导入的流水会成为新的「已存在」)
           runPreview(remaining).catch(() => {});
@@ -878,18 +935,19 @@ function Header({ colors, onBack }: { colors: ReturnType<typeof useTheme>['color
       >
         <ChevronLeft size={18} color={colors.foreground} />
       </Pressable>
-      <Text style={{ fontSize: 20, fontWeight: '700' }}>短信记账</Text>
+      <Text style={{ fontSize: 20, fontWeight: '700' }}>短信 / 通知记账</Text>
     </View>
   );
 }
 
 /** 候选行:左侧复选框勾选,右侧点开详情(原文 + 解析/匹配逐项) */
-function CandidateRow({ candidate, previewRow, checked, onToggle, onOpenDetail }: {
+function CandidateRow({ candidate, previewRow, checked, onToggle, onOpenDetail, onIgnore }: {
   candidate: LocalCandidate;
   previewRow?: ParsedImportRow;
   checked: boolean;
   onToggle: () => void;
   onOpenDetail: () => void;
+  onIgnore: () => void;
 }) {
   const { colors } = useTheme();
   const typeColor = semanticTypeColor(colors, candidate.type);
@@ -942,10 +1000,13 @@ function CandidateRow({ candidate, previewRow, checked, onToggle, onOpenDetail }
             {accountText}
             {candidate.payer ? ` · ${candidate.payer}` : ''}
           </Text>
-          {/* 来源渠道:同一笔在双渠道上报时已折叠,这里标明最终采用哪条 */}
+          {/* 来源渠道:同一笔在双渠道上报时已折叠,这里把合并掉的渠道也标出来 ——
+              否则列表只显示胜出渠道,用户会以为「统计说通知 2 条,列表里只有 1 条通知」 */}
           <View style={{ paddingHorizontal: 4, borderRadius: 4, backgroundColor: colors.muted }}>
             <Text style={{ fontSize: 9, color: colors.mutedForeground }}>
-              {candidate.channel === 'notification' ? '通知' : '短信'}
+              {candidate.channel === 'notification'
+                ? (candidate.mergedSources?.length ? '通知 + 短信' : '通知')
+                : (candidate.mergedSources?.some((s) => s.channel === 'notification') ? '短信 + 通知' : '短信')}
             </Text>
           </View>
           {/* AI 兜底解析出来的行:本地规则没读懂,字段由模型抽取,置信度普遍偏低 */}
@@ -961,6 +1022,12 @@ function CandidateRow({ candidate, previewRow, checked, onToggle, onOpenDetail }
           {candidate.cardTail ? ` · 尾号${candidate.cardTail}` : ''}
           {previewRow?.mappedCategoryCode ? ` · → ${previewRow.mappedCategoryCode}` : ''}
         </Text>
+      </Pressable>
+
+      {/* 忽略:标记「已处理」后不再出现在列表里 —— 有些行本就不想记(误识别/不想入账),
+          没有这个出口它们每次扫描都会一直挂着占位 */}
+      <Pressable onPress={onIgnore} hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }} style={{ paddingTop: 2 }}>
+        <EyeOff size={15} color={colors.mutedForeground} />
       </Pressable>
     </View>
   );

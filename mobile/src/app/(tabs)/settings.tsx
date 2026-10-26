@@ -175,7 +175,7 @@ export default function SettingsScreen() {
           <Card className="px-0 py-2 mb-2 overflow-hidden">
             <Row
               icon={<MessageSquareText size={16} color={colors.primary} />}
-              label="短信记账"
+              label="短信 / 通知记账"
               right={<Text variant="muted" style={{ fontSize: 12 }}>仅 Android</Text>}
               onPress={() => router.push('/sms-settings')}
               last

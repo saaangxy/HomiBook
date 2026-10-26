@@ -343,7 +343,7 @@ export default function HomeScreen() {
           {[
             { icon: Plus, label: '记一笔', onPress: () => openRecord() },
             { icon: FileUp, label: '导入', onPress: () => { openImportSheet(); router.push('/(tabs)/records'); } },
-            { icon: MessageSquareText, label: '短信记账', onPress: () => router.push('/sms-import') },
+            { icon: MessageSquareText, label: '短信/通知', onPress: () => router.push('/sms-import') },
             { icon: Camera, label: '图片记账', onPress: () => setImagePickerOpen(true) },
           ].map((a) => (
             <Pressable

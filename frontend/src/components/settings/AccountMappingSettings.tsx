@@ -43,6 +43,7 @@ import {
 } from '@/components/ui/table'
 import { Spinner } from '@/components/ui/spinner'
 import { importExportApi, type AccountMapping } from '@/api/import-export'
+import { MAPPING_SOURCE_DEFS } from '@homibook/core'
 import { Plus, Pencil, Trash2, Wallet } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -173,10 +174,9 @@ export function AccountMappingSettings() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent className="bg-card border-border">
-                <SelectItem value="alipay" className="text-xs">支付宝</SelectItem>
-                <SelectItem value="wechat" className="text-xs">微信</SelectItem>
-                <SelectItem value="jd" className="text-xs">京东</SelectItem>
-                <SelectItem value="csv" className="text-xs">其他CSV</SelectItem>
+                {MAPPING_SOURCE_DEFS.map((s) => (
+                  <SelectItem key={s.key} value={s.key} className="text-xs">{s.label}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
             <div className="flex items-center gap-1.5 ml-auto">
