@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>页面不存在 · HomiBook</title>
+  <link rel="icon" type="image/png" href="./assets/favicon.png" />
+  <style>
+    :root {
+      --brand: #f97316;
+      --brand-strong: #ea580c;
+      --bg: #f7f8fb;
+      --surface: #ffffff;
+      --border: #e5e9f0;
+      --text: #0e1726;
+      --text-2: #46536a;
+      --text-3: #76839b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+      text-align: center;
+    }
+    .card {
+      width: min(440px, 100%);
+      padding: 44px 32px;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      background: var(--surface);
+      box-shadow: 0 24px 50px -34px rgba(15, 23, 42, 0.4);
+    }
+    .code {
+      font-size: 56px;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      background: linear-gradient(120deg, #fb923c, var(--brand-strong));
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    h1 { margin: 8px 0 0; font-size: 20px; }
+    p { margin: 10px 0 0; color: var(--text-2); font-size: 14px; line-height: 1.7; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 26px; }
+    a {
+      padding: 10px 20px;
+      border-radius: 10px;
+      font-size: 14.5px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: transform 0.18s ease;
+    }
+    a:hover { transform: translateY(-1px); }
+    .primary {
+      background: linear-gradient(135deg, #fb923c, var(--brand-strong));
+      color: #fff;
+      box-shadow: 0 14px 28px -16px rgba(249, 115, 22, 0.7);
+    }
+    .ghost { border: 1px solid var(--border); color: var(--text-2); }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0a1120;
+        --surface: #111b2d;
+        --border: #223049;
+        --text: #eef3fa;
+        --text-2: #a9b7cc;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="code">404</div>
+    <h1>这个页面不在账本里</h1>
+    <p>链接可能已经失效，或者地址输错了。</p>
+    <div class="actions">
+      <a class="primary" href="./" id="home">回到首页</a>
+      <a class="ghost" href="https://github.com/saaangxy/HomiBook">GitHub 仓库</a>
+    </div>
+  </main>
+  <script>
+    // 项目站点部署在 /<repo>/ 下，取路径首段拼出站点根
+    var segment = location.pathname.split('/')[1];
+    if (segment) document.getElementById('home').href = '/' + segment + '/';
+  </script>
+</body>
+</html>
