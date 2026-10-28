@@ -1,5 +1,6 @@
 import { prisma } from '../app.js'
 import { dayStartOf, dayEnd, dayStart } from '../lib/date-time.js'
+import { computeBalanceValue } from './balance.js'
 
 // ---- 过滤器参数 ----
 
@@ -127,11 +128,12 @@ export async function computeBalance(accountId: string): Promise<{ balance: numb
   // 与余额走势图"当日先应用调整再叠加交易"的口径一致(原 gt baseDate 会漏掉调整日凌晨 0-8 点的交易)
   const dateFilter = baseDate ? { gt: dayStartOf(baseDate) } : undefined
 
+  const inRange = dateFilter ? { date: dateFilter } : {}
   const [incomeResult, expenseResult, transferOutResult, transferInResult] = await Promise.all([
-    prisma.record.aggregate({ where: { accountId, type: 'INCOME', ...(dateFilter ? { date: dateFilter } : {}) }, _sum: { amount: true } }),
-    prisma.record.aggregate({ where: { accountId, type: 'EXPENSE', ...(dateFilter ? { date: dateFilter } : {}) }, _sum: { amount: true } }),
-    prisma.record.aggregate({ where: { fromAccountId: accountId, type: 'TRANSFER', ...(dateFilter ? { date: dateFilter } : {}) }, _sum: { amount: true } }),
-    prisma.record.aggregate({ where: { toAccountId: accountId, type: 'TRANSFER', ...(dateFilter ? { date: dateFilter } : {}) }, _sum: { amount: true } }),
+    prisma.record.aggregate({ where: { accountId, type: 'INCOME', ...inRange }, _sum: { amount: true } }),
+    prisma.record.aggregate({ where: { accountId, type: 'EXPENSE', ...inRange }, _sum: { amount: true } }),
+    prisma.record.aggregate({ where: { fromAccountId: accountId, type: 'TRANSFER', ...inRange }, _sum: { amount: true } }),
+    prisma.record.aggregate({ where: { toAccountId: accountId, type: 'TRANSFER', ...inRange }, _sum: { amount: true } }),
   ])
 
   const income = incomeResult._sum.amount ?? 0
@@ -139,7 +141,10 @@ export async function computeBalance(accountId: string): Promise<{ balance: numb
   const transferOut = transferOutResult._sum.amount ?? 0
   const transferIn = transferInResult._sum.amount ?? 0
 
-  return { balance: baseBalance + income - expense + transferIn - transferOut, balanceAt: baseDate }
+  return {
+    balance: computeBalanceValue(baseBalance, { income, expense, transferIn, transferOut }),
+    balanceAt: baseDate,
+  }
 }
 
 export async function refreshAccountBalance(accountId: string) {

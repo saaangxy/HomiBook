@@ -1,4 +1,5 @@
 import { prisma } from '../../../app.js'
+import { computeAccountBalance } from '../../account.js'
 import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 
@@ -25,7 +26,6 @@ export const queryAccountsTool: ToolDef = {
           name: true,
           type: true,
           currency: true,
-          balance: true,
           accountNo: true,
           bankName: true,
           ownerId: true,
@@ -33,10 +33,16 @@ export const queryAccountsTool: ToolDef = {
         },
         orderBy: { name: 'asc' },
       })
+
+      // 余额**实时计算**
+      // 与 REST /api/accounts 的 computedBalance 同口径。
+      const balances = await Promise.all(rows.map(a => computeAccountBalance(a.id)))
+
       // 归属人展示名:多成员账本下同一名称可能有多个账户(如各人的「微信」),没有它模型无法区分,
       // 生成的「请选择账户」选项就会撞名(与 REST /api/accounts 的 ownerName 同口径)
-      const accounts = rows.map(({ owner, ...a }) => ({
+      const accounts = rows.map(({ owner, ...a }, i) => ({
         ...a,
+        balance: Math.round(balances[i] * 100) / 100,
         ownerName: owner?.nickname || owner?.email || null,
       }))
 

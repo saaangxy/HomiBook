@@ -2,6 +2,7 @@ import { prisma } from '../../../app.js'
 import { assertIsMember, checkEnums, retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 import { resolveAccountId } from './helpers.js'
+import { refreshAccountBalance } from '../../account.js'
 import { RECORD_TYPES, normalizeRecordType } from '@homibook/core'
 import { parseDayStart, dateKey } from '../../../lib/date-time.js'
 import fs from 'fs'
@@ -133,11 +134,24 @@ export const updateRecordTool: ToolDef = {
       if (resolvedFromId !== undefined) data.fromAccountId = resolvedFromId
       if (resolvedToId !== undefined) data.toAccountId = resolvedToId
 
+      // 与 create_record 同口径:转账的 accountId 必须以 fromAccountId 为准。
+      // 只改 fromAccountId 而不动 accountId,会让这条记录重新变成脏数据。
+      const nextType = (data.type as string | undefined) ?? existing.type
+      const nextFrom = (data.fromAccountId as string | null | undefined) ?? existing.fromAccountId
+      if (nextType === 'TRANSFER' && nextFrom) data.accountId = nextFrom
+
       const record = await prisma.record.update({
         where: { id: args.recordId },
         data,
         include: { account: { select: { name: true } } },
       })
+
+      // 刷新余额缓存:新旧账户都要刷(改金额/改账户/改方向都会影响)
+      const touched = new Set(
+        [existing.accountId, existing.fromAccountId, existing.toAccountId,
+         record.accountId, record.fromAccountId, record.toAccountId].filter(Boolean) as string[],
+      )
+      for (const accId of touched) await refreshAccountBalance(accId)
 
       return desensitize({
         id: record.id,

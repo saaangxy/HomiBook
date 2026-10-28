@@ -168,28 +168,57 @@ export const getStatsTool: ToolDef = {
       }
 
       if (args.groupBy === 'account') {
-        const records = await prisma.record.findMany({
-          where,
-          select: { amount: true, type: true, account: { select: { id: true, name: true } } },
-        })
+        // 转账要落到两个账户上:源账户记转出、目标账户记转入。
+        // 此前这里只取 accountId 且只累加收入/支出,转账在任何账户下都是 0,
+        // 单账户分析会失真(总账因内部对冲看不出问题)。
+        const [records, accounts] = await Promise.all([
+          prisma.record.findMany({
+            where,
+            select: { amount: true, type: true, accountId: true, toAccountId: true },
+          }),
+          prisma.account.findMany({
+            where: { accountBookId: ctx.accountBookId },
+            select: { id: true, name: true },
+          }),
+        ])
+        const nameOf = new Map(accounts.map(a => [a.id, a.name]))
 
-        const accountMap = new Map<string, { accountName: string; income: number; expense: number }>()
-        for (const r of records) {
-          const { id, name } = r.account
-          if (!accountMap.has(id)) accountMap.set(id, { accountName: name, income: 0, expense: 0 })
-          const a = accountMap.get(id)!
-          if (r.type === 'INCOME') a.income += r.amount
-          else if (r.type === 'EXPENSE') a.expense += r.amount
+        type Bucket = { accountName: string; income: number; expense: number; transferIn: number; transferOut: number }
+        const accountMap = new Map<string, Bucket>()
+        const bucketOf = (id: string): Bucket => {
+          let b = accountMap.get(id)
+          if (!b) {
+            b = { accountName: nameOf.get(id) ?? id, income: 0, expense: 0, transferIn: 0, transferOut: 0 }
+            accountMap.set(id, b)
+          }
+          return b
         }
 
+        for (const r of records) {
+          if (!r.accountId) continue
+          const b = bucketOf(r.accountId)
+          if (r.type === 'INCOME') b.income += r.amount
+          else if (r.type === 'EXPENSE') b.expense += r.amount
+          else if (r.type === 'TRANSFER') {
+            b.transferOut += r.amount
+            if (r.toAccountId) bucketOf(r.toAccountId).transferIn += r.amount
+          }
+        }
+
+        const r2 = (v: number) => Math.round(v * 100) / 100
         breakdown = Array.from(accountMap.entries())
-          .sort(([, a], [, b]) => (b.income + b.expense) - (a.income + a.expense))
-          .map(([accountId, data]) => ({
+          .sort(([, a], [, b]) =>
+            (Math.abs(b.income) + Math.abs(b.expense) + b.transferIn + b.transferOut)
+            - (Math.abs(a.income) + Math.abs(a.expense) + a.transferIn + a.transferOut))
+          .map(([accountId, d]) => ({
             accountId,
-            accountName: data.accountName,
-            income: Math.round(data.income * 100) / 100,
-            expense: Math.round(data.expense * 100) / 100,
-            net: Math.round((data.income - data.expense) * 100) / 100,
+            accountName: d.accountName,
+            income: r2(d.income),
+            expense: r2(d.expense),
+            transferIn: r2(d.transferIn),
+            transferOut: r2(d.transferOut),
+            // 单账户净变动 = 收入 − 支出 + 转入 − 转出(与余额变化同口径)
+            net: r2(d.income - d.expense + d.transferIn - d.transferOut),
           }))
       }
 

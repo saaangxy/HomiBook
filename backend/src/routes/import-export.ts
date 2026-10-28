@@ -435,6 +435,16 @@ export async function importExportRoutes(app: FastifyInstance) {
       })
     }
 
+    // 转账必须有转入账户:否则这笔钱只在源账户扣、目标账户永远不加(余额对不上)。
+    // 预览阶段(/preview、/sms/check)已经阻断,这里再挡一次 —— 直接调 API 的旧客户端/脚本绕不过去。
+    const transfersMissingTo = records.filter(r => r.type === 'TRANSFER' && !r.toAccountId)
+    if (transfersMissingTo.length > 0) {
+      return reply.status(400).send({
+        message: `有 ${transfersMissingTo.length} 条转账缺少转入账户，请补全后再导入`,
+        blocking: [{ kind: 'account', ref: '', reason: '转账缺少转入账户', willFailAtImport: true }],
+      })
+    }
+
     const [bookAccounts, dictItems] = await Promise.all([
       prisma.account.findMany({ where: { accountBookId, status: 'ACTIVE' }, select: { id: true } }),
       prisma.dictionary.findMany({ where: { group: { in: CATEGORY_DICT_GROUPS } }, select: { code: true } }),

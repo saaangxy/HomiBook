@@ -78,6 +78,10 @@ export async function remapImportRows(opts: RemapOptions) {
   }
   const toCreate = [...creationByName.values()]
 
+  // 注:同账户转账(转出 === 转入)当前**保持转账、余额净 0**。
+  // 账户合并(网商卡/蚂蚁财富 → 支付宝)后,"内部搬运"与"真实资金流出"在数据上无法区分,
+  // 是否按支出处理留待产品口径确定,这里不做静默降级。
+
   // 分类:DB 规则 + 本次决议合并
   const { unmatched: unmatchedCategories, allDictItems } = await applyCategoryMappings(source, rows, categoryResolutions)
 
@@ -115,6 +119,13 @@ export async function remapImportRows(opts: RemapOptions) {
     blockReasons.push(`有 ${counts.willSkip} 条未识别记录未处理（勾选「同意跳过」后可继续）`)
   }
   if (finalRows.length === 0) blockReasons.push('没有可导入的流水记录')
+
+  // 转账必须有转入账户:否则这笔钱在目标账户上永远不出现(只在源账户扣款),
+  // 余额会对不上。转账的 accountId 已确认恒等于 fromAccountId,不能拿它兜底。
+  const transfersMissingTo = finalRows.filter(r => r.type === 'TRANSFER' && !r.toAccountId)
+  if (transfersMissingTo.length > 0) {
+    blockReasons.push(`有 ${transfersMissingTo.length} 条转账缺少转入账户，请先指定`)
+  }
 
   // 最终流水里的分类必须落在字典中:否则 /import 的严格校验会 400(这里用同一句文案,
   // 让用户在被拦下时看到的原因与实际报错一致)。

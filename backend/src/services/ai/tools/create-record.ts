@@ -2,6 +2,7 @@ import { prisma } from '../../../app.js'
 import { assertIsMember, checkEnums, retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 import { resolveAccountId } from './helpers.js'
+import { refreshAccountBalance } from '../../account.js'
 import { parseDayStart, dateKey } from '../../../lib/date-time.js'
 import { RECORD_TYPES } from '@homibook/core'
 
@@ -82,7 +83,10 @@ export const createRecordTool: ToolDef = {
           date: parseDayStart(args.date),
           remark: args.remark,
           tags: JSON.stringify(args.tags ?? []),
-          accountId: resolvedAccountId,
+          // 转账的 accountId 必须等于转出账户:它是「记账归属账户」,余额、账户筛选、汇总都按它走。
+          // 模型可能把它传成转入账户(实测产生过 19 条 accountId = toAccountId 的脏数据,
+          // 表现是「账户筛选选转入账户时,额外筛出这批转账」)。
+          accountId: args.type === 'TRANSFER' ? (resolvedFromId ?? resolvedAccountId) : resolvedAccountId,
           fromAccountId: resolvedFromId,
           toAccountId: resolvedToId,
           categoryCode: args.categoryCode,
@@ -91,6 +95,11 @@ export const createRecordTool: ToolDef = {
         },
         include: { account: { select: { name: true } } },
       })
+
+      // 刷新账户余额缓存:AI 工具是独立入口,不走 routes/record 的那套刷新,
+      // 不补的话 account.balance 会一直是旧值(query_accounts 之前就吃过这个亏)
+      await refreshAccountBalance(record.accountId)
+      if (record.toAccountId) await refreshAccountBalance(record.toAccountId)
 
       // 关联附件
       if (args.attachmentIds && args.attachmentIds.length > 0) {

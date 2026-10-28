@@ -1,4 +1,5 @@
 import { prisma } from '../../../app.js'
+import { refreshAccountBalance } from '../../account.js'
 import { assertIsMember, retryable, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 
@@ -26,7 +27,20 @@ export const deleteRecordTool: ToolDef = {
     }
 
     return retryable(async () => {
+      // 先取账户信息:删除后就查不到这条记录属于谁了,余额缓存也就没法刷新
+      const existing = await prisma.record.findUnique({
+        where: { id: args.recordId },
+        select: { accountId: true, fromAccountId: true, toAccountId: true },
+      })
       await prisma.record.delete({ where: { id: args.recordId } })
+
+      if (existing) {
+        const touched = new Set(
+          [existing.accountId, existing.fromAccountId, existing.toAccountId].filter(Boolean) as string[],
+        )
+        for (const accId of touched) await refreshAccountBalance(accId)
+      }
+
       return { deleted: true, id: args.recordId }
     }, 'delete_record')
   },

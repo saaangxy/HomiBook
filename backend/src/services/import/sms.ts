@@ -81,11 +81,15 @@ export function smsCandidatesToRows(candidates: SmsCandidateInput[]): SmsRowsRes
     const accountName = accountLabelOf(c) ?? ''
     const missingAccount = !accountName
     const validType = isRecordType(c.type)
+    // 短信/通知的文本里没有「转入账户」:转账一律置 UNKNOWN 交给确认页指定,
+    // 否则会写入一条「只有转出、没有转入」的记录(钱在目标账户上永远不出现)
+    const missingTo = c.type === 'TRANSFER'
     // 方向非法或缺少账户 → UNKNOWN,交给用户在确认卡里指定(不猜、不静默归一化)
-    const type: ParsedRow['type'] = !missingAccount && isRecordType(c.type) ? c.type : 'UNKNOWN'
+    const type: ParsedRow['type'] = !missingAccount && !missingTo && isRecordType(c.type) ? c.type : 'UNKNOWN'
 
     const notes: string[] = []
     if (missingAccount) notes.push('缺少账户信息,请指定账户')
+    if (missingTo) notes.push('转账需指定转入账户')
     if (!validType) notes.push('收支方向未识别')
     const remark = [c.remark?.trim(), ...notes].filter(Boolean).join(' ｜ ')
 

@@ -761,7 +761,9 @@ export async function recordRoutes(app: FastifyInstance) {
                 recordAttachments: {
                     connect: (data.attachmentIds ?? []).map((id: string) => ({id})),
                 },
-                accountId: data.accountId,
+                // 转账的 accountId 以 fromAccountId 为准(与 create_record 同口径):
+                // accountId 是记账归属账户,余额/筛选/汇总都按它算,不能被传成转入账户
+                accountId: data.type === 'TRANSFER' && data.fromAccountId ? data.fromAccountId : data.accountId,
                 fromAccountId: data.fromAccountId,
                 toAccountId: data.toAccountId,
                 categoryCode: data.categoryCode,
@@ -1117,6 +1119,11 @@ export async function recordRoutes(app: FastifyInstance) {
         delete updateData.attachmentIds
         if (parsed.data.tags) updateData.tags = JSON.stringify(parsed.data.tags)
         if (parsed.data.date) updateData.date = parseDayStart(parsed.data.date)
+
+        // 转账的 accountId 必须跟着 fromAccountId:只改转出账户而 accountId 不动,会重新产生脏数据
+        const nextType = (updateData.type as string | undefined) ?? existing.type
+        const nextFrom = (updateData.fromAccountId as string | undefined) ?? existing.fromAccountId
+        if (nextType === 'TRANSFER' && nextFrom) updateData.accountId = nextFrom
 
         // 更新为转账时，校验账户属于当前账本
         if (updateData.type === 'TRANSFER' && updateData.fromAccountId && updateData.toAccountId) {

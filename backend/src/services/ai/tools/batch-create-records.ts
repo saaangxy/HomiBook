@@ -2,6 +2,7 @@ import { prisma } from '../../../app.js'
 import { assertIsMember, checkEnumList, retryable, desensitize, type ToolResult } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 import { resolveAccountId } from './helpers.js'
+import { refreshAccountBalance } from '../../account.js'
 import { dateKey } from '../../../lib/date-time.js'
 import { RECORD_TYPES } from '@homibook/core'
 
@@ -117,7 +118,10 @@ export const batchCreateRecordsTool: ToolDef = {
           continue
         }
       }
-      resolved.push({ accountId: resolvedAccountId, fromAccountId: resolvedFromId, toAccountId: resolvedToId })
+      // 转账的 accountId 以 fromAccountId 为准(与 create_record 同口径),
+      // 否则 accountId 会被传成转入账户,账户筛选与汇总都会错位
+      const finalAccountId = r.type === 'TRANSFER' && resolvedFromId ? resolvedFromId : resolvedAccountId
+      resolved.push({ accountId: finalAccountId, fromAccountId: resolvedFromId, toAccountId: resolvedToId })
     }
     if (errors.length > 0) {
       return { success: false, error: errors.join('; '), retryable: false }
@@ -153,6 +157,14 @@ export const batchCreateRecordsTool: ToolDef = {
           data: { recordId: created[0].id },
         })
       }
+
+      // 刷新余额缓存(AI 工具不走 routes/record 的刷新逻辑,不补会让 query_accounts 读到旧值)
+      const touched = new Set<string>()
+      for (const x of resolved) {
+        if (x.accountId) touched.add(x.accountId)
+        if (x.toAccountId) touched.add(x.toAccountId)
+      }
+      for (const accId of touched) await refreshAccountBalance(accId)
 
       return desensitize({
         created: created.length,

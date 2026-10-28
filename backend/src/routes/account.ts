@@ -254,10 +254,15 @@ export async function accountRoutes(app: FastifyInstance) {
 
       let runningBalance = baseBalance
       for (const r of preRecords) {
-        if (r.accountId === account.id && r.type === 'INCOME') runningBalance += r.amount
-        else if (r.accountId === account.id && r.type === 'EXPENSE') runningBalance -= r.amount
-        else if (r.fromAccountId === account.id && r.type === 'TRANSFER') runningBalance -= r.amount
-        else if (r.toAccountId === account.id && r.type === 'TRANSFER') runningBalance += r.amount
+        // 收支与转账分开判:同账户转账(accountId === toAccountId)两侧都要计,净额为 0;
+        // 用 else-if 串起来时「转入」永远进不来,曲线会比账面少掉这一截
+        if (r.type === 'TRANSFER') {
+          if (r.fromAccountId === account.id) runningBalance -= r.amount
+          if (r.toAccountId === account.id) runningBalance += r.amount
+        } else if (r.accountId === account.id) {
+          if (r.type === 'INCOME') runningBalance += r.amount
+          if (r.type === 'EXPENSE') runningBalance -= r.amount
+        }
       }
 
       // 查询范围内的记录
@@ -281,10 +286,14 @@ export async function accountRoutes(app: FastifyInstance) {
           ? monthKey(r.date)
           : dateKey(r.date)
         if (!periodMap[key]) periodMap[key] = 0
-        if (r.accountId === account.id && r.type === 'INCOME') periodMap[key] += r.amount
-        else if (r.accountId === account.id && r.type === 'EXPENSE') periodMap[key] -= r.amount
-        else if (r.fromAccountId === account.id && r.type === 'TRANSFER') periodMap[key] -= r.amount
-        else if (r.toAccountId === account.id && r.type === 'TRANSFER') periodMap[key] += r.amount
+        // 与上面同一口径:转账两侧独立判断,同账户转账自然抵消,而不是被 else-if 吞掉转入那条
+        if (r.type === 'TRANSFER') {
+          if (r.fromAccountId === account.id) periodMap[key] -= r.amount
+          if (r.toAccountId === account.id) periodMap[key] += r.amount
+        } else if (r.accountId === account.id) {
+          if (r.type === 'INCOME') periodMap[key] += r.amount
+          if (r.type === 'EXPENSE') periodMap[key] -= r.amount
+        }
       }
 
       // 查询范围内的余额调整，按粒度取最后一个
