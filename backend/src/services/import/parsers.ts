@@ -76,10 +76,34 @@ function parseDateStr(raw: string): string | null {
 
 // ---- 支付宝 ----
 
+/** 仅用于「提现指向外部银行卡」的判断:对方属于支付宝体系内部时不当作提现 */
 const ALIPAY_INTERNAL_PATTERN = /花呗|余额宝|余额|账户余额|集分宝|红包|淘金币|支付宝|他人代付/
+
+/**
+ * 支付宝体系里的**独立资金账户**,各自成户,不再合并进「支付宝」。
+ *
+ * 合并会让三种性质完全不同的东西混在一个余额里:
+ *   · 花呗 —— 信用(负债):消费不是钱包减少、还款也不是钱包增加
+ *   · 余额宝/余利宝 —— 货币基金
+ *   · 蚂蚁财富 —— 基金持仓
+ * 结果是「支付宝余额」长期偏离真实值,且花呗还款会变成「支付宝 → 支付宝」净 0。
+ */
+const ALIPAY_SUB_ACCOUNTS: { pattern: RegExp; name: string }[] = [
+  { pattern: /花呗/, name: '花呗' },
+  { pattern: /余利宝/, name: '余利宝' },
+  { pattern: /余额宝/, name: '余额宝' },
+  { pattern: /蚂蚁财富/, name: '蚂蚁财富' },
+]
+
+/** 仍然属于「支付宝钱包余额」本身的表述 */
+const ALIPAY_WALLET_PATTERN = /余额|账户余额|集分宝|红包|淘金币|支付宝|他人代付/
+
 export function resolveAlipayAccountName(name: string) {
   if (!name) return '支付宝'
-  if (ALIPAY_INTERNAL_PATTERN.test(name)) return '支付宝'
+  for (const sub of ALIPAY_SUB_ACCOUNTS) {
+    if (sub.pattern.test(name)) return sub.name
+  }
+  if (ALIPAY_WALLET_PATTERN.test(name)) return '支付宝'
   return name
 }
 
@@ -163,8 +187,9 @@ export function parseAlipayCSV(buffer: Buffer): { rows: ParsedRow[]; errors: str
         const isTopup = /充值/.test(description)
 
         if (isHuabeiRepay) {
+          // 还款是「银行卡 → 花呗」:减少的是负债,不进入支付宝钱包
           recordType = 'TRANSFER'
-          toAccountName = '支付宝'
+          toAccountName = '花呗'
         } else if (isIncome) {
           recordType = 'INCOME'
         } else if (isWithdraw) {
@@ -174,15 +199,17 @@ export function parseAlipayCSV(buffer: Buffer): { rows: ParsedRow[]; errors: str
           recordType = 'TRANSFER'
           toAccountName = '支付宝'
         } else if (isYueBaoTransfer) {
+          // 余额宝与余利宝是两只不同的货基,分开成户
+          const fundName = /余利宝/.test(description) || counterparty === '余利宝' ? '余利宝' : '余额宝'
           recordType = 'TRANSFER'
           if (/转出到银行卡|提现/.test(description)) {
-            // 余额宝/余利宝 → 银行卡:钱从支付宝系出、进「收/付款方式」那张卡。
+            // 余额宝/余利宝 → 银行卡:钱从货基出、进「收/付款方式」那张卡。
             // 此前无条件把「支付宝」当转入方,导致方向整个反了(2026-09 真实账单)。
-            fromAccountNameOverride = '支付宝'
+            fromAccountNameOverride = fundName
             toAccountName = paymentMethod || counterparty
           } else {
-            // 银行卡 → 余额宝
-            toAccountName = '支付宝'
+            // 银行卡 → 余额宝/余利宝
+            toAccountName = fundName
           }
         } else if (isAntTransfer) {
           if (/转出到银行卡/.test(description)) {
@@ -204,7 +231,9 @@ export function parseAlipayCSV(buffer: Buffer): { rows: ParsedRow[]; errors: str
       const resolvedAccountName = resolveAlipayAccountName(fromAccountNameOverride ?? paymentMethod)
       const resolvedToAccountName = toAccountName ? resolveAlipayAccountName(toAccountName) : null
 
-      if (recordType === 'TRANSFER' && resolvedAccountName === '支付宝' && resolvedToAccountName === '支付宝') {
+      // 拆出花呗/余额宝/余利宝/蚂蚁财富后,「支付宝 → 余额宝」这类是真实的账户间搬运,要保留;
+      // 只有转出与转入落到同一个账户(纯内部空转)才跳过
+      if (recordType === 'TRANSFER' && resolvedAccountName === resolvedToAccountName) {
         continue
       }
 
