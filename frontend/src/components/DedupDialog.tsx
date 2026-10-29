@@ -62,6 +62,8 @@ interface DedupDialogProps {
   onComplete: () => void
 }
 
+type GroupStatus = 'pending' | 'confirmed' | 'ignored'
+
 interface DuplicateGroup {
   key: string
   count: number
@@ -138,6 +140,11 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
   // 选中要处理的记录 ID(两种模式语义一致:勾选 = 该记录会被处理,切模式不动勾选)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
+  /** 组级状态(与平账弹窗一致):确认即按当前勾选锁定整组,取消确认后才能改 */
+  const [groupStates, setGroupStates] = useState<Record<string, GroupStatus>>({})
+  /** 状态 tab 筛选 */
+  const [statusFilter, setStatusFilter] = useState<'all' | GroupStatus>('all')
+
   // 处理方式(合并 / 删除)
   const [mode, setMode] = useState<'merge' | 'delete'>('merge')
   // 每组合并结果的编辑(keepId → 冲突选择 / 文本覆盖)
@@ -189,6 +196,9 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
         remarkSimilarity ? Number(remarkSimilarity) / 100 : undefined,
       )
       setGroups(result.groups)
+      // 每次检测后所有组回到待处理
+      setGroupStates(Object.fromEntries(result.groups.map((g) => [g.key, 'pending' as GroupStatus])))
+      setStatusFilter('all')
       setTotalDuplicates(result.totalDuplicates)
       setDetected(true)
 
@@ -231,10 +241,16 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
   }
 
   const doDelete = async () => {
+    // 只提交「已确认」组里被勾选的记录;待处理/忽略组一律不提交
+    const ids = confirmedGroups.flatMap((g) =>
+      g.records.filter((r) => selectedIds.has(r.id)).map((r) => r.id),
+    )
+    if (ids.length === 0) return
+
     setRunning(true)
     setError('')
     try {
-      await recordApi.batchDelete(Array.from(selectedIds))
+      await recordApi.batchDelete(ids)
       onOpenChange(false)
       onComplete()
     } catch (e) {
@@ -262,8 +278,20 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
   }, [groups, selectedIds, choices])
 
   const planOf = (group: DuplicateGroup) => mergePlans.find((p) => p.group === group)?.plan
-  const pendingMergeCount = mergePlans.reduce((sum, p) => sum + (p.plan.blocked ? 0 : p.plan.mergeIds.length), 0)
   const blockedCount = mergePlans.filter((p) => p.plan.blocked).length
+
+  /** 该组是否可确认:合并模式下须有勾选成员且未被阻断;删除模式只要有勾选 */
+  const groupReady = (g: DuplicateGroup): boolean => {
+    if (mode === 'merge') {
+      const picked = g.records.slice(1).filter((r) => selectedIds.has(r.id))
+      return picked.length > 0 && !planOf(g)?.blocked
+    }
+    return g.records.some((r) => selectedIds.has(r.id))
+  }
+  /** 已确认组里真正要合并的条数(不含被阻断的组) */
+  const confirmedMergeCount = mergePlans
+    .filter((p) => groupStates[p.group.key] === 'confirmed' && !p.plan.blocked)
+    .reduce((sum, p) => sum + p.plan.mergeIds.length, 0)
 
   // 分组筛选(全部 / 无冲突 / 有冲突):**按整组判定,与勾选无关** ——
   // 勾选决定「处理哪些」,筛选决定「先看哪些」,所以用全组记录算一次,而不是用当前勾选算。
@@ -279,9 +307,26 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
   }, [groups])
   const cleanCount = groups.filter((g) => !groupInfo.get(g)?.dirty).length
   const conflictCount = groups.length - cleanCount
+
+  // 组级状态:全部 / 待处理 / 已确认 / 忽略(数量随时反映当前检测结果)
+  const statusCounts = useMemo(() => {
+    const c = { pending: 0, confirmed: 0, ignored: 0 }
+    for (const g of groups) {
+      const s = groupStates[g.key] ?? 'pending'
+      if (s === 'confirmed') c.confirmed++
+      else if (s === 'ignored') c.ignored++
+      else c.pending++
+    }
+    return c
+  }, [groups, groupStates])
+  const confirmedGroups = groups.filter((g) => groupStates[g.key] === 'confirmed')
+  const statusVisible = groups.filter(
+    (g) => statusFilter === 'all' || (groupStates[g.key] ?? 'pending') === statusFilter,
+  )
+
   const visibleGroups = groupFilter === 'all'
-    ? groups
-    : groups.filter((g) => (groupFilter === 'clean' ? !groupInfo.get(g)?.dirty : !!groupInfo.get(g)?.dirty))
+    ? statusVisible
+    : statusVisible.filter((g) => (groupFilter === 'clean' ? !groupInfo.get(g)?.dirty : !!groupInfo.get(g)?.dirty))
 
   const chipValue = (v: string | null | undefined) => (v == null ? EMPTY_CHIP : v)
   // 取该字段的当前选择:**显式选过(含选「不填」= null)一律以选择为准** ——
@@ -317,7 +362,11 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
     setRunning(true)
     setError('')
     try {
-      const targets = mergePlans.filter((p) => !p.plan.blocked)
+      // 只提交「已确认」且未被阻断的组
+      const targets = mergePlans.filter(
+        (p) => groupStates[p.group.key] === 'confirmed' && !p.plan.blocked,
+      )
+      if (targets.length === 0) return
       await recordApi.mergeDuplicates(
         bookId,
         matchFields,
@@ -340,12 +389,9 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
 
   /** 底部按钮:按当前模式弹确认(web 用 window.confirm 之外的既有 ConfirmSheet 缺失,这里直接执行) */
   const handleRun = () => {
-    if (running) return
-    if (mode === 'delete') {
-      if (selectedIds.size > 0) void doDelete()
-    } else if (pendingMergeCount > 0) {
-      void doMerge()
-    }
+    if (running || confirmedGroups.length === 0) return
+    if (mode === 'delete') void doDelete()
+    else void doMerge()
   }
 
   const reset = () => {
@@ -629,7 +675,16 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
                     <span className={`text-xs font-medium ${mode === 'merge' ? 'text-primary' : 'text-muted-foreground'}`}>
                       合并重复
                     </span>
-                    <Switch checked={mode === 'merge'} onCheckedChange={(v) => setMode(v ? 'merge' : 'delete')} />
+                    <Switch
+                    checked={mode === 'merge'}
+                    onCheckedChange={(v) => {
+                      setMode(v ? 'merge' : 'delete')
+                      // 合并与删除语义不同:切模式后所有组退回待处理,避免把「已确认合并」当删除执行
+                      setGroupStates((prev) =>
+                        Object.fromEntries(Object.keys(prev).map((k) => [k, 'pending' as GroupStatus])),
+                      )
+                    }}
+                  />
                     <span className={`text-xs font-medium ${mode === 'delete' ? 'text-[#ef4444]' : 'text-muted-foreground'}`}>
                       删除重复
                     </span>
@@ -649,13 +704,35 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
                       {totalDuplicates} 条重复
                     </Badge>
                     <Badge variant="secondary" className="text-xs">
-                      {mode === 'merge' ? `将合并 ${pendingMergeCount} 条` : `已选 ${selectedIds.size} 条`}
+                      {mode === 'merge'
+                        ? `已确认 ${confirmedGroups.length} 组 / 将合并 ${confirmedMergeCount} 条`
+                        : `已确认 ${confirmedGroups.length} 组`}
                     </Badge>
                     {mode === 'merge' && blockedCount > 0 ? (
                       <Badge variant="secondary" className="text-xs text-destructive">
                         {blockedCount} 组方向不一致,不参与合并
                       </Badge>
                     ) : null}
+                  </div>
+
+                  {/* 组状态 tab:与平账弹窗一致 */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {([
+                      ['all', '全部', groups.length],
+                      ['pending', '待处理', statusCounts.pending],
+                      ['confirmed', '已确认', statusCounts.confirmed],
+                      ['ignored', '忽略', statusCounts.ignored],
+                    ] as const).map(([key, label, count]) => (
+                      <Button
+                        key={key}
+                        size="sm"
+                        variant={statusFilter === key ? 'default' : 'outline'}
+                        className="h-7 text-xs"
+                        onClick={() => setStatusFilter(key)}
+                      >
+                        {label} ({count})
+                      </Button>
+                    ))}
                   </div>
 
                   {/* 分组筛选:先看需要拍板的组(计数按整组算,与勾选无关) */}
@@ -703,17 +780,25 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
                       const attachCount =
                         (keepRec.attachments?.length ?? 0) +
                         group.records.slice(1).filter(r => selectedIds.has(r.id)).reduce((n, r) => n + (r.attachments?.length ?? 0), 0)
+                      const status = groupStates[group.key] ?? 'pending'
+                      const locked = status !== 'pending'
+                      const ready = groupReady(group)
 
                       return (
-                        <div key={group.key} className="border rounded-lg overflow-hidden">
+                        <div
+                          key={group.key}
+                          className={`border rounded-lg overflow-hidden ${status === 'confirmed' ? 'border-primary/60' : ''}`}
+                        >
                           {/* 组头 */}
                           <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 border-b">
-                            <button
-                              className="text-xs text-muted-foreground hover:text-foreground"
-                              onClick={() => toggleGroup(group)}
-                            >
-                              {allSelected ? '取消全选' : '全选'}
-                            </button>
+                            {!locked && (
+                              <button
+                                className="text-xs text-muted-foreground hover:text-foreground"
+                                onClick={() => toggleGroup(group)}
+                              >
+                                {allSelected ? '取消全选' : '全选'}
+                              </button>
+                            )}
                             <span className="text-xs text-muted-foreground">
                               {group.count} 条重复
                             </span>
@@ -728,6 +813,8 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
                                   {label}
                                 </Badge>
                               ))}
+                              {status === 'confirmed' && <Badge className="text-[10px]">已确认</Badge>}
+                              {status === 'ignored' && <Badge variant="outline" className="text-[10px]">已忽略</Badge>}
                             </div>
                           </div>
 
@@ -741,6 +828,7 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
                                       type="checkbox"
                                       checked={allSelected}
                                       onChange={() => toggleGroup(group)}
+                                      disabled={locked}
                                       className="rounded"
                                     />
                                   </TableHead>
@@ -763,6 +851,7 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
                                         type="checkbox"
                                         checked={selectedIds.has(r.id)}
                                         onChange={() => toggleRecord(r.id)}
+                                        disabled={locked}
                                         className="rounded"
                                       />
                                     </TableCell>
@@ -813,7 +902,7 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
 
                           {/* 合并结果(内联可编辑,不再另弹窗):淡绿 = 自动收敛,淡红 = 组内不一致需确认 */}
                           {mode === 'merge' ? (
-                            <div className="border-t bg-muted/40 px-3 py-2.5 space-y-1.5">
+                            <div className={`border-t bg-muted/40 px-3 py-2.5 space-y-1.5 ${locked ? 'pointer-events-none opacity-60' : ''}`}>
                               {!groupPlan ? (
                                 <p className="text-[11px] text-muted-foreground">未勾选要并入的记录 — 本组不处理</p>
                               ) : groupPlan.blocked ? (
@@ -921,6 +1010,50 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
                               )}
                             </div>
                           ) : null}
+
+                          {/* 组底操作区:确认 / 忽略放这里,比塞在组头明显得多 */}
+                          <div className={`border-t px-3 py-2 flex items-center gap-2 ${status === 'pending' ? 'bg-card' : 'bg-muted/40'}`}>
+                            <span className="text-[11px] text-muted-foreground">
+                              {status === 'confirmed'
+                                ? '已确认:按当前勾选提交,可取消确认后调整'
+                                : status === 'ignored'
+                                  ? '已忽略:不会提交,可恢复'
+                                  : mode === 'merge'
+                                    ? '确认后按当前勾选合并(保留第 1 条)'
+                                    : '确认后按当前勾选删除'}
+                            </span>
+                            <div className="ml-auto flex gap-1.5">
+                              {status === 'pending' ? (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    className="h-7 text-xs px-3"
+                                    disabled={!ready}
+                                    onClick={() => setGroupStates((p) => ({ ...p, [group.key]: 'confirmed' }))}
+                                  >
+                                    确认
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 text-xs px-3"
+                                    onClick={() => setGroupStates((p) => ({ ...p, [group.key]: 'ignored' }))}
+                                  >
+                                    忽略
+                                  </Button>
+                                </>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs px-3"
+                                  onClick={() => setGroupStates((p) => ({ ...p, [group.key]: 'pending' }))}
+                                >
+                                  {status === 'confirmed' ? '取消确认' : '恢复'}
+                                </Button>
+                              )}
+                            </div>
+                          </div>
                         </div>
                       )
                     })}
@@ -943,15 +1076,15 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
                   : 'bg-primary hover:bg-primary/90 text-primary-foreground'
               }
               onClick={handleRun}
-              disabled={running || (mode === 'delete' ? selectedIds.size === 0 : pendingMergeCount === 0)}
+              disabled={running || confirmedGroups.length === 0}
             >
               {running
                 ? mode === 'delete'
                   ? '删除中...'
                   : '合并中...'
                 : mode === 'delete'
-                  ? `删除 (${selectedIds.size})`
-                  : `合并 (${pendingMergeCount})`}
+                  ? `删除 ${confirmedGroups.length} 组`
+                  : `合并 ${confirmedGroups.length} 组`}
             </Button>
           )}
         </DialogFooter>
