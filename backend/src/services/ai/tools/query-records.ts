@@ -50,7 +50,8 @@ export const queryRecordsTool: ToolDef = {
     await assertIsMember(ctx.accountBookId, ctx.userId)
 
     return retryable(async () => {
-      const where: Record<string, unknown> = { accountBookId: ctx.accountBookId }
+      // 已平账的记录不参与模型侧查询(否则「退款 + 购物」会被当成两笔真实收支)
+      const where: Record<string, unknown> = { accountBookId: ctx.accountBookId, offsetAt: null }
 
       if (args.type) where.type = args.type
       if (args.categoryCode) where.categoryCode = args.categoryCode

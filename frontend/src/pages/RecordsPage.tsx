@@ -47,6 +47,7 @@ import { settingsApi, type DictItem } from '@/api/settings'
 import { useBookStore } from '../stores/book'
 import { ImportDialog } from '@/components/ImportDialog'
 import { DedupDialog } from '@/components/DedupDialog'
+import { OffsetDialog } from '@/components/records/OffsetDialog'
 import { RecordRow } from '@/components/records/RecordRow'
 import { useIsMobile } from '@/hooks/use-mobile'
 import {
@@ -62,6 +63,7 @@ import {
   Pencil, Filter, X, ChevronLeft, ChevronRight,
   Upload, Download, Save, CopyMinus,
 } from 'lucide-react'
+import { toast } from 'sonner'
 
 interface FilterState {
   types: string[]         // 多选类型 INCOME/EXPENSE/TRANSFER
@@ -180,11 +182,14 @@ export function RecordsPage() {
 
   // 选择
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  /** 只看已平账记录:平账用于把「购物 + 退款」这类互相抵消的收支从统计里剔除 */
+  const [offsetOnly, setOffsetOnly] = useState(false)
 
   // 导入弹窗
   const [importOpen, setImportOpen] = useState(false)
   // 去重弹窗
   const [dedupOpen, setDedupOpen] = useState(false)
+  const [offsetOpen, setOffsetOpen] = useState(false)
 
   // 记一笔/编辑弹窗(表单状态在 RecordFormDialog 内)
   const [formOpen, setFormOpen] = useState(false)
@@ -261,9 +266,10 @@ export function RecordsPage() {
         amountTo: filters.amountTo ? parseFloat(filters.amountTo) : undefined,
         remark: filters.remark || undefined,
         tags: filters.tags.length > 0 ? filters.tags.join(',') : undefined,
+        offsetOnly: offsetOnly || undefined,
       }))
     } catch { /* ignore */ }
-  }, [currentBookId, filters.types, filters.accountIds, filters.toAccountIds, filters.categoryCodes, filters.dateFrom, filters.dateTo, filters.ownerIds, filters.payer, filters.amountFrom, filters.amountTo, filters.remark, filters.tags])
+  }, [currentBookId, offsetOnly, filters.types, filters.accountIds, filters.toAccountIds, filters.categoryCodes, filters.dateFrom, filters.dateTo, filters.ownerIds, filters.payer, filters.amountFrom, filters.amountTo, filters.remark, filters.tags])
 
   // 加载列表
   const loadRecords = useCallback(async () => {
@@ -287,6 +293,7 @@ export function RecordsPage() {
         amountTo: filters.amountTo ? parseFloat(filters.amountTo) : undefined,
         remark: filters.remark || undefined,
         tags: filters.tags.length > 0 ? filters.tags.join(',') : undefined,
+        offsetOnly: offsetOnly || undefined,
       })
       setRecords(res.records)
       setTotal(res.total)
@@ -295,7 +302,7 @@ export function RecordsPage() {
     } finally {
       setLoading(false)
     }
-  }, [currentBookId, page, pageSize, filters])
+  }, [currentBookId, page, pageSize, filters, offsetOnly])
 
   useEffect(() => { loadRecords() }, [loadRecords])
   useEffect(() => { loadSummary() }, [loadSummary])
@@ -361,6 +368,22 @@ export function RecordsPage() {
       loadRecords()
       loadSummary()
       loadAccounts()
+    } catch (e) { setError(errorMessage(e)) }
+  }
+
+  /**
+   * 平账 / 取消平账。
+   * 平账后整批记录不再计入收支统计与账户余额,用于剔除「购物 + 退款」这类互抵的流水。
+   */
+  const handleOffset = async (offset: boolean) => {
+    if (selectedIds.size === 0) return
+    try {
+      const res = await recordApi.batchOffset(Array.from(selectedIds), offset)
+      setSelectedIds(new Set())
+      loadRecords()
+      loadSummary()
+      loadAccounts()
+      toast.success(offset ? `已平账 ${res.updated} 条` : `已取消平账 ${res.updated} 条`)
     } catch (e) { setError(errorMessage(e)) }
   }
 
@@ -638,6 +661,9 @@ export function RecordsPage() {
                 <Button variant="outline" onClick={() => setDedupOpen(true)} className="h-8 text-xs rounded-lg">
                   <CopyMinus size={14} /> 去重
                 </Button>
+                <Button variant="outline" onClick={() => setOffsetOpen(true)} className="h-8 text-xs rounded-lg">
+                  平账
+                </Button>
                 <Button
                   variant="outline"
                   onClick={openDrawer}
@@ -649,6 +675,15 @@ export function RecordsPage() {
                       {activeFilterCount}
                     </span>
                   )}
+                </Button>
+                {/* 已平账视图:平账记录默认从列表与统计中剔除,这里单独查看 / 取消 */}
+                <Button
+                  variant={offsetOnly ? 'default' : 'outline'}
+                  onClick={() => { setOffsetOnly((v) => !v); setPage(1) }}
+                  className="h-8 text-xs rounded-lg"
+                  title="平账记录不计入收支统计与账户余额，可在这里取消"
+                >
+                  {offsetOnly ? '已平账' : '平账记录'}
                 </Button>
                 {activeFilterCount > 0 && (
                   <Button
@@ -671,6 +706,18 @@ export function RecordsPage() {
             <Button size="sm" variant="outline" onClick={() => setBatchOpen(true)} className="text-xs h-7">
               批量更新
             </Button>
+            {/* 平账入口在顶部工具条(弹窗配平);批量栏只在「平账记录」视图提供取消 */}
+            {offsetOnly && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => handleOffset(false)}
+                className="text-xs h-7"
+                title="恢复为未平账，重新计入收支统计与账户余额"
+              >
+                取消平账
+              </Button>
+            )}
             <Button size="sm" variant="outline" onClick={() => setBatchDeleteOpen(true)} className="text-xs h-7 text-red-600 hover:text-red-700 border-red-200 hover:border-red-300">
               批量删除
             </Button>
@@ -1105,6 +1152,22 @@ export function RecordsPage() {
         onOpenChange={setDedupOpen}
         bookId={currentBookId || ''}
         onComplete={() => { loadRecords(); loadSummary(); loadAccounts() }}
+      />
+
+      {/* 平账弹窗:key 随开关切换强制重挂载,保证每次打开都是干净的初始状态 */}
+      <OffsetDialog
+        key={offsetOpen ? 'offset-open' : 'offset-closed'}
+        open={offsetOpen}
+        onOpenChange={setOffsetOpen}
+        bookId={currentBookId || ''}
+        accounts={accounts}
+        categories={allCategories.map((c) => ({ code: c.code, label: c.label }))}
+        onComplete={() => {
+          setSelectedIds(new Set())
+          loadRecords()
+          loadSummary()
+          loadAccounts()
+        }}
       />
     </div>
   )

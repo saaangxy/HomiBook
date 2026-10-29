@@ -80,6 +80,8 @@ export const getStatsTool: ToolDef = {
       const where: Record<string, unknown> = {
         accountBookId: ctx.accountBookId,
         date: dateFilter,
+        // 已平账不计入统计(与 /records/summary 同口径)
+        offsetAt: null,
       }
       if (args.type) where.type = args.type
       if (args.categoryCode) where.categoryCode = args.categoryCode

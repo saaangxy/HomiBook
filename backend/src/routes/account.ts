@@ -244,6 +244,8 @@ export async function accountRoutes(app: FastifyInstance) {
             { fromAccountId: account.id },
             { toAccountId: account.id },
           ],
+          // 已平账不参与余额曲线(与 computeBalance 同口径)
+          offsetAt: null,
           date: {
             ...(baseDate ? { gt: dayStartOf(baseDate) } : {}),
             lt: startDate,
@@ -273,6 +275,8 @@ export async function accountRoutes(app: FastifyInstance) {
             { fromAccountId: account.id },
             { toAccountId: account.id },
           ],
+          // 已平账不参与余额曲线(与 computeBalance 同口径)
+          offsetAt: null,
           date: { gte: startDate, lte: endDate },
         },
         select: { type: true, amount: true, date: true, accountId: true, fromAccountId: true, toAccountId: true },

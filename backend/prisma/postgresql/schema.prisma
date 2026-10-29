@@ -133,6 +133,8 @@ model Record {
   owner         User      @relation(fields: [ownerId], references: [id])
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+  /// 平账标记:非空即「已平账」,不计入收支统计、账户余额与报表(保留原记录,可取消)
+  offsetAt      DateTime?
 
   account       Account   @relation(fields: [accountId], references: [id])
   fromAccount   Account?  @relation("FromAccount", fields: [fromAccountId], references: [id])
@@ -140,6 +142,7 @@ model Record {
   recordAttachments RecordAttachment[]
 
   @@index([accountBookId, date])
+  @@index([accountBookId, offsetAt])
 }
 
 // 流水附件

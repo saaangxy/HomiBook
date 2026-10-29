@@ -18,6 +18,13 @@ export interface RecordFilter {
   amountTo?: number
   remark?: string
   tags?: string
+  /**
+   * 只看「已平账」记录。
+   *
+   * 默认(false/缺省)排除已平账:平账用于把「购物 + 退款」这类互相抵消的收支从
+   * 总支出/总收入里剔除,否则两边的金额都会虚高。
+   */
+  offsetOnly?: boolean
 }
 
 // ---- Prisma 查询 ----
@@ -49,6 +56,9 @@ function parseDateFilter(raw: string, endOfDay: boolean): Date | null {
 
 export function buildRecordWhere(bookId: string, filter: RecordFilter) {
   const where: Record<string, unknown> = { accountBookId: bookId }
+
+  // 平账:列表/汇总/统计共用这一处过滤 —— 默认排除已平账,offsetOnly 时反过来只看已平账
+  where.offsetAt = filter.offsetOnly ? { not: null } : null
 
   if (filter.type) applyMultiSelect(where, 'type', filter.type)
   if (filter.accountId) applyMultiSelect(where, 'accountId', filter.accountId)
@@ -128,7 +138,7 @@ export async function computeBalance(accountId: string): Promise<{ balance: numb
   // 与余额走势图"当日先应用调整再叠加交易"的口径一致(原 gt baseDate 会漏掉调整日凌晨 0-8 点的交易)
   const dateFilter = baseDate ? { gt: dayStartOf(baseDate) } : undefined
 
-  const inRange = dateFilter ? { date: dateFilter } : {}
+  const inRange = { ...(dateFilter ? { date: dateFilter } : {}), offsetAt: null }
   const [incomeResult, expenseResult, transferOutResult, transferInResult] = await Promise.all([
     prisma.record.aggregate({ where: { accountId, type: 'INCOME', ...inRange }, _sum: { amount: true } }),
     prisma.record.aggregate({ where: { accountId, type: 'EXPENSE', ...inRange }, _sum: { amount: true } }),

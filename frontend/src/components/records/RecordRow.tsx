@@ -123,7 +123,14 @@ export function RecordRow(props: RecordRowProps) {
         </SelectContent>
       </Select>
     ) : (
-      <Badge className={`text-[10px] ${TYPE_COLORS[record.type]}`}>{TYPE_LABELS[record.type]}</Badge>
+      <>
+        <Badge className={`text-[10px] ${TYPE_COLORS[record.type]}`}>{TYPE_LABELS[record.type]}</Badge>
+        {record.offsetAt && (
+          <Badge className="text-[10px] bg-muted text-muted-foreground" title="已平账:不计入收支统计与账户余额">
+            已平账
+          </Badge>
+        )}
+      </>
     )
 
   const renderAccount = () =>
@@ -334,6 +341,11 @@ export function RecordRow(props: RecordRowProps) {
               {checkbox}
               <span className="text-xs text-muted-foreground">{new Date(record.date).toLocaleDateString('zh-CN')}</span>
               <Badge className={`text-[10px] ${TYPE_COLORS[record.type]}`}>{TYPE_LABELS[record.type]}</Badge>
+              {record.offsetAt && (
+                <Badge className="text-[10px] bg-muted text-muted-foreground" title="已平账:不计入收支统计与账户余额">
+                  已平账
+                </Badge>
+              )}
               <span className="ml-auto text-sm font-bold tabular-nums">{renderAmount()}</span>
             </div>
             {/* 第二行：账户 | 分类 */}

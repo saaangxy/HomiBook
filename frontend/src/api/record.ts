@@ -26,11 +26,22 @@ export interface RecordItem {
   payer: string | null
   ownerId: string
   ownerName: string
+  /** 平账时间:非空表示已平账,不计入收支统计与账户余额 */
+  offsetAt?: string | null
   createdAt: string
   updatedAt: string
   account: { id: string; name: string; type: string }
   fromAccount: { id: string; name: string } | null
   toAccount: { id: string; name: string } | null
+}
+
+/** 平账配对结果:组内收入合计 = 支出合计 */
+export interface OffsetGroupDTO {
+  key: string
+  amount: number
+  spanDays: number
+  income: RecordItem[]
+  expense: RecordItem[]
 }
 
 export interface RecordListResult {
@@ -59,6 +70,8 @@ export const recordApi = {
     amountTo?: number
     remark?: string
     tags?: string       // 逗号分隔多选
+    /** 只看已平账记录(缺省排除) */
+    offsetOnly?: boolean
   }) => api.get<RecordListResult>('/api/records?' + new URLSearchParams(
     Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))
   ).toString()),
@@ -78,6 +91,8 @@ export const recordApi = {
     amountTo?: number
     remark?: string
     tags?: string       // 逗号分隔多选
+    /** 只看已平账记录(缺省排除) */
+    offsetOnly?: boolean
   }) => api.get<RecordSummary>('/api/records/summary?' + new URLSearchParams(
     Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))
   ).toString()),
@@ -134,9 +149,49 @@ export const recordApi = {
   batchDelete: (ids: string[]) =>
     api.post<{ success: boolean; deleted: number }>('/api/records/batch-delete', { ids }),
 
+  /**
+   * 平账 / 取消平账。
+   * 平账后这批记录不计入收支统计、账户余额与报表(记录保留,可随时取消)。
+   * 典型场景:购物 100(支出) + 退款 100(收入),两条都平掉后总额不再虚高。
+   */
+  batchOffset: (ids: string[], offset: boolean) =>
+    api.post<{ updated: number; offset: boolean }>('/api/records/offset', { ids, offset }),
+
+  /** 平账配对预览：金额相等的一收一支组合（1:1 优先，其次单侧拆 1:N） */
+  offsetPreview: (params: {
+    bookId: string
+    /** 组内时间跨度上限(天)；null = 不限 */
+    windowDays?: number | null
+    sameAccount?: boolean
+    sameOwner?: boolean
+    /** 备注相似度阈值(0~1);<=0 不启用 */
+    minRemarkSimilarity?: number
+    type?: string
+    accountId?: string
+    categoryCode?: string
+    dateFrom?: string
+    dateTo?: string
+    amountFrom?: number
+    amountTo?: number
+    remark?: string
+  }) =>
+    api.post<{ scanned: number; truncated: boolean; groups: OffsetGroupDTO[] }>(
+      '/api/records/offset/preview',
+      params,
+    ),
+
   /** 检测重复。filters 为**检测范围**筛选(时间/类型/金额区间),与 matchFields(怎么算同一笔)独立 */
-  detectDuplicates: (bookId: string, matchFields: { date: 'exact' | 'minute' | 'date' | null; type: boolean; accountId: boolean; payer: boolean; amount: boolean }, filters?: Partial<DedupScopeFilter>) =>
-    api.post<{ groups: Array<{ key: string; count: number; records: RecordItem[] }>; totalDuplicates: number }>('/api/records/detect-duplicates', { bookId, matchFields, filters }),
+  detectDuplicates: (
+    bookId: string,
+    matchFields: { date: 'exact' | 'minute' | 'date' | null; type: boolean; accountId: boolean; payer: boolean; amount: boolean },
+    filters?: Partial<DedupScopeFilter>,
+    /** 备注相似度阈值(0~1);<=0 不启用 —— 组内与首条不相似的记录会被剔出该组 */
+    minRemarkSimilarity?: number,
+  ) =>
+    api.post<{ groups: Array<{ key: string; count: number; records: RecordItem[] }>; totalDuplicates: number }>(
+      '/api/records/detect-duplicates',
+      { bookId, matchFields, filters, minRemarkSimilarity },
+    ),
 
   /**
    * 合并重复记录(可一次提交多组)。keepId 为保留记录,choices 缺省 = 用保留记录的值。

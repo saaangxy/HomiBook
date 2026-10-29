@@ -7,6 +7,8 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { EllipsisText } from '@/components/ui/ellipsis-text'
 import {
   Select,
   SelectContent,
@@ -114,6 +116,8 @@ function toMergeRecord(r: RecordItem): DuplicateMergeRecord {
 
 export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDialogProps) {
   const [matchFields, setMatchFields] = useState<DedupMatchFields>(DEFAULT_DEDUP_MATCH_FIELDS)
+  /** 备注相似度阈值(0~100,空 = 不启用):启用后组内与首条差异过大的记录会被剔出该组 */
+  const [remarkSimilarity, setRemarkSimilarity] = useState('')
   // 匹配条件默认展开;点「检测重复」后自动收起(给结果让位)
   const [matchOpen, setMatchOpen] = useState(true)
 
@@ -178,7 +182,12 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
     setMatchOpen(false)
     setScopeOpen(false)
     try {
-      const result = await recordApi.detectDuplicates(bookId, matchFields, hasDedupScopeFilter(scope) ? scope : undefined)
+      const result = await recordApi.detectDuplicates(
+        bookId,
+        matchFields,
+        hasDedupScopeFilter(scope) ? scope : undefined,
+        remarkSimilarity ? Number(remarkSimilarity) / 100 : undefined,
+      )
       setGroups(result.groups)
       setTotalDuplicates(result.totalDuplicates)
       setDetected(true)
@@ -569,7 +578,20 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
                     </button>
                   ))}
                 </div>
-                <p className="text-[10px] text-muted-foreground">至少选中一项</p>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">备注相似度 ≥</span>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={remarkSimilarity}
+                    onChange={(e) => setRemarkSimilarity(e.target.value)}
+                    placeholder="不启用"
+                    className="h-8 text-xs w-24 bg-background"
+                  />
+                  <span className="text-xs text-muted-foreground">%</span>
+                </div>
+                <p className="text-[10px] text-muted-foreground">至少选中一项；填写相似度后会剔除组内备注差异过大的记录</p>
               </div>
             )}
           </div>
@@ -756,24 +778,29 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
                                       {TYPE_LABELS[r.type]}
                                     </TableCell>
                                     <TableCell className="text-xs py-1.5">
-                                      {r.type === 'TRANSFER' && r.fromAccount && r.toAccount
-                                        ? `${r.fromAccount.name} → ${r.toAccount.name}`
-                                        : r.account?.name || '-'}
+                                      <div className="max-w-[180px]">
+                                        <EllipsisText
+                                          text={r.type === 'TRANSFER' && r.fromAccount && r.toAccount
+                                            ? `${r.fromAccount.name} → ${r.toAccount.name}`
+                                            : r.account?.name}
+                                          empty="-"
+                                        />
+                                      </div>
                                     </TableCell>
-                                    <TableCell className="text-xs py-1.5 text-muted-foreground">
-                                      {r.payer || '-'}
+                                    <TableCell className="text-xs py-1.5">
+                                      <div className="max-w-[120px]"><EllipsisText text={r.payer} empty="-" /></div>
                                     </TableCell>
                                     <TableCell className="text-xs py-1.5 font-mono">
                                       {r.amount.toFixed(2)}
                                     </TableCell>
-                                    <TableCell className="text-xs py-1.5 text-muted-foreground">
-                                      {r.categoryCode || '-'}
+                                    <TableCell className="text-xs py-1.5">
+                                      <div className="max-w-[120px]"><EllipsisText text={r.categoryCode} empty="-" /></div>
                                     </TableCell>
-                                    <TableCell className="text-xs py-1.5 text-muted-foreground max-w-[120px] truncate">
-                                      {r.remark || '-'}
+                                    <TableCell className="text-xs py-1.5">
+                                      <div className="max-w-[200px]"><EllipsisText text={r.remark} empty="-" /></div>
                                     </TableCell>
-                                    <TableCell className="text-xs py-1.5 text-muted-foreground max-w-[140px] truncate">
-                                      {r.tags?.length ? r.tags.join(' / ') : '-'}
+                                    <TableCell className="text-xs py-1.5">
+                                      <div className="max-w-[160px]"><EllipsisText text={r.tags?.join(' / ')} empty="-" /></div>
                                     </TableCell>
                                     <TableCell className="text-xs py-1.5 text-muted-foreground">
                                       {r.attachments?.length ? `${r.attachments.length} 个` : '-'}

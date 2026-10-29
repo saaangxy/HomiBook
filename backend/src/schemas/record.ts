@@ -48,6 +48,8 @@ export const listRecordsSchema = z.object({
   amountFrom: z.coerce.number().optional().describe('金额下限'),
   amountTo: z.coerce.number().optional().describe('金额上限'),
   remark: z.string().optional().describe('备注，模糊匹配'),
+  /** 只看已平账的记录(缺省排除已平账) */
+  offsetOnly: z.coerce.boolean().optional().describe('只看已平账记录'),
   tags: z.string().optional().describe('标签，逗号分隔多选'),
 })
 

@@ -19,6 +19,8 @@ import path from 'path'
 import fs from 'fs'
 import {randomUUID} from 'crypto'
 import {buildRecordWhere, formatRecord, computeBalance, refreshAccountBalance} from '../services/record.js'
+import {matchOffsetGroups} from '../services/offset-match.js'
+import {textSimilarity} from '../services/text-similarity.js'
 import {monthKey, dateKey, dayStart, dayEnd, parseDayStart} from '../lib/date-time.js'
 
 const RECORD_INCLUDE = {
@@ -305,7 +307,8 @@ export async function recordRoutes(app: FastifyInstance) {
         const end = dayEnd(`${year}-${mm}-${String(lastDay).padStart(2, '0')}`)
 
         const records = await prisma.record.findMany({
-            where: {accountBookId: bookId, date: {gte: start, lte: end}},
+            // 已平账不计入月度趋势(与 /summary 同口径)
+            where: {accountBookId: bookId, date: {gte: start, lte: end}, offsetAt: null},
             select: {type: true, amount: true, date: true},
         })
 
@@ -835,12 +838,14 @@ export async function recordRoutes(app: FastifyInstance) {
             body: zSchema(z.object({
                 bookId: z.string().min(1),
                 matchFields: dedupMatchFieldsSchema,
+                /** 备注相似度阈值(0~1);<=0 不启用,启用后组内与首条不相似的记录会被剔出该组 */
+                minRemarkSimilarity: z.number().min(0).max(1).optional(),
                 // 检测范围筛选(可选):只把命中的流水拿去做分组
                 filters: dedupScopeFilterSchema.optional(),
             })),
         },
     }, async (req, reply) => {
-        const {bookId, matchFields, filters} = req.body as {
+        const {bookId, matchFields, filters, minRemarkSimilarity} = req.body as {
             bookId: string
             matchFields: {
                 date: 'exact' | 'minute' | 'date' | null;
@@ -851,6 +856,7 @@ export async function recordRoutes(app: FastifyInstance) {
                 ownerId: boolean;
             }
             filters?: Partial<DedupScopeFilter>
+            minRemarkSimilarity?: number
         }
         const userId = (req as any).user.id as string
 
@@ -861,7 +867,8 @@ export async function recordRoutes(app: FastifyInstance) {
         }
 
         const allRecords = await prisma.record.findMany({
-            where: {accountBookId: bookId},
+            // 已平账不参与重复检测:否则「购物 + 退款」这类已处理过的记录还会被反复提示合并
+            where: {accountBookId: bookId, offsetAt: null},
             include: RECORD_INCLUDE,
             orderBy: {date: 'asc'},
         })
@@ -879,8 +886,22 @@ export async function recordRoutes(app: FastifyInstance) {
             groups.get(key)!.push(r)
         }
 
-        const duplicateGroups = Array.from(groups.entries())
-            .filter(([, recs]) => recs.length > 1)
+        let grouped = Array.from(groups.entries()).filter(([, recs]) => recs.length > 1)
+
+        // 备注相似度:启用后组内与首条(保留记录)差异过大的记录不再算同组。
+        // 数据范围已被 matchFields 分组限定,这里只做组内过滤,不做跨组两两比较。
+        const minSimilarity = Math.min(Math.max(minRemarkSimilarity ?? 0, 0), 1)
+        if (minSimilarity > 0) {
+            grouped = grouped
+                .map(([key, recs]) => {
+                    const [first, ...rest] = recs
+                    const kept = rest.filter(r => textSimilarity(r.remark, first.remark) >= minSimilarity)
+                    return [key, [first, ...kept]] as [string, typeof recs]
+                })
+                .filter(([, recs]) => recs.length > 1)
+        }
+
+        const duplicateGroups = grouped
             .map(([key, recs]) => ({
                 key,
                 count: recs.length,
@@ -1088,6 +1109,129 @@ export async function recordRoutes(app: FastifyInstance) {
         }
 
         return {success: true, deleted: records.length}
+    })
+
+    // 平账预览:按金额+方向配对「购物支出 / 退款收入」,返回待确认的组
+    app.post('/offset/preview', {
+        schema: {
+            description: '平账配对预览：返回金额相等的一收一支组合（1:1 优先，其次单侧拆 1:N）',
+            tags: ['记录'],
+            body: zSchema(z.object({
+                bookId: z.string().min(1),
+                /** 组内时间跨度上限(天);null/缺省 = 不限,默认 90 */
+                windowDays: z.number().int().min(1).nullable().optional(),
+                sameAccount: z.boolean().optional(),
+                sameOwner: z.boolean().optional(),
+                /** 备注相似度阈值(0~1);<=0 不启用 */
+                minRemarkSimilarity: z.number().min(0).max(1).optional(),
+                // 以下与列表筛选同口径
+                type: z.string().optional(),
+                accountId: z.string().optional(),
+                toAccountId: z.string().optional(),
+                categoryCode: z.string().optional(),
+                dateFrom: z.string().optional(),
+                dateTo: z.string().optional(),
+                ownerId: z.string().optional(),
+                payer: z.string().optional(),
+                amountFrom: z.number().optional(),
+                amountTo: z.number().optional(),
+                remark: z.string().optional(),
+                tags: z.string().optional(),
+            })),
+        },
+    }, async (req, reply) => {
+        const body = req.body as Record<string, unknown> & { bookId: string }
+        const userId = (req as any).user.id as string
+
+        try {
+            await assertIsMember(body.bookId, userId)
+        } catch (e: any) {
+            return reply.status(e.statusCode || 403).send({message: e.message})
+        }
+
+        const {bookId, windowDays = 90, sameAccount, sameOwner, minRemarkSimilarity, ...filter} = body as any
+
+        // 平账只对收支有意义:未指定类型时默认只看 INCOME/EXPENSE(转账不参与)
+        const where = buildRecordWhere(bookId, {
+            ...filter,
+            type: filter.type || 'INCOME,EXPENSE',
+        })
+
+        const records = await prisma.record.findMany({
+            where,
+            include: RECORD_INCLUDE,
+            orderBy: {date: 'asc'},
+        })
+
+        const {groups, truncated} = matchOffsetGroups(
+            records.map(r => ({
+                id: r.id,
+                type: r.type,
+                amount: r.amount,
+                date: r.date.toISOString(),
+                accountId: r.accountId,
+                ownerId: r.ownerId,
+                // 备注用于「同额巧合」时的优先排序(不参与过滤)
+                remark: r.remark ?? r.payer ?? '',
+            })),
+            {windowDays, sameAccount, sameOwner, minRemarkSimilarity},
+        )
+
+        const byId = new Map(records.map(r => [r.id, formatRecord(r)]))
+        return {
+            /** 参与配对的流水数(已应用筛选与「排除已平账」) */
+            scanned: records.length,
+            truncated,
+            groups: groups.map(g => ({
+                key: g.key,
+                amount: g.amount,
+                spanDays: g.spanDays,
+                income: g.income.map(r => byId.get(r.id)).filter(Boolean),
+                expense: g.expense.map(r => byId.get(r.id)).filter(Boolean),
+            })),
+        }
+    })
+
+    // 平账 / 取消平账(批量)
+    app.post('/offset', {
+        schema: {
+            description: '平账或取消平账：标记后该批记录不计入收支统计与账户余额（记录保留，可撤销）',
+            tags: ['记录'],
+            body: zSchema(z.object({ ids: z.array(z.string()).min(1), offset: z.boolean() })),
+        },
+    }, async (req, reply) => {
+        const {ids, offset} = req.body as { ids: string[]; offset: boolean }
+        const userId = (req as any).user.id as string
+
+        const records = await prisma.record.findMany({
+            where: {id: {in: ids}},
+            select: {id: true, accountId: true, fromAccountId: true, toAccountId: true, accountBookId: true},
+        })
+        if (records.length === 0) return reply.status(404).send({message: '记录不存在'})
+
+        for (const bookId of new Set(records.map(r => r.accountBookId))) {
+            try {
+                await assertIsMember(bookId, userId)
+            } catch (e: any) {
+                return reply.status(e.statusCode || 403).send({message: e.message})
+            }
+        }
+
+        const result = await prisma.record.updateMany({
+            where: {id: {in: ids}},
+            data: {offsetAt: offset ? new Date() : null},
+        })
+
+        // 平账改变了统计口径(收支/转账都不再计入),涉及账户的余额缓存要重算
+        const affected = new Set<string>()
+        for (const r of records) {
+            if (r.accountId) affected.add(r.accountId)
+            if (r.fromAccountId) affected.add(r.fromAccountId)
+            if (r.toAccountId) affected.add(r.toAccountId)
+        }
+        for (const accId of affected) await refreshAccountBalance(accId)
+
+        return {updated: result.count, offset}
     })
 
     // 更新单条
