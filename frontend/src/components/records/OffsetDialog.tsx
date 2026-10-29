@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/select'
 import { MultiSelect } from '@/components/ui/multi-select'
 import { EllipsisText } from '@/components/ui/ellipsis-text'
+import { DatePicker } from '@/components/ui/date-picker'
 import { recordApi, type OffsetGroupDTO, type RecordItem } from '@/api/record'
 import type { AccountItem } from '@/api/account'
 import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
@@ -251,7 +252,7 @@ export function OffsetDialog({ open, onOpenChange, bookId, accounts, categories,
               <div className="rounded-lg border">
                 <div className="px-3 py-2 border-b bg-muted/50 text-xs font-medium">匹配条件</div>
                 <div className="p-3 space-y-3">
-                  <div className="grid grid-cols-4 gap-3 items-end">
+                  <div className="grid grid-cols-4 gap-3">
                     <div>
                       <Label className="text-xs text-muted-foreground">时间跨度</Label>
                       <Select value={windowDays} onValueChange={setWindowDays}>
@@ -273,12 +274,18 @@ export function OffsetDialog({ open, onOpenChange, bookId, accounts, categories,
                         className="h-8 text-xs mt-1"
                       />
                     </div>
-                    <label className="flex items-center gap-2 text-xs h-8">
-                      <Switch checked={sameAccount} onCheckedChange={setSameAccount} />只配同一账户
-                    </label>
-                    <label className="flex items-center gap-2 text-xs h-8">
-                      <Switch checked={sameOwner} onCheckedChange={setSameOwner} />只配同一归属人
-                    </label>
+                    <div>
+                      <Label className="text-xs text-muted-foreground">账户范围</Label>
+                      <label className="flex items-center gap-2 text-xs h-8 mt-1">
+                        <Switch checked={sameAccount} onCheckedChange={setSameAccount} />只配同一账户
+                      </label>
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground">归属人</Label>
+                      <label className="flex items-center gap-2 text-xs h-8 mt-1">
+                        <Switch checked={sameOwner} onCheckedChange={setSameOwner} />只配同一归属人
+                      </label>
+                    </div>
                   </div>
                   <p className="text-xs text-muted-foreground">
                     只配「金额相等、一收一支」的记录：优先一笔对一笔，凑不上再一侧拆成多笔（最多 5 笔）。
@@ -289,7 +296,7 @@ export function OffsetDialog({ open, onOpenChange, bookId, accounts, categories,
               {/* 筛选条件:决定在哪些流水里找 */}
               <div className="rounded-lg border">
                 <div className="px-3 py-2 border-b bg-muted/50 text-xs font-medium">筛选条件</div>
-                <div className="p-3 grid grid-cols-3 gap-3">
+                <div className="p-3 grid grid-cols-4 gap-3">
                   <div>
                     <Label className="text-xs text-muted-foreground">账户（多选）</Label>
                     <div className="mt-1">
@@ -314,11 +321,11 @@ export function OffsetDialog({ open, onOpenChange, bookId, accounts, categories,
                   </div>
                   <div>
                     <Label className="text-xs text-muted-foreground">开始日期</Label>
-                    <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="h-8 text-xs mt-1" />
+                    <div className="mt-1"><DatePicker compact value={dateFrom} onChange={setDateFrom} /></div>
                   </div>
                   <div>
                     <Label className="text-xs text-muted-foreground">结束日期</Label>
-                    <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="h-8 text-xs mt-1" />
+                    <div className="mt-1"><DatePicker compact value={dateTo} onChange={setDateTo} /></div>
                   </div>
                   <div>
                     <Label className="text-xs text-muted-foreground">金额下限</Label>
@@ -328,7 +335,7 @@ export function OffsetDialog({ open, onOpenChange, bookId, accounts, categories,
                     <Label className="text-xs text-muted-foreground">金额上限</Label>
                     <Input type="number" value={amountTo} onChange={(e) => setAmountTo(e.target.value)} className="h-8 text-xs mt-1" />
                   </div>
-                  <div>
+                  <div className="col-span-2">
                     <Label className="text-xs text-muted-foreground">备注包含</Label>
                     <Input value={remark} onChange={(e) => setRemark(e.target.value)} placeholder="如：退款" className="h-8 text-xs mt-1" />
                   </div>
@@ -524,8 +531,8 @@ export function OffsetDialog({ open, onOpenChange, bookId, accounts, categories,
                     <span className="ml-auto text-muted-foreground">已选 {rightSel.size} 笔 · {fmt(rightSum)}</span>
                   </div>
                   <div className="px-2 py-1.5 border-b flex flex-wrap gap-1.5">
-                    <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="h-7 text-xs w-[130px]" />
-                    <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="h-7 text-xs w-[130px]" />
+                    <div className="w-[132px]"><DatePicker compact value={dateFrom} onChange={setDateFrom} /></div>
+                    <div className="w-[132px]"><DatePicker compact value={dateTo} onChange={setDateTo} /></div>
                     <Input type="number" value={amountFrom} onChange={(e) => setAmountFrom(e.target.value)} placeholder="金额≥" className="h-7 text-xs w-[80px]" />
                     <Input type="number" value={amountTo} onChange={(e) => setAmountTo(e.target.value)} placeholder="金额≤" className="h-7 text-xs w-[80px]" />
                     <Button size="sm" variant="outline" className="h-7 text-xs" onClick={loadManual} disabled={loading}>筛选</Button>
@@ -584,17 +591,25 @@ export function OffsetDialog({ open, onOpenChange, bookId, accounts, categories,
 
         <DialogFooter className="gap-2">
           {tab === 'auto' && step === 'result' && (
-            <Button variant="outline" size="sm" className="text-xs" onClick={() => setStep('filter')}>返回筛选</Button>
-          )}
-          {tab === 'auto' && step === 'filter' && (
-            <Button size="sm" className="text-xs" onClick={runMatch} disabled={loading}>
-              {loading ? '匹配中…' : '开始匹配'}
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs mr-auto"
+              onClick={() => setStep('filter')}
+            >
+              返回筛选
             </Button>
           )}
           <Button variant="ghost" size="sm" className="text-xs" onClick={() => onOpenChange(false)}>关闭</Button>
-          <Button size="sm" className="text-xs" onClick={save} disabled={saving || totalToSave === 0}>
-            {saving ? '保存中…' : `保存 ${totalToSave} 组`}
-          </Button>
+          {tab === 'auto' && step === 'filter' ? (
+            <Button size="sm" className="text-xs" onClick={runMatch} disabled={loading}>
+              {loading ? '匹配中…' : '开始匹配'}
+            </Button>
+          ) : (
+            <Button size="sm" className="text-xs" onClick={save} disabled={saving || totalToSave === 0}>
+              {saving ? '保存中…' : `保存 ${totalToSave} 组`}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

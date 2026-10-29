@@ -61,7 +61,7 @@ import { importExportApi } from '@/api/import-export'
 import {
   Plus, ArrowUpRight, ArrowDownRight, ArrowLeftRight,
   Pencil, Filter, X, ChevronLeft, ChevronRight,
-  Upload, Download, Save, CopyMinus,
+  Upload, Download, Save, CopyMinus, Scale,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -662,7 +662,7 @@ export function RecordsPage() {
                   <CopyMinus size={14} /> 去重
                 </Button>
                 <Button variant="outline" onClick={() => setOffsetOpen(true)} className="h-8 text-xs rounded-lg">
-                  平账
+                  <Scale size={14} /> 平账
                 </Button>
                 <Button
                   variant="outline"

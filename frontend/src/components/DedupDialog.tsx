@@ -474,12 +474,12 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
             </div>
 
             {scopeOpen && (
-              <div className="border-t px-3 py-2.5 space-y-2.5">
-                {/* 时间范围(按本地日,含首尾当天;起始日与结束日同一行) */}
-                <div className="flex items-center gap-2 flex-wrap">
+              <div className="border-t px-3 py-2.5 grid grid-cols-3 gap-3">
+                {/* 起始日 */}
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">起始日</div>
                   <div className="flex items-center gap-1">
-                    <span className="text-xs text-muted-foreground shrink-0">起始日</span>
-                    <div className="w-32 shrink-0">
+                    <div className="flex-1 min-w-0">
                       <DatePicker
                         compact
                         value={filters.dateFrom || ''}
@@ -496,10 +496,13 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
                       </button>
                     ) : null}
                   </div>
-                  <span className="text-xs text-muted-foreground shrink-0">~</span>
+                </div>
+
+                {/* 结束日 */}
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">结束日</div>
                   <div className="flex items-center gap-1">
-                    <span className="text-xs text-muted-foreground shrink-0">结束日</span>
-                    <div className="w-32 shrink-0">
+                    <div className="flex-1 min-w-0">
                       <DatePicker
                         compact
                         value={filters.dateTo || ''}
@@ -517,12 +520,11 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
                     ) : null}
                   </div>
                 </div>
-                <p className="text-[10px] text-muted-foreground">时间按本地日,含首尾当天</p>
 
                 {/* 类型 */}
                 <div>
-                  <div className="text-xs text-muted-foreground mb-1">类型(不选 = 全部)</div>
-                  <div className="flex items-center gap-2 flex-wrap">
+                  <div className="text-xs text-muted-foreground mb-1">类型（不选 = 全部）</div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     {RECORD_TYPES.map(t => {
                       const on = filters.types.includes(t)
                       return (
@@ -533,7 +535,7 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
                             ...prev,
                             types: on ? prev.types.filter(x => x !== t) : [...prev.types, t],
                           }))}
-                          className={`h-7 px-2.5 rounded-md text-xs border transition-colors ${
+                          className={`h-8 px-2.5 rounded-md text-xs border transition-colors ${
                             on
                               ? 'bg-primary border-primary text-primary-foreground'
                               : 'bg-background border-border text-muted-foreground hover:border-primary/30'
@@ -549,24 +551,29 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
 
                 {/* 金额区间(按绝对值) */}
                 <div>
-                  <div className="text-xs text-muted-foreground mb-1">金额区间(按绝对值,留空 = 不限)</div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      value={amountMinText}
-                      onChange={(e) => setAmountMinText(e.target.value)}
-                      inputMode="decimal"
-                      placeholder="最小"
-                      className="h-8 w-28 rounded border border-border bg-background px-2 text-xs"
-                    />
-                    <span className="text-xs text-muted-foreground">~</span>
-                    <input
-                      value={amountMaxText}
-                      onChange={(e) => setAmountMaxText(e.target.value)}
-                      inputMode="decimal"
-                      placeholder="最大"
-                      className="h-8 w-28 rounded border border-border bg-background px-2 text-xs"
-                    />
-                  </div>
+                  <div className="text-xs text-muted-foreground mb-1">金额下限</div>
+                  <input
+                    value={amountMinText}
+                    onChange={(e) => setAmountMinText(e.target.value)}
+                    inputMode="decimal"
+                    placeholder="不限"
+                    className="h-8 w-full rounded border border-border bg-background px-2 text-xs"
+                  />
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">金额上限</div>
+                  <input
+                    value={amountMaxText}
+                    onChange={(e) => setAmountMaxText(e.target.value)}
+                    inputMode="decimal"
+                    placeholder="不限"
+                    className="h-8 w-full rounded border border-border bg-background px-2 text-xs"
+                  />
+                </div>
+                <div className="flex items-end">
+                  <p className="text-[10px] text-muted-foreground leading-relaxed">
+                    时间按本地日，含首尾当天；金额按绝对值，留空不限
+                  </p>
                 </div>
               </div>
             )}
@@ -586,7 +593,7 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
                   <ChevronRight size={14} className="text-muted-foreground shrink-0" />
                 )}
                 <span className="text-xs font-medium shrink-0">匹配条件</span>
-                <span className="text-xs text-muted-foreground truncate">{matchSummary}</span>
+                <span className="text-xs text-muted-foreground truncate ml-auto">{matchSummary}</span>
               </button>
             </div>
 
@@ -670,53 +677,48 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
                 </div>
               ) : (
                 <>
-                  {/* 处理方式二选一(switch):勾选语义两模式一致(勾选 = 该记录会被处理),切模式不动勾选 */}
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`text-xs font-medium ${mode === 'merge' ? 'text-primary' : 'text-muted-foreground'}`}>
-                      合并重复
-                    </span>
-                    <Switch
-                    checked={mode === 'merge'}
-                    onCheckedChange={(v) => {
-                      setMode(v ? 'merge' : 'delete')
-                      // 合并与删除语义不同:切模式后所有组退回待处理,避免把「已确认合并」当删除执行
-                      setGroupStates((prev) =>
-                        Object.fromEntries(Object.keys(prev).map((k) => [k, 'pending' as GroupStatus])),
-                      )
-                    }}
-                  />
-                    <span className={`text-xs font-medium ${mode === 'delete' ? 'text-[#ef4444]' : 'text-muted-foreground'}`}>
-                      删除重复
-                    </span>
-                    <span className="text-xs text-muted-foreground">
+                  {/* 处理方式:开关一行(右侧放摘要),说明单独一行 */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`text-xs font-medium ${mode === 'merge' ? 'text-primary' : 'text-muted-foreground'}`}>
+                        合并重复
+                      </span>
+                      <Switch
+                        checked={mode === 'merge'}
+                        onCheckedChange={(v) => {
+                          setMode(v ? 'merge' : 'delete')
+                          // 合并与删除语义不同:切模式后所有组退回待处理,避免把「已确认合并」当删除执行
+                          setGroupStates((prev) =>
+                            Object.fromEntries(Object.keys(prev).map((k) => [k, 'pending' as GroupStatus])),
+                          )
+                        }}
+                      />
+                      <span className={`text-xs font-medium ${mode === 'delete' ? 'text-[#ef4444]' : 'text-muted-foreground'}`}>
+                        删除重复
+                      </span>
+                      <div className="ml-auto flex items-center gap-1.5 flex-wrap">
+                        <Badge variant="secondary" className="text-xs">{totalDuplicates} 条重复</Badge>
+                        <Badge variant="secondary" className="text-xs">
+                          {mode === 'merge'
+                            ? `已确认 ${confirmedGroups.length} 组 / 将合并 ${confirmedMergeCount} 条`
+                            : `已确认 ${confirmedGroups.length} 组`}
+                        </Badge>
+                        {mode === 'merge' && blockedCount > 0 && (
+                          <Badge variant="secondary" className="text-xs text-destructive">
+                            {blockedCount} 组方向不一致,不参与合并
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
                       {mode === 'merge'
                         ? '勾选要并入的记录(默认每组除第 1 条外全选),每组保留最早一条;下方结果面板淡绿 = 自动收敛、淡红 = 需你确认'
                         : '勾选要删除的记录(默认每组除第 1 条外全选),每组保留最早一条'}
-                    </span>
-                  </div>
-
-                  {/* 摘要 */}
-                  <div className="flex items-center gap-2 text-sm flex-wrap">
-                    <Badge variant="secondary" className="text-xs">
-                      共 {groups.length} 组重复
-                    </Badge>
-                    <Badge variant="secondary" className="text-xs">
-                      {totalDuplicates} 条重复
-                    </Badge>
-                    <Badge variant="secondary" className="text-xs">
-                      {mode === 'merge'
-                        ? `已确认 ${confirmedGroups.length} 组 / 将合并 ${confirmedMergeCount} 条`
-                        : `已确认 ${confirmedGroups.length} 组`}
-                    </Badge>
-                    {mode === 'merge' && blockedCount > 0 ? (
-                      <Badge variant="secondary" className="text-xs text-destructive">
-                        {blockedCount} 组方向不一致,不参与合并
-                      </Badge>
-                    ) : null}
+                    </p>
                   </div>
 
                   {/* 一级:组状态(与平账弹窗一致) */}
-                  <div className="flex items-center gap-1.5 flex-wrap">
+                  <div className="flex items-center gap-1.5 flex-wrap mt-3">
                     {([
                       ['all', '全部', groups.length],
                       ['pending', '待处理', statusCounts.pending],
