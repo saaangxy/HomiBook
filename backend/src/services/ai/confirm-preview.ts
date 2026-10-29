@@ -791,6 +791,8 @@ const TOOL_TITLES: Record<string, string> = {
   delete_account: '删除账户',
   delete_budget: '删除预算',
   save_import_mapping: '保存导入映射',
+  offset_records: '平账',
+  detect_duplicates: '检测重复流水',
 }
 
 /**

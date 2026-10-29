@@ -43,6 +43,7 @@ import { createBookTool } from './create-book.js'
 // 流水
 import { cloneRecordTool } from './clone-record.js'
 import { detectDuplicatesTool } from './detect-duplicates.js'
+import { offsetRecordsTool } from './offset-records.js'
 import { batchDeleteRecordsTool } from './batch-delete-records.js'
 // 记忆
 import { saveMemoryTool } from './save-memory.js'
@@ -75,6 +76,7 @@ export const TOOL_GROUPS: { label: string; tools: ToolDef[] }[] = [
       batchUpdateRecordsTool,
       cloneRecordTool,
       detectDuplicatesTool,
+      offsetRecordsTool,
       batchDeleteRecordsTool,
     ],
   },
