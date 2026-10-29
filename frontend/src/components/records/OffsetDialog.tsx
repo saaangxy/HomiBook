@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
@@ -43,14 +44,105 @@ const WINDOW_OPTIONS = [
 ]
 
 const fmt = (v: number) => v.toFixed(2)
-const sumOf = (rows: RecordItem[], ids: Set<string>) =>
-  rows.filter((r) => ids.has(r.id)).reduce((s, r) => s + r.amount, 0)
 
-/** 手动模式暂存的一组(左/右勾选后金额相等才可加入) */
-interface StagedGroup {
-  income: RecordItem[]
-  expense: RecordItem[]
-  amount: number
+/**
+ * 平账组卡片:自动配对与手动配对共用。
+ * 一处改动两处生效,避免两个 Tab 的展示样式漂移。
+ */
+function OffsetGroupCard({
+  group,
+  index,
+  confirmed,
+  note,
+  actions,
+  accountName,
+}: {
+  group: OffsetGroupDTO
+  index: number
+  confirmed?: boolean
+  note: string
+  actions: React.ReactNode
+  accountName: (r: RecordItem) => string
+}) {
+  const list = [
+    ...group.income.map((r) => ({ r, dir: 'INCOME' as const })),
+    ...group.expense.map((r) => ({ r, dir: 'EXPENSE' as const })),
+  ]
+
+  return (
+    <div className="border rounded-lg overflow-hidden">
+      {/* 组头 */}
+      <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 border-b">
+        <span className="text-xs text-muted-foreground">#{index + 1}</span>
+        <span className="text-sm font-semibold tabular-nums">¥{fmt(group.amount)}</span>
+        <span className="text-xs text-muted-foreground">
+          {group.income.length} 收 / {group.expense.length} 支
+        </span>
+        {group.spanDays > 0 && (
+          <Badge variant="outline" className="text-[10px] py-0 px-1.5">跨 {group.spanDays} 天</Badge>
+        )}
+        {confirmed && <Badge className="text-[10px] ml-auto">已确认</Badge>}
+      </div>
+
+      {/* 组内流水:每条一行、每字段一列 */}
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="text-xs py-1.5 w-[100px]">日期</TableHead>
+              <TableHead className="text-xs py-1.5 w-[60px]">类型</TableHead>
+              <TableHead className="text-xs py-1.5">账户</TableHead>
+              <TableHead className="text-xs py-1.5">交易方</TableHead>
+              <TableHead className="text-xs py-1.5 w-[100px]">金额</TableHead>
+              <TableHead className="text-xs py-1.5">分类</TableHead>
+              <TableHead className="text-xs py-1.5">备注</TableHead>
+              <TableHead className="text-xs py-1.5">标签</TableHead>
+              <TableHead className="text-xs py-1.5">归属人</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {list.map(({ r, dir }) => (
+              <TableRow key={r.id} className={confirmed ? 'bg-primary/5' : ''}>
+                <TableCell className="text-xs py-1.5 whitespace-nowrap text-muted-foreground">
+                  {new Date(r.date).toLocaleDateString('zh-CN')}
+                </TableCell>
+                <TableCell className={`text-xs py-1.5 ${dir === 'INCOME' ? 'text-emerald-600' : 'text-red-600'}`}>
+                  {dir === 'INCOME' ? '收入' : '支出'}
+                </TableCell>
+                <TableCell className="text-xs py-1.5">
+                  <div className="max-w-[160px]"><EllipsisText text={accountName(r)} /></div>
+                </TableCell>
+                <TableCell className="text-xs py-1.5">
+                  <div className="max-w-[140px]"><EllipsisText text={r.payer} /></div>
+                </TableCell>
+                <TableCell className={`text-xs py-1.5 font-mono ${dir === 'INCOME' ? 'text-emerald-600' : 'text-red-600'}`}>
+                  {dir === 'INCOME' ? '+' : '-'}{fmt(r.amount)}
+                </TableCell>
+                <TableCell className="text-xs py-1.5">
+                  <div className="max-w-[110px]"><EllipsisText text={r.categoryCode} /></div>
+                </TableCell>
+                <TableCell className="text-xs py-1.5">
+                  <div className="max-w-[200px]"><EllipsisText text={r.remark} /></div>
+                </TableCell>
+                <TableCell className="text-xs py-1.5">
+                  <div className="max-w-[130px]"><EllipsisText text={r.tags?.join(' / ')} /></div>
+                </TableCell>
+                <TableCell className="text-xs py-1.5">
+                  <div className="max-w-[90px]"><EllipsisText text={r.ownerName} /></div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* 组底操作区 */}
+      <div className="border-t bg-muted/40 px-3 py-2 flex items-center gap-2">
+        <span className="text-[11px] text-muted-foreground">{note}</span>
+        <div className="ml-auto flex gap-1.5">{actions}</div>
+      </div>
+    </div>
+  )
 }
 
 export function OffsetDialog({ open, onOpenChange, bookId, accounts, categories, onComplete }: OffsetDialogProps) {
@@ -80,12 +172,19 @@ export function OffsetDialog({ open, onOpenChange, bookId, accounts, categories,
   const [amountTo, setAmountTo] = useState('')
   const [remark, setRemark] = useState('')
 
-  // ---- 手动配对 ----
+  // ---- 手动配对:先筛选查询 → 选一条锚点 → 候选组 → 待保存 ----
   const [leftRows, setLeftRows] = useState<RecordItem[]>([])
-  const [leftSel, setLeftSel] = useState<Set<string>>(new Set())
-  const [rightRows, setRightRows] = useState<RecordItem[]>([])
-  const [rightSel, setRightSel] = useState<Set<string>>(new Set())
-  const [staged, setStaged] = useState<StagedGroup[]>([])
+  /** 是否已经点过「查询」:未查询时左侧为空,不再默认拉全量 */
+  const [queryDone, setQueryDone] = useState(false)
+  /** 手动页两个条件区的折叠状态 */
+  const [scopeOpen, setScopeOpen] = useState(true)
+  const [matchOpen, setMatchOpen] = useState(true)
+  const [anchorId, setAnchorId] = useState<string | null>(null)
+  const [anchorGroups, setAnchorGroups] = useState<OffsetGroupDTO[]>([])
+  const [anchorTruncated, setAnchorTruncated] = useState(false)
+  const [anchorLoading, setAnchorLoading] = useState(false)
+  /** 待保存的组:保存时与自动配对的「已确认」组合并提交 */
+  const [staged, setStaged] = useState<OffsetGroupDTO[]>([])
 
   const filterPayload = () => ({
     bookId,
@@ -121,19 +220,17 @@ export function OffsetDialog({ open, onOpenChange, bookId, accounts, categories,
     }
   }
 
-  /** 加载手动配对数据:左右两侧各查一次(右侧可再加筛选) */
-  const loadManual = async () => {
+  /** 按筛选条件查询左侧待平账列表(必须先查询,不再默认拉全量) */
+  const queryLeft = async () => {
     setLoading(true)
     setError('')
     try {
-      const [left, right] = await Promise.all([
-        recordApi.list({ bookId, page: 1, pageSize: 100 }),
-        recordApi.list({ ...filterPayload(), page: 1, pageSize: 100 }),
-      ])
-      setLeftRows(left.records.filter((r) => r.type === 'INCOME' || r.type === 'EXPENSE'))
-      setRightRows(right.records.filter((r) => r.type === 'INCOME' || r.type === 'EXPENSE'))
-      setLeftSel(new Set())
-      setRightSel(new Set())
+      const res = await recordApi.list({ ...filterPayload(), page: 1, pageSize: 100 })
+      setLeftRows(res.records.filter((r) => r.type === 'INCOME' || r.type === 'EXPENSE'))
+      setQueryDone(true)
+      setAnchorId(null)
+      setAnchorGroups([])
+      setAnchorTruncated(false)
     } catch (e) {
       setError(errorMessage(e))
     } finally {
@@ -141,21 +238,43 @@ export function OffsetDialog({ open, onOpenChange, bookId, accounts, categories,
     }
   }
 
-  const leftSum = useMemo(() => sumOf(leftRows, leftSel), [leftRows, leftSel])
-  const rightSum = useMemo(() => sumOf(rightRows, rightSel), [rightRows, rightSel])
-  const diff = Math.round((leftSum - rightSum) * 100) / 100
-  const canStage = leftSel.size > 0 && rightSel.size > 0 && Math.abs(diff) < 0.005
+  /** 选中一条锚点 → 拉取所有能配平的候选组 */
+  const pickAnchor = async (record: RecordItem) => {
+    setAnchorId(record.id)
+    setAnchorGroups([])
+    setAnchorTruncated(false)
+    setAnchorLoading(true)
+    setError('')
+    try {
+      const res = await recordApi.offsetAnchorGroups({
+        bookId,
+        anchorId: record.id,
+        windowDays: windowDays === '0' ? null : Number(windowDays),
+        sameAccount,
+        sameOwner,
+        minRemarkSimilarity: similarity ? Number(similarity) / 100 : undefined,
+      })
+      setAnchorGroups(res.groups)
+      setAnchorTruncated(res.truncated)
+    } catch (e) {
+      setError(errorMessage(e))
+    } finally {
+      setAnchorLoading(false)
+    }
+  }
 
-  const stage = () => {
-    if (!canStage) return
-    const left = leftRows.filter((r) => leftSel.has(r.id))
-    const right = rightRows.filter((r) => rightSel.has(r.id))
-    // 合并成一组:收入侧/支出侧按类型归位(左右只是操作区,不代表方向)
-    const income = [...left, ...right].filter((r) => r.type === 'INCOME')
-    const expense = [...left, ...right].filter((r) => r.type === 'EXPENSE')
-    setStaged((prev) => [...prev, { income, expense, amount: leftSum }])
-    setLeftSel(new Set())
-    setRightSel(new Set())
+  /** 已被待保存组占用的记录:左侧列表不再显示 */
+  const usedIds = useMemo(
+    () => new Set(staged.flatMap((g) => [...g.income, ...g.expense].map((r) => r.id))),
+    [staged],
+  )
+  const leftVisible = leftRows.filter((r) => !usedIds.has(r.id))
+
+  const addStaged = (group: OffsetGroupDTO) => {
+    setStaged((prev) => (prev.some((g) => g.key === group.key) ? prev : [...prev, group]))
+    setAnchorId(null)
+    setAnchorGroups([])
+    setAnchorTruncated(false)
   }
 
   const confirmedGroups = groups.filter((g) => state[g.key] === 'confirmed')
@@ -202,33 +321,11 @@ export function OffsetDialog({ open, onOpenChange, bookId, accounts, categories,
   const accountName = (r: RecordItem) =>
     r.fromAccount ? `${r.fromAccount.name} → ${r.toAccount?.name ?? '?'}` : accountLabel(r.account as never, multiOwner)
 
-  const toggle = (setter: React.Dispatch<React.SetStateAction<Set<string>>>, id: string) => {
-    setter((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
-  /** 单条记录行(手动区左右两栏共用) */
-  const rowLine = (r: RecordItem, selected: boolean, onToggle: () => void) => (
-    <label key={r.id} className="flex items-center gap-2 text-xs py-1 px-1 rounded hover:bg-muted/40 cursor-pointer">
-      <input type="checkbox" checked={selected} onChange={onToggle} />
-      <span className={r.type === 'INCOME' ? 'text-emerald-600 tabular-nums' : 'text-red-600 tabular-nums'}>
-        {r.type === 'INCOME' ? '+' : '-'}{fmt(r.amount)}
-      </span>
-      <span className="text-muted-foreground shrink-0">{new Date(r.date).toLocaleDateString('zh-CN')}</span>
-      <div className="max-w-[110px] min-w-0"><EllipsisText text={accountName(r)} /></div>
-      <div className="min-w-0 flex-1"><EllipsisText text={r.remark || r.payer} /></div>
-    </label>
-  )
-
   const totalToSave = confirmedGroups.length + staged.length
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col">
+      <DialogContent className="w-[90vw] max-w-[1600px] max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>平账</DialogTitle>
         </DialogHeader>
@@ -380,209 +477,307 @@ export function OffsetDialog({ open, onOpenChange, bookId, accounts, categories,
                   const current = state[g.key] ?? 'pending'
                   const confirmed = current === 'confirmed'
                   const ignored = current === 'ignored'
-                  // 组内按「收入在前、支出在后」排列,每条流水一行
-                  const list = [
-                    ...g.income.map((r) => ({ r, dir: 'INCOME' as const })),
-                    ...g.expense.map((r) => ({ r, dir: 'EXPENSE' as const })),
-                  ]
+                  const count = g.income.length + g.expense.length
                   return (
-                    <div key={g.key} className="border rounded-lg overflow-hidden">
-                      {/* 组头 */}
-                      <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 border-b">
-                        <span className="text-xs text-muted-foreground">#{gi + 1}</span>
-                        <span className="text-sm font-semibold tabular-nums">¥{fmt(g.amount)}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {g.income.length} 收 / {g.expense.length} 支
-                        </span>
-                        {g.spanDays > 0 && (
-                          <Badge variant="outline" className="text-[10px] py-0 px-1.5">跨 {g.spanDays} 天</Badge>
-                        )}
-                        {confirmed && <Badge className="text-[10px] ml-auto">已确认</Badge>}
-                      </div>
-
-                      {/* 组内流水 */}
-                      <div className="overflow-x-auto">
-                        <Table>
-                          <TableHeader>
-                            <TableRow className="hover:bg-transparent">
-                              <TableHead className="text-xs py-1.5 w-[100px]">日期</TableHead>
-                              <TableHead className="text-xs py-1.5 w-[60px]">类型</TableHead>
-                              <TableHead className="text-xs py-1.5">账户</TableHead>
-                              <TableHead className="text-xs py-1.5">交易方</TableHead>
-                              <TableHead className="text-xs py-1.5 w-[100px]">金额</TableHead>
-                              <TableHead className="text-xs py-1.5">分类</TableHead>
-                              <TableHead className="text-xs py-1.5">备注</TableHead>
-                              <TableHead className="text-xs py-1.5">标签</TableHead>
-                              <TableHead className="text-xs py-1.5">归属人</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {list.map(({ r, dir }) => (
-                              <TableRow key={r.id} className={confirmed ? 'bg-primary/5' : ''}>
-                                <TableCell className="text-xs py-1.5 whitespace-nowrap text-muted-foreground">
-                                  {new Date(r.date).toLocaleDateString('zh-CN')}
-                                </TableCell>
-                                <TableCell className={`text-xs py-1.5 ${dir === 'INCOME' ? 'text-emerald-600' : 'text-red-600'}`}>
-                                  {dir === 'INCOME' ? '收入' : '支出'}
-                                </TableCell>
-                                <TableCell className="text-xs py-1.5">
-                                  <div className="max-w-[160px]"><EllipsisText text={accountName(r)} /></div>
-                                </TableCell>
-                                <TableCell className="text-xs py-1.5">
-                                  <div className="max-w-[140px]"><EllipsisText text={r.payer} /></div>
-                                </TableCell>
-                                <TableCell className={`text-xs py-1.5 font-mono ${dir === 'INCOME' ? 'text-emerald-600' : 'text-red-600'}`}>
-                                  {dir === 'INCOME' ? '+' : '-'}{fmt(r.amount)}
-                                </TableCell>
-                                <TableCell className="text-xs py-1.5">
-                                  <div className="max-w-[110px]"><EllipsisText text={r.categoryCode} /></div>
-                                </TableCell>
-                                <TableCell className="text-xs py-1.5">
-                                  <div className="max-w-[200px]"><EllipsisText text={r.remark} /></div>
-                                </TableCell>
-                                <TableCell className="text-xs py-1.5">
-                                  <div className="max-w-[130px]"><EllipsisText text={r.tags?.join(' / ')} /></div>
-                                </TableCell>
-                                <TableCell className="text-xs py-1.5">
-                                  <div className="max-w-[90px]"><EllipsisText text={r.ownerName} /></div>
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </div>
-
-                      {/* 组底操作区 */}
-                      <div className="border-t bg-muted/40 px-3 py-2 flex items-center gap-2">
-                        <span className="text-[11px] text-muted-foreground">
-                          {ignored
-                            ? '已忽略:本组不会保存,可点「恢复」重新处理'
-                            : confirmed
-                              ? '已确认:保存后这些记录不再计入收支统计'
-                              : `确认后这 ${list.length} 条记录都不再计入收支统计`}
-                        </span>
-                        <div className="ml-auto flex gap-1.5">
-                          {ignored ? (
+                    <OffsetGroupCard
+                      key={g.key}
+                      group={g}
+                      index={gi}
+                      confirmed={confirmed}
+                      accountName={accountName}
+                      note={
+                        ignored
+                          ? '已忽略:本组不会保存,可点「恢复」重新处理'
+                          : confirmed
+                            ? '已确认:保存后这些记录不再计入收支统计'
+                            : `确认后这 ${count} 条记录都不再计入收支统计`
+                      }
+                      actions={
+                        ignored ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs"
+                            onClick={() => setState((p) => ({ ...p, [g.key]: 'pending' }))}
+                          >
+                            恢复
+                          </Button>
+                        ) : (
+                          <>
                             <Button
                               size="sm"
-                              variant="outline"
+                              variant={confirmed ? 'default' : 'outline'}
                               className="h-7 text-xs"
-                              onClick={() => setState((p) => ({ ...p, [g.key]: 'pending' }))}
+                              onClick={() => setState((p) => ({ ...p, [g.key]: confirmed ? 'pending' : 'confirmed' }))}
                             >
-                              恢复
+                              {confirmed ? '取消确认' : '确认平账'}
                             </Button>
-                          ) : (
-                            <>
-                              <Button
-                                size="sm"
-                                variant={confirmed ? 'default' : 'outline'}
-                                className="h-7 text-xs"
-                                onClick={() => setState((p) => ({ ...p, [g.key]: confirmed ? 'pending' : 'confirmed' }))}
-                              >
-                                {confirmed ? '取消确认' : '确认平账'}
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-7 text-xs text-muted-foreground"
-                                onClick={() => setState((p) => ({ ...p, [g.key]: 'ignored' }))}
-                              >
-                                忽略
-                              </Button>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    </div>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 text-xs text-muted-foreground"
+                              onClick={() => setState((p) => ({ ...p, [g.key]: 'ignored' }))}
+                            >
+                              忽略
+                            </Button>
+                          </>
+                        )
+                      }
+                    />
                   )
                 })}
               </div>
             </div>
           )}
 
-          {/* ================= 手动配对:左选右筛 ================= */}
+          {/* ================= 手动配对:先筛选查询 → 选锚点 → 候选组 → 待保存 ================= */}
           {tab === 'manual' && (
             <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <Button size="sm" variant="outline" className="h-8 text-xs" onClick={loadManual} disabled={loading}>
-                  {leftRows.length === 0 ? '加载未平账记录' : '重新查询'}
-                </Button>
-                <span className="text-xs text-muted-foreground">左侧选要平账的记录，右侧筛选同一笔的对应记录</span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                {/* 左栏 */}
-                <div className="rounded-lg border">
-                  <div className="px-2 py-1.5 border-b text-xs font-medium flex items-center">
-                    待平账记录
-                    <span className="ml-auto text-muted-foreground">已选 {leftSel.size} 笔 · {fmt(leftSum)}</span>
-                  </div>
-                  <div className="max-h-[260px] overflow-y-auto p-1.5">
-                    {leftRows.length === 0
-                      ? <p className="text-xs text-muted-foreground text-center py-6">先点上方按钮加载</p>
-                      : leftRows.map((r) => rowLine(r, leftSel.has(r.id), () => toggle(setLeftSel, r.id)))}
-                  </div>
-                </div>
-
-                {/* 右栏 */}
-                <div className="rounded-lg border">
-                  <div className="px-2 py-1.5 border-b text-xs font-medium flex items-center gap-2">
-                    对应记录（可筛选）
-                    <span className="ml-auto text-muted-foreground">已选 {rightSel.size} 笔 · {fmt(rightSum)}</span>
-                  </div>
-                  <div className="px-2 py-1.5 border-b flex flex-wrap gap-1.5">
-                    <div className="w-[132px]"><DatePicker compact value={dateFrom} onChange={setDateFrom} /></div>
-                    <div className="w-[132px]"><DatePicker compact value={dateTo} onChange={setDateTo} /></div>
-                    <Input type="number" value={amountFrom} onChange={(e) => setAmountFrom(e.target.value)} placeholder="金额≥" className="h-7 text-xs w-[80px]" />
-                    <Input type="number" value={amountTo} onChange={(e) => setAmountTo(e.target.value)} placeholder="金额≤" className="h-7 text-xs w-[80px]" />
-                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={loadManual} disabled={loading}>筛选</Button>
-                  </div>
-                  <div className="max-h-[220px] overflow-y-auto p-1.5">
-                    {rightRows.length === 0
-                      ? <p className="text-xs text-muted-foreground text-center py-6">无匹配记录</p>
-                      : rightRows.map((r) => rowLine(r, rightSel.has(r.id), () => toggle(setRightSel, r.id)))}
-                  </div>
-                </div>
-              </div>
-
-              {/* 差额 + 暂存 */}
-              <div className="flex items-center gap-3 rounded-md border px-3 py-2 text-xs">
-                <span>左 {fmt(leftSum)}</span>
-                <span className="text-muted-foreground">−</span>
-                <span>右 {fmt(rightSum)}</span>
-                <span className="text-muted-foreground">=</span>
-                <span className={Math.abs(diff) < 0.005 ? 'text-emerald-600 font-semibold' : 'text-amber-600 font-semibold'}>
-                  差额 {fmt(diff)}
-                </span>
-                {!canStage && <span className="text-muted-foreground">（两侧金额需相等才能加入）</span>}
-                <Button size="sm" className="ml-auto h-7 text-xs" onClick={stage} disabled={!canStage}>
-                  加入确认列表
-                </Button>
-              </div>
-
-              {/* 暂存列表 */}
+              {/* 筛选条件:决定左侧待平账列表包含哪些记录(可折叠) */}
               <div className="rounded-lg border">
-                <div className="px-2 py-1.5 border-b text-xs font-medium">确认列表（{staged.length} 组，保存前可移除）</div>
-                <div className="p-1.5 space-y-1">
-                  {staged.length === 0
-                    ? <p className="text-xs text-muted-foreground text-center py-4">还没有暂存的组</p>
-                    : staged.map((g, i) => (
-                      <div key={`${g.amount}-${i}`} className="flex items-center gap-2 text-xs">
-                        <Badge className="text-xs">¥{fmt(g.amount)}</Badge>
-                        <span className="text-muted-foreground">{g.income.length} 收 / {g.expense.length} 支</span>
-                        <span className="truncate">
-                          {[...g.income, ...g.expense].map((r) => (r.remark || r.payer || '').slice(0, 12)).join(' / ')}
-                        </span>
+                <button
+                  type="button"
+                  onClick={() => setScopeOpen((v) => !v)}
+                  className="w-full flex items-center gap-1.5 px-3 py-2 text-left"
+                >
+                  {scopeOpen ? <ChevronDown size={14} className="text-muted-foreground" /> : <ChevronRight size={14} className="text-muted-foreground" />}
+                  <span className="text-xs font-medium">筛选条件</span>
+                </button>
+                {scopeOpen && (
+                <div className="border-t p-3 grid grid-cols-4 gap-3">
+                  <div>
+                    <Label className="text-xs text-muted-foreground">账户（多选）</Label>
+                    <div className="mt-1">
+                      <MultiSelect
+                        items={accounts.map((a) => ({ value: a.id, label: accountLabel(a, multiOwner) }))}
+                        selected={accountIds}
+                        onChange={setAccountIds}
+                        placeholder="全部账户"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">分类（多选）</Label>
+                    <div className="mt-1">
+                      <MultiSelect
+                        items={categories.map((c) => ({ value: c.code, label: c.label }))}
+                        selected={categoryCodes}
+                        onChange={setCategoryCodes}
+                        placeholder="全部分类"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">开始日期</Label>
+                    <div className="mt-1"><DatePicker compact value={dateFrom} onChange={setDateFrom} /></div>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">结束日期</Label>
+                    <div className="mt-1"><DatePicker compact value={dateTo} onChange={setDateTo} /></div>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">金额下限</Label>
+                    <Input type="number" value={amountFrom} onChange={(e) => setAmountFrom(e.target.value)} className="h-8 text-xs mt-1" />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">金额上限</Label>
+                    <Input type="number" value={amountTo} onChange={(e) => setAmountTo(e.target.value)} className="h-8 text-xs mt-1" />
+                  </div>
+                  <div className="col-span-2">
+                    <Label className="text-xs text-muted-foreground">备注包含</Label>
+                    <div className="flex gap-2 mt-1">
+                      <Input value={remark} onChange={(e) => setRemark(e.target.value)} placeholder="如：退款" className="h-8 text-xs" />
+                      <Button size="sm" className="h-8 text-xs shrink-0" onClick={queryLeft} disabled={loading}>
+                        {loading ? '查询中…' : '查询'}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+                )}
+              </div>
+
+              {/* 匹配条件:决定候选组怎么算(可折叠,与自动配对共用同一套 state) */}
+              <div className="rounded-lg border">
+                <button
+                  type="button"
+                  onClick={() => setMatchOpen((v) => !v)}
+                  className="w-full flex items-center gap-1.5 px-3 py-2 text-left"
+                >
+                  {matchOpen ? <ChevronDown size={14} className="text-muted-foreground" /> : <ChevronRight size={14} className="text-muted-foreground" />}
+                  <span className="text-xs font-medium">匹配条件</span>
+                  <span className="ml-auto text-xs text-muted-foreground">
+                    {windowDays === '0' ? '时间不限' : `时间跨度 ${windowDays} 天`}
+                    {similarity ? ` · 相似度 ≥ ${similarity}%` : ''}
+                    {sameAccount ? ' · 同账户' : ''}
+                    {sameOwner ? ' · 同归属人' : ''}
+                  </span>
+                </button>
+                {matchOpen && (
+                  <div className="border-t p-3 space-y-3">
+                    <div className="grid grid-cols-4 gap-3">
+                      <div>
+                        <Label className="text-xs text-muted-foreground">时间跨度</Label>
+                        <Select value={windowDays} onValueChange={setWindowDays}>
+                          <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {WINDOW_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-xs text-muted-foreground">备注相似度 ≥ (%)</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={similarity}
+                          onChange={(e) => setSimilarity(e.target.value)}
+                          placeholder="不启用"
+                          className="h-8 text-xs mt-1"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs text-muted-foreground">账户范围</Label>
+                        <label className="flex items-center gap-2 text-xs h-8 mt-1">
+                          <Switch checked={sameAccount} onCheckedChange={setSameAccount} />只配同一账户
+                        </label>
+                      </div>
+                      <div>
+                        <Label className="text-xs text-muted-foreground">归属人</Label>
+                        <label className="flex items-center gap-2 text-xs h-8 mt-1">
+                          <Switch checked={sameOwner} onCheckedChange={setSameOwner} />只配同一归属人
+                        </label>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      候选组按此条件生成：对侧笔数最多 5 笔，金额之和需与锚点相等。
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {!queryDone ? (
+                <div className="py-10 text-center text-xs text-muted-foreground">
+                  先设置筛选条件，点「查询」加载待平账记录
+                </div>
+              ) : (
+                // 右栏(候选组)列更多,给它多一点宽度
+                <div className="grid grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-3">
+                  {/* 左:待平账记录(单选锚点) */}
+                  <div className="rounded-lg border flex flex-col">
+                    <div className="px-2 py-1.5 border-b text-xs font-medium flex items-center">
+                      待平账记录（{leftVisible.length}）
+                      <span className="ml-auto font-normal text-muted-foreground">点选一条作为锚点</span>
+                    </div>
+                    <div className="max-h-[320px] overflow-y-auto">
+                      {leftVisible.length === 0 ? (
+                        <p className="text-xs text-muted-foreground text-center py-6">没有可用记录</p>
+                      ) : (
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="hover:bg-transparent">
+                              <TableHead className="text-xs py-1.5 w-[92px]">日期</TableHead>
+                              <TableHead className="text-xs py-1.5 w-[58px]">类型</TableHead>
+                              <TableHead className="text-xs py-1.5">账户</TableHead>
+                              <TableHead className="text-xs py-1.5">交易方</TableHead>
+                              <TableHead className="text-xs py-1.5 w-[92px]">金额</TableHead>
+                              <TableHead className="text-xs py-1.5">备注</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {leftVisible.map((r) => (
+                              <TableRow
+                                key={r.id}
+                                onClick={() => pickAnchor(r)}
+                                className={`cursor-pointer ${anchorId === r.id ? 'bg-primary/10' : ''}`}
+                              >
+                                <TableCell className="text-xs py-1.5 whitespace-nowrap text-muted-foreground">
+                                  {new Date(r.date).toLocaleDateString('zh-CN')}
+                                </TableCell>
+                                <TableCell className={`text-xs py-1.5 ${r.type === 'INCOME' ? 'text-emerald-600' : 'text-red-600'}`}>
+                                  {r.type === 'INCOME' ? '收入' : '支出'}
+                                </TableCell>
+                                <TableCell className="text-xs py-1.5">
+                                  <div className="max-w-[110px]"><EllipsisText text={accountName(r)} /></div>
+                                </TableCell>
+                                <TableCell className="text-xs py-1.5">
+                                  <div className="max-w-[100px]"><EllipsisText text={r.payer} /></div>
+                                </TableCell>
+                                <TableCell className={`text-xs py-1.5 font-mono ${r.type === 'INCOME' ? 'text-emerald-600' : 'text-red-600'}`}>
+                                  {r.type === 'INCOME' ? '+' : '-'}{fmt(r.amount)}
+                                </TableCell>
+                                <TableCell className="text-xs py-1.5">
+                                  <div className="max-w-[150px]"><EllipsisText text={r.remark} /></div>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 右:候选组 */}
+                  <div className="rounded-lg border flex flex-col">
+                    <div className="px-2 py-1.5 border-b text-xs font-medium">
+                      候选组{anchorId ? `（${anchorGroups.length}）` : ''}
+                    </div>
+                    <div className="max-h-[280px] overflow-y-auto p-1.5 space-y-2">
+                      {!anchorId ? (
+                        <p className="text-xs text-muted-foreground text-center py-6">左侧选一条记录</p>
+                      ) : anchorLoading ? (
+                        <p className="text-xs text-muted-foreground text-center py-6">生成候选组…</p>
+                      ) : anchorGroups.length === 0 ? (
+                        <p className="text-xs text-muted-foreground text-center py-6">没有能配平的组合，可调整匹配条件</p>
+                      ) : anchorGroups.map((g, gi) => (
+                        <OffsetGroupCard
+                          key={g.key}
+                          group={g}
+                          index={gi}
+                          accountName={accountName}
+                          note="锚点已在组内"
+                          actions={
+                            <Button size="sm" className="h-7 text-xs" onClick={() => addStaged(g)}>
+                              加入待保存
+                            </Button>
+                          }
+                        />
+                      ))}
+                      {anchorTruncated && (
+                        <p className="text-[10px] text-amber-600">候选组过多，仅显示前 20 组，请收窄时间跨度或相似度</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 待保存:与自动配对同款卡片 */}
+              <div className="rounded-lg border">
+                <div className="px-3 py-2 border-b bg-muted/50 text-xs font-medium">
+                  待保存（{staged.length} 组，保存前可移除）
+                </div>
+                <div className="p-2 space-y-3">
+                  {staged.length === 0 ? (
+                    <p className="text-xs text-muted-foreground text-center py-4">还没有加入待保存的组</p>
+                  ) : staged.map((g, gi) => (
+                    <OffsetGroupCard
+                      key={g.key}
+                      group={g}
+                      index={gi}
+                      accountName={accountName}
+                      note="待保存:点底部「保存 N 组」后提交"
+                      actions={
                         <Button
                           size="sm"
-                          variant="ghost"
-                          className="ml-auto h-6 text-xs text-muted-foreground"
-                          onClick={() => setStaged((prev) => prev.filter((_, idx) => idx !== i))}
+                          variant="outline"
+                          className="h-7 text-xs"
+                          onClick={() => setStaged((prev) => prev.filter((x) => x.key !== g.key))}
                         >
                           移除
                         </Button>
-                      </div>
-                    ))}
+                      }
+                    />
+                  ))}
                 </div>
               </div>
             </div>

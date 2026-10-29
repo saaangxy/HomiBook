@@ -19,12 +19,12 @@ export interface RecordFilter {
   remark?: string
   tags?: string
   /**
-   * 只看「已平账」记录。
-   *
-   * 默认(false/缺省)排除已平账:平账用于把「购物 + 退款」这类互相抵消的收支从
-   * 总支出/总收入里剔除,否则两边的金额都会虚高。
+   * 平账状态筛选:
+   *   · 缺省 —— 列表看全部;统计仍排除已平账
+   *   · 'pending' —— 只看未平账
+   *   · 'offset'  —— 只看已平账
    */
-  offsetOnly?: boolean
+  offsetState?: 'pending' | 'offset'
 }
 
 // ---- Prisma 查询 ----
@@ -54,11 +54,19 @@ function parseDateFilter(raw: string, endOfDay: boolean): Date | null {
   return Number.isNaN(date.getTime()) ? null : date
 }
 
-export function buildRecordWhere(bookId: string, filter: RecordFilter) {
+export function buildRecordWhere(
+  bookId: string,
+  filter: RecordFilter,
+  opts: { includeOffsetDefault?: boolean } = {},
+) {
   const where: Record<string, unknown> = { accountBookId: bookId }
 
-  // 平账:列表/汇总/统计共用这一处过滤 —— 默认排除已平账,offsetOnly 时反过来只看已平账
-  where.offsetAt = filter.offsetOnly ? { not: null } : null
+  // 平账口径:
+  //   · 统计(默认):排除已平账 —— 否则「购物 + 退款」会让收支两边虚高
+  //   · 列表(includeOffsetDefault):默认全部,由 offsetState 显式筛「未平账 / 已平账」
+  if (filter.offsetState === 'pending') where.offsetAt = null
+  else if (filter.offsetState === 'offset') where.offsetAt = { not: null }
+  else if (!opts.includeOffsetDefault) where.offsetAt = null
 
   if (filter.type) applyMultiSelect(where, 'type', filter.type)
   if (filter.accountId) applyMultiSelect(where, 'accountId', filter.accountId)

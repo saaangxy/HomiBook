@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { matchOffsetGroups, type OffsetRow } from './offset-match.js'
+import { matchGroupsForAnchor, matchOffsetGroups, type OffsetRow } from './offset-match.js'
 
 const row = (
   id: string,
@@ -153,5 +153,63 @@ describe('matchOffsetGroups', () => {
     const { groups, truncated } = matchOffsetGroups(records, { maxGroups: 3 })
     expect(groups).toHaveLength(3)
     expect(truncated).toBe(true)
+  })
+})
+
+describe('matchGroupsForAnchor', () => {
+  const anchor: OffsetRow = row('a1', 'EXPENSE', 200, '2026-03-10', 'acc-1', 'u1', '京东-降噪耳机')
+
+  it('1 笔对 1 笔', () => {
+    const { groups } = matchGroupsForAnchor(anchor, [
+      row('i1', 'INCOME', 200, '2026-03-12', 'acc-1', 'u1', '退款-京东降噪耳机'),
+    ])
+    expect(groups).toHaveLength(1)
+    expect(groups[0].amount).toBe(200)
+  })
+
+  it('1 笔对 2 笔', () => {
+    const { groups } = matchGroupsForAnchor(anchor, [
+      row('i1', 'INCOME', 60, '2026-03-11'),
+      row('i2', 'INCOME', 140, '2026-03-12'),
+    ])
+    expect(groups).toHaveLength(1)
+    expect(ids(groups[0])).toEqual(['a1', 'i1', 'i2'])
+  })
+
+  it('每组都含锚点,且相似度高的排前面', () => {
+    const { groups } = matchGroupsForAnchor(anchor, [
+      row('i1', 'INCOME', 200, '2026-03-11', 'acc-1', 'u1', '退款-京东降噪耳机'),
+      row('i2', 'INCOME', 200, '2026-03-11', 'acc-1', 'u1', '无关交易'),
+    ])
+    expect(groups).toHaveLength(2)
+    expect(groups[0].income[0].id).toBe('i1')
+    for (const g of groups) {
+      expect([...g.income, ...g.expense].some((r) => r.id === 'a1')).toBe(true)
+    }
+  })
+
+  it('超过上限截断', () => {
+    const pool = Array.from({ length: 5 }, (_, i) => row(`i${i}`, 'INCOME', 100, `2026-03-1${i}`))
+    const { groups, truncated } = matchGroupsForAnchor(anchor, pool, { maxGroups: 2 })
+    expect(groups).toHaveLength(2)
+    expect(truncated).toBe(true)
+  })
+
+  it('sameAccount 时跨账户不生成组', () => {
+    const { groups } = matchGroupsForAnchor(
+      anchor,
+      [row('i1', 'INCOME', 200, '2026-03-11', 'acc-2')],
+      { sameAccount: true },
+    )
+    expect(groups).toHaveLength(0)
+  })
+
+  it('超出时间跨度不生成组', () => {
+    const { groups } = matchGroupsForAnchor(
+      anchor,
+      [row('i1', 'INCOME', 200, '2026-09-11')],
+      { windowDays: 30 },
+    )
+    expect(groups).toHaveLength(0)
   })
 })

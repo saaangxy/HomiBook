@@ -19,7 +19,7 @@ import path from 'path'
 import fs from 'fs'
 import {randomUUID} from 'crypto'
 import {buildRecordWhere, formatRecord, computeBalance, refreshAccountBalance} from '../services/record.js'
-import {matchOffsetGroups} from '../services/offset-match.js'
+import {matchGroupsForAnchor, matchOffsetGroups} from '../services/offset-match.js'
 import {textSimilarity} from '../services/text-similarity.js'
 import {monthKey, dateKey, dayStart, dayEnd, parseDayStart} from '../lib/date-time.js'
 
@@ -125,7 +125,8 @@ export async function recordRoutes(app: FastifyInstance) {
             return reply.status(e.statusCode || 403).send({message: e.message})
         }
 
-        const where = buildRecordWhere(bookId, filter)
+        // 列表默认展示全部流水(含已平账);offsetState 由用户显式筛选
+        const where = buildRecordWhere(bookId, filter, {includeOffsetDefault: true})
 
         const [records, total] = await Promise.all([
             prisma.record.findMany({
@@ -1181,6 +1182,100 @@ export async function recordRoutes(app: FastifyInstance) {
         return {
             /** 参与配对的流水数(已应用筛选与「排除已平账」) */
             scanned: records.length,
+            truncated,
+            groups: groups.map(g => ({
+                key: g.key,
+                amount: g.amount,
+                spanDays: g.spanDays,
+                income: g.income.map(r => byId.get(r.id)).filter(Boolean),
+                expense: g.expense.map(r => byId.get(r.id)).filter(Boolean),
+            })),
+        }
+    })
+
+    // 手动平账:以一条记录为锚点,列出所有能配平的对侧组合
+    app.post('/offset/anchor-groups', {
+        schema: {
+            description: '手动平账：给定一条记录，返回能和它配平的候选组（锚点 + 对侧 1~5 笔）',
+            tags: ['记录'],
+            body: zSchema(z.object({
+                bookId: z.string().min(1),
+                anchorId: z.string().min(1),
+                /** 组内时间跨度上限(天);null = 不限,默认 90 */
+                windowDays: z.number().int().min(1).nullable().optional(),
+                sameAccount: z.boolean().optional(),
+                sameOwner: z.boolean().optional(),
+                minRemarkSimilarity: z.number().min(0).max(1).optional(),
+            })),
+        },
+    }, async (req, reply) => {
+        const {bookId, anchorId, windowDays = 90, sameAccount, sameOwner, minRemarkSimilarity} = req.body as {
+            bookId: string
+            anchorId: string
+            windowDays?: number | null
+            sameAccount?: boolean
+            sameOwner?: boolean
+            minRemarkSimilarity?: number
+        }
+        const userId = (req as any).user.id as string
+
+        try {
+            await assertIsMember(bookId, userId)
+        } catch (e: any) {
+            return reply.status(e.statusCode || 403).send({message: e.message})
+        }
+
+        const anchor = await prisma.record.findFirst({
+            where: {id: anchorId, accountBookId: bookId},
+            include: RECORD_INCLUDE,
+        })
+        if (!anchor) return reply.status(404).send({message: '锚点记录不存在'})
+        if (anchor.type !== 'INCOME' && anchor.type !== 'EXPENSE') {
+            return reply.status(400).send({message: '只有收入/支出可以平账'})
+        }
+
+        // 对侧候选:同账本、未平账、类型相反、金额不超过锚点、时间在跨度内
+        const dayMs = 86_400_000
+        const dateFilter = windowDays == null ? {} : {
+            date: {
+                gte: new Date(anchor.date.getTime() - windowDays * dayMs),
+                lte: new Date(anchor.date.getTime() + windowDays * dayMs),
+            },
+        }
+        const pool = await prisma.record.findMany({
+            where: {
+                accountBookId: bookId,
+                offsetAt: null,
+                type: anchor.type === 'INCOME' ? 'EXPENSE' : 'INCOME',
+                amount: {lte: anchor.amount},
+                ...dateFilter,
+            },
+            include: RECORD_INCLUDE,
+            orderBy: {date: 'asc'},
+            take: 1000,
+        })
+
+        const toRow = (r: typeof anchor) => ({
+            id: r.id,
+            type: r.type,
+            amount: r.amount,
+            date: r.date.toISOString(),
+            accountId: r.accountId,
+            ownerId: r.ownerId,
+            remark: r.remark ?? r.payer ?? '',
+        })
+
+        const {groups, truncated} = matchGroupsForAnchor(toRow(anchor), pool.map(toRow), {
+            windowDays,
+            sameAccount,
+            sameOwner,
+            minRemarkSimilarity,
+        })
+
+        const byId = new Map([anchor, ...pool].map(r => [r.id, formatRecord(r)]))
+        return {
+            anchor: formatRecord(anchor),
+            scanned: pool.length,
             truncated,
             groups: groups.map(g => ({
                 key: g.key,

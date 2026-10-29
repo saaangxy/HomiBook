@@ -36,6 +36,7 @@ import {
 import {Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger} from '@/components/ui/sheet'
 import { DatePicker } from '@/components/ui/date-picker'
 import { MultiSelect } from '@/components/ui/multi-select'
+
 import { Spinner } from '@/components/ui/spinner'
 import { AttachmentViewer } from '@/components/AttachmentViewer'
 import { recordApi, type RecordItem, type RecordType, type RecordSummary } from '@/api/record'
@@ -182,8 +183,10 @@ export function RecordsPage() {
 
   // 选择
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  /** 只看已平账记录:平账用于把「购物 + 退款」这类互相抵消的收支从统计里剔除 */
-  const [offsetOnly, setOffsetOnly] = useState(false)
+  /** 平账状态:'' = 全部(默认)、'pending' = 未平账、'offset' = 已平账 */
+  const [offsetState, setOffsetState] = useState<'' | 'pending' | 'offset'>('')
+  /** 筛选面板里的草稿值,点「应用筛选」后才生效 */
+  const [draftOffsetState, setDraftOffsetState] = useState<'' | 'pending' | 'offset'>('')
 
   // 导入弹窗
   const [importOpen, setImportOpen] = useState(false)
@@ -266,10 +269,10 @@ export function RecordsPage() {
         amountTo: filters.amountTo ? parseFloat(filters.amountTo) : undefined,
         remark: filters.remark || undefined,
         tags: filters.tags.length > 0 ? filters.tags.join(',') : undefined,
-        offsetOnly: offsetOnly || undefined,
+        offsetState: offsetState || undefined,
       }))
     } catch { /* ignore */ }
-  }, [currentBookId, offsetOnly, filters.types, filters.accountIds, filters.toAccountIds, filters.categoryCodes, filters.dateFrom, filters.dateTo, filters.ownerIds, filters.payer, filters.amountFrom, filters.amountTo, filters.remark, filters.tags])
+  }, [currentBookId, offsetState, filters.types, filters.accountIds, filters.toAccountIds, filters.categoryCodes, filters.dateFrom, filters.dateTo, filters.ownerIds, filters.payer, filters.amountFrom, filters.amountTo, filters.remark, filters.tags])
 
   // 加载列表
   const loadRecords = useCallback(async () => {
@@ -293,7 +296,7 @@ export function RecordsPage() {
         amountTo: filters.amountTo ? parseFloat(filters.amountTo) : undefined,
         remark: filters.remark || undefined,
         tags: filters.tags.length > 0 ? filters.tags.join(',') : undefined,
-        offsetOnly: offsetOnly || undefined,
+        offsetState: offsetState || undefined,
       })
       setRecords(res.records)
       setTotal(res.total)
@@ -302,7 +305,7 @@ export function RecordsPage() {
     } finally {
       setLoading(false)
     }
-  }, [currentBookId, page, pageSize, filters, offsetOnly])
+  }, [currentBookId, page, pageSize, filters, offsetState])
 
   useEffect(() => { loadRecords() }, [loadRecords])
   useEffect(() => { loadSummary() }, [loadSummary])
@@ -311,16 +314,21 @@ export function RecordsPage() {
     const empty: FilterState = { types: [], accountIds: [], toAccountIds: [], categoryCodes: [], dateFrom: '', dateTo: '', ownerIds: [], payer: '', amountFrom: '', amountTo: '', remark: '', tags: [] }
     setFilters(empty)
     setDraftFilters({ ...empty })
+    // 平账状态不在 FilterState 里,要单独清掉,否则「重置」看起来没生效
+    setOffsetState('')
+    setDraftOffsetState('')
     setPage(1)
   }
 
   const openDrawer = () => {
     setDraftFilters({ ...filters })
+    setDraftOffsetState(offsetState)
     setDrawerOpen(true)
   }
 
   const applyFilters = () => {
     setFilters({ ...draftFilters })
+    setOffsetState(draftOffsetState)
     setPage(1)
     setDrawerOpen(false)
   }
@@ -335,7 +343,7 @@ export function RecordsPage() {
   const activeFilterCount = (Object.keys(filters) as (keyof FilterState)[]).filter((k) => {
     const v = filters[k]
     return Array.isArray(v) ? v.length > 0 : !!v
-  }).length
+  }).length + (offsetState ? 1 : 0)
 
   const openCreate = () => {
     setEditRecord(null)
@@ -375,6 +383,19 @@ export function RecordsPage() {
    * 平账 / 取消平账。
    * 平账后整批记录不再计入收支统计与账户余额,用于剔除「购物 + 退款」这类互抵的流水。
    */
+  /** 已平账记录:单条取消平账 */
+  const handleUnoffsetOne = async (id: string) => {
+    try {
+      await recordApi.batchOffset([id], false)
+      toast.success('已取消平账')
+      loadRecords()
+      loadSummary()
+      loadAccounts()
+    } catch (e) {
+      setError(errorMessage(e))
+    }
+  }
+
   const handleOffset = async (offset: boolean) => {
     if (selectedIds.size === 0) return
     try {
@@ -544,17 +565,31 @@ export function RecordsPage() {
             {activeFilterCount === 0 ? (
               <span className="text-sm text-muted-foreground">暂无筛选条件</span>
             ) : (
-              activeFilterKeys.map((key) => (
-                <Badge key={key} variant="secondary" className="pl-2 pr-1 py-1 gap-1 text-xs font-normal">
-                  {filterValueLabel(key, filters[key], accounts, bookMembers)}
-                  <button
-                    onClick={() => removeFilter(key)}
-                    className="ml-1 rounded hover:bg-muted p-0.5"
-                  >
-                    <X size={12} />
-                  </button>
-                </Badge>
-              ))
+              <>
+                {activeFilterKeys.map((key) => (
+                  <Badge key={key} variant="secondary" className="pl-2 pr-1 py-1 gap-1 text-xs font-normal">
+                    {filterValueLabel(key, filters[key], accounts, bookMembers)}
+                    <button
+                      onClick={() => removeFilter(key)}
+                      className="ml-1 rounded hover:bg-muted p-0.5"
+                    >
+                      <X size={12} />
+                    </button>
+                  </Badge>
+                ))}
+                {/* 平账状态不在 FilterState 里,单独出一个可移除的标签 */}
+                {offsetState && (
+                  <Badge key="offsetState" variant="secondary" className="pl-2 pr-1 py-1 gap-1 text-xs font-normal">
+                    {offsetState === 'offset' ? '只看已平账' : '只看未平账'}
+                    <button
+                      onClick={() => { setOffsetState(''); setDraftOffsetState(''); setPage(1) }}
+                      className="ml-1 rounded hover:bg-muted p-0.5"
+                    >
+                      <X size={12} />
+                    </button>
+                  </Badge>
+                )}
+              </>
             )}
           </div>
           {/* 右侧：操作按钮 */}
@@ -676,15 +711,6 @@ export function RecordsPage() {
                     </span>
                   )}
                 </Button>
-                {/* 已平账视图:平账记录默认从列表与统计中剔除,这里单独查看 / 取消 */}
-                <Button
-                  variant={offsetOnly ? 'default' : 'outline'}
-                  onClick={() => { setOffsetOnly((v) => !v); setPage(1) }}
-                  className="h-8 text-xs rounded-lg"
-                  title="平账记录不计入收支统计与账户余额，可在这里取消"
-                >
-                  {offsetOnly ? '已平账' : '平账记录'}
-                </Button>
                 {activeFilterCount > 0 && (
                   <Button
                     variant="ghost"
@@ -706,8 +732,8 @@ export function RecordsPage() {
             <Button size="sm" variant="outline" onClick={() => setBatchOpen(true)} className="text-xs h-7">
               批量更新
             </Button>
-            {/* 平账入口在顶部工具条(弹窗配平);批量栏只在「平账记录」视图提供取消 */}
-            {offsetOnly && (
+            {/* 平账入口在顶部工具条(弹窗配平);批量栏只在「已平账」筛选下提供取消 */}
+            {offsetState === 'offset' && (
               <Button
                 size="sm"
                 variant="outline"
@@ -758,6 +784,7 @@ export function RecordsPage() {
                     onClone={handleClone}
                     onDelete={setDeleteTarget}
                     onViewAttachments={setViewingAttachments}
+                    onUnoffset={handleUnoffsetOne}
                   />
                 ))}
               </div>
@@ -806,6 +833,7 @@ export function RecordsPage() {
                     onClone={handleClone}
                     onDelete={setDeleteTarget}
                     onViewAttachments={setViewingAttachments}
+                    onUnoffset={handleUnoffsetOne}
                   />
                 ))}
               </TableBody>
@@ -1060,11 +1088,34 @@ export function RecordsPage() {
                 )}
               </div>
             </div>
+
+            {/* 平账状态:与「类型/账户」同款 —— 不选 = 全部,单选语义用最后一项 */}
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">平账状态</Label>
+              <MultiSelect
+                items={[
+                  { value: 'pending', label: '未平账' },
+                  { value: 'offset', label: '已平账' },
+                ]}
+                selected={draftOffsetState ? [draftOffsetState] : []}
+                onChange={(v) => setDraftOffsetState((v[v.length - 1] as 'pending' | 'offset' | undefined) ?? '')}
+                placeholder="全部状态"
+              />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                平账记录不参与收支统计与账户余额
+              </p>
+            </div>
           </div>
 
           {/* 抽屉底部按钮 */}
           <div className="flex items-center gap-2 pt-4 border-t">
-            <Button variant="outline" className="flex-1" onClick={resetFilters}>重置</Button>
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => { resetFilters(); setDrawerOpen(false) }}
+            >
+              重置
+            </Button>
             <Button className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground" onClick={applyFilters}>应用</Button>
           </div>
         </SheetContent>

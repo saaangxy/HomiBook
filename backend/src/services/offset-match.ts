@@ -223,3 +223,123 @@ export function matchOffsetGroups(
 
   return { groups, truncated, skippedBuckets }
 }
+
+/** 枚举所有和为 target 的组合(1..maxSplit 笔),最多收集 limit 组 */
+function enumerateSubsets(
+  candidates: OffsetRow[],
+  target: number,
+  maxSplit: number,
+  limit: number,
+): OffsetRow[][] {
+  const sorted = [...candidates].sort((a, b) => cents(a.amount) - cents(b.amount))
+  const results: OffsetRow[][] = []
+  const picked: OffsetRow[] = []
+
+  const dfs = (start: number, sum: number) => {
+    if (results.length >= limit) return
+    if (sum === target) {
+      results.push([...picked])
+      return
+    }
+    if (picked.length >= maxSplit) return
+    for (let i = start; i < sorted.length; i++) {
+      const c = cents(sorted[i].amount)
+      if (sum + c > target) break // 已按金额升序
+      picked.push(sorted[i])
+      dfs(i + 1, sum + c)
+      picked.pop()
+      if (results.length >= limit) return
+    }
+  }
+
+  dfs(0, 0)
+  return results
+}
+
+export interface AnchorGroupOptions {
+  windowDays?: number | null
+  sameAccount?: boolean
+  sameOwner?: boolean
+  minRemarkSimilarity?: number
+  maxSplit?: number
+  /** 候选组上限(默认 20) */
+  maxGroups?: number
+  /** 参与组合的对侧候选上限(默认 30) */
+  maxCandidates?: number
+}
+
+const DEFAULT_ANCHOR_GROUPS = 20
+const DEFAULT_ANCHOR_CANDIDATES = 30
+
+/**
+ * 以一条记录为**锚点**,列出所有能和它配平的对侧组合。
+ *
+ * 手动平账用:用户先选一条,系统列出「1 笔对 1 笔」「1 笔对 2 笔」…的所有候选组,
+ * 每组都包含这条锚点,金额和与锚点相等。
+ *
+ * 排序:相似度高 → 时间跨度短 → 笔数少。
+ */
+export function matchGroupsForAnchor(
+  anchor: OffsetRow,
+  pool: OffsetRow[],
+  options: AnchorGroupOptions = {},
+): { groups: OffsetGroup[]; truncated: boolean } {
+  if (anchor.type !== 'INCOME' && anchor.type !== 'EXPENSE') return { groups: [], truncated: false }
+
+  const maxSplit = options.maxSplit ?? DEFAULT_MAX_SPLIT
+  const maxGroups = options.maxGroups ?? DEFAULT_ANCHOR_GROUPS
+  const maxCandidates = options.maxCandidates ?? DEFAULT_ANCHOR_CANDIDATES
+  const minSimilarity = Math.min(Math.max(options.minRemarkSimilarity ?? 0, 0), 1)
+  const guard: Guard = {
+    windowDays: options.windowDays ?? null,
+    sameAccount: !!options.sameAccount,
+    sameOwner: !!options.sameOwner,
+  }
+
+  const target = cents(anchor.amount)
+  const candidates = pool
+    .filter((r) => r.id !== anchor.id)
+    .filter((r) => (r.type === 'INCOME' || r.type === 'EXPENSE') && r.type !== anchor.type)
+    .filter((r) => cents(r.amount) <= target)
+    .sort((a, b) => {
+      const sa = -textSimilarity(anchor.remark, a.remark) * 1e6 + daysBetween(anchor.date, a.date)
+      const sb = -textSimilarity(anchor.remark, b.remark) * 1e6 + daysBetween(anchor.date, b.date)
+      return sa - sb
+    })
+    .slice(0, maxCandidates)
+
+  if (candidates.length === 0) return { groups: [], truncated: false }
+
+  // 多收集一些候选组,排序后再截断
+  const combos = enumerateSubsets(candidates, target, maxSplit, maxGroups * 3)
+  const groups: OffsetGroup[] = []
+  const seen = new Set<string>()
+
+  for (const combo of combos) {
+    const all = [anchor, ...combo]
+    if (!compatible(all, guard)) continue
+
+    const key = all.map((r) => r.id).sort().join('|')
+    if (seen.has(key)) continue
+
+    const income = anchor.type === 'INCOME' ? [anchor] : combo
+    const expense = anchor.type === 'EXPENSE' ? [anchor] : combo
+    if (minSimilarity > 0 && bestCrossSimilarity(income, expense) < minSimilarity) continue
+
+    seen.add(key)
+    const times = all.map((r) => new Date(r.date).getTime())
+    groups.push({
+      key,
+      amount: round2(income.reduce((s, r) => s + r.amount, 0)),
+      income,
+      expense,
+      spanDays: Math.round((Math.max(...times) - Math.min(...times)) / dayMs),
+    })
+  }
+
+  const score = (g: OffsetGroup) =>
+    -bestCrossSimilarity(g.income, g.expense) * 1e6 + g.spanDays * 100 + (g.income.length + g.expense.length)
+  groups.sort((a, b) => score(a) - score(b))
+
+  return { groups: groups.slice(0, maxGroups), truncated: groups.length > maxGroups }
+}

@@ -70,8 +70,8 @@ export const recordApi = {
     amountTo?: number
     remark?: string
     tags?: string       // 逗号分隔多选
-    /** 只看已平账记录(缺省排除) */
-    offsetOnly?: boolean
+    /** 平账状态:不传 = 全部;'pending' = 未平账;'offset' = 已平账 */
+    offsetState?: 'pending' | 'offset'
   }) => api.get<RecordListResult>('/api/records?' + new URLSearchParams(
     Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))
   ).toString()),
@@ -91,8 +91,8 @@ export const recordApi = {
     amountTo?: number
     remark?: string
     tags?: string       // 逗号分隔多选
-    /** 只看已平账记录(缺省排除) */
-    offsetOnly?: boolean
+    /** 平账状态:不传 = 全部;'pending' = 未平账;'offset' = 已平账 */
+    offsetState?: 'pending' | 'offset'
   }) => api.get<RecordSummary>('/api/records/summary?' + new URLSearchParams(
     Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))
   ).toString()),
@@ -156,6 +156,20 @@ export const recordApi = {
    */
   batchOffset: (ids: string[], offset: boolean) =>
     api.post<{ updated: number; offset: boolean }>('/api/records/offset', { ids, offset }),
+
+  /** 手动平账：以一条记录为锚点，返回能和它配平的候选组（锚点 + 对侧 1~5 笔） */
+  offsetAnchorGroups: (params: {
+    bookId: string
+    anchorId: string
+    windowDays?: number | null
+    sameAccount?: boolean
+    sameOwner?: boolean
+    minRemarkSimilarity?: number
+  }) =>
+    api.post<{ anchor: RecordItem; scanned: number; truncated: boolean; groups: OffsetGroupDTO[] }>(
+      '/api/records/offset/anchor-groups',
+      params,
+    ),
 
   /** 平账配对预览：金额相等的一收一支组合（1:1 优先，其次单侧拆 1:N） */
   offsetPreview: (params: {

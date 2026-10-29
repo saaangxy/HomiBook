@@ -17,7 +17,7 @@ import {
 import { DatePicker } from '@/components/ui/date-picker'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { TagCombobox } from '@/components/TagCombobox'
-import { Paperclip, Pencil, Copy, Trash2 } from 'lucide-react'
+import { Paperclip, Pencil, Copy, Trash2, Undo2 } from 'lucide-react'
 import dayjs from 'dayjs'
 import type { RecordItem, RecordType } from '@/api/record'
 import type { AccountItem } from '@/api/account'
@@ -53,13 +53,15 @@ interface RecordRowProps {
   onClone: (r: RecordItem) => void
   onDelete: (r: RecordItem) => void
   onViewAttachments: (att: { id: string; url: string; originalFilename: string }[]) => void
+  /** 已平账记录行内的「取消平账」 */
+  onUnoffset?: (id: string) => void
 }
 
 export function RecordRow(props: RecordRowProps) {
   const {
     record, variant, editMode, editChanges, selectedIds, accounts,
     allCategories, bookMembers, currentBookId,
-    onToggleSelect, onEditChange, onOpenEdit, onClone, onDelete, onViewAttachments,
+    onToggleSelect, onEditChange, onOpenEdit, onClone, onDelete, onViewAttachments, onUnoffset,
   } = props
 
   const isChanged = editChanges.has(record.id)
@@ -251,6 +253,18 @@ export function RecordRow(props: RecordRowProps) {
       {record.attachments?.length > 0 && (
         <Button aria-label="设置附件查看器" variant="ghost" size="icon" className="h-7 w-7" onClick={() => onViewAttachments(record.attachments)}>
           <Paperclip size={13} />
+        </Button>
+      )}
+      {record.offsetAt && onUnoffset && (
+        <Button
+          aria-label="取消平账"
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          onClick={() => onUnoffset(record.id)}
+          title="取消平账:恢复为未平账，重新计入收支统计与账户余额"
+        >
+          <Undo2 size={13} />
         </Button>
       )}
       {editMode ? (
