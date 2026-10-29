@@ -305,9 +305,6 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
     }
     return map
   }, [groups])
-  const cleanCount = groups.filter((g) => !groupInfo.get(g)?.dirty).length
-  const conflictCount = groups.length - cleanCount
-
   // 组级状态:全部 / 待处理 / 已确认 / 忽略(数量随时反映当前检测结果)
   const statusCounts = useMemo(() => {
     const c = { pending: 0, confirmed: 0, ignored: 0 }
@@ -320,13 +317,16 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
     return c
   }, [groups, groupStates])
   const confirmedGroups = groups.filter((g) => groupStates[g.key] === 'confirmed')
-  const statusVisible = groups.filter(
+  /** 一级状态筛完的组:二级冲突计数据此计算(而不是全局) */
+  const statusScoped = groups.filter(
     (g) => statusFilter === 'all' || (groupStates[g.key] ?? 'pending') === statusFilter,
   )
+  const scopedCleanCount = statusScoped.filter((g) => !groupInfo.get(g)?.dirty).length
+  const scopedConflictCount = statusScoped.length - scopedCleanCount
 
   const visibleGroups = groupFilter === 'all'
-    ? statusVisible
-    : statusVisible.filter((g) => (groupFilter === 'clean' ? !groupInfo.get(g)?.dirty : !!groupInfo.get(g)?.dirty))
+    ? statusScoped
+    : statusScoped.filter((g) => (groupFilter === 'clean' ? !groupInfo.get(g)?.dirty : !!groupInfo.get(g)?.dirty))
 
   const chipValue = (v: string | null | undefined) => (v == null ? EMPTY_CHIP : v)
   // 取该字段的当前选择:**显式选过(含选「不填」= null)一律以选择为准** ——
@@ -715,7 +715,7 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
                     ) : null}
                   </div>
 
-                  {/* 组状态 tab:与平账弹窗一致 */}
+                  {/* 一级:组状态(与平账弹窗一致) */}
                   <div className="flex items-center gap-1.5 flex-wrap">
                     {([
                       ['all', '全部', groups.length],
@@ -728,36 +728,42 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
                         size="sm"
                         variant={statusFilter === key ? 'default' : 'outline'}
                         className="h-7 text-xs"
-                        onClick={() => setStatusFilter(key)}
+                        onClick={() => {
+                          setStatusFilter(key)
+                          // 忽略视图不区分冲突,切过去时把二级筛选复位
+                          if (key === 'ignored') setGroupFilter('all')
+                        }}
                       >
                         {label} ({count})
                       </Button>
                     ))}
                   </div>
 
-                  {/* 分组筛选:先看需要拍板的组(计数按整组算,与勾选无关) */}
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {([
-                      ['all', '全部', groups.length],
-                      ['clean', '无冲突', cleanCount],
-                      ['conflict', '有冲突', conflictCount],
-                    ] as const).map(([key, label, count]) => {
-                      const on = groupFilter === key
-                      return (
-                        <button
-                          key={key}
-                          onClick={() => setGroupFilter(key)}
-                          className={`h-7 px-3 rounded-full text-xs border transition-colors ${
-                            on
-                              ? 'bg-primary border-primary text-primary-foreground'
-                              : 'bg-background border-border text-muted-foreground hover:border-primary/30'
-                          }`}
-                        >
-                          {label} {count}
-                        </button>
-                      )
-                    })}
-                  </div>
+                  {/* 二级:冲突筛选 —— 只在有意义的视图(全部/待处理/已确认)下出现 */}
+                  {statusFilter !== 'ignored' && (
+                    <div className="flex items-center gap-1.5 flex-wrap pl-1">
+                      {([
+                        ['all', '全部', statusScoped.length],
+                        ['clean', '无冲突', scopedCleanCount],
+                        ['conflict', '有冲突', scopedConflictCount],
+                      ] as const).map(([key, label, count]) => {
+                        const on = groupFilter === key
+                        return (
+                          <button
+                            key={key}
+                            onClick={() => setGroupFilter(key)}
+                            className={`h-6 px-2 rounded-full text-[11px] border transition-colors ${
+                              on
+                                ? 'bg-primary border-primary text-primary-foreground'
+                                : 'bg-background border-border text-muted-foreground hover:border-primary/30'
+                            }`}
+                          >
+                            {label} {count}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
 
                   {/* 重复分组 */}
                   <div className="space-y-4">
