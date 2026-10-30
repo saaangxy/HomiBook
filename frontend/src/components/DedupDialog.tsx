@@ -52,7 +52,7 @@ import {
 } from '@homibook/core'
 import { RECORD_TYPE_LABELS, RECORD_TYPE_TEXT_CLASS } from '@/lib/record-type'
 import { errorMessage } from '@/lib/error'
-import { CopyMinus, Check, ChevronDown, ChevronRight, X } from 'lucide-react'
+import { CopyMinus, Check, ChevronDown, ChevronRight } from 'lucide-react'
 import dayjs from 'dayjs'
 
 interface DedupDialogProps {
@@ -132,7 +132,7 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
   const [amountMaxText, setAmountMaxText] = useState('')
 
   const [groups, setGroups] = useState<DuplicateGroup[]>([])
-  const [totalDuplicates, setTotalDuplicates] = useState(0)
+  const [, setTotalDuplicates] = useState(0)
   const [detected, setDetected] = useState(false)
   const [detecting, setDetecting] = useState(false)
   const [error, setError] = useState('')
@@ -288,11 +288,6 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
     }
     return g.records.some((r) => selectedIds.has(r.id))
   }
-  /** 已确认组里真正要合并的条数(不含被阻断的组) */
-  const confirmedMergeCount = mergePlans
-    .filter((p) => groupStates[p.group.key] === 'confirmed' && !p.plan.blocked)
-    .reduce((sum, p) => sum + p.plan.mergeIds.length, 0)
-
   // 分组筛选(全部 / 无冲突 / 有冲突):**按整组判定,与勾选无关** ——
   // 勾选决定「处理哪些」,筛选决定「先看哪些」,所以用全组记录算一次,而不是用当前勾选算。
   // 「有冲突」= 账户/分类组内不一致(要选一个)或方向不一致(根本不能合),即"需要人工处理的组"。
@@ -486,15 +481,7 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
                         onChange={(v) => setFilters(prev => ({ ...prev, dateFrom: v || null }))}
                       />
                     </div>
-                    {filters.dateFrom ? (
-                      <button
-                        type="button"
-                        onClick={() => setFilters(prev => ({ ...prev, dateFrom: null }))}
-                        className="shrink-0 text-muted-foreground hover:text-foreground"
-                      >
-                        <X size={14} />
-                      </button>
-                    ) : null}
+                    {/* 清空交给 DatePicker 自带的 ×，这里不再重复放一个 */}
                   </div>
                 </div>
 
@@ -509,15 +496,7 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
                         onChange={(v) => setFilters(prev => ({ ...prev, dateTo: v || null }))}
                       />
                     </div>
-                    {filters.dateTo ? (
-                      <button
-                        type="button"
-                        onClick={() => setFilters(prev => ({ ...prev, dateTo: null }))}
-                        className="shrink-0 text-muted-foreground hover:text-foreground"
-                      >
-                        <X size={14} />
-                      </button>
-                    ) : null}
+                    {/* 清空交给 DatePicker 自带的 ×，这里不再重复放一个 */}
                   </div>
                 </div>
 
@@ -697,12 +676,6 @@ export function DedupDialog({ open, onOpenChange, bookId, onComplete }: DedupDia
                         删除重复
                       </span>
                       <div className="ml-auto flex items-center gap-1.5 flex-wrap">
-                        <Badge variant="secondary" className="text-xs">{totalDuplicates} 条重复</Badge>
-                        <Badge variant="secondary" className="text-xs">
-                          {mode === 'merge'
-                            ? `已确认 ${confirmedGroups.length} 组 / 将合并 ${confirmedMergeCount} 条`
-                            : `已确认 ${confirmedGroups.length} 组`}
-                        </Badge>
                         {mode === 'merge' && blockedCount > 0 && (
                           <Badge variant="secondary" className="text-xs text-destructive">
                             {blockedCount} 组方向不一致,不参与合并
