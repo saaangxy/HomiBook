@@ -21,5 +21,8 @@
   },
   // 只编译 src/：prisma.config.ts 由 Prisma CLI 执行，dist/ 旧产物不作为输入
   // @homibook/core 类型/运行时经 node_modules(workspace 链接)的 exports 解析到 packages/core/dist
-  "include": ["src"]
+  "include": ["src"],
+  // 测试文件不进生产构建：Docker 只装 dependencies，没有 vitest，tsc 会因找不到模块而失败
+  // （单测由 vitest 自己用 esbuild 转译，不依赖这里）
+  "exclude": ["src/**/*.test.ts", "src/**/*.spec.ts"]
 }
