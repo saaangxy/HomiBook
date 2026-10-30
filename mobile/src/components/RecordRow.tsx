@@ -50,6 +50,21 @@ export const RecordRow = memo(function RecordRow({ record, showDivider = false }
             <Text numberOfLines={1} style={{ fontSize: 16, fontWeight: '700', color: colors.foreground }}>
               {title}
             </Text>
+            {record.offsetAt && (
+              <Text
+                style={{
+                  fontSize: 10,
+                  color: colors.mutedForeground,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  borderRadius: 4,
+                  paddingHorizontal: 4,
+                  paddingVertical: 1,
+                }}
+              >
+                已平账
+              </Text>
+            )}
             {attCount > 0 && (
               <Pressable
                 hitSlop={6}

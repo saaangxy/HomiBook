@@ -36,6 +36,8 @@ export interface RecordItem {
   payer: string | null;
   ownerId: string;
   ownerName: string;
+  /** 平账时间:非空表示已平账,不计入收支统计与账户余额 */
+  offsetAt?: string | null;
   createdAt: string;
   updatedAt: string;
   account: { id: string; name: string; type: string };

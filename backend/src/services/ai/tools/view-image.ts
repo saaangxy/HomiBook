@@ -14,6 +14,7 @@ import type { ToolDef } from './types.js'
 import { prisma } from '../../../app.js'
 import { assertIsMember } from '../security.js'
 import { askImage } from '../image-context.js'
+import { stripThinkTags } from '../context-compress.js'
 
 export const viewImageTool: ToolDef = {
   name: 'view_image',
@@ -27,13 +28,21 @@ export const viewImageTool: ToolDef = {
     type: 'object',
     properties: {
       attachmentId: { type: 'string', description: '附件 ID（从消息中的附件信息获取）' },
-      question: { type: 'string', description: '要确认的视觉细节,例如「这张小票上有盖章吗?盖在什么位置」' },
+      question: {
+        type: 'string',
+        description: '要确认的视觉细节,例如「这张小票上有盖章吗?盖在什么位置」。' +
+          '仅在 needImage=false（由视觉模型代答）时需要；needImage=true 时不需要填写。',
+      },
+      needImage: {
+        type: 'boolean',
+        description: '文字答案不够、需要自己直接看图时置 true —— 系统会在同一次回复的下一步把原图注入,此后你可以自己看图作答',
+      },
     },
-    required: ['attachmentId', 'question'],
+    required: ['attachmentId'],
   } as Record<string, unknown>,
   requireConfirm: false,
 
-  execute: async (args: { attachmentId: string; question?: string }, ctx) => {
+  execute: async (args: { attachmentId: string; question?: string; needImage?: boolean }, ctx) => {
     const { userId, accountBookId } = ctx
     await assertIsMember(accountBookId, userId)
 
@@ -54,7 +63,23 @@ export const viewImageTool: ToolDef = {
       }
     }
 
+    // needImage=true:模型明确要求自己看图 —— 不再让视觉模型代答一遍(同一张图花两次调用),
+    // 也不需要在参数里编一个问题:下一步直接把原图注入,由模型自己看
+    if (args.needImage) {
+      return {
+        success: true,
+        retryable: false,
+        data: {
+          attachmentId: attachment.id,
+          originalFilename: attachment.originalFilename,
+          requestImage: true,
+          hint: '原图将在本次回复的下一步注入,届时你自己看图作答;本轮可先简述已从摘要中确认的信息。',
+        },
+      }
+    }
+
     const question = (args.question || '').trim() || '这张图片里有哪些值得注意的视觉细节?'
+
     const res = await askImage(attachment, question, userId)
     if ('error' in res) return { success: false, error: res.error, retryable: false }
 
@@ -65,7 +90,13 @@ export const viewImageTool: ToolDef = {
         attachmentId: attachment.id,
         originalFilename: attachment.originalFilename,
         question,
-        answer: res.answer,
+        // 视觉模型常把推理过程写在 think 里并混进答案,主模型收到的是无用英文推理 → 先剥掉
+        answer: stripThinkTags(res.answer),
+        /**
+         * 请求下一轮把该图作为图片重新注入(由 chat.ts 收集并在下次请求时附加一次)。
+         * 不能把 base64 放进 tool-result —— openai-compatible 会当文本,单图就能把请求撑到 300 万 token。
+         */
+        requestImage: !!args.needImage,
       },
     }
   },

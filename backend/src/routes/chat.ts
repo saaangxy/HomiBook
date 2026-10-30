@@ -6,7 +6,7 @@ import { prisma } from '../app.js'
 import { authenticate, requireAdmin } from '../middleware/auth.js'
 import { createModel, ALL_PROVIDERS, DEFAULT_BASE_URLS, type ProviderType } from '../services/ai/providers.js'
 import { detectImageFormat, getImageSize, VISION_MEDIA_TYPES, IMAGE_FORMAT_LABELS } from '../services/ai/image-format.js'
-import { needsTiling, fitOversizedImage, VISION_MAX_SIDE } from '../services/ai/image-tile.js'
+import { needsTiling, fitOversizedImage, VISION_MAX_SIDE, prepareVisionImage } from '../services/ai/image-tile.js'
 import { routeIntent, classifyWithKeywords } from '../services/ai/model-router.js'
 import { assertIsMember, loadUserProviderConfig } from '../services/ai/security.js'
 import { logToolCall } from '../services/ai/audit.js'
@@ -30,6 +30,16 @@ declare module 'fastify' {
     swaggerResponse?: Record<number, unknown>
   }
 }
+
+/**
+ * 待注入的图片:模型调用 view_image 且 needImage=true 后,在**下一次请求**里把图
+ * 作为 user message 的 image part 附加一次。
+ *
+ * 为什么不能直接放进 tool-result:openai-compatible 的 tool 消息不支持图片 content,
+ * base64 会被当文本计入 token —— 实测单图就能把请求撑到 320 万 token。
+ */
+const pendingImageInjections = new Map<string, { attachmentId: string; at: number }>()
+const IMAGE_INJECTION_TTL_MS = 10 * 60 * 1000
 
 // ---- 共享流式响应函数：供 /send 和 /confirm 复用 ----
 
@@ -154,6 +164,10 @@ const UI_HINT_ONLY_TOOLS = new Set(['save_image_content'])
 
 async function streamAssistantResponse(opts: StreamAssistantOptions) {
   const { reply, sessionId, accountBookId, userId, systemPrompt, messages, parentMessageId, provider, model, apiKey, baseURL, temperature, maxTokens, maxSteps, autoConfirmCreate, disabledTools, runtimeDisabledTools, forceImageSummary } = opts
+
+  // view_image 请求「直接看图」时,把图作为 user message 注入一次。
+  // 放在这里而不是各装配路径:所有入口(/send、/confirm、续写)都会经过本函数
+  await applyPendingImageInjection(sessionId, messages)
 
   reply.raw.writeHead(200, {
     'Content-Type': 'text/event-stream',
@@ -314,6 +328,13 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
 
           // ---- 普通工具：直接执行 ----
           const result = await tool.execute(args, { userId, accountBookId })
+
+          // view_image 请求「直接看图」→ 记下来,下一次请求把它作为图片注入一次
+          if (tool.name === 'view_image' && (args as any)?.needImage && result.success) {
+            const attachmentId = (result as any).data?.attachmentId
+            if (attachmentId) pendingImageInjections.set(sessionId, { attachmentId, at: Date.now() })
+          }
+
           const durationMs = Date.now() - start
           const status = result.success ? 'success' : 'error'
 
@@ -376,16 +397,19 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
       maxOutputTokens: maxTokens,
       stopWhen: stepCountIs(maxSteps),
       abortSignal: abortController.signal,
-      // 首步强制记录图片内容:模型本轮已经看到图,让它把内容写下来即可 ——
-      // 既保证后续轮次「记得」图片,又不会像另调视觉模型那样多一次识图
-      ...(forceImageSummary
-        ? {
-            prepareStep: ({ stepNumber }: { stepNumber: number }) =>
-              stepNumber === 0
-                ? { toolChoice: { type: 'tool' as const, toolName: 'save_image_content' } }
-                : {},
-          }
-        : {}),
+      // prepareStep 是 SDK 里唯一能在「同一次请求内、下一步之前」改 messages 的钩子:
+      //   · step 0:forceImageSummary 时强制模型先记录图片内容
+      //   · step >0:上一步 view_image 请求了原图时,把图插进下一步的 messages(同轮就能看到,不用等下一轮)
+      prepareStep: async ({ stepNumber, messages: stepMessages }: { stepNumber: number; messages: any[] }) => {
+        if (stepNumber > 0) {
+          const injected = await buildPendingImageMessage(sessionId)
+          if (injected) return { messages: [...stepMessages, injected] }
+        }
+        if (forceImageSummary && stepNumber === 0) {
+          return { toolChoice: { type: 'tool' as const, toolName: 'save_image_content' } }
+        }
+        return {}
+      },
       onStepFinish: () => {
         // 所有 tool 的 execute() 已执行完、tool-result 已全部 enqueue
         // 此时 controller 空闲，安全调用 abort 阻止下一步 LLM 调用
@@ -605,6 +629,67 @@ async function findPendingToolMessage(toolCallId: string, userId: string): Promi
 
 // ---- 共享辅助：构建 AI SDK CoreMessage 数组 ----
 
+/**
+ * 把 view_image 请求过的图片作为 user message 注入一次。
+ *
+ * 约束(与方案一致):只在下一轮注入一次、单轮最多 1 张、长边压缩由 prepareVisionImage 负责;
+ * 任何失败都静默跳过 —— 工具返回的文字答案已经足够。
+ */
+async function buildPendingImageMessage(sessionId: string): Promise<any | null> {
+  const pending = pendingImageInjections.get(sessionId)
+  if (!pending) return null
+  // 一次性:无论成功与否都消费掉,避免同一张图反复注入撑大上下文
+  pendingImageInjections.delete(sessionId)
+  if (Date.now() - pending.at > IMAGE_INJECTION_TTL_MS) return null
+  console.log(`图片召回`)
+  try {
+    const att = await prisma.recordAttachment.findUnique({
+      where: { id: pending.attachmentId },
+      select: { path: true, originalFilename: true },
+    })
+    if (!att?.path) return null
+
+    const disk = path.join(process.cwd(), att.path.replace(/^\/api\//, ''))
+    if (!existsSync(disk)) return null
+
+    const prep = await prepareVisionImage(readFileSync(disk))
+    if ('error' in prep || prep.parts.length === 0) return null
+    console.log(`图片召回${pending.attachmentId}`)
+
+    // 超长图会被切成多块:按顺序全量注入,否则模型只看到上半截会误判
+    // (上限 6 段:再多单次就要多花上万 token,超出部分明确告知被截断)
+    const MAX_INJECT_PARTS = 6
+    const parts = prep.parts.slice(0, MAX_INJECT_PARTS)
+    const cut = prep.parts.length > parts.length
+
+    const note = cut
+      ? `原图较长,按从上到下切分为 ${prep.parts.length} 段,这里只注入前 ${parts.length} 段。`
+      : parts.length > 1
+        ? `原图较长,按从上到下切分为 ${parts.length} 段,请按顺序阅读。`
+        : ''
+
+    return {
+      role: 'user',
+      content: [
+        {
+          type: 'text',
+          text: `（系统注入）你上一步请求直接查看这张图片${att.originalFilename ? `：${att.originalFilename}` : ''}。${note}`,
+        },
+        ...parts.map((p) => ({ type: 'image' as const, image: p.image, mediaType: p.mediaType })),
+      ],
+    }
+  } catch {
+    // 注入失败不影响文字答案
+    return null
+  }
+}
+
+/** 跨轮兜底:上一次请求里标记了要注入、但本轮开始前还没被 prepareStep 消费掉 */
+async function applyPendingImageInjection(sessionId: string, messages: any[]) {
+  const msg = await buildPendingImageMessage(sessionId)
+  if (msg) messages.push(msg)
+}
+
 async function buildChatMessages(sessionId: string, pendingToolResults: { toolCallId: string; toolName: string; result: unknown }[]): Promise<{ messages: any[]; messageIds: string[] }> {
   const dbMessages = await prisma.chatMessage.findMany({
     where: { sessionId },
@@ -701,6 +786,9 @@ async function buildChatMessages(sessionId: string, pendingToolResults: { toolCa
   foldInjections(messages, messageIds, injects)
   // 附件段补摘要(与主消息流程同一套规则:两条装配路径的文本必须一致)
   await enrichAttachmentSections(messages, messageIds)
+
+  // view_image 请求「直接看图」时,把图作为 user message 注入一次
+  await applyPendingImageInjection(sessionId, messages)
 
   return { messages, messageIds }
 }

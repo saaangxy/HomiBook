@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, Switch, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, Switch, TextInput, View, useWindowDimensions } from 'react-native';
 import { Check, ChevronDown, ChevronRight, CopyMinus, X } from 'lucide-react-native';
 import { useTheme, alpha, haptics, semanticTypeColor } from '@/theme';
 import { Text } from '@/components/ui/Text';
@@ -87,6 +87,8 @@ function toMergeRecord(r: RecordItem): DuplicateMergeRecord {
   };
 }
 
+type GroupStatus = 'pending' | 'confirmed' | 'ignored';
+
 interface DedupSheetProps {
   visible: boolean;
   onClose: () => void;
@@ -97,6 +99,8 @@ interface DedupSheetProps {
 export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
   const { colors, palette } = useTheme();
   const { accounts } = useRecords();
+  // 弹窗主体高度:占屏幕 90%,减去头部/底部按钮占位,避免内容区只剩一半
+  const { height: windowHeight } = useWindowDimensions();
 
   const [matchFields, setMatchFields] = useState<DedupMatchFields>(DEFAULT_DEDUP_MATCH_FIELDS);
   // 匹配条件默认展开;点「检测重复」后自动收起(给结果让位)
@@ -121,6 +125,11 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
   // 合并与删除共用的「执行中」标记
   const [running, setRunning] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  /** 备注相似度阈值(0~100,空 = 不启用) */
+  const [remarkSimilarity, setRemarkSimilarity] = useState('');
+  /** 组级状态(与 Web 端一致):确认即按当前勾选锁定整组 */
+  const [groupStates, setGroupStates] = useState<Record<string, GroupStatus>>({});
+  const [statusFilter, setStatusFilter] = useState<'all' | GroupStatus>('all');
 
   // 账户 id → "账户名 · 归属人" 显示映射(多归属人账本才带归属人)
   const multiOwnerAccounts = isMultiOwnerAccounts(accounts);
@@ -162,6 +171,9 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
     setChoices({});
     setGroupFilter('all');
     setConfirmOpen(false);
+    setGroupStates({});
+    setStatusFilter('all');
+    setRemarkSimilarity('');
   };
 
   const handleClose = () => {
@@ -178,8 +190,15 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
     setMatchOpen(false);
     setScopeOpen(false);
     try {
-      const result = await detectDuplicatesApi(bookId, matchFields, hasDedupScopeFilter(scope) ? scope : undefined);
+      const result = await detectDuplicatesApi(
+        bookId,
+        matchFields,
+        hasDedupScopeFilter(scope) ? scope : undefined,
+        remarkSimilarity ? Number(remarkSimilarity) / 100 : undefined,
+      );
       setGroups(result.groups);
+      setGroupStates(Object.fromEntries(result.groups.map((g) => [g.key, 'pending' as GroupStatus])));
+      setStatusFilter('all');
       setTotalDuplicates(result.totalDuplicates);
       setDetected(true);
       // 默认勾选:每组保留最早的(第一条),勾选其余
@@ -219,8 +238,7 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
 
   /** 底部按钮:按当前模式弹确认(删除 / 合并) */
   const handleRun = () => {
-    if (running) return;
-    if (mode === 'delete' ? selectedIds.size === 0 : pendingMergeCount === 0) return;
+    if (running || confirmedGroups.length === 0) return;
     setConfirmOpen(true);
   };
 
@@ -229,7 +247,10 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
     setRunning(true);
     setError('');
     try {
-      await batchDeleteRecordsApi(Array.from(selectedIds));
+      // 只删「已确认」组里被勾选的记录
+      const ids = confirmedGroups.flatMap((g) => g.records.filter((r) => selectedIds.has(r.id)).map((r) => r.id));
+      if (ids.length === 0) { setConfirmOpen(false); return; }
+      await batchDeleteRecordsApi(ids);
       haptics.success();
       notifyPageRefresh();
       handleClose();
@@ -268,6 +289,15 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
   const pendingMergeCount = mergePlans.reduce((sum, p) => sum + (p.plan.blocked ? 0 : p.plan.mergeIds.length), 0);
   const blockedCount = mergePlans.filter((p) => p.plan.blocked).length;
 
+  /** 该组是否可确认:合并模式须有勾选成员且未被阻断;删除模式只要有勾选 */
+  const groupReady = (g: DuplicateGroup): boolean => {
+    if (mode === 'merge') {
+      const picked = g.records.slice(1).filter((r) => selectedIds.has(r.id));
+      return picked.length > 0 && !planOf(g)?.blocked;
+    }
+    return g.records.some((r) => selectedIds.has(r.id));
+  };
+
   // 分组筛选(全部 / 无冲突 / 有冲突):**按整组判定,与勾选无关** ——
   // 勾选决定「处理哪些」,筛选决定「先看哪些」,所以要用全组记录算一次,而不是用当前勾选算。
   // 「有冲突」= 账户/分类组内不一致(要选一个)或方向不一致(根本不能合),即"需要人工处理的组"。
@@ -282,9 +312,27 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
   }, [groups]);
   const cleanCount = groups.filter((g) => !groupInfo.get(g)?.dirty).length;
   const conflictCount = groups.length - cleanCount;
+  // 组级状态:全部 / 待处理 / 已确认 / 忽略(数量随时反映当前检测结果)
+  const statusCounts = useMemo(() => {
+    const c = { pending: 0, confirmed: 0, ignored: 0 };
+    for (const g of groups) {
+      const s = groupStates[g.key] ?? 'pending';
+      if (s === 'confirmed') c.confirmed++;
+      else if (s === 'ignored') c.ignored++;
+      else c.pending++;
+    }
+    return c;
+  }, [groups, groupStates]);
+  const confirmedGroups = groups.filter((g) => groupStates[g.key] === 'confirmed');
+  const statusScoped = groups.filter(
+    (g) => statusFilter === 'all' || (groupStates[g.key] ?? 'pending') === statusFilter,
+  );
+  // 二级冲突计数按**当前状态**统计,否则切到「已确认」时二级还显示全局 8
+  const scopedCleanCount = statusScoped.filter((g) => !groupInfo.get(g)?.dirty).length;
+  const scopedConflictCount = statusScoped.length - scopedCleanCount;
   const visibleGroups = groupFilter === 'all'
-    ? groups
-    : groups.filter((g) => (groupFilter === 'clean' ? !groupInfo.get(g)?.dirty : !!groupInfo.get(g)?.dirty));
+    ? statusScoped
+    : statusScoped.filter((g) => (groupFilter === 'clean' ? !groupInfo.get(g)?.dirty : !!groupInfo.get(g)?.dirty));
 
   const chipValue = (v: string | null | undefined) => (v == null ? EMPTY_CHIP : v);
   // 取该字段的当前选择:**显式选过(含选「不填」= null)一律以选择为准** ——
@@ -340,7 +388,9 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
     setRunning(true);
     setError('');
     try {
-      const targets = mergePlans.filter((p) => !p.plan.blocked);
+      // 只提交「已确认」且未被阻断的组
+      const targets = mergePlans.filter((p) => groupStates[p.group.key] === 'confirmed' && !p.plan.blocked);
+      if (targets.length === 0) { setConfirmOpen(false); return; }
       const res = await mergeDuplicatesApi(
         bookId,
         matchFields,
@@ -380,7 +430,7 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
       <Text variant="muted" style={{ fontSize: 11, width: 40 }}>{label}</Text>
       <View style={{ flex: 1 }}>
-        <DatePicker value={value ? `${value}T00:00:00` : ''} onChange={(v) => onChange(v.slice(0, 10))} />
+        <DatePicker compact value={value ? `${value}T00:00:00` : ''} onChange={(v) => onChange(v.slice(0, 10))} />
       </View>
       {value ? (
         <Pressable onPress={() => onChange(null)} hitSlop={8}>
@@ -393,7 +443,7 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
   return (
     <>
       <FormSheet visible={visible} title="去重检测" onClose={handleClose}>
-      <ScrollView style={{ maxHeight: 460 }} contentContainerStyle={{ paddingBottom: 8 }} showsVerticalScrollIndicator={false}>
+      <ScrollView style={{ maxHeight: Math.max(420, Math.round(windowHeight * 0.92) - 110) }} contentContainerStyle={{ paddingBottom: 16 }} showsVerticalScrollIndicator={false}>
         {error ? (
           <View style={{ padding: 10, borderRadius: 10, backgroundColor: alpha(colors.expense, 0.1), marginBottom: 12 }}>
             <Text style={{ fontSize: 12, color: colors.expense }}>{error}</Text>
@@ -429,9 +479,12 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
 
           {scopeOpen ? (
             <View style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 10, marginTop: 4 }}>
-              {dateRow('起始日', filters.dateFrom, (v) => setFilters((p) => ({ ...p, dateFrom: v })))}
-              {dateRow('结束日', filters.dateTo, (v) => setFilters((p) => ({ ...p, dateTo: v })))}
-              <Text variant="muted" style={{ fontSize: 10, marginBottom: 10 }}>时间按本地日,含首尾当天</Text>
+              {/* 起始日 / 结束日 并排,省一行高度 */}
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <View style={{ flex: 1 }}>{dateRow('起始日', filters.dateFrom, (v) => setFilters((p) => ({ ...p, dateFrom: v })))}</View>
+                <View style={{ flex: 1 }}>{dateRow('结束日', filters.dateTo, (v) => setFilters((p) => ({ ...p, dateTo: v })))}</View>
+              </View>
+              <Text variant="muted" style={{ fontSize: 10, marginBottom: 10 }}>时间按本地日，含首尾当天</Text>
 
               <Text variant="muted" style={{ fontSize: 11, marginBottom: 6 }}>类型(不选 = 全部)</Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
@@ -458,7 +511,7 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
                 })}
               </View>
 
-              <Text variant="muted" style={{ fontSize: 11, marginBottom: 6 }}>金额区间(按绝对值,留空 = 不限)</Text>
+              <Text variant="muted" style={{ fontSize: 11, marginBottom: 6 }}>金额区间（按绝对值，留空 = 不限）</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <TextInput
                   value={amountMinText}
@@ -529,7 +582,29 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
                   );
                 })}
               </View>
-              <Text variant="muted" style={{ fontSize: 10 }}>至少选中一项</Text>
+              {/* 备注相似度:启用后组内与首条差异过大的记录会被剔出该组 */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 }}>
+                <Text style={{ fontSize: 11, color: colors.mutedForeground }}>备注相似度 ≥</Text>
+                <TextInput
+                  value={remarkSimilarity}
+                  onChangeText={setRemarkSimilarity}
+                  keyboardType="numeric"
+                  // 不用 placeholder:部分 Android 上 placeholderTextColor 不生效,会被误看成已填值
+                  placeholder=""
+                  style={{
+                    flex: 1,
+                    height: 34,
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    paddingHorizontal: 10,
+                    color: colors.foreground,
+                    fontSize: 12,
+                  }}
+                />
+                <Text style={{ fontSize: 11, color: colors.mutedForeground }}>%</Text>
+              </View>
+              <Text variant="muted" style={{ fontSize: 10 }}>至少选中一项；备注相似度留空 = 不启用</Text>
             </View>
           ) : null}
         </View>
@@ -575,6 +650,10 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
                 value={mode === 'merge'}
                 onValueChange={(v) => {
                   setMode(v ? 'merge' : 'delete');
+                  // 合并与删除语义不同:切模式后所有组退回待处理
+                  setGroupStates((prev) =>
+                    Object.fromEntries(Object.keys(prev).map((k) => [k, 'pending' as GroupStatus])),
+                  );
                   haptics.tap();
                 }}
                 trackColor={{ false: alpha(colors.expense, 0.45), true: alpha(colors.primary, 0.45) }}
@@ -590,26 +669,58 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
                 : '勾选要删除的记录(默认每组除第 1 条外全选),每组保留最早一条。'}
             </Text>
 
-            {/* 摘要 */}
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-              {[
-                `共 ${groups.length} 组重复`,
-                `${totalDuplicates} 条重复`,
-                mode === 'merge' ? `将合并 ${pendingMergeCount} 条` : `已选 ${selectedIds.size} 条`,
-                ...(mode === 'merge' && blockedCount > 0 ? [`${blockedCount} 组方向不一致,不参与合并`] : []),
-              ].map((t) => (
-                <View key={t} style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: colors.muted }}>
-                  <Text style={{ fontSize: 11, color: colors.mutedForeground }}>{t}</Text>
+            {/* 摘要:组数/条数已在一级 tab 与底部按钮体现,这里只保留「方向不一致」这种需要注意的提示 */}
+            {mode === 'merge' && blockedCount > 0 ? (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: colors.muted }}>
+                  <Text style={{ fontSize: 11, color: colors.mutedForeground }}>{blockedCount} 组方向不一致，不参与合并</Text>
                 </View>
-              ))}
-            </View>
+              </View>
+            ) : null}
 
-            {/* 分组筛选:先看需要拍板的组(计数按整组算,与勾选无关) */}
-            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+            {/* 一级:组状态(与 Web 端一致) */}
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
               {([
                 ['all', '全部', groups.length],
-                ['clean', '无冲突', cleanCount],
-                ['conflict', '有冲突', conflictCount],
+                ['pending', '待处理', statusCounts.pending],
+                ['confirmed', '已确认', statusCounts.confirmed],
+                ['ignored', '忽略', statusCounts.ignored],
+              ] as const).map(([key, label, count]) => {
+                const on = statusFilter === key;
+                return (
+                  <Pressable
+                    key={key}
+                    onPress={() => {
+                      setStatusFilter(key);
+                      // 忽略视图不区分冲突,切过去时复位二级筛选
+                      if (key === 'ignored') setGroupFilter('all');
+                      haptics.tap();
+                    }}
+                    style={{
+                      paddingHorizontal: 12,
+                      paddingVertical: 6,
+                      borderRadius: 999,
+                      borderWidth: 1,
+                      borderColor: on ? colors.primary : colors.border,
+                      backgroundColor: on ? colors.primary : colors.card,
+                    }}
+                  >
+                    <Text style={{ fontSize: 12, fontWeight: on ? '600' : '400', color: on ? '#fff' : colors.mutedForeground }}>
+                      {label} ({count})
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {/* 二级:分组筛选(忽略视图下无意义) —— 缩进 + 小号 + 「冲突」前缀,明确从属于一级 */}
+            {statusFilter !== 'ignored' && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10, paddingLeft: 4 }}>
+              <Text style={{ fontSize: 10, color: colors.mutedForeground }}>冲突</Text>
+              {([
+                ['all', '全部', statusScoped.length],
+                ['clean', '无冲突', scopedCleanCount],
+                ['conflict', '有冲突', scopedConflictCount],
               ] as const).map(([key, label, count]) => {
                 const on = groupFilter === key;
                 return (
@@ -620,21 +731,22 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
                       haptics.tap();
                     }}
                     style={{
-                      paddingHorizontal: 10,
-                      paddingVertical: 5,
+                      paddingHorizontal: 8,
+                      paddingVertical: 4,
                       borderRadius: 999,
                       borderWidth: 1,
                       borderColor: on ? colors.primary : colors.border,
                       backgroundColor: on ? alpha(colors.primary, 0.12) : colors.card,
                     }}
                   >
-                    <Text style={{ fontSize: 11.5, fontWeight: on ? '600' : '400', color: on ? colors.primary : colors.mutedForeground }}>
+                    <Text style={{ fontSize: 10.5, fontWeight: on ? '600' : '400', color: on ? colors.primary : colors.mutedForeground }}>
                       {label} {count}
                     </Text>
                   </Pressable>
                 );
               })}
             </View>
+            )}
 
             {visibleGroups.length === 0 ? (
               <View style={{ paddingVertical: 20, alignItems: 'center' }}>
@@ -646,6 +758,8 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
             {visibleGroups.map((group) => {
               const groupIds = group.records.map((r) => r.id);
               const allSelected = groupIds.every((id) => selectedIds.has(id));
+              const status = groupStates[group.key] ?? 'pending';
+              const locked = status !== 'pending';
               const keyLabels = parseDuplicateGroupKey(group.key, matchFields, { accountDisplay, ownerNames });
               const groupPlan = planOf(group);
               const keepRec = group.records[0];
@@ -661,17 +775,57 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
                 group.records.slice(1).filter((r) => selectedIds.has(r.id)).reduce((n, r) => n + (r.attachments?.length ?? 0), 0);
               return (
                 <View key={group.key} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 14, overflow: 'hidden', marginBottom: 14 }}>
-                  {/* 组头 */}
+                  {/* 组头:状态 + 确认/忽略/恢复 */}
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.muted, flexWrap: 'wrap' }}>
-                    <Pressable onPress={() => toggleGroup(group)}>
-                      <Text style={{ fontSize: 12, color: colors.primary, fontWeight: '600' }}>{allSelected ? '取消全选' : '全选'}</Text>
-                    </Pressable>
+                    {!locked && (
+                      <Pressable onPress={() => toggleGroup(group)}>
+                        <Text style={{ fontSize: 12, color: colors.primary, fontWeight: '600' }}>{allSelected ? '取消全选' : '全选'}</Text>
+                      </Pressable>
+                    )}
                     <Text style={{ fontSize: 12, color: colors.mutedForeground }}>{group.count} 条重复</Text>
                     {mode === 'merge' && groupPlan ? (
-                      <Text variant="muted" style={{ fontSize: 11, marginLeft: 'auto' }}>
+                      <Text variant="muted" style={{ fontSize: 11 }}>
                         {groupPlan.blocked ? '方向不一致,不合并' : `将并入 ${groupPlan.mergeIds.length} 条`}
                       </Text>
                     ) : null}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
+                      {status === 'confirmed' && (
+                        <Text style={{ fontSize: 10, color: colors.primary, borderWidth: 1, borderColor: colors.primary, borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1 }}>已确认</Text>
+                      )}
+                      {status === 'ignored' && (
+                        <Text style={{ fontSize: 10, color: colors.mutedForeground, borderWidth: 1, borderColor: colors.border, borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1 }}>已忽略</Text>
+                      )}
+                      {status === 'pending' ? (
+                        <>
+                          <Pressable
+                            onPress={() => { setGroupStates((p) => ({ ...p, [group.key]: 'confirmed' })); haptics.tap(); }}
+                            disabled={!groupReady(group)}
+                            style={{
+                              paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6,
+                              backgroundColor: colors.primary,
+                              opacity: groupReady(group) ? 1 : 0.4,
+                            }}
+                          >
+                            <Text style={{ fontSize: 11, color: '#fff', fontWeight: '600' }}>确认</Text>
+                          </Pressable>
+                          <Pressable
+                            onPress={() => { setGroupStates((p) => ({ ...p, [group.key]: 'ignored' })); haptics.tap(); }}
+                            style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: colors.border }}
+                          >
+                            <Text style={{ fontSize: 11, color: colors.mutedForeground }}>忽略</Text>
+                          </Pressable>
+                        </>
+                      ) : (
+                        <Pressable
+                          onPress={() => { setGroupStates((p) => ({ ...p, [group.key]: 'pending' })); haptics.tap(); }}
+                          style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: colors.border }}
+                        >
+                          <Text style={{ fontSize: 11, color: colors.mutedForeground }}>
+                            {status === 'confirmed' ? '取消确认' : '恢复'}
+                          </Text>
+                        </Pressable>
+                      )}
+                    </View>
                   </View>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, paddingHorizontal: 12, paddingBottom: 8, backgroundColor: colors.muted }}>
                     {keyLabels.map((label, i) => (
@@ -688,6 +842,7 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
                     return (
                       <Pressable
                         key={r.id}
+                        disabled={locked}
                         onPress={() => toggleRecord(r.id)}
                         style={{
                           flexDirection: 'row',
@@ -838,7 +993,7 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
       {detected && groups.length > 0 ? (
         <Pressable
           onPress={handleRun}
-          disabled={running || (mode === 'delete' ? selectedIds.size === 0 : pendingMergeCount === 0)}
+          disabled={running || confirmedGroups.length === 0}
           style={{
             marginTop: 12,
             height: 48,
@@ -848,14 +1003,14 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
             justifyContent: 'center',
             flexDirection: 'row',
             gap: 8,
-            opacity: running || (mode === 'delete' ? selectedIds.size === 0 : pendingMergeCount === 0) ? 0.5 : 1,
+            opacity: running || confirmedGroups.length === 0 ? 0.5 : 1,
           }}
         >
           {running ? (
             <ActivityIndicator color="#fff" />
           ) : (
             <Text style={{ fontSize: 15, fontWeight: '600', color: '#fff' }}>
-              {mode === 'delete' ? `删除 (${selectedIds.size})` : `合并 (${pendingMergeCount})`}
+              {mode === 'delete' ? `删除 ${confirmedGroups.length} 组` : `合并 ${confirmedGroups.length} 组`}
             </Text>
           )}
         </Pressable>

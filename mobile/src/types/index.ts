@@ -63,6 +63,8 @@ export interface RecordItem {
   counterparty?: string;
   ownerId?: string;
   ownerName?: string;
+  /** 平账时间:非空表示已平账,不计入收支统计与账户余额 */
+  offsetAt?: string | null;
   tags: string[];
   /** 流水附件(小票/发票等),url 为相对路径 */
   attachments?: { id: string; url: string; originalFilename: string }[];

@@ -11,6 +11,8 @@ import { Text } from '@/components/ui/Text';
 interface DatePickerProps {
   value: string; // 'YYYY-MM-DDTHH:mm:ss'(与 web 端 datetime-picker 一致)
   onChange: (value: string) => void;
+  /** 紧凑模式:更小的字号与高度,用于并排两列的场景(避免「选择日期」被挤成两行) */
+  compact?: boolean;
 }
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
@@ -120,7 +122,7 @@ function parseValue(value?: string): dayjs.Dayjs {
   return dayjs(value);
 }
 
-export function DatePicker({ value, onChange }: DatePickerProps) {
+export function DatePicker({ value, onChange, compact }: DatePickerProps) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
@@ -189,10 +191,24 @@ export function DatePicker({ value, onChange }: DatePickerProps) {
     <>
       <Pressable
         onPress={openSheet}
-        style={{ height: 44, borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.elevated, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center' }}
+        style={{
+          height: compact ? 36 : 44,
+          borderRadius: compact ? 10 : 14,
+          borderWidth: 1,
+          borderColor: colors.border,
+          backgroundColor: colors.elevated,
+          paddingHorizontal: compact ? 8 : 14,
+          flexDirection: 'row',
+          alignItems: 'center',
+        }}
       >
-        <CalendarIcon size={15} color={colors.primary} />
-        <Text style={{ marginLeft: 8, fontSize: 14, color: value ? colors.foreground : colors.mutedForeground, flex: 1 }}>{display}</Text>
+        <CalendarIcon size={compact ? 13 : 15} color={colors.primary} />
+        <Text
+          numberOfLines={1}
+          style={{ marginLeft: compact ? 5 : 8, fontSize: compact ? 12 : 14, color: value ? colors.foreground : colors.mutedForeground, flex: 1 }}
+        >
+          {display}
+        </Text>
       </Pressable>
 
       <Modal visible={open} transparent animationType="none" onRequestClose={() => setOpen(false)}>

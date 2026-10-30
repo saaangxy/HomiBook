@@ -22,6 +22,8 @@ export interface RecordFilters {
   minAmount: string;
   maxAmount: string;
   keyword: string; // 交易方/备注模糊
+  /** 平账状态:'' = 全部,'pending' = 未平账,'offset' = 已平账 */
+  offsetState: '' | 'pending' | 'offset';
 }
 
 export const emptyFilters: RecordFilters = {
@@ -34,6 +36,7 @@ export const emptyFilters: RecordFilters = {
   minAmount: '',
   maxAmount: '',
   keyword: '',
+  offsetState: '',
 };
 
 /** 活跃条件计数(日期/金额各计 1) */
@@ -45,7 +48,8 @@ export function countActiveFilters(f: RecordFilters): number {
     f.categoryCodes.length +
     (f.dateFrom || f.dateTo ? 1 : 0) +
     (f.minAmount || f.maxAmount ? 1 : 0) +
-    (f.keyword.trim() ? 1 : 0)
+    (f.keyword.trim() ? 1 : 0) +
+    (f.offsetState ? 1 : 0)
   );
 }
 
@@ -175,6 +179,24 @@ export function FilterSheet({ visible, initial, onApply, onClose }: FilterSheetP
                   style={chip(draft.types.includes(t.value))}
                 >
                   <Text style={chipText(draft.types.includes(t.value))}>{t.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+
+            {/* 平账状态:单选,与 Web 端口径一致(空 = 全部) */}
+            <Text variant="label">平账状态</Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+              {([
+                { value: '', label: '全部' },
+                { value: 'pending', label: '未平账' },
+                { value: 'offset', label: '已平账' },
+              ] as const).map((o) => (
+                <Pressable
+                  key={o.value || 'all'}
+                  onPress={() => { setDraft((d) => ({ ...d, offsetState: o.value })); haptics.tap(); }}
+                  style={chip(draft.offsetState === o.value)}
+                >
+                  <Text style={chipText(draft.offsetState === o.value)}>{o.label}</Text>
                 </Pressable>
               ))}
             </View>

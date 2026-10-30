@@ -327,6 +327,10 @@ export function MessageBubble({ message, onRetry, onEditSubmit, versions, onSwit
                 }
                 case 'tool-call':
                   // 读图工具只给一行轻量进度(不落库,历史里不会出现),不渲染完整工具卡
+                  // view_image 的「请求看原图」没有视觉产出(只有 requestImage 标记),卡片无信息量
+                  if (block.toolName === 'view_image' && (block.result as any)?.data?.requestImage === true) {
+                    return null
+                  }
                   return block.toolName === 'save_image_content'
                     ? <SaveImageHint key={block.id} status={block.status} />
                     : <ToolCallCard key={block.id} toolCall={block} />

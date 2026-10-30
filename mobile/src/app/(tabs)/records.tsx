@@ -1,11 +1,11 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Platform, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useIsFocused } from 'expo-router';
-import { ArrowUpRight, ArrowDownRight, ArrowLeftRight, SlidersHorizontal, X, Copy, Trash2, CopyMinus, FileUp, Download, Save, Share2, ChevronDown, ChevronUp } from 'lucide-react-native';
+import { ArrowUpRight, ArrowDownRight, ArrowLeftRight, SlidersHorizontal, X, Copy, Trash2, CopyMinus, FileUp, Download, Save, Share2, ChevronDown, ChevronUp, Undo2 } from 'lucide-react-native';
 import { useTheme, alpha, haptics } from '@/theme';
 import { useUIShell, usePageRefresh } from '@/components/chrome/chrome';
 import { useRecords } from '@/stores/records';
-import { fetchRecordsPaged, fetchSummary } from '@/services/records';
+import { fetchRecordsPaged, fetchSummary, batchOffset } from '@/services/records';
 import { Screen } from '@/components/Screen';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
@@ -54,13 +54,15 @@ function appendUnique(prev: RecordItem[], next: RecordItem[]): RecordItem[] {
  * 这里抽成 memo 组件 + 稳定回调:只要该日数据与回调没变就跳过整棵子树。
  * 注:回调必须是稳定引用(useCallback),否则 memo 形同虚设。
  */
-const DayCard = memo(function DayCard({ date, records, index, onClone, onDelete, onOpen }: {
+const DayCard = memo(function DayCard({ date, records, index, onClone, onDelete, onOpen, onUnoffset }: {
   date: string;
   records: RecordItem[];
   index: number;
   onClone: (r: RecordItem) => void;
   onDelete: (r: RecordItem) => void;
   onOpen: (r: RecordItem) => void;
+  /** 已平账记录:左滑取消平账 */
+  onUnoffset: (r: RecordItem) => void;
 }) {
   const { colors } = useTheme();
   return (
@@ -71,6 +73,10 @@ const DayCard = memo(function DayCard({ date, records, index, onClone, onDelete,
           <View key={r.id}>
             <SwipeRow
               actions={[
+                // 已平账的记录才提供「取消平账」
+                ...(r.offsetAt
+                  ? [{ key: 'unoffset', label: '取消平账', color: colors.transfer, icon: Undo2, onPress: () => onUnoffset(r) }]
+                  : []),
                 { key: 'clone', label: '克隆', color: colors.transfer, icon: Copy, onPress: () => onClone(r) },
                 { key: 'del', label: '删除', color: colors.expense, icon: Trash2, onPress: () => onDelete(r) },
               ]}
@@ -138,6 +144,7 @@ export default function RecordsScreen() {
       // 转入账户:转账记录的 accountId 存的是源账户,转入账户单独筛
       toAccountId: filters.toAccountIds.length > 0 ? filters.toAccountIds.join(',') : undefined,
       categoryCode: filters.categoryCodes.length > 0 ? filters.categoryCodes.join(',') : undefined,
+      offsetState: filters.offsetState || undefined,
     };
   }, [filters]);
 
@@ -261,10 +268,22 @@ export default function RecordsScreen() {
   /** 打开流水详情(稳定引用) */
   const onOpenRecord = useCallback((r: RecordItem) => { haptics.tap(); openRecord(r); }, [openRecord]);
 
+  /** 已平账记录:左滑取消平账(移动端只做「查看 + 取消」,平账动作在 Web / AI 对话) */
+  const onUnoffset = useCallback(async (r: RecordItem) => {
+    try {
+      await batchOffset([r.id], false);
+      haptics.success();
+      // 本地即时恢复为未平账,避免整页重拉
+      setItems((prev) => prev.map((x) => (x.id === r.id ? { ...x, offsetAt: null } : x)));
+    } catch {
+      // 失败静默:下次刷新会回到已平账状态
+    }
+  }, []);
+
   // renderItem/keyExtractor 稳定化:滚动、加载下一页、汇总变化时不再整批重建 cell
   const renderDay = useCallback(({ item: d, index }: { item: string; index: number }) => (
-    <DayCard date={d} records={groups[d]} index={index} onClone={onClone} onDelete={onDelete} onOpen={onOpenRecord} />
-  ), [groups, onClone, onDelete, onOpenRecord]);
+    <DayCard date={d} records={groups[d]} index={index} onClone={onClone} onDelete={onDelete} onOpen={onOpenRecord} onUnoffset={onUnoffset} />
+  ), [groups, onClone, onDelete, onOpenRecord, onUnoffset]);
   const keyExtractorDate = useCallback((d: string) => d, []);
   const onConfirmDelete = () => {
     if (!confirmRecord) return;
@@ -341,6 +360,13 @@ export default function RecordsScreen() {
     ...(filters.keyword.trim()
       ? [{ key: 'kw', label: `「${filters.keyword.trim()}」`, onClear: () => setFilters((f) => ({ ...f, keyword: '' })) }]
       : []),
+    ...(filters.offsetState
+      ? [{
+          key: 'offsetState',
+          label: filters.offsetState === 'offset' ? '只看已平账' : '只看未平账',
+          onClear: () => setFilters((f) => ({ ...f, offsetState: '' })),
+        }]
+      : []),
   ];
 
   // 单条条件胶囊(限宽 + 省略号:像「农业银行储蓄卡(5172)」这种长标签不会一条吃掉整行)
@@ -393,20 +419,21 @@ export default function RecordsScreen() {
           </View>
         </FadeInView>
 
-        {/* 筛选入口 + 活跃条件胶囊 */}
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingBottom: 12, alignItems: 'center' }}>
+        {/* 操作入口:四个按钮等分一行,不换行也不依赖滚动测量(ScrollView 里 Text 会被压扁) */}
+        <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', paddingBottom: 12 }}>
           <Pressable
             onPress={() => {
               setFilterOpen(true);
               haptics.tap();
             }}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border }}
+            style={{ flex: 1, position: 'relative', justifyContent: 'center', flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 7, borderRadius: 999, backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border }}
           >
             <SlidersHorizontal size={13} color={colors.foreground} />
-            <Text style={{ fontSize: 13, color: colors.foreground, fontWeight: '500' }}>筛选</Text>
+            <Text style={{ flexShrink: 0, fontSize: 13, color: colors.foreground, fontWeight: '500' }}>筛选</Text>
+            {/* 角标绝对定位:不占布局宽度,否则会把后面的按钮挤到下一行 */}
             {activeCount > 0 && (
-              <View style={{ minWidth: 16, height: 16, borderRadius: 8, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 }}>
-                <Text style={{ fontSize: 10, color: colors.primaryForeground, fontWeight: '700' }}>{activeCount}</Text>
+              <View style={{ position: 'absolute', top: -5, right: -5, minWidth: 16, height: 16, borderRadius: 8, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, borderWidth: 1.5, borderColor: colors.background }}>
+                <Text style={{ fontSize: 9, color: colors.primaryForeground, fontWeight: '700' }}>{activeCount}</Text>
               </View>
             )}
           </Pressable>
@@ -417,10 +444,10 @@ export default function RecordsScreen() {
               setDedupOpen(true);
               haptics.tap();
             }}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border }}
+            style={{ flex: 1, justifyContent: 'center', flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 7, borderRadius: 999, backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border }}
           >
             <CopyMinus size={13} color={colors.foreground} />
-            <Text style={{ fontSize: 13, color: colors.foreground, fontWeight: '500' }}>去重</Text>
+            <Text style={{ flexShrink: 0, fontSize: 13, color: colors.foreground, fontWeight: '500' }}>去重</Text>
           </Pressable>
 
           {/* 导入入口 */}
@@ -429,10 +456,10 @@ export default function RecordsScreen() {
               setImportOpen(true);
               haptics.tap();
             }}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border }}
+            style={{ flex: 1, justifyContent: 'center', flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 7, borderRadius: 999, backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border }}
           >
             <FileUp size={13} color={colors.foreground} />
-            <Text style={{ fontSize: 13, color: colors.foreground, fontWeight: '500' }}>导入</Text>
+            <Text style={{ flexShrink: 0, fontSize: 13, color: colors.foreground, fontWeight: '500' }}>导入</Text>
           </Pressable>
 
           {/* 导出入口 */}
@@ -442,10 +469,10 @@ export default function RecordsScreen() {
               haptics.tap();
             }}
             disabled={exporting}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border, opacity: exporting ? 0.5 : 1 }}
+            style={{ flex: 1, justifyContent: 'center', flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 7, borderRadius: 999, backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border, opacity: exporting ? 0.5 : 1 }}
           >
             <Download size={13} color={colors.foreground} />
-            <Text style={{ fontSize: 13, color: colors.foreground, fontWeight: '500' }}>{exporting ? '导出中...' : '导出'}</Text>
+            <Text numberOfLines={1} style={{ flexShrink: 0, fontSize: 13, color: colors.foreground, fontWeight: '500' }}>{exporting ? '导出中…' : '导出'}</Text>
           </Pressable>
 
         </View>

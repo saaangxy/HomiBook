@@ -39,6 +39,7 @@ function toRecordItem(r: CoreRecord): RecordItem {
     counterparty: r.payer ?? undefined,
     ownerId: r.ownerId ?? undefined,
     ownerName: r.ownerName,
+    offsetAt: r.offsetAt ?? null,
     tags: r.tags ?? [],
     attachments: r.attachments ?? [],
   };
@@ -108,6 +109,8 @@ export interface RecordQuery {
   tags?: string;
   payer?: string;
   ownerId?: string;
+  /** 平账状态:不传 = 全部;'pending' = 未平账;'offset' = 已平账 */
+  offsetState?: 'pending' | 'offset';
 }
 
 export async function fetchRecords(bookId: string, opts?: RecordQuery): Promise<RecordItem[]> {
@@ -129,10 +132,16 @@ export async function fetchRecords(bookId: string, opts?: RecordQuery): Promise<
         remark: opts?.remark,
         tags: opts?.tags,
         payer: opts?.payer,
+        offsetState: opts?.offsetState,
       },
     },
   );
   return (res.records ?? []).map(toRecordItem);
+}
+
+/** 平账 / 取消平账(移动端只用于单条取消) */
+export async function batchOffset(ids: string[], offset: boolean): Promise<{ updated: number }> {
+  return http.post('/api/records/offset', { ids, offset });
 }
 
 /** 分页查询(含 total,统计详情弹层用) */
@@ -155,6 +164,7 @@ export async function fetchRecordsPaged(bookId: string, opts?: RecordQuery): Pro
         remark: opts?.remark,
         tags: opts?.tags,
         payer: opts?.payer,
+        offsetState: opts?.offsetState,
         ownerId: opts?.ownerId,
       },
     },
@@ -306,8 +316,13 @@ export async function detectDuplicatesApi(
   bookId: string,
   matchFields: DedupMatchFields,
   filters?: Partial<DedupScopeFilter>,
+  /** 备注相似度阈值(0~1);<=0 不启用 */
+  minRemarkSimilarity?: number,
 ): Promise<{ groups: DuplicateGroup[]; totalDuplicates: number }> {
-  const res = await http.post<{ groups: DuplicateGroup[]; totalDuplicates: number }>('/api/records/detect-duplicates', { bookId, matchFields, filters });
+  const res = await http.post<{ groups: DuplicateGroup[]; totalDuplicates: number }>(
+    '/api/records/detect-duplicates',
+    { bookId, matchFields, filters, minRemarkSimilarity },
+  );
   return res ?? { groups: [], totalDuplicates: 0 };
 }
 
