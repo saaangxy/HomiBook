@@ -27,11 +27,6 @@ import { accountLabel, isMultiOwnerAccounts } from '@/lib/account';
 /** 列表分页大小:一次只加载 20 条,滚动到底自动加载下一页 */
 const PAGE_SIZE = 20;
 
-/** 判断第一页内容是否变化(静默刷新时避免无谓替换打断滚动位置) */
-function samePage(a: RecordItem[], b: RecordItem[]): boolean {
-  return a.length === b.length && a.every((x, i) => x.id === b[i].id);
-}
-
 /** 按 id 去重(保留首次出现顺序):同一 id 出现两次会让同一天的分组里出现重复 React key */
 function dedupeById(list: RecordItem[]): RecordItem[] {
   const seen = new Set<string>();
@@ -160,8 +155,9 @@ export default function RecordsScreen() {
     try {
       const r = await fetchRecordsPaged(bookId, { page: 1, pageSize: PAGE_SIZE, ...query });
       if (gen !== listGenRef.current) return; // 期间又发生了一次重拉,本次结果作废
-      // 静默刷新时内容未变则不动列表,保住滚动位置;否则按 id 去重后替换
-      setItems((prev) => (opts?.silent && samePage(prev, r.records) ? prev : dedupeById(r.records)));
+      // 编辑/新增/删除/下拉刷新都直接替换列表:此前「内容未变则保留旧数组」的优化
+      // 只比 id,改类型等字段后会被误判成没变化,导致列表不刷新
+      setItems(dedupeById(r.records));
       setPage(1);
       setTotalPages(Math.max(1, Math.ceil(r.total / PAGE_SIZE)));
       loadedKeyRef.current = filterKey;
