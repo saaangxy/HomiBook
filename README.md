@@ -241,6 +241,7 @@ docker compose up -d   # 或使用 DockerHub 预构建镜像
 
 ## 🔗 相关链接
 
+- [官网](https://saaangxy.github.io/HomiBook/)
 - [在线演示](https://homibook-demo.onrender.com)
 - [GitHub 仓库](https://github.com/saaangxy/HomiBook)
 - [DockerHub 镜像](https://hub.docker.com/repository/docker/saaangxy/homibook)

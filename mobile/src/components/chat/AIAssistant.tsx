@@ -536,7 +536,7 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
     haptics.warn();
   };
 
-  const renderBlock = (block: MessageBlock, isUser = false) => {
+  const renderBlock = (block: MessageBlock, isUser = false, isLatest = true) => {
     switch (block.type) {
       case 'thinking':
         return <ThinkingBlock key={block.id} block={block} />;
@@ -564,7 +564,7 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
         }
         return block.toolName === 'save_image_content'
           ? <ImageReadHint key={block.id} status={block.status} />
-          : <ToolCard key={block.id} toolCall={block} bookId={bookId} />;
+          : <ToolCard key={block.id} toolCall={block} bookId={bookId} stale={!isLatest} />;
       default:
         return null;
     }
@@ -707,7 +707,7 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
                   <Text style={{ fontSize: 13, color: colors.mutedForeground }}>思考中...</Text>
                 </View>
               ) : (
-                <View style={{ gap: 8 }}>{item.blocks.map((b) => renderBlock(b))}</View>
+                <View style={{ gap: 8 }}>{item.blocks.map((b) => renderBlock(b, false, messages[messages.length - 1]?.id === item.id))}</View>
               )}
             </View>
           )}

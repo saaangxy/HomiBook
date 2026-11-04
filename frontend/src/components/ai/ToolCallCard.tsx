@@ -17,6 +17,8 @@ import { ImportConfirmCard } from './ImportConfirmCard'
 
 interface Props {
   toolCall: ToolCallEntry
+  /** 所属消息之后已有新对话:卡片按「已过期」处理(后端也会 409) */
+  stale?: boolean
 }
 
 // ---- ConfirmPreview 类型 ----
@@ -270,7 +272,7 @@ export function SaveImageHint({ status }: { status: ToolCallEntry['status'] }) {
   )
 }
 
-export function ToolCallCard({ toolCall }: Props) {
+export function ToolCallCard({ toolCall, stale }: Props) {
   const [expanded, setExpanded] = useState(false)
 
   const isPreviewImport = toolCall.toolName === 'preview_import'
@@ -280,7 +282,16 @@ export function ToolCallCard({ toolCall }: Props) {
   const args = typeof toolCall.args === 'object' && toolCall.args != null ? toolCall.args as Record<string, unknown> : null
 
   // 从历史记录加载时 status 可能为 'pending'（旧数据快照），状态推断单一来源在 core
-  const { effectiveStatus, effectiveSuggestion, isExpired, expiredMessage } = useMemo(() => resolveToolCallStatus(toolCall), [toolCall])
+  const { effectiveStatus, effectiveSuggestion, isExpired: statusExpired, expiredMessage: statusExpiredMessage } = useMemo(() => resolveToolCallStatus(toolCall), [toolCall])
+  // 历史消息上的待确认卡片:之后已产生新对话 → 与「重载后过期」同处理,
+  // 后端 /confirm 同样会返回 409(避免上下文按分支错序)。
+  // 只对「等待用户动作」的工具生效:查询类工具没有待确认动作,不该展示过期提示。
+  const awaitingAction =
+    effectiveStatus === 'confirming' || effectiveStatus === 'suggesting' || effectiveStatus === 'switching'
+  const isExpired = statusExpired || (!!stale && awaitingAction)
+  const expiredMessage = stale && awaitingAction
+    ? '该操作已过期（之后已有新的对话），请重新发起'
+    : statusExpiredMessage
 
   const isInteractivePreview = isPreviewImport && args?.mode === 'preview'
   const confirmResult = isConfirmImport && effectiveStatus === 'success' ? ((toolCall.result as any)?.data ?? null) : null
@@ -521,7 +532,15 @@ export function ToolCallCard({ toolCall }: Props) {
       {/* 确认按钮 —— 始终可见 */}
       {(effectiveStatus === 'confirming' || (isExpired && toolCall.preview)) && (
         <>
-          <ConfirmPreviewView preview={toolCall.preview} toolName={toolCall.toolName} onConfirm={handleConfirm} submitted={isSubmitted(toolCall.toolCallId)} />
+          {/* 过期时整块置灰并禁用交互:确认/拒绝按钮不再可点 */}
+          <div className={isExpired ? 'pointer-events-none opacity-50 select-none' : ''}>
+            <ConfirmPreviewView
+              preview={toolCall.preview}
+              toolName={toolCall.toolName}
+              onConfirm={handleConfirm}
+              submitted={isSubmitted(toolCall.toolCallId)}
+            />
+          </div>
           {confirmError && (
             <div className="flex items-center gap-1.5 text-red-600 text-xs mt-1">
               <XCircle size={12} />

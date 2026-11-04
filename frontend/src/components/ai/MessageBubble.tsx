@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
-import type { Message, MessageBlock } from '@/stores/chat'
+import { useSessionView, type Message, type MessageBlock } from '@/stores/chat'
 import { parseImportMessage, type ChatInjection } from '@homibook/core'
 import { useAuthStore } from '@/stores/auth'
 import { ToolCallCard, SaveImageHint } from './ToolCallCard'
@@ -91,6 +91,10 @@ export function getMessageText(message: Message): string {
 }
 
 export function MessageBubble({ message, onRetry, onEditSubmit, versions, onSwitchVersion }: Props) {
+  // 当前分支的最后一条:不是它,说明这条消息之后又有了新对话,里面的待确认卡片应视为过期
+  const { messages: sessionMessages } = useSessionView()
+  const isLatestMessage =
+    sessionMessages.length === 0 || sessionMessages[sessionMessages.length - 1]?.id === message.id
   const user = useAuthStore((s) => s.user)
   const userInitial = (user?.nickname || user?.username || '用')[0]
 
@@ -333,7 +337,7 @@ export function MessageBubble({ message, onRetry, onEditSubmit, versions, onSwit
                   }
                   return block.toolName === 'save_image_content'
                     ? <SaveImageHint key={block.id} status={block.status} />
-                    : <ToolCallCard key={block.id} toolCall={block} />
+                    : <ToolCallCard key={block.id} toolCall={block} stale={!isLatestMessage} />
                 default:
                   return null
               }

@@ -609,7 +609,7 @@ interface PendingToolMsg {
 async function findPendingToolMessage(toolCallId: string, userId: string): Promise<{ success: true; data: PendingToolMsg } | { success: false; status: number; message: string }> {
   const message = await prisma.chatMessage.findFirst({
     where: { toolCalls: { contains: toolCallId } },
-    select: { id: true, toolCalls: true, sessionId: true, accountBookId: true, parentMessageId: true, modelProvider: true, modelName: true },
+    select: { id: true, toolCalls: true, sessionId: true, accountBookId: true, parentMessageId: true, createdAt: true, modelProvider: true, modelName: true },
   })
   if (!message) return { success: false, status: 404, message: '确认已过期或不存在' }
 
@@ -622,6 +622,15 @@ async function findPendingToolMessage(toolCallId: string, userId: string): Promi
   if (!accountBookId) return { success: false, status: 404, message: '会话不存在' }
   try { await assertIsMember(accountBookId, userId) } catch (e: any) {
     return { success: false, status: e.statusCode || 403, message: e.message }
+  }
+
+  // 之后已有新消息 → 这张卡片属于历史分支,确认它会让「上下文是线性重放」的链路错序
+  // (buildChatMessages 按 sessionId 全量重放,不区分分支),所以直接判定失效
+  const newerCount = await prisma.chatMessage.count({
+    where: { sessionId: message.sessionId, createdAt: { gt: message.createdAt } },
+  })
+  if (newerCount > 0) {
+    return { success: false, status: 409, message: '该操作已过期（之后已有新的对话），请重新发起' }
   }
 
   return { success: true, data: { message, entry, toolCalls, accountBookId } }

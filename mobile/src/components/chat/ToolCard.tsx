@@ -264,7 +264,7 @@ export function ImageReadHint({ status }: { status: ToolCallEntry['status'] }) {
   );
 }
 
-export function ToolCard({ toolCall, bookId }: { toolCall: ToolCallEntry; bookId: string }) {
+export function ToolCard({ toolCall, bookId, stale }: { toolCall: ToolCallEntry; bookId: string; /** 所属消息之后已有新对话:按过期处理 */ stale?: boolean }) {
   const { colors } = useTheme();
   const [expanded, setExpanded] = useState(false);
   const [selected, setSelected] = useState<Record<string, string>>({});
@@ -279,7 +279,15 @@ export function ToolCard({ toolCall, bookId }: { toolCall: ToolCallEntry; bookId
   const args = typeof toolCall.args === 'object' && toolCall.args != null ? toolCall.args as Record<string, unknown> : null;
 
   // 历史数据 status=pending 时按已有字段推断实际状态(单一来源 core resolveToolCallStatus)
-  const { effectiveStatus, effectiveSuggestion, isExpired, expiredMessage } = resolveToolCallStatus(toolCall);
+  const { effectiveStatus, effectiveSuggestion, isExpired: statusExpired, expiredMessage: statusExpiredMessage } = resolveToolCallStatus(toolCall);
+  // 历史消息上的待确认卡片:之后已产生新对话 → 与「重载后过期」同处理。
+  // 只对「等待用户动作」的工具生效:查询类工具没有待确认动作,不该展示过期提示。
+  const awaitingAction =
+    effectiveStatus === 'confirming' || effectiveStatus === 'suggesting' || effectiveStatus === 'switching';
+  const isExpired = statusExpired || (!!stale && awaitingAction);
+  const expiredMessage = stale && awaitingAction
+    ? '该操作已过期（之后已有新的对话），请重新发起'
+    : statusExpiredMessage;
 
   const suggestion = effectiveSuggestion;
 
@@ -616,9 +624,11 @@ export function ToolCard({ toolCall, bookId }: { toolCall: ToolCallEntry; bookId
       {/* 批量确认计数:普通确认卡 + 导入预览/确认导入卡(后两者点完所有卡才提交 decisions) */}
       {(effectiveStatus === 'confirming' || isInteractivePreview || isConfirmCard) && <BatchIndicator toolCallId={toolCall.toolCallId} />}
 
-      {/* 确认按钮(始终可见) */}
+      {/* 确认按钮(始终可见);过期时整块置灰并禁用点击 */}
       {(effectiveStatus === 'confirming' || (isExpired && toolCall.preview)) && (
-        <ConfirmPreviewView preview={toolCall.preview} submitted={submitted} submitting={submitted} onConfirm={handleConfirm} />
+        <View style={isExpired ? { pointerEvents: 'none', opacity: 0.5 } : undefined}>
+          <ConfirmPreviewView preview={toolCall.preview} submitted={submitted} submitting={submitted} onConfirm={handleConfirm} />
+        </View>
       )}
 
       {/* 建议补充(始终可见) */}
