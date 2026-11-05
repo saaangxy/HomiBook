@@ -31,7 +31,7 @@ import {
 const MAX_ATTACH_MB = 10
 const MAX_ATTACH_BYTES = MAX_ATTACH_MB * 1024 * 1024
 
-export function ChatWindow() {
+export function ChatWindow({ dock = false }: { /** 浮窗模式:桌面也把会话列表收进抽屉,给正文让出宽度 */ dock?: boolean } = {}) {
   const [input, setInput] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
   /**
@@ -584,8 +584,8 @@ export function ChatWindow() {
           </div>
         </div>
       )}
-      {/* 桌面端左侧会话列表 */}
-      {!isMobile && (
+      {/* 桌面端左侧会话列表(浮窗模式下改为抽屉) */}
+      {!isMobile && !dock && (
         <div className="w-52 border-r shrink-0">
           <SessionList
             sessions={sessions}
@@ -599,7 +599,31 @@ export function ChatWindow() {
         </div>
       )}
 
-      {/* 移动端会话抽屉 */}
+      {/* 浮窗模式的会话抽屉:Sheet 会 portal 到 body 铺满整页,
+          这里改用窗口内部的绝对定位层(根节点是 relative + overflow-hidden,会被裁在窗口内) */}
+      {dock && sessionOpen && (
+        <div className="absolute inset-0 z-20 flex">
+          <div className="w-64 shrink-0 border-r bg-card">
+            <SessionList
+              sessions={sessions}
+              currentId={currentSessionId}
+              streamingSessionIds={streamingSessionIds}
+              loading={sessionsLoading}
+              onSelect={(id) => { handleSelectSession(id); setSessionOpen(false) }}
+              onCreate={() => { handleCreateSession(); setSessionOpen(false) }}
+              onDelete={askDeleteSession}
+            />
+          </div>
+          <button
+            type="button"
+            aria-label="关闭会话列表"
+            className="flex-1 bg-black/20"
+            onClick={() => setSessionOpen(false)}
+          />
+        </div>
+      )}
+
+      {/* 移动端:保持原有 Sheet(全屏抽屉) */}
       {isMobile && (
         <Sheet open={sessionOpen} onOpenChange={setSessionOpen}>
           <SheetContent side="left" className="w-72 p-0 [&>button]:hidden">
@@ -621,13 +645,18 @@ export function ChatWindow() {
 
       {/* 右侧聊天区 */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* 移动端顶部工具行 */}
-        {isMobile && (
+        {/* 移动端 / 浮窗模式的顶部工具行(含会话列表按钮) */}
+        {(isMobile || dock) && (
           <div className="flex items-center gap-2 border-b px-3 py-2 shrink-0">
             <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setSessionOpen(true)}>
               <Menu size={16} />
             </Button>
-            <span className="text-sm font-medium flex-1 truncate">AI 助手</span>
+            {/* 浮窗模式:外层标题栏已有产品名,这里显示当前会话名称;移动端仍显示「AI 助手」 */}
+            <span className="text-sm font-medium flex-1 truncate">
+              {dock
+                ? (sessions.find((s) => s.id === currentSessionId)?.title || '新对话')
+                : 'AI 助手'}
+            </span>
             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleCreateSession}>
               <Plus size={16} />
             </Button>

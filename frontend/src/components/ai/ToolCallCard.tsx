@@ -144,7 +144,7 @@ function RecordSummary({ record, actionLabel, labels }: { record: ToolRecord; ac
 /** 记录列表表格(查询/批量创建结果) */
 function RecordTable({ records, labels }: { records: ToolRecord[]; labels: Map<string, string> }) {
   return (
-    <Table>
+    <div className="overflow-x-auto"><Table>
       <TableHeader>
         <TableRow className="bg-muted/50 hover:bg-muted/50">
           <TableHead className="text-xs">日期</TableHead>
@@ -167,14 +167,14 @@ function RecordTable({ records, labels }: { records: ToolRecord[]; labels: Map<s
           </TableRow>
         ))}
       </TableBody>
-    </Table>
+    </Table></div>
   )
 }
 
 /** 预算列表表格 */
 function BudgetTable({ budgets, labels }: { budgets: any[]; labels: Map<string, string> }) {
   return (
-    <Table>
+    <div className="overflow-x-auto"><Table>
       <TableHeader>
         <TableRow className="bg-muted/50 hover:bg-muted/50">
           <TableHead className="text-xs">名称</TableHead>
@@ -199,7 +199,7 @@ function BudgetTable({ budgets, labels }: { budgets: any[]; labels: Map<string, 
           </TableRow>
         ))}
       </TableBody>
-    </Table>
+    </Table></div>
   )
 }
 
@@ -216,7 +216,7 @@ function AccountTable({ accounts, totalBalance }: { accounts: any[]; totalBalanc
       {totalBalance != null && (
         <div className="text-xs text-muted-foreground">共 {accounts.length} 个账户 · 总余额 <span className="font-medium text-foreground">{totalBalance.toFixed(2)}</span></div>
       )}
-      <Table>
+      <div className="overflow-x-auto"><Table>
         <TableHeader>
           <TableRow className="bg-muted/50 hover:bg-muted/50">
             <TableHead className="text-xs">账户</TableHead>
@@ -233,7 +233,7 @@ function AccountTable({ accounts, totalBalance }: { accounts: any[]; totalBalanc
             </TableRow>
           ))}
         </TableBody>
-      </Table>
+      </Table></div>
     </div>
   )
 }
@@ -351,7 +351,7 @@ export function ToolCallCard({ toolCall, stale }: Props) {
       case 'query_categories':
         return Array.isArray(rd?.categories) ? {
           table: (
-            <Table>
+            <div className="overflow-x-auto"><Table>
               <TableHeader>
                 <TableRow className="bg-muted/50 hover:bg-muted/50">
                   <TableHead className="text-xs">分类</TableHead>
@@ -368,7 +368,7 @@ export function ToolCallCard({ toolCall, stale }: Props) {
                   </TableRow>
                 ))}
               </TableBody>
-            </Table>
+            </Table></div>
           ),
         } : null
       case 'set_budget':
@@ -595,7 +595,7 @@ function ConfirmPreviewView({
       {/* records-table 类型 */}
       {preview?.type === 'records-table' && preview.columns && preview.rows && (
         <div className="rounded border overflow-hidden">
-          <Table>
+          <div className="overflow-x-auto"><Table>
             <TableHeader>
               <TableRow>
                 {preview.columns.map((col) => (
@@ -614,7 +614,7 @@ function ConfirmPreviewView({
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </Table></div>
         </div>
       )}
 
@@ -742,7 +742,9 @@ function SuggestionView({
                   key={value}
                   size="sm"
                   variant={sel === value ? 'default' : 'outline'}
-                  className="text-xs h-7"
+                  // Button 默认 whitespace-nowrap:长选项会撑破卡片(浮窗里尤其明显),
+                  // 这里允许换行并限制不超过父容器宽度
+                  className="text-xs h-auto min-h-7 max-w-full whitespace-normal break-words text-left leading-snug py-1"
                   onClick={() => setSelectedOption((prev) => ({ ...prev, [q.field]: value }))}
                 >
                   {label}
@@ -930,7 +932,7 @@ function GenericPreview({ raw, toolName }: { raw: string; toolName?: string }) {
 
   return (
     <div className="rounded border overflow-hidden max-h-48 overflow-auto">
-      <Table>
+      <div className="overflow-x-auto"><Table>
         <TableHeader>
           <TableRow>
             {table.keys.map((key) => (
@@ -949,7 +951,7 @@ function GenericPreview({ raw, toolName }: { raw: string; toolName?: string }) {
             </TableRow>
           ))}
         </TableBody>
-      </Table>
+      </Table></div>
     </div>
   )
 }

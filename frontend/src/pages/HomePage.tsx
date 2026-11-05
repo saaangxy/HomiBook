@@ -1,16 +1,18 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { Card, CardContent } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Book, Wallet, ArrowUpCircle, ArrowDownCircle, TrendingUp, TrendingDown, AlertTriangle, Bot, Settings } from 'lucide-react'
+import {
+  Book, Wallet, ArrowUpCircle, ArrowDownCircle, TrendingUp, TrendingDown, AlertTriangle,
+  Plus, Upload, CopyMinus, Scale, ChevronRight,
+} from 'lucide-react'
 import { useBookStore } from '../stores/book'
 import { useIsMobile } from '@/hooks/use-mobile'
-import { recordApi, type RecordSummary } from '../api/record'
-import { accountApi } from '../api/account'
+import { recordApi, type RecordItem, type RecordSummary } from '../api/record'
+import { accountApi, type AccountItem } from '../api/account'
 import { budgetApi, type BudgetItem } from '../api/budget'
-import { ChatWindow } from '../components/ai/ChatWindow'
-import { fetchAIConfig } from '../api/chat'
+
 import { RECORD_TYPE_BADGE_CLASS } from '@/lib/record-type'
 
 export function HomePage() {
@@ -18,22 +20,14 @@ export function HomePage() {
   const currentBook = books.find((b) => b.id === currentBookId)
   const isMobile = useIsMobile()
 
+  const navigate = useNavigate()
+
   const [summary, setSummary] = useState<RecordSummary | null>(null)
   const [accountCount, setAccountCount] = useState(0)
   const [budgets, setBudgets] = useState<BudgetItem[]>([])
+  const [accounts, setAccounts] = useState<AccountItem[]>([])
+  const [recentRecords, setRecentRecords] = useState<RecordItem[]>([])
   const [loading, setLoading] = useState(false)
-  const [aiEnabled, setAiEnabled] = useState(false)
-  const [aiConfigured, setAiConfigured] = useState(false)
-
-  useEffect(() => {
-    fetchAIConfig()
-      .then((cfg) => {
-        setAiEnabled(cfg.enabled)
-        setAiConfigured(!!cfg.simpleProviderConfigId)
-      })
-      .catch(() => { /* ignore */ })
-  }, [])
-
   useEffect(() => {
     if (!currentBookId) return
 
@@ -48,11 +42,14 @@ export function HomePage() {
       recordApi.summary({ bookId: currentBookId, dateFrom, dateTo }),
       accountApi.list(currentBookId),
       budgetApi.listFixed({ bookId: currentBookId, year, month }),
+      recordApi.list({ bookId: currentBookId, page: 1, pageSize: 10 }),
     ])
-      .then(([summaryData, accounts, budgetData]) => {
+      .then(([summaryData, accountList, budgetData, recent]) => {
         setSummary(summaryData)
-        setAccountCount(accounts.filter((a) => a.status === 'ACTIVE').length)
+        setAccounts(accountList)
+        setAccountCount(accountList.filter((a) => a.status === 'ACTIVE').length)
         setBudgets(budgetData)
+        setRecentRecords(recent.records)
       })
       .catch(() => {
         // ignore errors silently
@@ -149,27 +146,8 @@ export function HomePage() {
         </div>
       )}
 
-      {/* AI 聊天:桌面按「当前屏幕内的剩余高度」吃满(flex-1);
-          移动端窄屏下上方卡片会把剩余高度压到几十 px,这里给一个最小高度把聊天区撑开,
-          超出部分交给外层内容区(overflow-auto)滚动 —— 否则输入框几乎不可用。
-          svh 取「地址栏可见时」的最小视口,避免移动端浏览器地址栏收起/展开时高度跳动。 */}
-      {currentBookId && aiEnabled && (
-        <div className={isMobile ? 'flex-1 min-h-[75svh] flex flex-col' : 'flex-1 min-h-0 flex flex-col'}>
-          <h2 className="shrink-0 text-base font-semibold mb-3">AI 助手</h2>
-          {aiConfigured ? (
-            <ChatWindow />
-          ) : (
-            <div className="shrink-0 p-5 bg-card border border-border rounded-xl text-center">
-              <Bot size={24} className="mx-auto mb-2 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground mb-3">AI 助手尚未配置模型，请先完成供应商配置</p>
-              <Link to="/settings" className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline">
-                <Settings size={14} />
-                前往配置
-              </Link>
-            </div>
-          )}
-        </div>
-      )}
+      {/* AI 聊天已改为全局浮窗(见 AssistantDock),首页不再内嵌;
+          概览模块(账户/最近流水/预算/快捷操作)在下一步补上 */}
     </div>
   )
 }

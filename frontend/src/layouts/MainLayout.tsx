@@ -21,6 +21,7 @@ import { resetAccountCaches } from '../stores/reset-account'
 import { BookSwitcher } from '../components/BookSwitcher'
 import { UserMenu } from '../components/UserMenuSheet'
 import { BottomNav } from '../components/BottomNav'
+import { AssistantDock } from '../components/ai/AssistantDock'
 import {
   Book,
   LayoutDashboard,
@@ -195,6 +196,9 @@ export function MainLayout() {
           <Outlet />
         </div>
       </main>
+
+      {/* 全局 AI 浮窗:挂在布局层,切页不重建,会话与流式状态都保留 */}
+      <AssistantDock />
 
       {/* 移动端底部导航 */}
       <BottomNav />
