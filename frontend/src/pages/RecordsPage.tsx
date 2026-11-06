@@ -1,5 +1,6 @@
 import { errorMessage } from '@/lib/error'
 import { useState, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { RECORD_TYPE_LABELS as TYPE_LABELS, RECORD_TYPE_TEXT_CLASS } from '@/lib/record-type'
 import { RecordFormDialog } from '@/components/records/RecordFormDialog'
 import { BatchEditDialog } from '@/components/records/BatchEditDialog'
@@ -200,6 +201,28 @@ export function RecordsPage() {
   const [deleteTarget, setDeleteTarget] = useState<RecordItem | null>(null)
   // 表格行附件查看
   const [viewingAttachments, setViewingAttachments] = useState<{ id: string; url: string; originalFilename: string }[] | null>(null)
+
+  /**
+   * 首页快捷操作的落地:?action=record|import|dedup|offset 直接打开对应弹窗,
+   * 打开后把参数清掉,避免刷新页面又弹一次。
+   */
+  const [searchParams, setSearchParams] = useSearchParams()
+  useEffect(() => {
+    const action = searchParams.get('action')
+    if (!action) return
+    // 放进微任务:避开「effect 内同步 setState」的规则,同时保证首帧渲染完成后再弹
+    const timer = window.setTimeout(() => {
+      if (action === 'import') setImportOpen(true)
+      else if (action === 'dedup') setDedupOpen(true)
+      else if (action === 'offset') setOffsetOpen(true)
+      else if (action === 'record') {
+        setEditRecord(null)
+        setFormOpen(true)
+      }
+      setSearchParams({}, { replace: true })
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [searchParams, setSearchParams])
 
   // 批量更新弹窗(表单状态在 BatchEditDialog 内)
   const [batchOpen, setBatchOpen] = useState(false)

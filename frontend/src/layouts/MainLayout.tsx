@@ -56,8 +56,15 @@ function NavItems() {
   const navigate = useNavigate()
   const location = useLocation()
   const { user } = useAuthStore()
+  const { isMobile, setOpenMobile } = useSidebar()
   const isAdmin = user?.role === 'ADMIN'
   const navItems = allNavItems.filter((item) => !item.adminOnly || isAdmin)
+
+  /** 窄屏下侧栏是覆盖层:点完导航立刻收起,否则会一直挡着页面内容 */
+  const handleNavigate = (path: string) => {
+    navigate(path)
+    if (isMobile) setOpenMobile(false)
+  }
 
   return (
     <SidebarMenu>
@@ -66,7 +73,7 @@ function NavItems() {
         return (
           <SidebarMenuItem key={item.path}>
             <SidebarMenuButton
-              onClick={() => navigate(item.path)}
+              onClick={() => handleNavigate(item.path)}
               isActive={active}
               size="lg"
               tooltip={item.label}

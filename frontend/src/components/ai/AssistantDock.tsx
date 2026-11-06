@@ -17,8 +17,8 @@ const STORAGE_KEY = 'ai-dock-prefs'
 const DOCK_W = 720
 const DOCK_H = 760
 const MARGIN = 16
-/** 底部给 Toast / 其他浮动元素留出空间 */
-const BOTTOM_SAFE = 96
+/** 底部留白:避开首页右下角的控制台按钮(44px + 24px 边距)与 Toast */
+const BOTTOM_SAFE = 152
 
 /**
  * 去掉 Markdown 标记,只留可读文本。

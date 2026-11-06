@@ -179,7 +179,9 @@ const Sidebar = React.forwardRef<
           <SheetContent
             data-sidebar="sidebar"
             data-mobile="true"
-            className="w-[--sidebar-width] bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
+            // 保留 Sheet 自带的右上角关闭按钮(不再 [&>button]:hidden),
+            // 窄屏下用户可以主动收起侧栏,而不是只能点遮罩
+            className="w-[--sidebar-width] bg-sidebar p-0 text-sidebar-foreground"
             style={
               {
                 "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
