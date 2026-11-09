@@ -388,6 +388,12 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
 
   try {
     const llmModel = createModel(provider as ProviderType, model, { apiKey, baseURL })
+  /**
+   * 是否禁用 tool_choice。
+   * DeepSeek 官方 API 的模型(chat / reasoner / flash)在有思考能力时都拒绝 tool_choice,
+   */
+  const isThinkingModel =
+    provider === 'deepseek' || /reasoner|thinking|flash|(^|[^\d])o[13]([^\d]|$)/i.test(model)
     const result = streamText({
       model: llmModel,
       system: systemPrompt,
@@ -406,6 +412,10 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
           if (injected) return { messages: [...stepMessages, injected] }
         }
         if (forceImageSummary && stepNumber === 0) {
+          // DeepSeek 的思考模型(reasoner)不支持 tool_choice,传了会直接 400:
+          // "Thinking mode does not support this tool_choice"
+          // 这类模型不加约束,靠 system prompt 里的指引让它自行调用。
+          if (isThinkingModel) return {}
           return { toolChoice: { type: 'tool' as const, toolName: 'save_image_content' } }
         }
         return {}
@@ -1299,7 +1309,15 @@ export async function chatRoutes(app: FastifyInstance) {
     })
 
     // ── 14) 系统提示词(纯静态,动态上下文已走注入消息) ──
-    const systemPrompt = SYSTEM_PROMPT
+    // 本轮带新图片时必须先记录图片内容:思考模型不允许 toolChoice 强制,
+    // 只能靠这段强指令兜住,否则它可能跳过 save_image_content 直接凭空回答。
+    const systemPrompt = forceImageSummary
+      ? `${SYSTEM_PROMPT}
+
+【本轮有用户新上传的图片】
+必须先用 save_image_content 工具逐张记录图片内容（完整、按顺序），再基于记录结果回答或调用其他工具。
+禁止跳过这一步直接描述或推断图片；也禁止只记录其中一部分。`
+      : SYSTEM_PROMPT
 
     const messages = [...history]
     const messageIds = [...historyIds]

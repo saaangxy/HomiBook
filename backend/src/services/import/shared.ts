@@ -328,6 +328,15 @@ export async function applyCategoryMappings(
   const incomeCodes = new Set(allDictItems.filter(d => d.group === 'transaction_category_income').map(d => d.code))
   const transferCodes = new Set(allDictItems.filter(d => d.group === 'transaction_category_transfer').map(d => d.code))
 
+  /** 分类是否属于该记录的收支类型(EXPENSE/INCOME/TRANSFER);类型未知时只校验是否存在于字典 */
+  const isCategoryCodeValidForType = (code: string | null, type: string): boolean => {
+    if (!code) return false
+    if (type === 'EXPENSE') return expenseCodes.has(code)
+    if (type === 'INCOME') return incomeCodes.has(code)
+    if (type === 'TRANSFER') return transferCodes.has(code)
+    return dictCodeSet.has(code)
+  }
+
   // 收集每个分类出现的记录类型
   const categoryTypes = new Map<string, Set<string>>()
   // 收集仍有未匹配记录的分类
@@ -341,8 +350,13 @@ export async function applyCategoryMappings(
     if (r.categoryCode && r.mappedCategoryCode === null) {
       // 规则优先;规则没命中时,若源分类名本身就是合法字典编码(中文 code,如「退款」)则直接采用。
       // 这类行不需要任何规则 —— 不认它就会被判「未映射」挡住门禁,而实际写库用的就是这个源名。
-      r.mappedCategoryCode = findBestMapping(r)
+      const picked = findBestMapping(r)
         ?? (dictCodeSet.has(r.categoryCode) ? r.categoryCode : null)
+
+      // 关键校验:目标分类必须属于该记录的收支类型。
+      // 否则「群收款 → 转账」这类只配了源分类、没限 recordType 的规则会把支出行映射到「转账」分类,
+      // 写库后就是「支出记录挂着转账分类」的脏数据。不匹配时按未映射处理,交给用户重新指定。
+      r.mappedCategoryCode = isCategoryCodeValidForType(picked, r.type) ? picked : null
     }
     // 类型未识别的行不入「未映射分类」清单(口径说明见 shouldMarkCategoryUnmatched)
     if (shouldMarkCategoryUnmatched(r)) {
@@ -395,6 +409,9 @@ export async function applyCategoryMappings(
       // 带条件的规则必须条件全部命中才参与匹配(与前端确认阶段语义一致);无条件规则作兜底
       if (m.payerContains && !(row.payer && testMatch(m.payerContains, row.payer))) continue
       if (m.descriptionContains && !(row.remark && testMatch(m.descriptionContains, row.remark))) continue
+      // 目标分类不属于该记录的收支类型(如支出行映射到「转账」分类)时跳过这条规则,
+      // 继续尝试后面的规则;全部规则都不合法才落到未映射
+      if (!isCategoryCodeValidForType(m.targetCategoryCode, row.type)) continue
       let score = 0
       if (m.recordType === row.type) score += 1
       if (m.payerContains) score += 1
