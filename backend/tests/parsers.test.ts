@@ -78,8 +78,14 @@ describe('resolveAlipayAccountName', () => {
     expect(resolveAlipayAccountName('')).toBe('支付宝');
   });
 
-  it('内部账户名归一为 支付宝', () => {
-    for (const n of ['余额宝', '花呗', '支付宝', '账户余额', '集分宝', '红包', '淘金币', '他人代付']) {
+  it('子账户拆分:花呗/余额宝/余利宝/蚂蚁财富 保留为独立账户名', () => {
+    for (const n of ['花呗', '余额宝', '余利宝', '蚂蚁财富']) {
+      expect(resolveAlipayAccountName(n)).toBe(n);
+    }
+  });
+
+  it('钱包余额相关的内部名归一为 支付宝', () => {
+    for (const n of ['支付宝', '账户余额', '集分宝', '红包', '淘金币', '他人代付']) {
       expect(resolveAlipayAccountName(n)).toBe('支付宝');
     }
   });
@@ -190,12 +196,12 @@ describe('parseAlipayCSV', () => {
   describe('不计收支分支推断', () => {
     const neutral = { direction: '不计收支', status: '交易成功' };
 
-    it('花呗还款(信用借还) → TRANSFER 到 支付宝', () => {
+    it('花呗还款(信用借还) → TRANSFER 到 花呗(子账户已拆分)', () => {
       const r = parseAlipayCSV(
         Buffer.from(alipayCsv([aliRow({ ...neutral, category: '信用借还', counterparty: '花呗', description: '花呗还款' })]), 'utf8'),
       );
       expect(r.rows[0].type).toBe('TRANSFER');
-      expect(r.rows[0].toAccountName).toBe('支付宝');
+      expect(r.rows[0].toAccountName).toBe('花呗');
     });
 
     it('描述含收益 → INCOME', () => {
@@ -221,7 +227,7 @@ describe('parseAlipayCSV', () => {
       expect(r.rows[0].toAccountName).toBe('支付宝');
     });
 
-    it('余额宝-转出到银行卡 → 支付宝 → 银行卡(方向修正,2026-09 真实账单回归)', () => {
+    it('余额宝-转出到银行卡 → 余额宝 → 银行卡(子账户已拆分,2026-09 真实账单回归)', () => {
       const r = parseAlipayCSV(
         Buffer.from(alipayCsv([aliRow({
           ...neutral,
@@ -234,32 +240,34 @@ describe('parseAlipayCSV', () => {
       );
       expect(r.rows).toHaveLength(1);
       expect(r.rows[0].type).toBe('TRANSFER');
-      expect(r.rows[0].accountName).toBe('支付宝');
+      expect(r.rows[0].accountName).toBe('余额宝');
       expect(r.rows[0].toAccountName).toBe('中国农业银行储蓄卡(5172)');
     });
-    it('余额宝转入 → TRANSFER 到 支付宝', () => {
+    it('余额宝转入 → TRANSFER 到 余额宝', () => {
       const r = parseAlipayCSV(
         Buffer.from(alipayCsv([aliRow({ ...neutral, category: '投资理财', counterparty: '余额宝', description: '转入' })]), 'utf8'),
       );
       expect(r.rows[0].type).toBe('TRANSFER');
-      expect(r.rows[0].toAccountName).toBe('支付宝');
+      expect(r.rows[0].toAccountName).toBe('余额宝');
     });
 
-    it('支付宝转入到余利宝(网商银行) → 与余额宝转入同规则,内部跳过(2026-09 真实账单回归)', () => {
-      // 付款方式为"账户余额" → 支付宝→支付宝,应跳过而非落 UNKNOWN 被路由分流
+    it('支付宝转入到余利宝(网商银行) → 余利宝已是独立账户,不再内部跳过(2026-09 真实账单回归)', () => {
+      // 子账户拆分后「余利宝」与「支付宝」是两个账户:这是一笔真实的账户间转账,不能再丢弃
       const r = parseAlipayCSV(
         Buffer.from(alipayCsv([aliRow({ ...neutral, category: '投资理财', counterparty: '网商银行', description: '支付宝转入到余利宝', paymentMethod: '账户余额' })]), 'utf8'),
       );
-      expect(r.rows).toHaveLength(0);
+      expect(r.rows).toHaveLength(1);
+      expect(r.rows[0].type).toBe('TRANSFER');
+      expect(r.rows[0].toAccountName).toBe('余利宝');
     });
 
-    it('银行卡转入余利宝 → TRANSFER 到 支付宝', () => {
+    it('银行卡转入余利宝 → TRANSFER 到 余利宝', () => {
       const r = parseAlipayCSV(
         Buffer.from(alipayCsv([aliRow({ ...neutral, category: '投资理财', counterparty: '网商银行', description: '支付宝转入到余利宝', paymentMethod: '农业银行储蓄卡(5172)' })]), 'utf8'),
       );
       expect(r.rows).toHaveLength(1);
       expect(r.rows[0].type).toBe('TRANSFER');
-      expect(r.rows[0].toAccountName).toBe('支付宝');
+      expect(r.rows[0].toAccountName).toBe('余利宝');
     });
 
     it('蚂蚁财富 → TRANSFER 到 蚂蚁财富', () => {

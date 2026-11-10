@@ -6,7 +6,7 @@ import {
   sumDeltasForAccount,
   sumsForAccount,
   type BalanceRecordLike,
-} from './balance.js'
+} from '../src/services/balance.js'
 
 // 账户 id 简写,便于阅读用例
 const A = 'acc-A'

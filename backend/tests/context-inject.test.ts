@@ -6,85 +6,102 @@ import {
   planInjection,
   stripAttachmentSection,
   summarizeInjection,
-  type InjectedState,
+  type InjectedState, InjectInput,
 } from '../src/services/ai/context-inject.js'
-import { detectSkills } from '../src/services/ai/skills/index.js'
+import { detectSkills } from '../src/services/ai/skills'
 import { IMPORT_MESSAGE_PREFIX } from '@homibook/core'
 
 // 上下文注入的核心不变量:没有差异就绝不写消息(前缀逐字节不变 = 前缀缓存命中)
-const EMPTY: InjectedState = { date: null, memoryIds: [], skills: [] }
+/** 构造完整的注入指纹:InjectedState 后续新增字段时,用例不用逐个补齐 */
+/**
+ * InjectInput 的 bookId/bookName/language 是**必填 string**(调用方一定知道当前账本),
+ * 而 InjectedState 里同名三项是 `string | null`(首轮为 null)。
+ * 因此「无差异」类用例必须显式把 state 也设成同样三个值,否则会被判成「账本变了」而产出注入段。
+ */
+const BOOK = { bookId: 'b1', bookName: '测试账本', language: 'zh' }
+const inputOf = (p: Partial<InjectInput> = {}): InjectInput => ({
+  today: '2026-09-17', memories: [], skills: [],
+  ...BOOK,
+  toolsText: '', toolNames: [], disabledToolCount: 0,
+  ...p,
+})
+const stateOf = (p: Partial<InjectedState> = {}): InjectedState => ({
+  date: null, memoryIds: [], skills: [], bookId: null, bookName: null, language: null, toolsKey: null,
+  ...p,
+})
+const EMPTY: InjectedState = stateOf()
 const MEM_A = { id: 'm1', memoryType: 'habit', content: '每月餐饮约2000元' }
 const MEM_B = { id: 'm2', memoryType: 'preference', content: '外卖归入餐饮' }
 const SKILL = { name: 'import-transactions', prompt: '## 导入流水数据' }
 
 describe('planInjection(上下文注入差量计划)', () => {
   it('首轮:日期/记忆/技能各注入一段,并记录指纹', () => {
-    const plan = planInjection(EMPTY, { today: '2026-09-17', memories: [MEM_A], skills: [SKILL] })
+    const plan = planInjection(EMPTY, inputOf({ today: '2026-09-17', memories: [MEM_A], skills: [SKILL] }))
     expect(plan?.text).toContain('2026-09-17')
     expect(plan?.text).toContain('每月餐饮约2000元')
     expect(plan?.text).toContain('[习惯]')
     expect(plan?.text).toContain('## 导入流水数据')
-    expect(plan?.nextState).toEqual({ date: '2026-09-17', memoryIds: ['m1'], skills: ['import-transactions'] })
+    expect(plan?.nextState).toMatchObject({ date: '2026-09-17', memoryIds: ['m1'], skills: ['import-transactions'] })
   })
 
   it('无任何差异时返回 null —— 不写消息,历史前缀保持命中', () => {
-    const state: InjectedState = { date: '2026-09-17', memoryIds: ['m1'], skills: ['import-transactions'] }
-    expect(planInjection(state, { today: '2026-09-17', memories: [MEM_A], skills: [SKILL] })).toBeNull()
+    const state = stateOf({ ...BOOK, date: '2026-09-17', memoryIds: ['m1'], skills: ['import-transactions'] })
+    expect(planInjection(state, inputOf({ today: '2026-09-17', memories: [MEM_A], skills: [SKILL] }))).toBeNull()
   })
 
   it('跨天只补日期段', () => {
-    const state: InjectedState = { date: '2026-09-17', memoryIds: ['m1'], skills: ['import-transactions'] }
-    const plan = planInjection(state, { today: '2026-09-18', memories: [MEM_A], skills: [SKILL] })
+    const state= stateOf({ date: '2026-09-17', memoryIds: ['m1'], skills: ['import-transactions'] })
+    const plan = planInjection(state, inputOf({ today: '2026-09-18', memories: [MEM_A], skills: [SKILL] }))
     expect(plan?.text).toContain('2026-09-18')
     expect(plan?.text).not.toContain('每月餐饮约2000元')
     expect(plan?.nextState.date).toBe('2026-09-18')
   })
 
   it('记忆只注入差量(已给过的不再重复占用 token)', () => {
-    const state: InjectedState = { date: '2026-09-17', memoryIds: ['m1'], skills: [] }
-    const plan = planInjection(state, { today: '2026-09-17', memories: [MEM_A, MEM_B], skills: [] })
+    const state= stateOf({ date: '2026-09-17', memoryIds: ['m1'], skills: [] })
+    const plan = planInjection(state, inputOf({ today: '2026-09-17', memories: [MEM_A, MEM_B], skills: [] }))
     expect(plan?.text).toContain('外卖归入餐饮')
     expect(plan?.text).not.toContain('每月餐饮约2000元')
     expect(plan?.nextState.memoryIds).toEqual(['m1', 'm2'])
   })
 
   it('同名技能只注入一次', () => {
-    const state: InjectedState = { date: '2026-09-17', memoryIds: [], skills: ['import-transactions'] }
-    expect(planInjection(state, { today: '2026-09-17', memories: [], skills: [SKILL] })).toBeNull()
+    const state = stateOf({ ...BOOK, date: '2026-09-17', memoryIds: [], skills: ['import-transactions'] })
+    expect(planInjection(state, inputOf({ today: '2026-09-17', memories: [], skills: [SKILL] }))).toBeNull()
   })
 
   it('注入文本带「不要复述」标记,避免模型把它当成用户发言去回应', () => {
-    const plan = planInjection(EMPTY, { today: '2026-09-17', memories: [], skills: [] })
+    const plan = planInjection(EMPTY, inputOf({ today: '2026-09-17', memories: [], skills: [] }))
     expect(plan?.text.startsWith('[系统追加的上下文')).toBe(true)
   })
 
   it('临时上下文(附件清单)每轮都注入,且不参与指纹去重', () => {
-    const state: InjectedState = { date: '2026-09-17', memoryIds: ['m1'], skills: [] }
-    const plan = planInjection(state, {
+    const state = stateOf({ ...BOOK, date: '2026-09-17', memoryIds: ['m1'], skills: [] })
+    const plan = planInjection(state, inputOf({
       today: '2026-09-17',
       memories: [MEM_A],
       skills: [],
       extraSections: ['[附件信息]\nattachmentId: a1'],
-    })
+    }))
     expect(plan?.text).toContain('attachmentId: a1')
     // 指纹保持不变:附件清单是每轮一次的临时上下文,不该被「已注入」记录吞掉
     expect(plan?.nextState).toEqual(state)
   })
 
   it('临时上下文追加在日期/记忆段之后(离本轮请求最近)', () => {
-    const plan = planInjection(EMPTY, {
+    const plan = planInjection(EMPTY, inputOf({
       today: '2026-09-17',
       memories: [],
       skills: [],
       extraSections: ['[附件信息]'],
-    })
+    }))
     expect(plan!.text.indexOf('2026-09-17')).toBeLessThan(plan!.text.indexOf('[附件信息]'))
   })
 
   it('无状态差异且无有效临时上下文时仍不写消息', () => {
-    const state: InjectedState = { date: '2026-09-17', memoryIds: [], skills: [] }
-    expect(planInjection(state, { today: '2026-09-17', memories: [], skills: [], extraSections: [] })).toBeNull()
-    expect(planInjection(state, { today: '2026-09-17', memories: [], skills: [], extraSections: ['', ''] })).toBeNull()
+    const state = stateOf({ ...BOOK, date: '2026-09-17', memoryIds: [], skills: [] })
+    expect(planInjection(state, inputOf({ today: '2026-09-17', memories: [], skills: [], extraSections: [] }))).toBeNull()
+    expect(planInjection(state, inputOf({ today: '2026-09-17', memories: [], skills: [], extraSections: ['', ''] }))).toBeNull()
   })
 
   it('parseInjectedState:坏数据/缺字段一律按「未注入」处理', () => {
@@ -96,7 +113,7 @@ describe('planInjection(上下文注入差量计划)', () => {
 
 describe('summarizeInjection(写入与解析成对维护)', () => {
   it('能反解 planInjection 生成的注入文本', () => {
-    const plan = planInjection(EMPTY, { today: '2026-09-17', memories: [MEM_A, MEM_B], skills: [SKILL] })
+    const plan = planInjection(EMPTY, inputOf({ today: '2026-09-17', memories: [MEM_A, MEM_B], skills: [SKILL] }))
     expect(plan).not.toBeNull()
     const summary = summarizeInjection(plan!.text)
     expect(summary.date).toBe('2026-09-17')
@@ -111,7 +128,7 @@ describe('summarizeInjection(写入与解析成对维护)', () => {
     expect(section).toContain('attachmentId: a1')
     expect(buildAttachmentSection([])).toBe('')
 
-    const plan = planInjection(EMPTY, { today: '2026-09-17', memories: [], skills: [], extraSections: [section] })
+    const plan = planInjection(EMPTY, inputOf({ today: '2026-09-17', memories: [], skills: [], extraSections: [section] }))
     const summary = summarizeInjection(plan!.text)
     expect(summary.date).toBe('2026-09-17')
     expect(summary.hasAttachments).toBe(true)
@@ -158,8 +175,8 @@ describe('summarizeInjection(写入与解析成对维护)', () => {
   })
 
   it('只注入记忆(未跨天)时日期为 null,记忆仍可解析', () => {
-    const state: InjectedState = { date: '2026-09-17', memoryIds: [], skills: [] }
-    const plan = planInjection(state, { today: '2026-09-17', memories: [MEM_A], skills: [] })
+    const state = stateOf({ ...BOOK, date: '2026-09-17', memoryIds: [], skills: [] })
+    const plan = planInjection(state, inputOf({ today: '2026-09-17', memories: [MEM_A], skills: [] }))
     const summary = summarizeInjection(plan!.text)
     expect(summary.date).toBeNull()
     expect(summary.memories).toEqual(['[习惯] 每月餐饮约2000元'])

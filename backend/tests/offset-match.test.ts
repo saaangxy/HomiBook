@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { matchGroupsForAnchor, matchOffsetGroups, type OffsetRow } from './offset-match.js'
+import { matchGroupsForAnchor, matchOffsetGroups, type OffsetRow } from '../src/services/offset-match.js'
 
 const row = (
   id: string,
