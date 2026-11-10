@@ -1,7 +1,9 @@
 import { http } from './http';
+import { normalizeRecordType } from '@homibook/core';
 import type { LoanInterestMethod, LoanPreview, RecurringTransaction, RepaymentPlan } from '@/types';
 import type { RecurringTransaction as CoreRecurring } from '@homibook/core';
-import { normalizeRecordType } from '@homibook/core';
+
+
 
 // 固定收支数据访问层 —— 真实后端 API(签名对齐 frontend/src/api/recurring.ts)
 

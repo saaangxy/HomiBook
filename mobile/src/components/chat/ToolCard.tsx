@@ -5,10 +5,11 @@ import { useTheme, alpha, semanticTypeColor } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { useChatStore, useSessionView } from '@/stores/chat';
 import { getToolDisplayName } from '@/services/chat';
-import { ACCOUNT_TYPE_LABELS, BUDGET_TYPE_LABELS, IMPORT_SOURCE_LABELS, RECORD_TYPE_LABELS, resolveToolCallStatus, isAwaitingUserAction, type ToolCallEntry } from '@homibook/core';
 import { settingsApi } from '@/services/settings';
 import { MiniTable, computeColWidths } from './MiniTable';
-import { accountLabel, isMultiOwnerAccounts } from '@/lib/account';
+import { accountLabel, isMultiOwnerAccounts, ACCOUNT_TYPE_LABELS, BUDGET_TYPE_LABELS, IMPORT_SOURCE_LABELS, RECORD_TYPE_LABELS, resolveToolCallStatus, isAwaitingUserAction, ToolCallEntry } from '@homibook/core';
+
+
 import { ImportPreviewCard } from './ImportPreviewCard';
 import type { Ledger } from '@/types';
 

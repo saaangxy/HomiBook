@@ -8,7 +8,9 @@ import { AttachmentViewer } from '@/components/ui/AttachmentViewer';
 import { formatMoney } from '@/lib/format';
 import { RECORD_TYPE_LABELS as TYPE_LABEL } from '@homibook/core';
 import { useRecords } from '@/stores/records';
-import { accountLabel, isMultiOwnerAccounts } from '@/lib/account';
+import { accountLabel, isMultiOwnerAccounts } from '@homibook/core';
+
+
 
 interface RecordRowProps {
   record: RecordItem;

@@ -1,5 +1,4 @@
-import { errorMessage } from '@/lib/error'
-import { notifyUnauthorized } from '@/api/http'
+import { notifyUnauthorized } from '@/api/http';
 import { useEffect, useState } from 'react'
 import dayjs from 'dayjs'
 import { X, Download, Upload } from 'lucide-react'
@@ -15,7 +14,9 @@ import { DateTimePicker } from '@/components/ui/datetime-picker'
 import { DictCombobox } from '@/components/DictCombobox'
 import { TagCombobox } from '@/components/TagCombobox'
 import { recordApi } from '@/api/record'
-import { accountLabel } from '@/lib/account'
+import { accountLabel, errorMessage } from '@homibook/core';
+
+
 import type { AccountItem } from '@/api/account'
 import type { BookMember } from '@/api/book'
 import { RECORD_TYPE_LABELS, RECORD_TYPE_TEXT_CLASS } from '@/lib/record-type'

@@ -1,4 +1,4 @@
-import { errorMessage } from '@/lib/error'
+import { errorMessage } from '@homibook/core'
 import { useState, type ReactNode } from 'react'
 import { useAuthStore } from '@/stores/auth'
 import { authApi } from '@/api/auth'

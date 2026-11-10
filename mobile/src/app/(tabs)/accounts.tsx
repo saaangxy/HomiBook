@@ -16,8 +16,9 @@ import { createAccountApi, createAdjustmentApi, deleteAccountApi, fetchAccounts,
 import type { BalanceAdjustment } from '@/services/records';
 import { formatMoney } from '@/lib/format';
 import type { AccountItem, AccountType } from '@/types';
-import { ACCOUNT_TYPES, ACCOUNT_TYPE_LABELS } from '@homibook/core';
-import { isMultiOwnerAccounts } from '@/lib/account';
+import { ACCOUNT_TYPES, ACCOUNT_TYPE_LABELS, isMultiOwnerAccounts } from '@homibook/core'
+
+
 
 const FILTERS = ['全部', '活跃', '已归档'] as const;
 type Filter = (typeof FILTERS)[number];

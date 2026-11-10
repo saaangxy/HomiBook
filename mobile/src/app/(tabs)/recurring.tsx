@@ -16,20 +16,14 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { showToast } from '@/components/chrome/Toast';
 import { useUIShell } from '@/components/chrome/chrome';
 import {
-  createRecurringApi, deleteRecurringApi, fetchRecurring, fetchRepaymentPlanApi,
-  loanPreviewApi, toggleRecurringApi, updateRecurringApi,
-} from '@/services/recurring';
+  createRecurringApi, deleteRecurringApi, fetchRecurring, fetchRepaymentPlanApi, loanPreviewApi, toggleRecurringApi, updateRecurringApi, } from '@/services/recurring';
 import { fetchBudgetTags, fetchRecordTags } from '@/services/records';
 import { useRecords } from '@/stores/records';
 import { formatMoney, formatMoneyShort } from '@/lib/format';
 import type { AccountItem, LoanInterestMethod, LoanPreview, RecordType, RecurringTransaction, RepaymentPlan } from '@/types';
-import { accountLabel, isMultiOwnerAccounts } from '@/lib/account';
-import {
-  LOAN_INTEREST_METHOD_LABELS as METHOD_LABELS,
-  RECORD_TYPES,
-  RECORD_TYPE_LABELS as TYPE_LABEL,
-  RECURRING_TYPE_LABELS as REC_TYPE_LABELS,
-} from '@homibook/core';
+import { accountLabel, isMultiOwnerAccounts, LOAN_INTEREST_METHOD_LABELS as METHOD_LABELS, RECORD_TYPES, RECORD_TYPE_LABELS as TYPE_LABEL, RECURRING_TYPE_LABELS as REC_TYPE_LABELS } from '@homibook/core'
+
+
 
 const TYPE_KEYS: RecordType[] = [...RECORD_TYPES];
 const TYPE_ICON = { INCOME: ArrowUpRight, EXPENSE: ArrowDownRight, TRANSFER: ArrowLeftRight } as const;

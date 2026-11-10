@@ -1,4 +1,4 @@
-import {useState} from 'react';
+import { useState} from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { CheckCircle2, ChevronDown, Copy, FileSpreadsheet, Search, Trash2, X } from 'lucide-react-native';
@@ -6,10 +6,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, alpha, motion, semanticTypeColor, sheetShadow } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { useChatStore } from '@/stores/chat';
-import { accountLabel, isMultiOwnerAccounts } from '@/lib/account';
 import { checkImport } from '@/services/import';
 import { MiniTable } from './MiniTable';
-import { ACCOUNT_TYPE_LABELS, RECORD_TYPE_LABELS, TYPE_TO_GROUP, adoptSuggestedAccountResolutions, computeImportProgress, initAccountResolutions, type AccountResolution, type ToolCallEntry } from '@homibook/core';
+import { ACCOUNT_TYPE_LABELS, RECORD_TYPE_LABELS, TYPE_TO_GROUP, adoptSuggestedAccountResolutions, computeImportProgress, initAccountResolutions, type AccountResolution, type ToolCallEntry, accountLabel, isMultiOwnerAccounts } from '@homibook/core';
+
+
 
 // ── 导入预览交互卡(复刻 web ImportPreviewInteractive,UI 适配移动端)。从 AIAssistant.tsx 拆出 ──
 // 注意:旧版导入消息(v1)的解析统一走 core 的 parseImportMessage(AIAssistant 里在渲染前调用),

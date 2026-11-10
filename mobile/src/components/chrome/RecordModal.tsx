@@ -20,7 +20,7 @@ import { useRecords } from '@/stores/records';
 import { useAuth } from '@/stores/auth';
 import { fetchBookMembers, fetchRecordTags, fetchBudgetTags, uploadRecordAttachment } from '@/services/records';
 import { resolveRemoteUrl } from '@/services/http';
-import { accountLabel, isMultiOwnerAccounts } from '@/lib/account';
+import { accountLabel, isMultiOwnerAccounts } from '@homibook/core';
 import dayjs from 'dayjs';
 
 type RecordType = 'EXPENSE' | 'INCOME' | 'TRANSFER';

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { buildImportMessage, parseImportMessage, IMPORT_AI_SOURCES, IMPORT_SOURCE_LABELS } from '@homibook/core';
 import { ActivityIndicator, BackHandler, FlatList, Image, NativeScrollEvent, NativeSyntheticEvent, Platform, Pressable, SectionList, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -19,7 +20,8 @@ import { isBillFile, uploadImportFile } from '@/services/import';
 import { DownloadModeSheet } from '@/components/chrome/DownloadModeSheet';
 import { downloadAttachment, resolveRemoteUrl, type DownloadMode } from '@/services/http';
 import type { Message, MessageBlock, ChatInjection } from '@homibook/core';
-import { IMPORT_AI_SOURCES, IMPORT_SOURCE_LABELS, buildImportMessage, parseImportMessage } from '@homibook/core';
+
+
 
 
 // 拆分出的子组件(工具卡/导入预览卡)

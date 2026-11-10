@@ -1,10 +1,11 @@
 import { cn } from '@/lib/utils'
-import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
-import { markSubmitted, isSubmitted } from '@/lib/ai-submit'
+import { markSubmitted, isSubmitted } from '@/lib/ai-submit';
 import { getToolDisplayName } from '@/lib/tool-names'
 import type { ToolCallEntry, SuggestionOption } from '@/stores/chat'
 import { useChatStore, useSessionView, getSessionView } from '@/stores/chat'
-import { ACCOUNT_TYPE_LABELS, BUDGET_TYPE_LABELS, resolveToolCallStatus, isAwaitingUserAction } from '@homibook/core'
+import { ACCOUNT_TYPE_LABELS, BUDGET_TYPE_LABELS, resolveToolCallStatus, isAwaitingUserAction, accountLabel, isMultiOwnerAccounts } from '@homibook/core';
+
+
 import { RECORD_TYPE_LABELS, RECORD_TYPE_TEXT_CLASS, RECORD_TYPE_BADGE_CLASS } from '@/lib/record-type'
 import { settingsApi } from '@/api/settings'
 import { useBookStore } from '@/stores/book'

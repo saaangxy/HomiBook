@@ -1,8 +1,6 @@
-import { errorMessage } from '@/lib/error'
-import { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react';
 import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
-} from '@/components/ui/dialog'
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -14,7 +12,9 @@ import { TagCombobox } from '@/components/TagCombobox'
 import { recordApi } from '@/api/record'
 import { RECORD_TYPE_LABELS } from '@/lib/record-type'
 import type { AccountItem } from '@/api/account'
-import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
+import { accountLabel, isMultiOwnerAccounts, errorMessage } from '@homibook/core';
+
+
 import type { BookMember } from '@/api/book'
 import type { RecordItem, RecordType } from '@/api/record'
 

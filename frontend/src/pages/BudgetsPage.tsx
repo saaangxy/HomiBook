@@ -1,4 +1,4 @@
-import { errorMessage } from '@/lib/error'
+import { errorMessage } from '@homibook/core'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import {

@@ -1,4 +1,4 @@
-import { errorMessage } from '@/lib/error'
+import { errorMessage } from '@homibook/core'
 import { useState } from 'react'
 import {
   AccordionContent,

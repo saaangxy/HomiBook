@@ -4,16 +4,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from '@/components/ui/select'
 import {
-  TableRow,
-  TableCell,
-} from '@/components/ui/table'
+  TableRow, TableCell, } from '@/components/ui/table'
 import { DatePicker } from '@/components/ui/date-picker'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { TagCombobox } from '@/components/TagCombobox'
@@ -24,8 +17,9 @@ import type { AccountItem } from '@/api/account'
 import type { DictItem } from '@/api/settings'
 import type { BookMember } from '@/api/book'
 import { cn } from '@/lib/utils'
-import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
-import { formatMoney } from '@homibook/core'
+import { accountLabel, isMultiOwnerAccounts, formatMoney } from '@homibook/core'
+
+
 
 // 收支类型标签与语义色(单一来源 @/lib/record-type ← core)
 const TYPE_COLORS = RECORD_TYPE_BADGE_CLASS

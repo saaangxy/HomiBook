@@ -1,49 +1,23 @@
-import { errorMessage } from '@/lib/error'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react';
 import {
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion'
+  AccordionContent, AccordionItem, AccordionTrigger, } from '@/components/ui/accordion'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog'
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, } from '@/components/ui/dialog'
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, } from '@/components/ui/alert-dialog'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from '@/components/ui/select'
 import {
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
-} from '@/components/ui/table'
+  Table, TableHeader, TableBody, TableRow, TableHead, TableCell, } from '@/components/ui/table'
 import { Spinner } from '@/components/ui/spinner'
 import { importExportApi, type CategoryMapping } from '@/api/import-export'
-import { MAPPING_SOURCE_DEFS } from '@homibook/core'
+import { MAPPING_SOURCE_DEFS, errorMessage } from '@homibook/core';
+
+
 import { DictCombobox } from '@/components/DictCombobox'
 import { Plus, Pencil, Trash2, Link2, ChevronDown, Wrench } from 'lucide-react'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu'

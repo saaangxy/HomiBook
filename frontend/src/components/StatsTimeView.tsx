@@ -10,24 +10,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { MultiSelect } from '@/components/ui/multi-select'
 import { DatePicker } from '@/components/ui/date-picker'
 import {
-  Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle,
-} from '@/components/ui/dialog'
+  Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, } from '@/components/ui/dialog'
 import {
-  Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
-} from '@/components/ui/table'
+  Table, TableHeader, TableBody, TableRow, TableHead, TableCell, } from '@/components/ui/table'
 import { recordApi, type RecordSummary, type RecordItem } from '@/api/record'
 import { accountApi, type AccountItem } from '@/api/account'
-import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
-import { formatMoney } from '@homibook/core'
-import { adminApi, type AdminUser } from '@/api/admin'
+import { adminApi, type AdminUser } from '@/api/admin';
 import { budgetApi } from '@/api/budget'
 import { recurringApi } from '@/api/recurring'
-import {
-  scoreSavings,
-  scoreDebtBurden,
-  scoreFreedom,
-  type RadarMetric,
-} from '@/lib/financial-health'
+import { scoreSavings, scoreDebtBurden, scoreFreedom, type RadarMetric, accountLabel, isMultiOwnerAccounts, formatMoney } from '@homibook/core';
+
+
+
 import { AnalysisPanel } from './AnalysisPanel'
 import { BarChart3, Search, X, List, ChevronLeft, ChevronRight, HelpCircle } from 'lucide-react'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'

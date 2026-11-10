@@ -1,4 +1,4 @@
-import { errorMessage } from '@/lib/error'
+import { errorMessage } from '@homibook/core'
 import { useEffect, useState } from 'react'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'

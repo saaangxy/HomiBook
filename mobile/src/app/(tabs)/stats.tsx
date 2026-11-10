@@ -1,16 +1,13 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useTheme, alpha, useChartColors } from '@/theme';
 import { useIsFocused } from 'expo-router';
 import {
-  RefreshControl, ScrollView, View, Pressable, ActivityIndicator, FlatList,
-} from 'react-native';
+  RefreshControl, ScrollView, View, Pressable, ActivityIndicator, FlatList, } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated from 'react-native-reanimated';
 import {
-  TrendingUp, TrendingDown, Wallet, PieChart as PieIcon,
-  Activity, Search, ChevronLeft, ChevronRight, ChevronDown, Users, X,
-} from 'lucide-react-native';
-import type { StatGranularity } from '@homibook/core';
-import { useTheme, alpha, useChartColors } from '@/theme';
+  TrendingUp, TrendingDown, Wallet, PieChart as PieIcon, Activity, Search, ChevronLeft, ChevronRight, ChevronDown, Users, X, } from 'lucide-react-native';
+
 import { Text } from '@/components/ui/Text';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { useAppearStyle } from '@/components/ui/useAppearAnimation';
@@ -20,12 +17,12 @@ import { RecordRow } from '@/components/RecordRow';
 import { useRecords } from '@/stores/records';
 import { useUIShell, usePageRefresh } from '@/components/chrome/chrome';
 import {
-  fetchMonthlyTrend, fetchBalanceHistory, fetchAccounts, fetchGroupSummary, fetchCategoryTrend, fetchSummary,
-  fetchRecordsPaged, fetchBookMembers, fetchBudgets, type GroupSummaryItem, type CategoryTrendResult,
-} from '@/services/records';
+  fetchMonthlyTrend, fetchBalanceHistory, fetchAccounts, fetchGroupSummary, fetchCategoryTrend, fetchSummary, fetchRecordsPaged, fetchBookMembers, fetchBudgets, type GroupSummaryItem, type CategoryTrendResult, } from '@/services/records';
 import { fetchRecurring } from '@/services/recurring';
 import { computeRadarMetrics, computeTimeRadar } from '@/lib/financial-health';
-import { accountLabel, isMultiOwnerAccounts } from '@/lib/account';
+import { accountLabel, isMultiOwnerAccounts, StatGranularity } from '@homibook/core';
+
+
 import type { BudgetItem, LedgerMember, RadarMetric, RecordItem, RecordSummary } from '@/types';
 
 import { TripleLineChart, AreaLineChart, MultiLineChart, StackedBarChart, DonutChart, TimeRadar, CW } from '@/components/charts';

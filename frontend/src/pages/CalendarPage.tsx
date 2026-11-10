@@ -1,5 +1,4 @@
-import { errorMessage } from '@/lib/error'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react';
 import { RECORD_TYPE_LABELS as TYPE_LABELS, RECORD_TYPE_TEXT_CLASS, RECORD_TYPE_BG_CLASS } from '@/lib/record-type'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -8,31 +7,11 @@ import { Label } from '@/components/ui/label'
 
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
-  Dialog,
-  DialogTrigger,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog'
+  Dialog, DialogTrigger, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter, } from '@/components/ui/dialog'
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, } from '@/components/ui/alert-dialog'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import { DictCombobox } from '@/components/DictCombobox'
@@ -41,8 +20,10 @@ import { TransactionCalendar } from '@/components/TransactionCalendar'
 import { AttachmentViewer, type AttachmentItem } from '@/components/AttachmentViewer'
 import { recordApi, type RecordItem, type RecordType } from '@/api/record'
 import { accountApi, type AccountItem } from '@/api/account'
-import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
-import { formatMoney } from '@homibook/core'
+import { accountLabel, isMultiOwnerAccounts, formatMoney, errorMessage } from '@homibook/core';
+
+
+
 import { settingsApi } from '@/api/settings'
 import { holidayApi, type HolidayItem } from '@/api/holiday'
 import { useBookStore } from '../stores/book'

@@ -1,26 +1,14 @@
 import { useMemo } from 'react';
+import { buildActivePath, collectDescendantIds, parseContentIntoBlocks, processTextDelta, isAwaitingUserAction, DeltaState } from '@homibook/core';
 import { create } from 'zustand';
-import { buildActivePath, collectDescendantIds, parseContentIntoBlocks, processTextDelta, isAwaitingUserAction, type DeltaState } from '@homibook/core';
-import type { Message, MessageBlock, ToolCallEntry } from '@homibook/core';
-import {
-  confirmActionStream,
-  createSession,
-  deleteSession,
-  fetchMessages,
-  fetchSessions,
-  generateSessionTitle,
-  sendMessageStream,
-  updateSession,
-  type SSEEvent,
-} from '@/services/chat';
+import { confirmActionStream, createSession, deleteSession, fetchMessages, fetchSessions, generateSessionTitle, sendMessageStream, updateSession, type SSEEvent } from '@/services/chat';
 
 // AI 聊天状态(zustand + core 共享解析)。
-// 数据模型:sessionCache[sid] 为唯一状态源(allMessages 权威 + branchSelections),
-// 当前会话的活跃路径 messages 一律由 buildActivePath 派生(useSessionView / viewOf),
-// 切换会话无需保存/恢复 —— 消灭顶层与 cache 的双状态源互抄。
+// 数据模型:sessionCache[sid] 为唯一状态源(allMessages 权威 + branchSelections), // 当前会话的活跃路径 messages 一律由 buildActivePath 派生(useSessionView / viewOf), // 切换会话无需保存/恢复 —— 消灭顶层与 cache 的双状态源互抄。
 
-export type { Message, MessageBlock, ToolCallEntry };
-export type { SuggestionOption } from '@homibook/core';
+import type { Message, MessageBlock } from '@homibook/core';
+export type { Message, MessageBlock, ToolCallEntry, SuggestionOption } from '@homibook/core';
+
 
 // ── 流式增量刷新调度 ──
 // SSE 的每个 text/reasoning delta 都直接写 store → AIAssistant 整棵树(含全部历史 Markdown)

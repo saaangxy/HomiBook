@@ -9,7 +9,7 @@ import { DatePicker } from '@/components/ui/DatePicker';
 import { useAppearProgress } from '@/components/ui/useAppearAnimation';
 import { useRecords } from '@/stores/records';
 import type { RecordType } from '@/types';
-import { accountLabel, isMultiOwnerAccounts } from '@/lib/account';
+import { accountLabel, isMultiOwnerAccounts } from '@homibook/core';
 
 export interface RecordFilters {
   types: RecordType[];

@@ -7,25 +7,17 @@ import { recordApi, type RecordSummary } from '@/api/record'
 import { accountApi, type AccountItem } from '@/api/account'
 import { MultiSelect } from '@/components/ui/multi-select'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
-import { recurringApi, type RecurringTransaction } from '@/api/recurring'
+import { recurringApi, type RecurringTransaction } from '@/api/recurring';
 import { useBookStore } from '@/stores/book'
 import { useChartTheme, type ChartTheme, generateChartColors } from '@/hooks/useChartTheme'
 import { RECORD_TYPE_HEX, RECORD_TYPE_TEXT_CLASS } from '@/lib/record-type'
 import { TrendingUp, BarChart3, Wallet, Target, HelpCircle } from 'lucide-react'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import dayjs from 'dayjs'
-import {
-  scoreEmergency,
-  scoreDebtBurden,
-  scoreLeverage,
-  scoreSavings,
-  scoreInvestment,
-  scoreFreedom,
-  scoreInsurance,
-  type RadarMetric,
-} from '@/lib/financial-health'
-import { formatMoney, isAssetAccountType, isEmergencyAccountType } from '@homibook/core'
+import { scoreEmergency, scoreDebtBurden, scoreLeverage, scoreSavings, scoreInvestment, scoreFreedom, scoreInsurance, type RadarMetric, formatMoney, isAssetAccountType, isEmergencyAccountType, accountLabel, isMultiOwnerAccounts } from '@homibook/core';
+
+
+
 
 /**
  * 账户余额变化的时间范围。后端 granularity 只支持 daily / monthly:

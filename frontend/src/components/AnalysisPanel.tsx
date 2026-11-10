@@ -8,20 +8,19 @@ import { MultiSelect } from '@/components/ui/multi-select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
-  Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle,
-} from '@/components/ui/dialog'
+  Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, } from '@/components/ui/dialog'
 import {
-  Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
-} from '@/components/ui/table'
+  Table, TableHeader, TableBody, TableRow, TableHead, TableCell, } from '@/components/ui/table'
 import { Spinner } from '@/components/ui/spinner'
 import { recordApi, type RecordItem } from '@/api/record'
 import { accountApi, type AccountItem } from '@/api/account'
-import { accountLabel, isMultiOwnerAccounts } from '@/lib/account'
-import { adminApi, type AdminUser } from '@/api/admin'
+import { adminApi, type AdminUser } from '@/api/admin';
 import { PieChart, Users, Wallet, X, List, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useChartTheme, type ChartTheme, generateChartColors } from '@/hooks/useChartTheme'
 import { RECORD_TYPE_HEX } from '@/lib/record-type'
-import { STAT_GROUP_BYS, formatMoney } from '@homibook/core'
+import { STAT_GROUP_BYS, formatMoney, accountLabel, isMultiOwnerAccounts } from '@homibook/core';
+
+
 
 const ANALYSIS_TYPES = [
   { value: 'EXPENSE', label: '支出分析', color: RECORD_TYPE_HEX.EXPENSE },

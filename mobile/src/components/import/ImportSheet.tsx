@@ -11,37 +11,12 @@ import { showToast } from '@/components/chrome/Toast';
 import { importExportApi } from '@/services/settings';
 import { useRecords } from '@/stores/records';
 import { useAuth } from '@/stores/auth';
-import { accountLabel } from '@/lib/account';
 import { fetchBookMembers } from '@/services/records';
 import {
-  analyzeImportCsv,
-  confirmImport,
-  isBillFile,
-  previewImport,
-  type DictEntry,
-  type ImportPreviewResult,
-  type ParsedImportRow,
-} from '@/services/import';
-import {
-  ACCOUNT_TYPE_LABELS,
-  IMPORT_COLUMN_FIELDS,
-  IMPORT_SOURCE_DEFS,
-  IMPORT_TYPE_LABELS,
-  TYPE_TO_GROUP,
-  adoptSuggestedAccountResolutions,
-  autoDetectColumns,
-  autoDetectTypeMapping,
-  canProceedImport,
-  computeImportProgress,
-  detectTypeValues,
-  initAccountResolutions,
-  isColumnMappingValid,
-  matchAccountInPool,
-  mergeAccountCreations,
-  type AccountResolution,
-  type ImportColumnField,
-  type ImportSource,
-} from '@homibook/core';
+  analyzeImportCsv, confirmImport, isBillFile, previewImport, type DictEntry, type ImportPreviewResult, type ParsedImportRow, } from '@/services/import';
+import { ACCOUNT_TYPE_LABELS, IMPORT_COLUMN_FIELDS, IMPORT_SOURCE_DEFS, IMPORT_TYPE_LABELS, TYPE_TO_GROUP, adoptSuggestedAccountResolutions, autoDetectColumns, autoDetectTypeMapping, canProceedImport, computeImportProgress, detectTypeValues, initAccountResolutions, isColumnMappingValid, matchAccountInPool, mergeAccountCreations, type AccountResolution, type ImportColumnField, type ImportSource, accountLabel } from '@homibook/core';
+
+
 
 // 类型语义色随主题(semanticTypeColor);映射未命中等警示色保持固定琥珀
 // 收支类型 → 字典组映射(TYPE_TO_GROUP)统一来自 @homibook/core
