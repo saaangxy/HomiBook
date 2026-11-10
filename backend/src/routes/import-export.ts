@@ -493,14 +493,29 @@ export async function importExportRoutes(app: FastifyInstance) {
   }, async () => {
     const dictItems = await prisma.dictionary.findMany({
       where: { group: { in: [...CATEGORY_DICT_GROUPS] } },
-      select: { code: true },
+      select: { code: true, group: true },
     })
-    const validCodes = new Set(dictItems.map(d => d.code))
-    const all = await prisma.importCategoryMapping.findMany({ select: { id: true, sourceCategory: true, targetCategoryCode: true } })
-    // 无效 = 目标分类不在字典中,或源分类与目标分类同名(等于没映射)
+    const codeGroup = new Map(dictItems.map(d => [d.code, d.group]))
+    const validCodes = new Set(codeGroup.keys())
+    const all = await prisma.importCategoryMapping.findMany({
+      select: { id: true, sourceCategory: true, targetCategoryCode: true, recordType: true },
+    })
+
+    const TYPE_GROUP: Record<string, string> = {
+      EXPENSE: 'transaction_category_expense',
+      INCOME: 'transaction_category_income',
+      TRANSFER: 'transaction_category_transfer',
+    }
+
+    // 无效 = 目标分类不在字典中 / 源分类与目标同名(等于没映射) / 目标分类不属于规则限定的记录类型
     const invalidIds = all.filter(m => {
       const src = m.sourceCategory.trim()
-      return !validCodes.has(m.targetCategoryCode) || (!!src && src === m.targetCategoryCode.trim())
+      if (!validCodes.has(m.targetCategoryCode)) return true
+      if (!!src && src === m.targetCategoryCode.trim()) return true
+      // 规则限定了记录类型时,目标分类必须属于该类型(否则导入时会因类型不符被跳过)
+      const expectedGroup = m.recordType ? TYPE_GROUP[m.recordType] : undefined
+      if (expectedGroup && codeGroup.get(m.targetCategoryCode) !== expectedGroup) return true
+      return false
     }).map(m => m.id)
     if (invalidIds.length > 0) {
       await prisma.importCategoryMapping.deleteMany({ where: { id: { in: invalidIds } } })
@@ -550,20 +565,30 @@ export async function importExportRoutes(app: FastifyInstance) {
       orderBy: { createdAt: 'desc' },
     })
     // 标记无效规则:设置页据此标红 + 提供一键清理
-    // 无效的两种情形:① 目标分类不在字典中;② 源分类与目标分类同名(等于没映射)
+    // 无效情形:① 目标分类不在字典中;② 源分类与目标分类同名;③ 目标分类不属于规则限定的记录类型
     const dictItems = await prisma.dictionary.findMany({
       where: { group: { in: [...CATEGORY_DICT_GROUPS] } },
-      select: { code: true },
+      select: { code: true, group: true },
     })
-    const validCodes = new Set(dictItems.map(d => d.code))
+    const codeGroup = new Map(dictItems.map(d => [d.code, d.group]))
+    const validCodes = new Set(codeGroup.keys())
+    const TYPE_GROUP: Record<string, string> = {
+      EXPENSE: 'transaction_category_expense',
+      INCOME: 'transaction_category_income',
+      TRANSFER: 'transaction_category_transfer',
+    }
+    const TYPE_LABEL: Record<string, string> = { EXPENSE: '支出', INCOME: '收入', TRANSFER: '转账' }
     return {
       mappings: mappings.map(m => {
         const src = m.sourceCategory.trim()
+        const expectedGroup = m.recordType ? TYPE_GROUP[m.recordType] : undefined
         const reason = !validCodes.has(m.targetCategoryCode)
           ? '目标分类不在字典中'
           : (src && src === m.targetCategoryCode.trim())
             ? '源分类与目标分类同名（等于未映射）'
-            : undefined
+            : (expectedGroup && codeGroup.get(m.targetCategoryCode) !== expectedGroup)
+              ? `目标分类不属于「${TYPE_LABEL[m.recordType] ?? m.recordType}」类型，导入时会被跳过`
+              : undefined
         return { ...m, invalidReason: reason }
       }),
     }
