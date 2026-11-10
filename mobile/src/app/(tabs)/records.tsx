@@ -22,7 +22,7 @@ import { FormSheet } from '@/components/chrome/FormSheet';
 import { exportRecordsCsv, type ExportMode } from '@/services/import';
 import { formatMoneyShort } from '@/lib/format';
 import type { RecordItem, RecordSummary } from '@/types';
-import { RECORD_TYPE_LABELS as TYPE_LABEL } from '@homibook/core';
+import { RECORD_TYPE_LABELS as TYPE_LABEL, parseOptionalAmount, optionalText, optionalList } from '@homibook/core';
 import { accountLabel, isMultiOwnerAccounts } from '@/lib/account';
 /** 列表分页大小:一次只加载 20 条,滚动到底自动加载下一页 */
 const PAGE_SIZE = 20;
@@ -127,18 +127,20 @@ export default function RecordsScreen() {
   const listGenRef = useRef(0);
 
   // 后端查询条件(账户/分类/转入账户均支持逗号分隔多选,与 web 一致)
+  // 空值统一走 core 的 filter-params:空 → undefined(字段不出现),后端才当成「不设条件」。
   const query = useMemo(() => {
     return {
-      types: filters.types,
-      dateFrom: filters.dateFrom || undefined,
-      dateTo: filters.dateTo || undefined,
-      amountFrom: filters.minAmount ? Number(filters.minAmount) : undefined,
-      amountTo: filters.maxAmount ? Number(filters.maxAmount) : undefined,
-      remark: filters.keyword.trim() || undefined,
-      accountId: filters.accountIds.length > 0 ? filters.accountIds.join(',') : undefined,
+      types: optionalList(filters.types),
+      dateFrom: optionalText(filters.dateFrom),
+      dateTo: optionalText(filters.dateTo),
+      amountFrom: parseOptionalAmount(filters.minAmount),
+      amountTo: parseOptionalAmount(filters.maxAmount),
+      remark: optionalText(filters.keyword),
+      accountId: optionalList(filters.accountIds)?.join(','),
       // 转入账户:转账记录的 accountId 存的是源账户,转入账户单独筛
-      toAccountId: filters.toAccountIds.length > 0 ? filters.toAccountIds.join(',') : undefined,
-      categoryCode: filters.categoryCodes.length > 0 ? filters.categoryCodes.join(',') : undefined,
+      toAccountId: optionalList(filters.toAccountIds)?.join(','),
+      categoryCode: optionalList(filters.categoryCodes)?.join(','),
+      // offsetState 是字面量联合('pending'|'offset'),不能用 optionalText(会退化成 string)
       offsetState: filters.offsetState || undefined,
     };
   }, [filters]);
@@ -181,7 +183,7 @@ export default function RecordsScreen() {
     if (!bookId) return;
     try {
       setSummary(await fetchSummary(bookId, {
-        type: query.types.length > 0 ? query.types.join(',') : undefined,
+        type: optionalList(query.types)?.join(','),
         accountId: query.accountId,
         toAccountId: query.toAccountId,
         categoryCode: query.categoryCode,
@@ -304,8 +306,8 @@ export default function RecordsScreen() {
           accountIds: filters.accountIds,
           toAccountIds: filters.toAccountIds,
           categoryCodes: filters.categoryCodes,
-          dateFrom: filters.dateFrom || undefined,
-          dateTo: filters.dateTo || undefined,
+          dateFrom: optionalText(filters.dateFrom),
+          dateTo: optionalText(filters.dateTo),
         },
         mode,
       );

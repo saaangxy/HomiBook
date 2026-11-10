@@ -1,4 +1,5 @@
 import { errorMessage } from '@/lib/error'
+import { parseOptionalAmount, optionalText, optionalList } from '@/lib/filter-params'
 import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { RECORD_TYPE_LABELS as TYPE_LABELS, RECORD_TYPE_TEXT_CLASS } from '@/lib/record-type'
@@ -280,18 +281,19 @@ export function RecordsPage() {
     try {
       setSummary(await recordApi.summary({
         bookId: currentBookId,
-        type: filters.types.length > 0 ? filters.types.join(',') : undefined,
-        accountId: filters.accountIds.length > 0 ? filters.accountIds.join(',') : undefined,
-        toAccountId: filters.toAccountIds.length > 0 ? filters.toAccountIds.join(',') : undefined,
-        categoryCode: filters.categoryCodes.length > 0 ? filters.categoryCodes.join(',') : undefined,
-        dateFrom: filters.dateFrom || undefined,
-        dateTo: filters.dateTo || undefined,
-        ownerId: filters.ownerIds.length > 0 ? filters.ownerIds.join(',') : undefined,
-        payer: filters.payer || undefined,
-        amountFrom: filters.amountFrom ? parseFloat(filters.amountFrom) : undefined,
-        amountTo: filters.amountTo ? parseFloat(filters.amountTo) : undefined,
-        remark: filters.remark || undefined,
-        tags: filters.tags.length > 0 ? filters.tags.join(',') : undefined,
+        type: optionalList(filters.types)?.join(','),
+        accountId: optionalList(filters.accountIds)?.join(','),
+        toAccountId: optionalList(filters.toAccountIds)?.join(','),
+        categoryCode: optionalList(filters.categoryCodes)?.join(','),
+        dateFrom: optionalText(filters.dateFrom),
+        dateTo: optionalText(filters.dateTo),
+        ownerId: optionalList(filters.ownerIds)?.join(','),
+        payer: optionalText(filters.payer),
+        amountFrom: parseOptionalAmount(filters.amountFrom),
+        amountTo: parseOptionalAmount(filters.amountTo),
+        remark: optionalText(filters.remark),
+        tags: optionalList(filters.tags)?.join(','),
+        // offsetState 是字面量联合('pending'|'offset'),不能用 optionalText(会退化成 string)
         offsetState: offsetState || undefined,
       }))
     } catch { /* ignore */ }
@@ -307,18 +309,19 @@ export function RecordsPage() {
         bookId: currentBookId,
         page,
         pageSize,
-        type: filters.types.length > 0 ? filters.types.join(',') : undefined,
-        accountId: filters.accountIds.length > 0 ? filters.accountIds.join(',') : undefined,
-        toAccountId: filters.toAccountIds.length > 0 ? filters.toAccountIds.join(',') : undefined,
-        categoryCode: filters.categoryCodes.length > 0 ? filters.categoryCodes.join(',') : undefined,
-        dateFrom: filters.dateFrom || undefined,
-        dateTo: filters.dateTo || undefined,
-        ownerId: filters.ownerIds.length > 0 ? filters.ownerIds.join(',') : undefined,
-        payer: filters.payer || undefined,
-        amountFrom: filters.amountFrom ? parseFloat(filters.amountFrom) : undefined,
-        amountTo: filters.amountTo ? parseFloat(filters.amountTo) : undefined,
-        remark: filters.remark || undefined,
-        tags: filters.tags.length > 0 ? filters.tags.join(',') : undefined,
+        type: optionalList(filters.types)?.join(','),
+        accountId: optionalList(filters.accountIds)?.join(','),
+        toAccountId: optionalList(filters.toAccountIds)?.join(','),
+        categoryCode: optionalList(filters.categoryCodes)?.join(','),
+        dateFrom: optionalText(filters.dateFrom),
+        dateTo: optionalText(filters.dateTo),
+        ownerId: optionalList(filters.ownerIds)?.join(','),
+        payer: optionalText(filters.payer),
+        amountFrom: parseOptionalAmount(filters.amountFrom),
+        amountTo: parseOptionalAmount(filters.amountTo),
+        remark: optionalText(filters.remark),
+        tags: optionalList(filters.tags)?.join(','),
+        // offsetState 是字面量联合('pending'|'offset'),不能用 optionalText(会退化成 string)
         offsetState: offsetState || undefined,
       })
       setRecords(res.records)

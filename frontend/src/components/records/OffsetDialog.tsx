@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { parseOptionalAmount, optionalText, optionalList } from '@/lib/filter-params'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -188,14 +189,14 @@ export function OffsetDialog({ open, onOpenChange, bookId, accounts, categories,
 
   const filterPayload = () => ({
     bookId,
-    dateFrom: dateFrom || undefined,
-    dateTo: dateTo || undefined,
+    dateFrom: optionalText(dateFrom),
+    dateTo: optionalText(dateTo),
     // 账户/分类多选:后端按逗号分隔解析
-    accountId: accountIds.length ? accountIds.join(',') : undefined,
-    categoryCode: categoryCodes.length ? categoryCodes.join(',') : undefined,
-    amountFrom: amountFrom ? Number(amountFrom) : undefined,
-    amountTo: amountTo ? Number(amountTo) : undefined,
-    remark: remark || undefined,
+    accountId: optionalList(accountIds)?.join(','),
+    categoryCode: optionalList(categoryCodes)?.join(','),
+    amountFrom: parseOptionalAmount(amountFrom),
+    amountTo: parseOptionalAmount(amountTo),
+    remark: optionalText(remark),
   })
 
   const runMatch = async () => {

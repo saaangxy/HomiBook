@@ -19,7 +19,10 @@ import {
   DEDUP_TYPE_LABELS,
   RECORD_TYPES,
   hasDedupScopeFilter,
+  optionalList,
+  optionalText,
   parseDuplicateGroupKey,
+  parseOptionalAmount,
   planDuplicateMerge,
   summarizeDedupScopeFilter,
   type DedupMatchFields,
@@ -58,14 +61,6 @@ function fmtDate(iso: string): string {
 
 /** 冲突选择里「不填」的哨兵值(chip 的 value 必须是字符串) */
 const EMPTY_CHIP = '__empty__';
-
-/** 金额区间用**文本**保存(直接存 number 会吞掉「1.」这类中间输入,小数点打不出来);空/非法 → null */
-function parseAmountText(text: string): number | null {
-  const t = text.trim();
-  if (!t) return null;
-  const n = Number(t);
-  return Number.isFinite(n) ? n : null;
-}
 
 /**
  * 流水 → core 的合并入参。
@@ -142,11 +137,14 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
     }
   }
 
-  // 实际提交的范围筛选(金额从文本解析);归一化(日期取到日、金额换序)由 core 负责
-  const scope = useMemo<DedupScopeFilter>(() => ({
-    ...filters,
-    amountMin: parseAmountText(amountMinText),
-    amountMax: parseAmountText(amountMaxText),
+  // 实际提交的范围筛选:只放有值的字段(与 Web 端同一套 core 函数)。
+  // 不能把空字段写成 null —— 后端 AJV 会把 null coerce 成 0,变成「金额 ≤ 0」过滤掉所有流水。
+  const scope = useMemo<Partial<DedupScopeFilter>>(() => ({
+    dateFrom: optionalText(filters.dateFrom),
+    dateTo: optionalText(filters.dateTo),
+    types: optionalList(filters.types),
+    amountMin: parseOptionalAmount(amountMinText),
+    amountMax: parseOptionalAmount(amountMaxText),
   }), [filters, amountMinText, amountMaxText]);
   const scopeSummary = summarizeDedupScopeFilter(scope);
   const clearScope = () => {
