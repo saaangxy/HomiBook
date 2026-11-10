@@ -154,8 +154,8 @@ export const previewImportTool: ToolDef = {
       c.sourceAccountNames.map(sn => ({ sourceAccountName: sn, name: c.name, type: c.type })),
     )
 
-    // 账本全量账户(带归属人)供前端切换归属人时列候选
-    const accounts = await loadAccountsForTool(ctx.accountBookId)
+    // 只列当前用户的账户:多成员账本下若把他人账户也交给 AI,它会建议匹配到别人的同名账户
+    const accounts = await loadAccountsForTool(ctx.accountBookId, ctx.userId)
 
     // AI 账户映射规则直接展示，供前端预填充（跳过已在 DB 未匹配列表中的同名项）
     if (accountResolutions?.length) {
@@ -351,10 +351,10 @@ export const previewImportTool: ToolDef = {
   },
 }
 
-/** 账本全量活跃账户(带归属人),供前端切换归属人时列候选 */
-async function loadAccountsForTool(bookId: string) {
+/** 当前用户在该账本下的活跃账户(带归属人),供前端列候选 */
+async function loadAccountsForTool(bookId: string, ownerId: string) {
   const allAccountsRaw = await prisma.account.findMany({
-    where: { accountBookId: bookId, status: 'ACTIVE' },
+    where: { accountBookId: bookId, status: 'ACTIVE', ownerId },
     select: { id: true, name: true, type: true, ownerId: true, owner: { select: { nickname: true, email: true } } },
   })
   return allAccountsRaw.map(a => ({

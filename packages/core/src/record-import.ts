@@ -222,7 +222,8 @@ export type AccountPoolMatchResult =
  * 传入 ownerId 时只在本人账户(及未设归属人的账户)中匹配(多成员账本下避免误匹配他人同名账户)。
  */
 export function matchAccountInPoolDetailed(name: string, pool: PoolAccount[], ownerId?: string): AccountPoolMatchResult {
-  const candidates = ownerId ? pool.filter((a) => !a.ownerId || a.ownerId === ownerId) : pool;
+  // 账户必有归属人(不存在「共享账户」):传了 ownerId 就严格只匹配本人账户
+  const candidates = ownerId ? pool.filter((a) => a.ownerId === ownerId) : pool;
   if (!name || candidates.length === 0) return { matched: false, ambiguous: false };
 
   // ① 原样四级匹配

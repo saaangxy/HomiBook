@@ -224,11 +224,14 @@ export async function applyAccountMappings(
   if (aiResolutions?.length) {
     for (const ar of aiResolutions) {
       if (ar.action === 'existing' && ar.targetAccountId) {
-        idMap.set(ar.sourceAccountName, ar.targetAccountId)
+        // 必须校验目标账户落在当前用户的账户池内:
+        // 决议来自 AI 时若直接信任 id,多成员账本下会把流水挂到别人的同名账户上。
         const acc = allAccounts.find(a => a.id === ar.targetAccountId)
-        if (acc) nameRecord[ar.sourceAccountName] = acc.name
+        if (!acc) continue
+        idMap.set(ar.sourceAccountName, acc.id)
+        nameRecord[ar.sourceAccountName] = acc.name
       } else if (ar.action === 'create' && ar.targetAccountName && ar.accountType) {
-        const matched = matchAccountByName(ar.targetAccountName, allAccounts)
+        const matched = matchAccountByName(ar.targetAccountName, allAccounts, ownerId)
         if (matched.matched) {
           idMap.set(ar.sourceAccountName, matched.id)
           nameRecord[ar.sourceAccountName] = matched.name
