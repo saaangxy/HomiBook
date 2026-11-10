@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { router, useIsFocused } from 'expo-router';
 import { Pressable, ScrollView, View } from 'react-native';
-import { AlertTriangle, ArrowDownRight, ArrowUpRight, CalendarClock, Camera, ChevronRight, FileUp, MessageSquareText, Plus } from 'lucide-react-native';
+import { ArrowDownRight, ArrowUpRight, CalendarClock, Camera, ChevronRight, FileUp, MessageSquareText, Plus } from 'lucide-react-native';
 import { useTheme, alpha } from '@/theme';
 import { useAuth } from '@/stores/auth';
 import { useAIAvailability } from '@/hooks/useAIAvailability';
@@ -185,6 +185,9 @@ export default function HomeScreen() {
       .sort((a, b) => b.actualAmount / b.amount - a.actualAmount / a.amount),
     [monthlyBudgets],
   );
+  /** 超支(≥100%)与接近上限(85%~100%)分别计数 —— 卡片标题角标用 */
+  const dangerBudgetCount = budgetAlerts.filter((b) => b.actualAmount >= b.amount).length;
+  const warnBudgetCount = budgetAlerts.length - dangerBudgetCount;
 
   // ── 固定收支待办:下次生成时间在未来 7 天内,按日期升序取前 5 ──
   // 不用 useMemo:内部要取当前时间,放 hook 里会触发 react-hooks/purity(数据量小,重算无妨)
@@ -372,7 +375,19 @@ export default function HomeScreen() {
               <Pressable onPress={() => setBudgetExp((v) => !v)} style={{ gap: 2 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                   <View>
-                    <Text variant="muted" style={{ fontSize: 12 }}>本月总预算</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text variant="muted" style={{ fontSize: 12 }}>本月总预算</Text>
+                      {/* 轻量预警角标:替代原先独立的「预算预警」卡片,与 Web 首页一致 */}
+                      {dangerBudgetCount > 0 ? (
+                        <View style={{ borderRadius: 4, backgroundColor: alpha(colors.expense, 0.1), paddingHorizontal: 5, paddingVertical: 1 }}>
+                          <Text style={{ fontSize: 10, fontWeight: '600', color: colors.expense }}>⚠ {dangerBudgetCount} 项超支</Text>
+                        </View>
+                      ) : warnBudgetCount > 0 ? (
+                        <View style={{ borderRadius: 4, backgroundColor: alpha('#f97316', 0.1), paddingHorizontal: 5, paddingVertical: 1 }}>
+                          <Text style={{ fontSize: 10, fontWeight: '600', color: '#f97316' }}>{warnBudgetCount} 项接近上限</Text>
+                        </View>
+                      ) : null}
+                    </View>
                     <Text style={{ fontSize: 22, fontWeight: '700', fontVariant: ['tabular-nums'], marginTop: 2 }}>{formatMoney(totalBudget)}</Text>
                   </View>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -407,29 +422,6 @@ export default function HomeScreen() {
                 </View>
               )}
             </Card>
-          </FadeInView>
-        )}
-
-        {/* 超预算预警(≥85% 提醒 / ≥100% 危险,仅在有预警项时展示) */}
-        {budgetAlerts.length > 0 && (
-          <FadeInView index={5}>
-            <View style={{ marginBottom: 12, borderRadius: 14, borderWidth: 1, borderColor: alpha(colors.expense, 0.4), backgroundColor: alpha(colors.expense, 0.06), padding: 12, gap: 8 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <AlertTriangle size={14} color={colors.expense} />
-                <Text style={{ fontSize: 13, fontWeight: '600', color: colors.expense }}>预算预警</Text>
-              </View>
-              {budgetAlerts.slice(0, 3).map((b) => {
-                const bp = Math.round((b.actualAmount / b.amount) * 100);
-                return (
-                  <View key={b.id} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                    <Text style={{ fontSize: 12.5 }} numberOfLines={1}>{b.name}</Text>
-                    <Text style={{ fontSize: 12, fontWeight: '600', color: bp >= 100 ? colors.expense : colors.mutedForeground }}>
-                      {bp}% · 已用 {formatMoneyShort(b.actualAmount)}
-                    </Text>
-                  </View>
-                );
-              })}
-            </View>
           </FadeInView>
         )}
 
