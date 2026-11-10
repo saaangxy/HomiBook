@@ -2,10 +2,9 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ReactECharts from 'echarts-for-react'
 import { Card, CardContent } from '@/components/ui/card'
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
-  Book, Wallet, ArrowUpCircle, ArrowDownCircle, TrendingUp, TrendingDown, AlertTriangle,
+  Book, Wallet, ArrowUpCircle, ArrowDownCircle, TrendingUp, TrendingDown,
   Plus, Upload, CopyMinus, Scale, ChevronRight, Settings2, Repeat, GripVertical, Check,
   ArrowUpDown, LayoutGrid,
 } from 'lucide-react'
@@ -293,23 +292,7 @@ export function HomePage() {
         </div>
       )}
 
-      {/* 预算预警 */}
-      {dangerBudgets.length > 0 && (
-        <Alert variant="destructive" className="shrink-0">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>
-            {dangerBudgets.map((b) => b.name).join('、')} 已超预算
-          </AlertDescription>
-        </Alert>
-      )}
-      {warnBudgets.filter((b) => !dangerBudgets.includes(b)).length > 0 && (
-        <Alert className="shrink-0">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>
-            {warnBudgets.filter((b) => !dangerBudgets.includes(b)).map((b) => `${b.name}(${Math.round((b.actualAmount / b.amount) * 100)}%)`).join('、')} 即将超预算
-          </AlertDescription>
-        </Alert>
-      )}
+      {/* 预算预警不再占整行:改为预算卡片标题上的轻量角标(见「本月预算」卡片) */}
 
       {/* 统计卡片(可排序) */}
       <div
@@ -446,11 +429,23 @@ export function HomePage() {
           {renderHandle('budget')}
           <CardContent className="p-4">
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold">本月预算</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-semibold">本月预算</h3>
+                {/* 轻量预警:替代原先占满整行的 Alert */}
+                {dangerBudgets.length > 0 ? (
+                  <span className="rounded bg-[#ef4444]/10 px-1.5 py-0.5 text-[10px] font-medium text-[#ef4444]">
+                    ⚠ {dangerBudgets.length} 项超支
+                  </span>
+                ) : warnBudgets.length > 0 ? (
+                  <span className="rounded bg-[#f97316]/10 px-1.5 py-0.5 text-[10px] font-medium text-[#f97316]">
+                    {warnBudgets.length} 项接近上限
+                  </span>
+                ) : null}
+              </div>
               <button
                 type="button"
                 className="flex items-center gap-0.5 text-xs text-muted-foreground hover:text-primary"
-                onClick={() => navigate('/budget')}
+                onClick={() => navigate('/budgets')}
               >
                 全部 <ChevronRight size={12} />
               </button>
