@@ -23,13 +23,10 @@ import { Send, StopCircle, Upload, Paperclip, FileText, X, Globe, Menu, Plus, Lo
 import { parseContentIntoBlocks, buildImportMessage } from '@homibook/core'
 import { type MessageBlock, type ChatSession } from '@/stores/chat'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { MAX_ATTACH_MB, useFileIntake } from '@/hooks/use-file-intake'
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle,
 } from '@/components/ui/sheet'
-
-/** 单个附件体积上限(与导入向导文案里的 10MB 保持一致) */
-const MAX_ATTACH_MB = 10
-const MAX_ATTACH_BYTES = MAX_ATTACH_MB * 1024 * 1024
 
 export function ChatWindow({ dock = false }: { /** 浮窗模式:桌面也把会话列表收进抽屉,给正文让出宽度 */ dock?: boolean } = {}) {
   const [input, setInput] = useState('')
@@ -152,8 +149,6 @@ export function ChatWindow({ dock = false }: { /** 浮窗模式:桌面也把会�
   // ---- 待发送附件(图片显示缩略图,其余显示文件名) ----
   const [pendingFiles, setPendingFiles] = useState<{ file: File; preview?: string }[]>([])
   const [uploadingFiles, setUploadingFiles] = useState(false)
-  // 拖拽文件到聊天框时的整块高亮
-  const [dragOver, setDragOver] = useState(false)
   // 体积超限 / 上传失败等提示
   const [attachError, setAttachError] = useState('')
   const attachInputRef = useRef<HTMLInputElement>(null)
@@ -162,66 +157,35 @@ export function ChatWindow({ dock = false }: { /** 浮窗模式:桌面也把会�
   // 放在 chat store 里:发送(/send)与确认后续写(/confirm)两条请求都要带同一个状态
 
   /**
-   * 统一的「加入待发送内容」入口:选择 / 粘贴 / 拖拽共用。
-   * 只做体积校验后挂进待发送列表 —— **不在这里发任何请求**(拖进来 ≠ 要发)。
+   * 统一的「加入待发送内容」入口:选择 / 粘贴 / 拖拽共用（体积校验在 useFileIntake 里）。
+   * 挂进待发送列表 —— **不在这里发任何请求**(拖进来 ≠ 要发)。
    * csv/excel 是不是账单,在点「发送」时才由服务端识别,见 handleSend。
    */
   const addFiles = (files: File[]) => {
     if (files.length === 0) return
-    const oversized = files.filter((f) => f.size > MAX_ATTACH_BYTES)
-    const rest = files.filter((f) => f.size <= MAX_ATTACH_BYTES)
-    setAttachError(oversized.length > 0 ? `${oversized.map((f) => f.name).join('、')} 超过 ${MAX_ATTACH_MB}MB，已跳过` : '')
-    if (rest.length === 0) return
     setPendingFiles((prev) => [
       ...prev,
-      ...rest.map((file) => ({
+      ...files.map((file) => ({
         file,
         preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined,
       })),
     ])
   }
 
+  // 拖拽 / 粘贴 / 选择共用同一套判定:粘贴只认图片,纯文本粘贴走默认行为
+  const { dragOver, dragHandlers, handlePaste, intakeFiles } = useFileIntake({
+    enabled: !!currentBookId && !isCurrentStreaming,
+    acceptPaste: (f) => f.type.startsWith('image/'),
+    onFiles: (files) => {
+      setAttachError('')
+      addFiles(files)
+    },
+    onOversized: (files) => setAttachError(`${files.map((f) => f.name).join('、')} 超过 ${MAX_ATTACH_MB}MB，已跳过`),
+  })
+
   const handleAttachSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    addFiles(Array.from(e.target.files || []))
+    intakeFiles(Array.from(e.target.files || []))
     e.target.value = '' // 允许重复选同一文件
-  }
-
-  /** 粘贴(截图直接 Ctrl+V):只认图片,纯文本粘贴走默认行为 */
-  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const dt = e.clipboardData
-    if (!dt) return
-    // files 与 items 指向**同一批**文件,不能相加(会一张变两张);只有 files 为空时才回退 items
-    const fromFiles = Array.from(dt.files || [])
-    const files = fromFiles.length > 0
-      ? fromFiles
-      : Array.from(dt.items || [])
-        .filter((it) => it.kind === 'file')
-        .map((it) => it.getAsFile())
-        .filter((f): f is File => !!f)
-    const images = files.filter((f) => f.type.startsWith('image/'))
-    if (images.length === 0) return
-    e.preventDefault() // 有图就别把剪贴板里的文本也塞进输入框
-    addFiles(images)
-  }
-
-  /** 拖拽文件到聊天框(整个窗口都是放置区) */
-  const handleDragOver = (e: React.DragEvent) => {
-    if (!currentBookId || isCurrentStreaming) return
-    if (!Array.from(e.dataTransfer?.types || []).includes('Files')) return
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'copy'
-    setDragOver(true)
-  }
-  const handleDragLeave = (e: React.DragEvent) => {
-    // 进入子元素同样会触发 dragleave:只有真正离开容器才收起提示
-    if (e.currentTarget.contains(e.relatedTarget as Node)) return
-    setDragOver(false)
-  }
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    setDragOver(false)
-    if (!currentBookId || isCurrentStreaming) return
-    addFiles(Array.from(e.dataTransfer?.files || []))
   }
 
   const removeFile = (index: number) => {
@@ -571,9 +535,7 @@ export function ChatWindow({ dock = false }: { /** 浮窗模式:桌面也把会�
     // 自动最小尺寸本就是 0，设了 min-h 反而会把页面撑出滚动条（撑满应当是"当前屏幕内"）
     <div
       className="relative flex flex-1 rounded-xl border bg-card overflow-hidden"
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
+      {...dragHandlers}
     >
       {/* 拖拽文件到聊天框:整块高亮提示(pointer-events-none 让 drop 仍落在容器上) */}
       {dragOver && (

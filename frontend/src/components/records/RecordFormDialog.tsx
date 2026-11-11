@@ -1,5 +1,5 @@
 import { notifyUnauthorized } from '@/api/http';
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import dayjs from 'dayjs'
 import { X, Download, Upload } from 'lucide-react'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
@@ -14,6 +14,7 @@ import { DateTimePicker } from '@/components/ui/datetime-picker'
 import { DictCombobox } from '@/components/DictCombobox'
 import { TagCombobox } from '@/components/TagCombobox'
 import { recordApi } from '@/api/record'
+import { useFileIntake, MAX_ATTACH_MB } from '@/hooks/use-file-intake'
 import { accountLabel, errorMessage } from '@homibook/core';
 
 
@@ -160,6 +161,49 @@ export function RecordFormDialog({ open, editRecord, currentBookId, accounts, mu
     finally { setSubmitting(false) }
   }
 
+  /** 选择 / 拖拽 / 粘贴三处共用的上传入口：立即上传并追加到附件列表 */
+  const uploadFiles = async (files: File[]) => {
+    if (files.length === 0 || uploadingAttachment) return
+    setUploadingAttachment(true)
+    try {
+      const results = await Promise.all(
+        files.map((f) => recordApi.uploadAttachment(
+          // 截图粘贴拿到的 File 可能没有文件名，补一个可读的默认名
+          f.name ? f : new File([f], `粘贴图片-${Date.now()}.png`, { type: f.type || 'image/png' }),
+        )),
+      )
+      setFormAttachments((prev) => [...prev, ...results.map((r) => ({
+        id: r.id,
+        url: r.url,
+        fullUrl: r.fullUrl,
+        originalFilename: r.originalFilename,
+      }))])
+    } catch (err) {
+      setFormError(errorMessage(err, '上传失败'))
+    } finally {
+      setUploadingAttachment(false)
+    }
+  }
+
+  const { dragOver, dragHandlers, handlePaste, intakeFiles } = useFileIntake({
+    enabled: open && !uploadingAttachment,
+    onFiles: (files) => { void uploadFiles(files) },
+    onOversized: (files) => setFormError(`${files.map((f) => f.name || '未命名文件').join('、')} 超过 ${MAX_ATTACH_MB}MB，已跳过`),
+  })
+
+  // 弹窗内任意输入框都能直接粘贴截图（焦点不在附件区也生效）
+  // 只处理落在本弹窗内的事件，避免和同时打开的 AI 浮窗抢同一份剪贴板内容
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onPaste = (e: ClipboardEvent) => {
+      if (!dialogRef.current?.contains(e.target as Node)) return
+      handlePaste(e)
+    }
+    document.addEventListener('paste', onPaste)
+    return () => document.removeEventListener('paste', onPaste)
+  }, [open, handlePaste])
+
   const handleDownload = async (url: string, originalFilename: string) => {
     try {
       const relativePath = url.includes('/api/uploads/')
@@ -200,7 +244,16 @@ export function RecordFormDialog({ open, editRecord, currentBookId, accounts, mu
   return (
     <Dialog open={open} onOpenChange={() => onClose()}>
       <DialogTrigger />
-      <DialogContent className="max-w-lg">
+      <DialogContent ref={dialogRef} className="max-w-lg" {...dragHandlers}>
+        {/* 拖拽文件到弹窗任意位置：整块高亮（pointer-events-none 让 drop 仍落在弹窗上） */}
+        {dragOver && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-primary bg-primary/10">
+            <div className="flex items-center gap-2 rounded-lg bg-card px-3 py-1.5 text-sm font-medium shadow-sm">
+              <Upload size={16} className="text-primary" />
+              松开即可上传附件
+            </div>
+          </div>
+        )}
         <DialogHeader>
           <DialogTitle>{editRecord ? '编辑流水' : '记一笔'}</DialogTitle>
         </DialogHeader>
@@ -396,30 +449,15 @@ export function RecordFormDialog({ open, editRecord, currentBookId, accounts, mu
               )}
               <label className="flex items-center gap-2 px-3 py-2 border border-dashed border-border rounded-md cursor-pointer hover:bg-accent text-sm text-muted-foreground">
                 <Upload size={14} />
-                <span>{uploadingAttachment ? '上传中...' : '添加附件'}</span>
+                <span>{uploadingAttachment ? '上传中...' : '点击选择、拖拽到窗口或 Ctrl+V 粘贴截图'}</span>
                 <input
                   type="file"
                   multiple
                   className="hidden"
                   disabled={uploadingAttachment}
-                  onChange={async (e) => {
-                    const files = Array.from(e.target.files || [])
-                    if (!files.length) return
-                    setUploadingAttachment(true)
-                    try {
-                      const results = await Promise.all(files.map((f) => recordApi.uploadAttachment(f)))
-                      setFormAttachments((prev) => [...prev, ...results.map((r) => ({
-                        id: r.id,
-                        url: r.url,
-                        fullUrl: r.fullUrl,
-                        originalFilename: r.originalFilename,
-                      }))])
-                    } catch (err: any) {
-                      setFormError(err.message || '上传失败')
-                    } finally {
-                      setUploadingAttachment(false)
-                      e.target.value = ''
-                    }
+                  onChange={(e) => {
+                    intakeFiles(Array.from(e.target.files || []))
+                    e.target.value = '' // 允许重复选同一文件
                   }}
                 />
               </label>
