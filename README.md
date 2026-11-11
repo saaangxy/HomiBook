@@ -145,7 +145,13 @@ npm start          # 扫码在 Expo Go 中运行，或 -a / -i 启动模拟器
 
 ```bash
 cp .env.example .env   # 修改端口、JWT 密钥、数据库类型
-docker compose up -d   # 或使用 DockerHub 预构建镜像
+docker compose up -d   # 默认使用 DockerHub 预构建镜像
+```
+
+也可改用 GitHub Container Registry 镜像（内容相同，国内通常更快）：
+
+```bash
+IMAGE_REPO=ghcr.io/saaangxy/homibook docker compose up -d
 ```
 
 访问 http://\<服务器IP\>:8080 即可。

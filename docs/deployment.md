@@ -16,8 +16,25 @@
 
 ## 镜像仓库
 
-- DockerHub：https://hub.docker.com/repository/docker/saaangxy/homibook
-- 镜像名：`saaangxy/homibook`，tag 为 `latest` 与 `v<版本号>`
+同一版本会同时推送到两个仓库，内容完全一致，按网络情况任选：
+
+| 仓库 | 镜像名 | 说明 |
+|---|---|---|
+| DockerHub | `saaangxy/homibook` | 默认，`docker compose` 直接使用 |
+| GitHub Container Registry | `ghcr.io/saaangxy/homibook` | 国内访问通常更快，公开镜像无需登录 |
+
+tag 统一为 `latest` 与 `v<版本号>`（如 `v1.2.3`）。
+
+**单独拉取**（不通过 compose）：
+
+```bash
+# DockerHub
+docker pull saaangxy/homibook:latest
+
+# GHCR
+docker pull ghcr.io/saaangxy/homibook:latest
+docker pull ghcr.io/saaangxy/homibook:v1.2.3
+```
 
 ## Docker Compose 部署
 
@@ -25,8 +42,16 @@
 
 ```bash
 cp .env.example .env   # 修改端口、JWT 密钥、数据库类型
-docker compose up -d   # 从 DockerHub 拉取镜像启动
+docker compose up -d   # 默认从 DockerHub 拉取 saaangxy/homibook
 ```
+
+改用 GHCR 镜像（内容相同，国内网络通常更快）：
+
+```bash
+IMAGE_REPO=ghcr.io/saaangxy/homibook docker compose up -d
+```
+
+> 想长期使用 GHCR，在 `.env` 里写 `IMAGE_REPO=ghcr.io/saaangxy/homibook`，之后 `docker compose` 命令不用再带前缀。
 
 访问 http://\<服务器IP\>:8080 即可。
 
@@ -50,6 +75,8 @@ IMAGE_TAG=v0.0.1 docker compose up -d
 | `JWT_SECRET` | 默认密钥 | **务必修改**为随机长字符串 |
 | `DATABASE_PROVIDER` | `sqlite` | `sqlite` / `mysql` / `postgresql` |
 | `DATABASE_URL` | `file:/app/data/dev.db` | 对应数据库连接串 |
+| `IMAGE_REPO` | `saaangxy/homibook` | 镜像仓库；切 GHCR 填 `ghcr.io/saaangxy/homibook` |
+| `IMAGE_TAG` | `latest` | 镜像版本；回滚时填 `v<版本号>` |
 
 完整模板见项目根目录 [.env.example](../.env.example)。
 
@@ -81,12 +108,18 @@ DATABASE_URL=postgresql://<用户名>:<密码>@<主机>:<端口>/<数据库名>
 ### 升级与回滚
 
 ```bash
-# 升级到最新镜像
+# 升级到最新镜像（DockerHub）
 docker compose pull && docker compose up -d
+
+# 升级到最新镜像（GHCR）
+IMAGE_REPO=ghcr.io/saaangxy/homibook docker compose pull
+IMAGE_REPO=ghcr.io/saaangxy/homibook docker compose up -d
 
 # 回滚到指定版本
 IMAGE_TAG=v0.0.1 docker compose up -d
 ```
+
+切换仓库只是拉取来源不同，容器重建一次即可，`homibook-data` / `homibook-uploads` 两个数据卷不受影响。
 
 ## 常见问题
 **Q：如何查看 API 文档？**

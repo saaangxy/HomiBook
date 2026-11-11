@@ -1,12 +1,14 @@
 # HomiBook 单容器部署（前端+后端合一，无需 Nginx）
 #
-# 镜像由 GitHub CI 构建并推送到 DockerHub，部署时直接拉取
-# 启动：docker compose up -d
+# 镜像由 GitHub CI 构建，同时推送到 DockerHub 与 GitHub Container Registry
+# 启动（DockerHub）：docker compose up -d
+# 启动（GHCR）：   IMAGE_REPO=ghcr.io/saaangxy/homibook docker compose up -d
 # 访问：http://<服务器IP>:8080
 
 services:
   app:
-    image: saaangxy/homibook:${IMAGE_TAG:-latest}
+    # IMAGE_REPO 可切换镜像仓库，IMAGE_TAG 可指定版本（回滚用）
+    image: ${IMAGE_REPO:-saaangxy/homibook}:${IMAGE_TAG:-latest}
     container_name: homibook
     restart: unless-stopped
     environment:
