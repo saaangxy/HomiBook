@@ -1,12 +1,11 @@
 import type { FastifyInstance } from 'fastify'
 import { streamText, generateText, stepCountIs, jsonSchema } from 'ai'
-import { existsSync, readFileSync } from 'fs'
 import path from 'path'
 import { prisma } from '../app.js'
 import { authenticate, requireAdmin } from '../middleware/auth.js'
 import { createModel, ALL_PROVIDERS, DEFAULT_BASE_URLS, type ProviderType } from '../services/ai/providers.js'
-import { detectImageFormat, getImageSize, VISION_MEDIA_TYPES, IMAGE_FORMAT_LABELS } from '../services/ai/image-format.js'
-import { needsTiling, fitOversizedImage, VISION_MAX_SIDE, prepareVisionImage } from '../services/ai/image-tile.js'
+import { VISION_MAX_SIDE } from '../services/ai/image-tile.js'
+import { loadVisionWindow, logVisionImage } from '../services/ai/vision-window.js'
 import { routeIntent, classifyWithKeywords } from '../services/ai/model-router.js'
 import { assertIsMember, loadUserProviderConfig } from '../services/ai/security.js'
 import { logToolCall } from '../services/ai/audit.js'
@@ -38,7 +37,15 @@ declare module 'fastify' {
  * 为什么不能直接放进 tool-result:openai-compatible 的 tool 消息不支持图片 content,
  * base64 会被当文本计入 token —— 实测单图就能把请求撑到 320 万 token。
  */
-const pendingImageInjections = new Map<string, { attachmentId: string; at: number }>()
+/**
+ * 待注入的图片召回请求。
+ * fromPart/toPart 是模型指定的分段区间(从 1 开始数,含端点):首次默认前 6 段,
+ * 模型可接着往后看,或直接跳到任意区间。
+ */
+const pendingImageInjections = new Map<
+  string,
+  { attachmentId: string; at: number; fromPart?: number; toPart?: number }
+>()
 const IMAGE_INJECTION_TTL_MS = 10 * 60 * 1000
 
 // ---- 共享流式响应函数：供 /send 和 /confirm 复用 ----
@@ -104,47 +111,38 @@ const IMAGE_MEDIA_TYPES: Record<string, string> = {
  * 在历史重发时持续复现),改为追加一段文本说明,让模型/用户知道是哪张图、为什么不识别。
  * 超出单边尺寸上限(手机长截图常见)的图片先纵向切片再发送,否则上游同样会报错且内容不可读。
  */
-async function injectImagesToLastUserMessage(messages: any[], imageAttachments: { url: string; originalFilename: string }[]): Promise<any[]> {
+async function injectImagesToLastUserMessage(messages: any[], imageAttachments: { id?: string; url: string; originalFilename: string }[]): Promise<any[]> {
   const msgs = [...messages]
   for (let i = msgs.length - 1; i >= 0; i--) {
     if (msgs[i].role !== 'user') continue
     const text = typeof msgs[i].content === 'string' ? msgs[i].content : ''
     const parts: any[] = [{ type: 'text', text }]
     const unsupported: string[] = []
+    /** 非错误类提示(长图分段、同图多段说明),单独收敛后追加,避免和「无法识别」混在一起 */
+    const notes: string[] = []
     for (const att of imageAttachments) {
-      try {
-        const filePath = path.join(process.cwd(), att.url.replace(/^\/api\//, ''))
-        if (!existsSync(filePath)) {
-          unsupported.push(`${att.originalFilename}（文件不存在）`)
-          continue
-        }
-        const buf = readFileSync(filePath)
-        const fmt = detectImageFormat(buf)
-        const mediaType = VISION_MEDIA_TYPES[fmt]
-        const size = mediaType ? getImageSize(fmt, buf) : null
-        // 无条件落日志:图片实际字节信息是排查上游报错的唯一依据(表头 hex 可反推真实格式)
-        console.log(`[多模态] 图片 ${att.originalFilename} | ${buf.length}B | ${size ? `${size.width}x${size.height}` : '尺寸未知'} | 表头 ${buf.subarray(0, 16).toString('hex')} | 判定格式 ${fmt}(${IMAGE_FORMAT_LABELS[fmt]}) | ${mediaType ? '发送' : '跳过'}`)
-        if (!mediaType) {
-          unsupported.push(`${att.originalFilename}（实际为 ${IMAGE_FORMAT_LABELS[fmt]}）`)
-          continue
-        }
-        const ext = path.extname(att.originalFilename).toLowerCase()
-        if (IMAGE_MEDIA_TYPES[ext] && IMAGE_MEDIA_TYPES[ext] !== mediaType) {
-          console.warn(`[多模态] ${att.originalFilename} 扩展名与内容不符(${IMAGE_MEDIA_TYPES[ext]} → ${mediaType}),按内容发送`)
-        }
-        // 超长截图:超过单边上限会被上游拒绝,且内容会被降采样到不可读,故切片/缩放后发送
-        if (size && needsTiling(size)) {
-          const images = await fitOversizedImage(buf, mediaType, size)
-          if (!images) {
-            unsupported.push(`${att.originalFilename}（${size.width}x${size.height} 超过单边 ${VISION_MAX_SIDE}px 上限,自动适配失败）`)
-            continue
-          }
-          console.log(`[多模态] ${att.originalFilename} 尺寸 ${size.width}x${size.height} 超限,已适配为 ${images.length} 张发送`)
-          for (const img of images) parts.push({ type: 'image', image: img, mediaType: 'image/jpeg' })
-          continue
-        }
-        parts.push({ type: 'image', image: buf.toString('base64'), mediaType })
-      } catch { /* 单张图片读取失败时跳过，不影响其余图片 */ }
+      // 读盘、格式校验、超限切段、取窗口、段落文案全部收敛在 vision-window 里,
+      // 与 view_image 召回路径共用同一份实现(PARTS_PER_CALL / 文案 / 日志都只有一处)。
+      const filePath = path.join(process.cwd(), att.url.replace(/^\/api\//, ''))
+      const loaded = await loadVisionWindow(filePath, {
+        filename: att.originalFilename,
+        attachmentId: att.id,
+        verb: '发送',
+      })
+      if ('error' in loaded) {
+        // error 自带完整说明(可能已含括号),这里用冒号拼接避免嵌套括号
+        unsupported.push(`${att.originalFilename}：${loaded.error}`)
+        continue
+      }
+      logVisionImage(loaded.meta, '发送')
+      // 扩展名与真实内容不符时告警:上游只认内容,但用户会照扩展名困惑
+      const ext = path.extname(att.originalFilename).toLowerCase()
+      const actualType = loaded.window.parts[0]?.mediaType
+      if (IMAGE_MEDIA_TYPES[ext] && actualType && IMAGE_MEDIA_TYPES[ext] !== actualType) {
+        console.warn(`[多模态] ${att.originalFilename} 扩展名与内容不符(${IMAGE_MEDIA_TYPES[ext]} → ${actualType}),按内容发送`)
+      }
+      for (const p of loaded.window.parts) parts.push({ type: 'image', ...p })
+      if (loaded.note) notes.push(loaded.note)
     }
     if (unsupported.length > 0) {
       // 明确要求模型把原因转述给用户:图片被跳过时,聊天界面里也要能看到原因
@@ -152,6 +150,9 @@ async function injectImagesToLastUserMessage(messages: any[], imageAttachments: 
         type: 'text',
         text: `[系统提示:以下图片无法识别,请在回复中明确告知用户原因 — ${unsupported.join('、')};当前视觉模型仅支持 JPEG/PNG/GIF/WebP 格式且单边不超过 ${VISION_MAX_SIDE}px,请处理后重新上传。这些图片已被跳过,不要凭空猜测图片内容]`,
       })
+    }
+    if (notes.length > 0) {
+      parts.push({ type: 'text', text: `[系统提示:${notes.join(' ')}]` })
     }
     msgs[i] = { ...msgs[i], content: parts }
     break
@@ -329,10 +330,15 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
           // ---- 普通工具：直接执行 ----
           const result = await tool.execute(args, { userId, accountBookId })
 
-          // view_image 请求「直接看图」→ 记下来,下一次请求把它作为图片注入一次
+          // view_image 请求「直接看图」→ 记下来,下一次请求把它作为图片注入一次。
+          // fromPart/toPart 是模型指定的分段区间,用于续看或跳读长截图的任意部分。
           if (tool.name === 'view_image' && (args as any)?.needImage && result.success) {
             const attachmentId = (result as any).data?.attachmentId
-            if (attachmentId) pendingImageInjections.set(sessionId, { attachmentId, at: Date.now() })
+            const fromPart = (result as any).data?.fromPart as number | undefined
+            const toPart = (result as any).data?.toPart as number | undefined
+            if (attachmentId) {
+              pendingImageInjections.set(sessionId, { attachmentId, at: Date.now(), fromPart, toPart })
+            }
           }
 
           const durationMs = Date.now() - start
@@ -394,6 +400,7 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
    */
   const isThinkingModel =
     provider === 'deepseek' || /reasoner|thinking|flash|(^|[^\d])o[13]([^\d]|$)/i.test(model)
+
     const result = streamText({
       model: llmModel,
       system: systemPrompt,
@@ -431,19 +438,19 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
 
     for await (const part of result.fullStream) {
       if (part.type === 'text-delta') {
-        console.info(`收到sse响应: ${JSON.stringify(part)}`)
+        // console.info(`收到sse响应: ${JSON.stringify(part)}`)
         // ai@6 的 fullStream text/reasoning-delta part 字段名均为 text(经实测确认,非 delta)
         const deltaText = (part as any).text ?? ''
         fullText += deltaText
         sendSSE('text-delta', { delta: deltaText })
       } else if (part.type === 'reasoning-delta') {
-        console.info(`收到sse响应: ${JSON.stringify(part)}`)
+        // console.info(`收到sse响应: ${JSON.stringify(part)}`)
         // DeepSeek 等推理模型的思考内容:累积存库并转发给前端渲染 thinking 块
         const deltaText = (part as any).text ?? ''
         reasoningContent += deltaText
         sendSSE('reasoning-delta', { delta: deltaText })
       } else if (part.type === 'error') {
-        console.info(`收到sse响应: ${JSON.stringify(part)}`)
+        // console.info(`收到sse响应: ${JSON.stringify(part)}`)
         // AI SDK 把 API 错误作为流内 error part 发出，不会走 throw
         const errPart = part as { type: 'error'; error: unknown }
         sendSSE('error', { message: friendlyAIErrorMessage(errPart.error) })
@@ -669,32 +676,27 @@ async function buildPendingImageMessage(sessionId: string): Promise<any | null> 
     if (!att?.path) return null
 
     const disk = path.join(process.cwd(), att.path.replace(/^\/api\//, ''))
-    if (!existsSync(disk)) return null
-
-    const prep = await prepareVisionImage(readFileSync(disk))
-    if ('error' in prep || prep.parts.length === 0) return null
-    console.log(`图片召回${pending.attachmentId}`)
-
-    // 超长图会被切成多块:按顺序全量注入,否则模型只看到上半截会误判
-    // (上限 6 段:再多单次就要多花上万 token,超出部分明确告知被截断)
-    const MAX_INJECT_PARTS = 6
-    const parts = prep.parts.slice(0, MAX_INJECT_PARTS)
-    const cut = prep.parts.length > parts.length
-
-    const note = cut
-      ? `原图较长,按从上到下切分为 ${prep.parts.length} 段,这里只注入前 ${parts.length} 段。`
-      : parts.length > 1
-        ? `原图较长,按从上到下切分为 ${parts.length} 段,请按顺序阅读。`
-        : ''
+    // 与首轮注入共用同一套「读盘 → 切段 → 取窗口 → 段落文案 → 日志」,
+    // 差异只有 fromPart(续看的起点)和 verb。
+    const loaded = await loadVisionWindow(disk, {
+      filename: att.originalFilename,
+      attachmentId: pending.attachmentId,
+      // 1 基区间:模型说「看第 5 段」就传 5
+      fromPart: pending.fromPart ?? 1,
+      toPart: pending.toPart,
+      verb: '注入',
+    })
+    if ('error' in loaded || loaded.window.parts.length === 0) return null
+    logVisionImage(loaded.meta, '注入')
 
     return {
       role: 'user',
       content: [
         {
           type: 'text',
-          text: `（系统注入）你上一步请求直接查看这张图片${att.originalFilename ? `：${att.originalFilename}` : ''}。${note}`,
+          text: `（系统注入）你上一步请求直接查看这张图片${att.originalFilename ? `：${att.originalFilename}` : ''}。${loaded.note}`,
         },
-        ...parts.map((p) => ({ type: 'image' as const, image: p.image, mediaType: p.mediaType })),
+        ...loaded.window.parts.map((p) => ({ type: 'image' as const, image: p.image, mediaType: p.mediaType })),
       ],
     }
   } catch {

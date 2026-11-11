@@ -14,6 +14,7 @@ import type { ToolDef } from './types.js'
 import { prisma } from '../../../app.js'
 import { assertIsMember } from '../security.js'
 import { askImage } from '../image-context.js'
+import { PARTS_PER_CALL } from '../vision-window.js'
 import { stripThinkTags } from '../context-compress.js'
 
 export const viewImageTool: ToolDef = {
@@ -37,12 +38,20 @@ export const viewImageTool: ToolDef = {
         type: 'boolean',
         description: '文字答案不够、需要自己直接看图时置 true —— 系统会在同一次回复的下一步把原图注入,此后你可以自己看图作答',
       },
+      fromPart: {
+        type: 'number',
+        description: `从第几段开始看,第 1 段填 1。不填=从头,单次最多 ${PARTS_PER_CALL} 段。看第 5 段→5`,
+      },
+      toPart: {
+        type: 'number',
+        description: `看到第几段为止(含)。不填=从 fromPart 起往后最多 ${PARTS_PER_CALL} 段。只看第 5 段→5`,
+      },
     },
     required: ['attachmentId'],
   } as Record<string, unknown>,
   requireConfirm: false,
 
-  execute: async (args: { attachmentId: string; question?: string; needImage?: boolean }, ctx) => {
+  execute: async (args: { attachmentId: string; question?: string; needImage?: boolean; fromPart?: number; toPart?: number }, ctx) => {
     const { userId, accountBookId } = ctx
     await assertIsMember(accountBookId, userId)
 
@@ -66,6 +75,11 @@ export const viewImageTool: ToolDef = {
     // needImage=true:模型明确要求自己看图 —— 不再让视觉模型代答一遍(同一张图花两次调用),
     // 也不需要在参数里编一个问题:下一步直接把原图注入,由模型自己看
     if (args.needImage) {
+      // 区间是 1 基:第 1 段传 1。非法/负数按 1 处理;真正的越界收敛在 sliceVisionWindow 里
+      const fromPart = Math.max(1, Math.floor(Number(args.fromPart ?? 1)) || 1)
+      const toPart = args.toPart === undefined
+        ? undefined
+        : Math.max(fromPart, Math.floor(Number(args.toPart)) || fromPart)
       return {
         success: true,
         retryable: false,
@@ -73,7 +87,12 @@ export const viewImageTool: ToolDef = {
           attachmentId: attachment.id,
           originalFilename: attachment.originalFilename,
           requestImage: true,
-          hint: '原图将在本次回复的下一步注入,届时你自己看图作答;本轮可先简述已从摘要中确认的信息。',
+          fromPart,
+          toPart,
+          hint:
+            fromPart > 1 || toPart !== undefined
+              ? `原图将在本次回复的下一步注入(第 ${fromPart}~${toPart ?? fromPart + PARTS_PER_CALL - 1} 段,超出部分会按上限收敛),届时你自己看图作答。`
+              : '原图将在本次回复的下一步注入,届时你自己看图作答;本轮可先简述已从摘要中确认的信息。',
         },
       }
     }

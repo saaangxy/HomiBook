@@ -143,7 +143,7 @@ export async function prepareVisionImage(buf: Buffer): Promise<PreparedVisionIma
     if (!images) {
       return { error: `图片尺寸 ${size.width}x${size.height} 超过单边 ${VISION_MAX_SIDE}px 上限，自动适配失败，请压缩后重试` }
     }
-    console.log(`[多模态] 图片 ${size.width}x${size.height} 超限,已适配为 ${images.length} 张发送`)
+    console.log(`[多模态] 图片 ${size.width}x${size.height} 超限,切分为 ${images.length} 张`)
     return {
       parts: images.map((image) => ({ image, mediaType: 'image/jpeg' })),
       size,
