@@ -19,6 +19,7 @@ import path from 'path'
 import fs from 'fs'
 import {randomUUID} from 'crypto'
 import {buildRecordWhere, formatRecord, computeBalance, refreshAccountBalance} from '../services/record.js'
+import {attachmentIdsOfRecords, cleanupOrphanAttachments} from '../services/attachment.js'
 import {matchGroupsForAnchor, matchOffsetGroups} from '../services/offset-match.js'
 import {textSimilarity} from '../services/text-similarity.js'
 import {monthKey, dateKey, dayStart, dayEnd, parseDayStart} from '../lib/date-time.js'
@@ -1024,9 +1025,10 @@ export async function recordRoutes(app: FastifyInstance) {
         const ops: any[] = []
         for (const m of merged) {
             if (m.attachmentSourceIds.length > 0) {
-                ops.push(prisma.recordAttachment.updateMany({
-                    where: {recordId: {in: m.attachmentSourceIds}},
-                    data: {recordId: m.keepId},
+                // 多对多:把源记录上的附件连到保留记录(原记录随后删除,关联由 Prisma 级联清理)
+                ops.push(prisma.record.update({
+                    where: {id: m.keepId},
+                    data: {recordAttachments: {connect: m.attachmentSourceIds.map((attId: string) => ({id: attId}))}},
                 }))
             }
             const {tags, ...rest} = m.patch
@@ -1075,7 +1077,6 @@ export async function recordRoutes(app: FastifyInstance) {
 
         const records = await prisma.record.findMany({
             where: {id: {in: ids}},
-            include: {recordAttachments: true},
         })
 
         if (records.length === 0) return reply.status(404).send({message: '记录不存在'})
@@ -1089,15 +1090,12 @@ export async function recordRoutes(app: FastifyInstance) {
             }
         }
 
-        const uploadsDir = path.join(process.cwd(), 'uploads')
-        for (const r of records) {
-            for (const att of r.recordAttachments) {
-                const filePath = path.join(uploadsDir, path.basename(att.path))
-                if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
-            }
-        }
+        // 多对多:先记下这些流水挂的附件,删完后只清理不再被任何流水/聊天引用的
+        const attachedIds = await attachmentIdsOfRecords(ids)
 
         await prisma.record.deleteMany({where: {id: {in: ids}}})
+
+        await cleanupOrphanAttachments(attachedIds)
 
         const affectedAccounts = new Set<string>()
         for (const r of records) {
@@ -1377,26 +1375,20 @@ export async function recordRoutes(app: FastifyInstance) {
 
         if (parsed.data.attachmentIds !== undefined) {
             const keptIds = new Set(parsed.data.attachmentIds)
-            const oldAttachments = await prisma.recordAttachment.findMany({where: {recordId: id}})
-            const removed = oldAttachments.filter((a) => !keptIds.has(a.id))
+            const current = await prisma.record.findUnique({
+                where: {id},
+                select: {recordAttachments: {select: {id: true}}},
+            })
+            const removedIds = (current?.recordAttachments ?? []).map((a) => a.id).filter((attId) => !keptIds.has(attId))
 
-            const uploadsDir = path.join(process.cwd(), 'uploads')
-            for (const att of removed) {
-                const filePath = path.join(uploadsDir, path.basename(att.path))
-                if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
-            }
+            // set 只替换「当前流水」的关联,不影响同一附件挂在别的流水上的记录
+            await prisma.record.update({
+                where: {id},
+                data: {recordAttachments: {set: parsed.data.attachmentIds.map((attId) => ({id: attId}))}},
+            })
 
-            if (removed.length > 0) {
-                await prisma.recordAttachment.deleteMany({
-                    where: {id: {in: removed.map((a) => a.id)}},
-                })
-            }
-            if (parsed.data.attachmentIds.length > 0) {
-                await prisma.recordAttachment.updateMany({
-                    where: {id: {in: parsed.data.attachmentIds}},
-                    data: {recordId: id},
-                })
-            }
+            // 真正删掉:只清理已经不再被任何流水/聊天引用的附件(连带文件)
+            await cleanupOrphanAttachments(removedIds)
         }
 
         const record = await prisma.record.update({
@@ -1436,14 +1428,12 @@ export async function recordRoutes(app: FastifyInstance) {
             return reply.status(e.statusCode || 403).send({message: e.message})
         }
 
-        const attachments = await prisma.recordAttachment.findMany({where: {recordId: id}})
-        const uploadsDir = path.join(process.cwd(), 'uploads')
-        for (const att of attachments) {
-            const filePath = path.join(uploadsDir, path.basename(att.path))
-            if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
-        }
+        // 多对多:先记下该流水挂的附件,删除流水后只清理「不再被任何流水/聊天引用」的那些
+        const attachedIds = await attachmentIdsOfRecords([id])
 
         await prisma.record.delete({where: {id}})
+
+        await cleanupOrphanAttachments(attachedIds)
 
         const affectedAccounts = [existing.accountId, existing.fromAccountId, existing.toAccountId].filter(Boolean) as string[]
         for (const accId of [...new Set(affectedAccounts)]) {

@@ -5,8 +5,7 @@ import { resolveAccountId } from './helpers.js'
 import { refreshAccountBalance } from '../../account.js'
 import { RECORD_TYPES, normalizeRecordType } from '@homibook/core'
 import { parseDayStart, dateKey } from '../../../lib/date-time.js'
-import fs from 'fs'
-import path from 'path'
+import { cleanupOrphanAttachments } from '../../attachment.js'
 
 /** 入参枚举校验:非法类型直接回报给模型。弹确认卡前与执行时共用 */
 const validateArgs = (args: any) => checkEnums({ type: [args.type, RECORD_TYPES] })
@@ -76,45 +75,41 @@ export const updateRecordTool: ToolDef = {
 
     // 附件操作
     const attOps: Array<() => Promise<void>> = []
-    const uploadsDir = path.join(process.cwd(), 'uploads')
 
     if (args.attachmentIds !== undefined) {
       attOps.push(async () => {
-        const oldAtts = await prisma.recordAttachment.findMany({ where: { recordId: args.recordId } })
-        for (const att of oldAtts) {
-          const filePath = path.join(uploadsDir, path.basename(att.path))
-          if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
-        }
-        if (oldAtts.length > 0) {
-          await prisma.recordAttachment.deleteMany({ where: { recordId: args.recordId } })
-        }
-        if (args.attachmentIds.length > 0) {
-          await prisma.recordAttachment.updateMany({
-            where: { id: { in: args.attachmentIds as string[] } },
-            data: { recordId: args.recordId },
-          })
-        }
+        const current = await prisma.record.findUnique({
+          where: { id: args.recordId },
+          select: { recordAttachments: { select: { id: true } } },
+        })
+        const kept = new Set(args.attachmentIds as string[])
+        const removedIds = (current?.recordAttachments ?? []).map((a) => a.id).filter((attId) => !kept.has(attId))
+        // set 只替换本条流水的关联,同一附件挂在别的流水上的记录不受影响
+        await prisma.record.update({
+          where: { id: args.recordId },
+          data: { recordAttachments: { set: (args.attachmentIds as string[]).map((attId) => ({ id: attId })) } },
+        })
+        // 只清理不再被任何流水/聊天引用的附件
+        await cleanupOrphanAttachments(removedIds)
       })
     } else {
       if (args.removeAttachmentIds?.length > 0) {
         attOps.push(async () => {
-          const toRemove = await prisma.recordAttachment.findMany({
-            where: { id: { in: args.removeAttachmentIds as string[] }, recordId: args.recordId },
+          const removeIds = args.removeAttachmentIds as string[]
+          // 只断开本条流水的关联;附件本身留着(可能还挂在别的流水上)
+          await prisma.record.update({
+            where: { id: args.recordId },
+            data: { recordAttachments: { disconnect: removeIds.map((attId) => ({ id: attId })) } },
           })
-          for (const att of toRemove) {
-            const filePath = path.join(uploadsDir, path.basename(att.path))
-            if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
-          }
-          await prisma.recordAttachment.deleteMany({
-            where: { id: { in: args.removeAttachmentIds as string[] }, recordId: args.recordId },
-          })
+          // 只清理不再被任何流水/聊天引用的附件
+          await cleanupOrphanAttachments(removeIds)
         })
       }
       if (args.addAttachmentIds?.length > 0) {
         attOps.push(async () => {
-          await prisma.recordAttachment.updateMany({
-            where: { id: { in: args.addAttachmentIds as string[] } },
-            data: { recordId: args.recordId },
+          await prisma.record.update({
+            where: { id: args.recordId },
+            data: { recordAttachments: { connect: (args.addAttachmentIds as string[]).map((attId) => ({ id: attId })) } },
           })
         })
       }

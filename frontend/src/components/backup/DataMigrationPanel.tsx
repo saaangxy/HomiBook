@@ -96,8 +96,15 @@ export function DataMigrationPanel() {
   const toggleModule = (key: string) => {
     setModules((prev) => {
       const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
+      if (next.has(key)) {
+        next.delete(key)
+        // 附件是 AI 聊天记录的强依赖：取消附件时一并取消聊天记录
+        if (key === 'attachments') next.delete('aiChat')
+      } else {
+        next.add(key)
+        // 勾选聊天记录时自动带上附件：聊天里的图片靠附件行与文件才能还原
+        if (key === 'aiChat') next.add('attachments')
+      }
       return next
     })
   }
@@ -277,17 +284,26 @@ export function DataMigrationPanel() {
                 字典、节假日、导入映射可独立导出；其余模块依赖核心数据（用户/账本/账户/流水），未勾选核心数据时只能存档，导入会因缺少关联数据而失败。
               </p>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1">
-                {optionalModules.map((m) => (
-                  <label key={m.key} className="flex items-center gap-1.5 text-sm cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={modules.has(m.key)}
-                      onChange={() => toggleModule(m.key)}
-                      className="rounded"
-                    />
-                    <span>{m.label}</span>
-                  </label>
-                ))}
+                {optionalModules.map((m) => {
+                  // 勾选 AI 聊天记录时附件被强依赖，必须先取消聊天记录才能取消附件
+                  const lockedByAiChat = m.key === 'attachments' && modules.has('aiChat')
+                  return (
+                    <label
+                      key={m.key}
+                      className={`flex items-center gap-1.5 text-sm ${lockedByAiChat ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+                      title={lockedByAiChat ? 'AI 聊天记录依赖附件模块，如需取消请先取消聊天记录' : undefined}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={modules.has(m.key)}
+                        onChange={() => toggleModule(m.key)}
+                        disabled={lockedByAiChat}
+                        className="rounded"
+                      />
+                      <span>{m.label}</span>
+                    </label>
+                  )
+                })}
               </div>
             </div>
           </div>

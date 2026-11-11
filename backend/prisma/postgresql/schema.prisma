@@ -148,7 +148,6 @@ model Record {
 // 流水附件
 model RecordAttachment {
   id               String                   @id @default(uuid())
-  recordId         String?                  // 关联的流水 ID（创建前为 null）
   path             String                   // 文件存储路径
   originalFilename String                   // 原始文件名
   createdAt        DateTime                 @default(now())
@@ -160,7 +159,7 @@ model RecordAttachment {
   visionText       String?
   visionMeta       String?                  // JSON 字符串:金额/日期/交易方/关键对象等
   visionAt         DateTime?
-  record           Record?                  @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  records          Record[]                 // 多对多:同一附件可被多笔流水引用
   chatMessages     ChatMessageAttachment[]  // 引用此附件的聊天消息
 }
 

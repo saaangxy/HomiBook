@@ -11,6 +11,69 @@ const uploadsDir = path.join(process.cwd(), 'uploads')
 // 分批写入，避免单条 createMany 过大（MySQL max_allowed_packet 限制）
 const BATCH = 500
 
+/** recordAttachment 行的标量字段；关联字段（recordIds / 旧版 recordId）单独恢复 */
+const ATTACHMENT_COLUMNS = [
+  'id',
+  'path',
+  'originalFilename',
+  'createdAt',
+  'visionSummary',
+  'visionText',
+  'visionMeta',
+  'visionAt',
+] as const
+
+/**
+ * 备份行里声明的关联流水 id。
+ * 兼容旧备份：多对多改造前只有单个 recordId 列。
+ */
+function attachmentRecordIds(row: any): string[] {
+  if (Array.isArray(row.recordIds)) return row.recordIds.filter((id: unknown) => typeof id === 'string')
+  return typeof row.recordId === 'string' && row.recordId ? [row.recordId] : []
+}
+
+/** 只保留可插入的标量列，避免 createMany 遇到未知字段 */
+function toAttachmentRow(row: any): any {
+  const clean: any = {}
+  for (const key of ATTACHMENT_COLUMNS) {
+    if (row[key] !== undefined) clean[key] = row[key]
+  }
+  return clean
+}
+
+/**
+ * 按 recordIds 恢复「附件 ↔ 流水」关联，只连两边都存在的 id。
+ * 返回无法恢复的关联条数（流水已不在库里）。
+ */
+async function restoreAttachmentLinks(
+  db: any,
+  rows: any[],
+  recordIds: Set<string>,
+  attachmentIds: Set<string>,
+): Promise<number> {
+  const byRecord = new Map<string, Set<string>>()
+  let skipped = 0
+  for (const row of rows) {
+    if (!attachmentIds.has(row.id)) continue
+    for (const recordId of attachmentRecordIds(row)) {
+      if (!recordIds.has(recordId)) {
+        skipped++
+        continue
+      }
+      const set = byRecord.get(recordId) ?? new Set<string>()
+      set.add(row.id)
+      byRecord.set(recordId, set)
+    }
+  }
+  for (const [recordId, ids] of byRecord) {
+    await db.record.update({
+      where: { id: recordId },
+      data: { recordAttachments: { connect: [...ids].map((id) => ({ id })) } },
+    })
+  }
+  return skipped
+}
+
 interface BackupManifest {
   formatVersion: number
   appVersion?: string
@@ -119,8 +182,10 @@ async function restoreAttachmentFiles(extractDir: string): Promise<number> {
 }
 
 /** 覆盖恢复：清空全部表后按依赖顺序分批插入备份数据 */
-async function importFull(extractDir: string): Promise<{ results: Record<string, number>; attachmentsRestored: number }> {
-  const counts = await rawPrisma.$transaction(
+async function importFull(extractDir: string): Promise<{ results: Record<string, number>; attachmentsRestored: number; skipped: number }> {
+  const attachmentRows = readTable(extractDir, 'recordAttachment')
+
+  const { counts, skipped } = await rawPrisma.$transaction(
     async (tx: any) => {
       // 逆序删除（子表先删），rawPrisma 为物理删除
       for (const table of [...IMPORT_TABLE_ORDER].reverse()) {
@@ -128,22 +193,30 @@ async function importFull(extractDir: string): Promise<{ results: Record<string,
       }
       const result: Record<string, number> = {}
       for (const table of IMPORT_TABLE_ORDER) {
-        const rows = readTable(extractDir, table)
+        // 附件的关联字段不能进 createMany，插入后再单独恢复
+        const rows = table === 'recordAttachment'
+          ? attachmentRows.map(toAttachmentRow)
+          : readTable(extractDir, table)
         result[table] = rows.length
         for (let i = 0; i < rows.length; i += BATCH) {
           await tx[table].createMany({ data: rows.slice(i, i + BATCH) })
         }
       }
-      return result
+
+      // 所有表插入完成后统一恢复「附件 ↔ 流水」关联（此时 record 已存在）
+      const recordIds = new Set(readTable(extractDir, 'record').map((r: any) => r.id))
+      const attachmentIds = new Set(attachmentRows.map((r: any) => r.id))
+      const skippedLinks = await restoreAttachmentLinks(tx, attachmentRows, recordIds, attachmentIds)
+      return { counts: result, skipped: skippedLinks }
     },
     { maxWait: 600000, timeout: 600000 }
   )
   // 附件文件在数据事务提交后写入（文件无法事务回滚）
   const attachmentsRestored = await restoreAttachmentFiles(extractDir)
-  return { results: counts, attachmentsRestored }
+  return { results: counts, attachmentsRestored, skipped }
 }
 
-/** 附件合并导入（非破坏）：按 ID 去重插入行，写入文件；recordId 不存在的行跳过 */
+/** 附件合并导入（非破坏）：按 ID 去重插入行，写入文件；能对上的流水关联一并恢复 */
 async function importAttachments(extractDir: string): Promise<{
   results: Record<string, number>
   skipped: number
@@ -153,22 +226,23 @@ async function importAttachments(extractDir: string): Promise<{
   const existing = await rawPrisma.recordAttachment.findMany({ select: { id: true } })
   const existingIds = new Set(existing.map((a) => a.id))
 
+  // 附件本身与流水解耦：先全部插入，关联能连多少算多少（对不上的流水计入 skipped）
   const toCreate = rows.filter((r) => !existingIds.has(r.id))
-  const idsNeedingCheck = toCreate.filter((r: any) => r.recordId).map((r: any) => r.recordId)
-  let valid = new Set<string>()
-  if (idsNeedingCheck.length > 0) {
-    const recs = await rawPrisma.record.findMany({ where: { id: { in: idsNeedingCheck } }, select: { id: true } })
-    valid = new Set(recs.map((r) => r.id))
+  for (let i = 0; i < toCreate.length; i += BATCH) {
+    await rawPrisma.recordAttachment.createMany({ data: toCreate.slice(i, i + BATCH).map(toAttachmentRow) })
   }
-  const insertable = toCreate.filter((r: any) => !r.recordId || valid.has(r.recordId))
-  const skipped = toCreate.length - insertable.length
 
-  for (let i = 0; i < insertable.length; i += BATCH) {
-    await rawPrisma.recordAttachment.createMany({ data: insertable.slice(i, i + BATCH) })
+  const declaredRecordIds = [...new Set(rows.flatMap((r) => attachmentRecordIds(r)))]
+  const recordIds = new Set<string>()
+  if (declaredRecordIds.length > 0) {
+    const recs = await rawPrisma.record.findMany({ where: { id: { in: declaredRecordIds } }, select: { id: true } })
+    for (const r of recs) recordIds.add(r.id)
   }
+  const attachmentIds = new Set([...existingIds, ...toCreate.map((r) => r.id)])
+  const skipped = await restoreAttachmentLinks(rawPrisma, rows, recordIds, attachmentIds)
 
   const attachmentsRestored = await restoreAttachmentFiles(extractDir)
-  return { results: { recordAttachment: insertable.length }, skipped, attachmentsRestored }
+  return { results: { recordAttachment: toCreate.length }, skipped, attachmentsRestored }
 }
 
 /**

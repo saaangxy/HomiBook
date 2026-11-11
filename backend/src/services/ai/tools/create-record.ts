@@ -101,11 +101,11 @@ export const createRecordTool: ToolDef = {
       await refreshAccountBalance(record.accountId)
       if (record.toAccountId) await refreshAccountBalance(record.toAccountId)
 
-      // 关联附件
+      // 关联附件(多对多,用 connect 累加:同一附件可被多笔流水引用,不会覆盖别人的关联)
       if (args.attachmentIds && args.attachmentIds.length > 0) {
-        await prisma.recordAttachment.updateMany({
-          where: { id: { in: args.attachmentIds } },
-          data: { recordId: record.id },
+        await prisma.record.update({
+          where: { id: record.id },
+          data: { recordAttachments: { connect: args.attachmentIds.map((id: string) => ({ id })) } },
         })
       }
 

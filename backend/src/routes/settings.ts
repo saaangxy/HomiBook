@@ -239,7 +239,7 @@ export async function settingsRoutes(app: FastifyInstance) {
 
                 // 1. 数据库孤儿：recordId 为 null 且未被聊天消息引用的 RecordAttachment 记录
                 const dbOrphans = await prisma.recordAttachment.findMany({
-                    where: {recordId: null, id: {notIn: chatReferencedIds}},
+                    where: {records: {none: {}}, id: {notIn: chatReferencedIds}},
                     select: {id: true, path: true, originalFilename: true, createdAt: true},
                     orderBy: {createdAt: 'asc'},
                 })
@@ -291,7 +291,7 @@ export async function settingsRoutes(app: FastifyInstance) {
 
                 // 1. 清理数据库孤儿（recordId 为 null 且未被聊天引用）的记录和文件
                 const dbOrphans = await prisma.recordAttachment.findMany({
-                    where: {recordId: null, id: {notIn: chatReferencedIds}},
+                    where: {records: {none: {}}, id: {notIn: chatReferencedIds}},
                     select: {id: true, path: true},
                 })
                 for (const att of dbOrphans) {
@@ -307,7 +307,7 @@ export async function settingsRoutes(app: FastifyInstance) {
                 }
                 if (dbOrphans.length > 0) {
                     const result = await prisma.recordAttachment.deleteMany({
-                        where: {recordId: null, id: {notIn: chatReferencedIds}},
+                        where: {records: {none: {}}, id: {notIn: chatReferencedIds}},
                     })
                     deletedRecords = result.count
                 }

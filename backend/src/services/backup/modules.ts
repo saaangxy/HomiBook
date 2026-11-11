@@ -49,7 +49,7 @@ export const MODULE_FILES: Record<string, string[]> = {
   recurring: ['recurringTransaction', 'repaymentPlan'],
   importMapping: ['importCategoryMapping', 'importAccountMapping'],
   aiConfig: ['userAIConfig', 'userProviderConfig'],
-  aiChat: ['chatSession', 'chatMessage', 'userMemory', 'agentAuditLog'],
+  aiChat: ['chatSession', 'chatMessage', 'chatMessageAttachment', 'userMemory', 'agentAuditLog'],
   apiKey: ['apiKey'],
   attachments: ['recordAttachment'],
 }
@@ -80,6 +80,7 @@ export const IMPORT_TABLE_ORDER = [
   'apiKey',
   'chatSession',
   'chatMessage',
+  'chatMessageAttachment',
   'userMemory',
   'agentAuditLog',
 ] as const
@@ -112,7 +113,7 @@ export const FOREIGN_KEYS: Record<string, ForeignKey[]> = {
     {column: 'fromAccountId', refTable: 'account', nullable: true},
     {column: 'toAccountId', refTable: 'account', nullable: true},
   ],
-  recordAttachment: [{column: 'recordId', refTable: 'record', nullable: true}],
+  // recordAttachment 与流水是多对多（中间表由 Prisma 维护），关联在导入时按 recordIds 单独恢复
   shareCode: [{column: 'accountBookId', refTable: 'accountBook', nullable: false}],
   budget: [{column: 'accountBookId', refTable: 'accountBook', nullable: false}],
   recurringTransaction: [
@@ -130,6 +131,11 @@ export const FOREIGN_KEYS: Record<string, ForeignKey[]> = {
   chatMessage: [
     {column: 'sessionId', refTable: 'chatSession', nullable: false},
     {column: 'accountBookId', refTable: 'accountBook', nullable: true},
+  ],
+  // 非空外键：导出包未包含 attachments 模块时整行跳过，避免恢复出坏引用
+  chatMessageAttachment: [
+    {column: 'messageId', refTable: 'chatMessage', nullable: false},
+    {column: 'attachmentId', refTable: 'recordAttachment', nullable: false},
   ],
   userMemory: [
     {column: 'userId', refTable: 'user', nullable: false},
@@ -204,5 +210,9 @@ export function assertValidModules(modules: string[]) {
         throw Object.assign(new Error(`核心数据必须整体打包导出，缺少: ${core}`), { statusCode: 400 })
       }
     }
+  }
+  // AI 聊天记录依赖附件：缺附件行/文件时，聊天里的图片无法还原（前端已联动，这里兜底 API 直调）
+  if (modules.includes('aiChat') && !modules.includes('attachments')) {
+    throw Object.assign(new Error('导出 AI 聊天记录时必须同时包含附件模块'), { statusCode: 400 })
   }
 }

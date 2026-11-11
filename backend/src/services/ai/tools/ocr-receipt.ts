@@ -30,19 +30,14 @@ export const ocrReceiptTool: ToolDef = {
     // 1. 查询附件记录
     const attachment = await prisma.recordAttachment.findUnique({
       where: { id: attachmentId },
-      select: { id: true, path: true, originalFilename: true, recordId: true },
+      select: { id: true, path: true, originalFilename: true, records: { select: { accountBookId: true } } },
     })
     if (!attachment) return { success: false, error: '附件不存在', retryable: false }
 
     // 如果附件已关联记录，验证记录属于当前账本
-    if (attachment.recordId) {
-      const record = await prisma.record.findUnique({
-        where: { id: attachment.recordId },
-        select: { accountBookId: true },
-      })
-      if (record?.accountBookId !== accountBookId) {
-        return { success: false, error: '无权访问该附件', retryable: false }
-      }
+    // 附件是多对多:只要有一条关联记录属于当前账本就放行,全部属于别的账本才拒绝
+    if (attachment.records.length > 0 && !attachment.records.some((r) => r.accountBookId === accountBookId)) {
+      return { success: false, error: '无权访问该附件', retryable: false }
     }
 
     // 2. 读取图片文件

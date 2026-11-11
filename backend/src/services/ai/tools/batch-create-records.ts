@@ -150,12 +150,16 @@ export const batchCreateRecordsTool: ToolDef = {
         ),
       )
 
-      // 关联附件到第一条记录
+      // 关联附件到本批【全部】记录:一张账单截图里往往有多笔,每笔都应能追溯到同一张凭证
       if (args.attachmentIds && args.attachmentIds.length > 0 && created.length > 0) {
-        await prisma.recordAttachment.updateMany({
-          where: { id: { in: args.attachmentIds } },
-          data: { recordId: created[0].id },
-        })
+        await prisma.$transaction(
+          created.map((rec) =>
+            prisma.record.update({
+              where: { id: rec.id },
+              data: { recordAttachments: { connect: args.attachmentIds!.map((id) => ({ id })) } },
+            }),
+          ),
+        )
       }
 
       // 刷新余额缓存(AI 工具不走 routes/record 的刷新逻辑,不补会让 query_accounts 读到旧值)

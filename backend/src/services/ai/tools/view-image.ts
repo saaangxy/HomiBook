@@ -57,19 +57,14 @@ export const viewImageTool: ToolDef = {
 
     const attachment = await prisma.recordAttachment.findUnique({
       where: { id: args.attachmentId },
-      select: { id: true, path: true, originalFilename: true, recordId: true },
+      select: { id: true, path: true, originalFilename: true, records: { select: { accountBookId: true } } },
     })
     if (!attachment) return { success: false, error: '附件不存在', retryable: false }
 
     // 与 ocr_receipt 同口径:已关联流水时校验流水属于当前账本
-    if (attachment.recordId) {
-      const record = await prisma.record.findUnique({
-        where: { id: attachment.recordId },
-        select: { accountBookId: true },
-      })
-      if (record?.accountBookId !== accountBookId) {
-        return { success: false, error: '无权访问该附件', retryable: false }
-      }
+    // 附件是多对多:只要有一条关联记录属于当前账本就放行,全部属于别的账本才拒绝
+    if (attachment.records.length > 0 && !attachment.records.some((r) => r.accountBookId === accountBookId)) {
+      return { success: false, error: '无权访问该附件', retryable: false }
     }
 
     // needImage=true:模型明确要求自己看图 —— 不再让视觉模型代答一遍(同一张图花两次调用),

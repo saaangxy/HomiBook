@@ -51,9 +51,26 @@ async function collectRows(table: string, bookIds?: string[]): Promise<any[]> {
     case 'record':
       return db.record.findMany(bookWhere(bookIds))
     case 'recordAttachment': {
-      if (!hasBooks) return db.recordAttachment.findMany()
-      const records = await db.record.findMany({ where: { accountBookId: { in: bookIds } }, select: { id: true } })
-      return db.recordAttachment.findMany({ where: { recordId: { in: records.map((r: any) => r.id) } } })
+      // 多对多：附件行额外带上引用它的流水 id 列表，导入时据此恢复关联
+      if (!hasBooks) {
+        const rows = await db.recordAttachment.findMany({ include: { records: { select: { id: true } } } })
+        return rows.map(({ records, ...att }: any) => ({ ...att, recordIds: records.map((r: any) => r.id) }))
+      }
+      // 账本范围：流水附件 ∪ 该账本聊天会话引用的附件（否则聊天图片恢复后是坏链接）
+      const caseSessions = await db.chatSession.findMany({
+        where: { accountBookId: { in: bookIds } },
+        select: { id: true },
+      })
+      const rows = await db.recordAttachment.findMany({
+        where: {
+          OR: [
+            { records: { some: { accountBookId: { in: bookIds } } } },
+            { chatMessages: { some: { message: { sessionId: { in: caseSessions.map((s: any) => s.id) } } } } },
+          ],
+        },
+        include: { records: { select: { id: true }, where: { accountBookId: { in: bookIds } } } },
+      })
+      return rows.map(({ records, ...att }: any) => ({ ...att, recordIds: records.map((r: any) => r.id) }))
     }
     case 'budget':
       return db.budget.findMany(bookWhere(bookIds))
@@ -80,6 +97,13 @@ async function collectRows(table: string, bookIds?: string[]): Promise<any[]> {
       if (!hasBooks) return db.chatMessage.findMany()
       const sessions = await db.chatSession.findMany({ where: { accountBookId: { in: bookIds } }, select: { id: true } })
       return db.chatMessage.findMany({ where: { sessionId: { in: sessions.map((s: any) => s.id) } } })
+    }
+    case 'chatMessageAttachment': {
+      if (!hasBooks) return db.chatMessageAttachment.findMany()
+      const sessions = await db.chatSession.findMany({ where: { accountBookId: { in: bookIds } }, select: { id: true } })
+      return db.chatMessageAttachment.findMany({
+        where: { message: { sessionId: { in: sessions.map((s: any) => s.id) } } },
+      })
     }
     case 'userMemory': {
       if (!hasBooks) return db.userMemory.findMany()
