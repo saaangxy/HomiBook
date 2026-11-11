@@ -22,9 +22,9 @@ export const previewImportTool: ToolDef = {
   parameters: {
     type: 'object',
     properties: {
-      attachmentId: { type: 'string', description: '账单**附件**的 id，取自本轮消息附件清单里的「attachmentId: xxx」(账单文件本身就是一个附件)。不要传文件名或其它 id' },
-      source: { type: 'string', enum: [...IMPORT_AI_SOURCES], description: '账单来源类型；不传则服务端按文件内容自动识别(推荐不传)' },
-      mode: { type: 'string', enum: ['analyze', 'preview'], description: '模式：analyze=分析模式（默认），返回未匹配数据供 AI 分析，不展示交互卡片；preview=预览模式，展示交互卡片供用户确认' },
+      attachmentId: { type: 'string', description: '账单附件的 id,取自附件清单的「attachmentId: xxx」;不要传文件名' },
+      source: { type: 'string', enum: [...IMPORT_AI_SOURCES], description: '账单来源;不传则由服务端按内容识别(推荐不传)' },
+      mode: { type: 'string', enum: ['analyze', 'preview'], description: 'analyze=返回未匹配数据供分析(默认);preview=展示确认卡片' },
       accountResolutions: {
         type: 'array',
         description: 'AI 提供的账户匹配规则。每个未匹配的源账户名对应一条规则。设为相同名称即可合并为一个账户',
@@ -48,9 +48,9 @@ export const previewImportTool: ToolDef = {
           properties: {
             sourceCategory: { type: 'string', description: '流水中的源分类名称' },
             targetCategoryCode: { type: 'string', description: '目标系统分类编码（必须在 allDictItems 中存在）' },
-            recordType: { type: 'string', enum: [...RECORD_TYPES], description: '限定记录类型（可选,不填则匹配所有类型,除确定不限类型全部映射的分类外,该字段应该填写对应类型）' },
-            payerContains: { type: 'string', description: '交易方名称正则过滤条件（可选），如 燃气|电力|汇通 匹配任一关键词' },
-            descriptionContains: { type: 'string', description: '说明字段正则过滤条件（可选），如 燃气|电力|汇通 匹配任一关键词' },
+            recordType: { type: 'string', enum: [...RECORD_TYPES], description: '限定记录类型;除「对所有类型都成立」的映射外建议填写' },
+            payerContains: { type: 'string', description: '按交易方过滤的正则(可选),如 燃气|电力' },
+            descriptionContains: { type: 'string', description: '按说明字段过滤的正则(可选),如 燃气|电力' },
           },
           required: ['sourceCategory', 'targetCategoryCode'],
         },

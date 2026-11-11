@@ -34,10 +34,10 @@ const ATTACHMENT_MARK = '[附件信息]'
  * 措辞**刻意避开** import-transactions 的触发标记(即「请导入」):detectSkills 的入参是
  * 「用户原文 + 本段」,这里出现该标记会让每条带附件的消息都激活导入技能。
  */
-const ATTACHMENT_SCOPE_NOTE =
-  '说明:以上 attachmentId 是这些附件在系统里的唯一标识 —— 图片识别、账单导入、流水附件关联都用它;调用工具时直接引用,不要用文件名或其它 id。' +
-  '图片的「内容摘要/识别文本/关键信息」是系统预先读出的文字内容:后续轮次凭这些文字作答即可,不要重复识别;' +
-  '仅当用户追问图片的视觉细节(版面排版、位置、印章、商品外观等)时,才调用 view_image(把要确认的细节写进 question),由视觉模型看图后作答。'
+const ATTACHMENT_ID_NOTE =
+  '说明:以上 attachmentId 是附件的唯一标识,图片识别/账单导入/附件关联都用它,不要用文件名或其它 id。'
+
+const ATTACHMENT_SCOPE_NOTE = ATTACHMENT_ID_NOTE + '「内容摘要/识别文本/关键信息」是系统预读的文字,凭它作答即可。'
 
 /**
  * 多模态主模型场景:本轮图片**以图像形式直接下发**,没有预提取的文字。
@@ -45,10 +45,7 @@ const ATTACHMENT_SCOPE_NOTE =
  * 措辞对后续轮次同样成立(首轮之后历史里只剩这段文字,追问细节要靠 view_image)。
  */
 const ATTACHMENT_SCOPE_NOTE_DIRECT =
-  '说明:以上 attachmentId 是这些附件在系统里的唯一标识 —— 图片识别、账单导入、流水附件关联都用它;调用工具时直接引用,不要用文件名或其它 id。' +
-  '本轮图片已作为图像随消息提供,请直接看图作答,不要调用 ocr_receipt 重复识别。' +
-  '回答前请先对每张图片调用一次 save_image_content,把你看到的内容(摘要/图中文字/关键字段)记下来 —— 后续轮次凭它记得图片;' +
-  '若需要确认视觉细节(版面排版、位置、印章、商品外观等),调用 view_image(把要确认的细节写进 question)。'
+  ATTACHMENT_ID_NOTE + '本轮图片已随消息提供,直接看图作答。'
 
 /** 图片文字化结果的最小形状(完整定义见 services/ai/image-context.ts;此处只取用得到的字段) */
 export interface AttachmentTextContext {
