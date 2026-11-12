@@ -1,6 +1,6 @@
 import type { ToolDef, ToolContext } from './types.js'
 import { prisma } from '../../../app.js'
-import { assertIsMember, checkEnumList, checkEnums } from '../security.js'
+import { checkEnumList, checkEnums, ToolError } from '../security.js'
 import { createAccountsInTx, saveCategoryMappingsInTx, saveAccountMappingsInTx, AccountResolver, batchCreateRecordsInTx, refreshBalances } from '../../import/execute.js'
 import { CATEGORY_DICT_GROUPS, findUnknownCategoryCodes, formatDictOptions, validateCategoryResolutions } from '../../import/blocking.js'
 import { remapImportRows } from '../../import/remap.js'
@@ -15,6 +15,8 @@ export const confirmImportTool: ToolDef = {
   description: '确认导入账单数据。传入账单附件的 attachmentId 和经过用户确认的映射规则，展示导入预览后可执行导入。',
   // 工具自身已返回 confirm_preview 供前端展示富预览（ImportConfirmCard），无需通用确认卡片（避免双重确认）
   requireConfirm: false,
+  // 只有 confirm_preview 才有卡片要确认；执行完的 imported 回执直接返回
+  pauseAfter: (_args, result) => (result.success && (result.data as { mode?: string } | undefined)?.mode === 'confirm_preview' ? 'confirm' : null),
   parameters: {
     type: 'object',
     properties: {
@@ -62,17 +64,17 @@ export const confirmImportTool: ToolDef = {
       ?? checkEnumList('accountResolutions[].action', (args.accountResolutions ?? []).map((r: any) => r.action), ['existing', 'create'] as const)
       ?? checkEnumList('accountResolutions[].accountType', (args.accountResolutions ?? []).map((r: any) => r.accountType), ACCOUNT_TYPES)
       ?? checkEnumList('categoryResolutions[].recordType', (args.categoryResolutions ?? []).map((r: any) => r.recordType), RECORD_TYPES)
-    if (badEnum) return badEnum
+    if (badEnum) throw new ToolError(badEnum.error ?? '参数非法', badEnum.retryable)
 
-    await assertIsMember(ctx.accountBookId, ctx.userId)
-    const { attachmentId, source: sourceArg, ownerId, accountResolutions, categoryResolutions, _execute } = args as {
+    const { attachmentId, source: sourceArg, ownerId, accountResolutions, categoryResolutions } = args as {
       attachmentId: string
       source?: 'alipay' | 'wechat' | 'jd'
       ownerId?: string
       accountResolutions?: { sourceAccountName: string; action: 'existing' | 'create'; targetAccountId?: string; targetAccountName?: string; accountType?: string }[]
       categoryResolutions?: { sourceCategory: string; targetCategoryCode: string; recordType?: string; payerContains?: string; descriptionContains?: string }[]
-      _execute?: boolean
     }
+    // 「真正写库」只由 ctx 决定：模型无法通过参数把自己从预览推进到执行
+    const isExecutePhase = ctx.confirmed === true
 
     // 分类编码必须在字典里(与 preview_import 同一道校验):不满足直接回报模型重填,避免脏规则落库
     if (categoryResolutions?.length) {
@@ -82,18 +84,14 @@ export const confirmImportTool: ToolDef = {
       })
       const unknown = findUnknownCategoryCodes(categoryResolutions.map((c: any) => c.targetCategoryCode), new Set(dictItems.map(d => d.code)))
       if (unknown.length > 0) {
-        return {
-          success: false,
-          retryable: false,
-          error: `分类编码不存在：${unknown.join('、')}。targetCategoryCode 必须是系统字典里的编码，可选值：${formatDictOptions(dictItems)}`,
-        }
+        throw new ToolError(`分类编码不存在：${unknown.join('、')}。targetCategoryCode 必须是系统字典里的编码，可选值：${formatDictOptions(dictItems)}`)
       }
     }
 
     // 兜底类无条件映射 / 自映射校验（与 preview_import 共用同一份规则）
     const categoryCheck = validateCategoryResolutions(categoryResolutions ?? [])
     if (!categoryCheck.ok) {
-      return { success: false, retryable: false, error: categoryCheck.error }
+      throw new ToolError(categoryCheck.error)
     }
 
     const effectiveOwnerId = ownerId || ctx.userId
@@ -105,23 +103,23 @@ export const confirmImportTool: ToolDef = {
         prisma.accountBook.findUnique({ where: { id: ctx.accountBookId }, select: { ownerId: true } }),
       ])
       if (!isMember && book?.ownerId !== effectiveOwnerId) {
-        return { success: false, error: '归属人不是账本成员', retryable: false }
+        throw new ToolError('归属人不是账本成员', false)
       }
     }
 
     // 账单文件 = 一个附件:按 attachmentId 取行、经 path 读盘
     const file = await loadImportFile(attachmentId)
-    if (!file) return { success: false, error: IMPORT_FILE_MISSING, retryable: false }
+    if (!file) throw new ToolError(IMPORT_FILE_MISSING, false)
 
     // 解析:与 preview_import 同一份逻辑(source 缺省/猜错时按文件内容识别)
     const parsed = parseImportFile(file, sourceArg)
-    if (!parsed.ok) return { success: false, error: parsed.error, retryable: false }
+    if (!parsed.ok) throw new ToolError(parsed.error, false)
     const source = parsed.source
     const parseResult = { rows: parsed.rows, errors: parsed.errors }
 
     // ---- 合并映射规则：用户覆盖 > LLM 参数 ----
     // Phase 1 (preview): peek 不删除，Phase 2 (execute) 才 consume 删除
-    const userOverrides = _execute ? consumeImportOverrides(attachmentId) : peekImportOverrides(attachmentId)
+    const userOverrides = isExecutePhase ? consumeImportOverrides(attachmentId) : peekImportOverrides(attachmentId)
     const effectiveAccountResolutions = userOverrides?.accountResolutions ?? accountResolutions
     const effectiveCategoryResolutions = userOverrides?.categoryResolutions ?? categoryResolutions
 
@@ -201,7 +199,7 @@ export const confirmImportTool: ToolDef = {
       csvName ? (remapped.nameMatched[csvName] ?? csvName) : null
 
     // ---- 阶段1：返回预览数据 ----
-    if (!_execute) {
+    if (!isExecutePhase) {
       // 查询分类标签
       const categoryCodes = new Set<string>()
       for (const r of normalRecords) {
@@ -216,62 +214,58 @@ export const confirmImportTool: ToolDef = {
       const accountTypeLabels = ACCOUNT_TYPE_LABELS as Record<string, string>
 
       return {
-        success: true,
-        retryable: false,
-        data: {
-          mode: 'confirm_preview',
-          source,
-          attachmentId,
-          accountsToCreate: accountCreations.map(a => ({
-            name: a.name,
-            type: a.type,
-            typeLabel: accountTypeLabels[a.type] || a.type,
-          })),
-          records: normalRecords.map(r => ({
-            rowIndex: r.rowIndex,
-            date: formatDate(r.date),
-            type: r.type,
-            amount: r.amount,
-            accountName: r.accountName,
-            mappedAccountName: accountDisplayName(r.accountName),
-            accountId: r.accountId,
-            toAccountName: r.toAccountName,
-            mappedToAccountName: accountDisplayName(r.toAccountName),
-            toAccountId: r.toAccountId,
-            categoryCode: r.categoryCode,
-            categoryLabel: r.categoryCode ? (labelMap.get(r.categoryCode) || r.categoryCode) : null,
-            mappedCategoryCode: r.mappedCategoryCode,
-            mappedCategoryLabel: r.mappedCategoryCode ? (labelMap.get(r.mappedCategoryCode) || r.mappedCategoryCode) : null,
-            payer: r.payer,
-            remark: r.remark,
-            tags: r.tags,
-          })),
-          stats: {
-            totalRecords: normalRecords.length,
-            incomeCount: normalRecords.filter(r => r.type === 'INCOME').length,
-            expenseCount: normalRecords.filter(r => r.type === 'EXPENSE').length,
-            transferCount: normalRecords.filter(r => r.type === 'TRANSFER').length,
-            accountsToCreate: accountCreations.length,
-          },
-          ownerId: effectiveOwnerId,
-          // 服务端裁决:未决原因(空数组 = 可以执行)
-          canProceed: blockReasons.length === 0,
-          blockReasons,
-          // 未处置的未识别行会被跳过(用户点确认即视为同意),只回报数量
-          skippedUnrecognized: remapped.unresolved.unrecognized.length,
-          owners: [
-            ...(bookOwner ? [{ id: bookOwner.owner.id, name: bookOwner.owner.nickname || bookOwner.owner.email, isOwner: true }] : []),
-            ...members.filter(m => m.user.id !== bookOwnerId).map(m => ({ id: m.user.id, name: m.user.nickname || m.user.email, isOwner: false })),
-          ],
-          accountBookId: ctx.accountBookId,
+        mode: 'confirm_preview',
+        source,
+        attachmentId,
+        accountsToCreate: accountCreations.map(a => ({
+          name: a.name,
+          type: a.type,
+          typeLabel: accountTypeLabels[a.type] || a.type,
+        })),
+        records: normalRecords.map(r => ({
+          rowIndex: r.rowIndex,
+          date: formatDate(r.date),
+          type: r.type,
+          amount: r.amount,
+          accountName: r.accountName,
+          mappedAccountName: accountDisplayName(r.accountName),
+          accountId: r.accountId,
+          toAccountName: r.toAccountName,
+          mappedToAccountName: accountDisplayName(r.toAccountName),
+          toAccountId: r.toAccountId,
+          categoryCode: r.categoryCode,
+          categoryLabel: r.categoryCode ? (labelMap.get(r.categoryCode) || r.categoryCode) : null,
+          mappedCategoryCode: r.mappedCategoryCode,
+          mappedCategoryLabel: r.mappedCategoryCode ? (labelMap.get(r.mappedCategoryCode) || r.mappedCategoryCode) : null,
+          payer: r.payer,
+          remark: r.remark,
+          tags: r.tags,
+        })),
+        stats: {
+          totalRecords: normalRecords.length,
+          incomeCount: normalRecords.filter(r => r.type === 'INCOME').length,
+          expenseCount: normalRecords.filter(r => r.type === 'EXPENSE').length,
+          transferCount: normalRecords.filter(r => r.type === 'TRANSFER').length,
+          accountsToCreate: accountCreations.length,
         },
+        ownerId: effectiveOwnerId,
+        // 服务端裁决:未决原因(空数组 = 可以执行)
+        canProceed: blockReasons.length === 0,
+        blockReasons,
+        // 未处置的未识别行会被跳过(用户点确认即视为同意),只回报数量
+        skippedUnrecognized: remapped.unresolved.unrecognized.length,
+        owners: [
+          ...(bookOwner ? [{ id: bookOwner.owner.id, name: bookOwner.owner.nickname || bookOwner.owner.email, isOwner: true }] : []),
+          ...members.filter(m => m.user.id !== bookOwnerId).map(m => ({ id: m.user.id, name: m.user.nickname || m.user.email, isOwner: false })),
+        ],
+        accountBookId: ctx.accountBookId,
       }
     }
 
     // ---- 阶段2：执行导入 ----
     // 服务端唯一裁决:有未决项就不执行(避免静默建账户 / 写入未映射分类),原因回传
     if (blockReasons.length > 0) {
-      return { success: false, error: blockReasons.join('；'), retryable: false }
+      throw new ToolError(blockReasons.join('；'), false)
     }
 
     // 源账户名 → 目标账户名(remap 已给出:名称匹配到的账户名 / 本次将新建的账户名)
@@ -304,12 +298,8 @@ export const confirmImportTool: ToolDef = {
     // 删掉磁盘文件会让该附件变成坏链接。它已被 ChatMessageAttachment 引用,clean-orphans 也不会清它。
 
     return {
-      success: true,
-      data: {
-        imported: records.length,
-        accountsCreated,
-      },
-      retryable: false,
+      imported: records.length,
+      accountsCreated,
     }
   },
 }

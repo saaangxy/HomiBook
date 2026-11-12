@@ -1,5 +1,5 @@
 import { prisma } from '../../../app.js'
-import { assertIsMember, checkEnums, retryable, type ToolResult } from '../security.js'
+import { checkEnums, ToolError } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 import { RECORD_TYPES } from '@homibook/core'
 
@@ -15,37 +15,33 @@ export const queryCategoriesTool: ToolDef = {
     },
   },
 
-  async execute(args: { type?: string }, ctx: ToolContext): Promise<ToolResult> {
+  async execute(args: { type?: string }, ctx: ToolContext) {
     // 入参枚举校验:非法分类类型直接回报给模型
     const badEnum = checkEnums({ type: [args.type, RECORD_TYPES] })
-    if (badEnum) return badEnum
+    if (badEnum) throw new ToolError(badEnum.error ?? '参数非法', badEnum.retryable)
 
-    await assertIsMember(ctx.accountBookId, ctx.userId)
+    const groups = args.type
+      ? [`transaction_category_${args.type.toLowerCase()}`]
+      : ['transaction_category_income', 'transaction_category_expense', 'transaction_category_transfer']
 
-    return retryable(async () => {
-      const groups = args.type
-        ? [`transaction_category_${args.type.toLowerCase()}`]
-        : ['transaction_category_income', 'transaction_category_expense', 'transaction_category_transfer']
+    const categories = await prisma.dictionary.findMany({
+      where: { group: { in: groups } },
+      select: { code: true, label: true, group: true },
+      orderBy: [{ group: 'asc' }, { order: 'asc' }],
+    })
 
-      const categories = await prisma.dictionary.findMany({
-        where: { group: { in: groups } },
-        select: { code: true, label: true, group: true },
-        orderBy: [{ group: 'asc' }, { order: 'asc' }],
-      })
+    const typeMap: Record<string, string> = {
+      transaction_category_income: 'INCOME',
+      transaction_category_expense: 'EXPENSE',
+      transaction_category_transfer: 'TRANSFER',
+    }
 
-      const typeMap: Record<string, string> = {
-        transaction_category_income: 'INCOME',
-        transaction_category_expense: 'EXPENSE',
-        transaction_category_transfer: 'TRANSFER',
-      }
-
-      return {
-        categories: categories.map((c) => ({
-          code: c.code,
-          name: c.label,
-          type: typeMap[c.group] || c.group,
-        })),
-      }
-    }, 'query_categories')
+    return {
+      categories: categories.map((c) => ({
+        code: c.code,
+        name: c.label,
+        type: typeMap[c.group] || c.group,
+      })),
+    }
   },
 }

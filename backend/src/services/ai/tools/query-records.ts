@@ -1,5 +1,5 @@
 import { prisma } from '../../../app.js'
-import { assertIsMember, checkEnums, retryable, desensitize, type ToolResult } from '../security.js'
+import { checkEnums, desensitize, ToolError } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 import { parseDayStart, parseDayEnd, dateKey } from '../../../lib/date-time.js'
 import { RECORD_TYPES, type RecordType } from '@homibook/core'
@@ -42,78 +42,74 @@ export const queryRecordsTool: ToolDef = {
     },
   },
 
-  async execute(args: QueryRecordsArgs, ctx: ToolContext): Promise<ToolResult> {
+  async execute(args: QueryRecordsArgs, ctx: ToolContext) {
     // 入参枚举校验:非法筛选类型直接回报给模型(否则会查空/查错)
     const badEnum = checkEnums({ type: [args.type, RECORD_TYPES] })
-    if (badEnum) return badEnum
+    if (badEnum) throw new ToolError(badEnum.error ?? '参数非法', badEnum.retryable)
 
-    await assertIsMember(ctx.accountBookId, ctx.userId)
+    // 已平账的记录不参与模型侧查询(否则「退款 + 购物」会被当成两笔真实收支)
+    const where: Record<string, unknown> = { accountBookId: ctx.accountBookId, offsetAt: null }
 
-    return retryable(async () => {
-      // 已平账的记录不参与模型侧查询(否则「退款 + 购物」会被当成两笔真实收支)
-      const where: Record<string, unknown> = { accountBookId: ctx.accountBookId, offsetAt: null }
-
-      if (args.type) where.type = args.type
-      if (args.categoryCode) where.categoryCode = args.categoryCode
-      if (args.accountId) where.accountId = args.accountId
-      // 转账记录的 accountId 存的是转出账户,「转入账户」是另一列
-      if (args.toAccountId) where.toAccountId = args.toAccountId
-      if (args.minAmount !== undefined || args.maxAmount !== undefined) {
-        const gte = args.minAmount !== undefined ? Number(args.minAmount) : undefined
-        const lte = args.maxAmount !== undefined ? Number(args.maxAmount) : undefined
-        where.amount = {
-          ...(gte !== undefined && !isNaN(gte) ? { gte } : {}),
-          ...(lte !== undefined && !isNaN(lte) ? { lte } : {}),
-        }
+    if (args.type) where.type = args.type
+    if (args.categoryCode) where.categoryCode = args.categoryCode
+    if (args.accountId) where.accountId = args.accountId
+    // 转账记录的 accountId 存的是转出账户,「转入账户」是另一列
+    if (args.toAccountId) where.toAccountId = args.toAccountId
+    if (args.minAmount !== undefined || args.maxAmount !== undefined) {
+      const gte = args.minAmount !== undefined ? Number(args.minAmount) : undefined
+      const lte = args.maxAmount !== undefined ? Number(args.maxAmount) : undefined
+      where.amount = {
+        ...(gte !== undefined && !isNaN(gte) ? { gte } : {}),
+        ...(lte !== undefined && !isNaN(lte) ? { lte } : {}),
       }
-      if (args.startDate || args.endDate) {
-        // 'YYYY-MM-DD' 锚定本地当日起止,避免 endDate 当天白天的交易被漏掉
-        where.date = {
-          ...(args.startDate ? { gte: parseDayStart(args.startDate) } : {}),
-          ...(args.endDate ? { lte: parseDayEnd(args.endDate) } : {}),
-        }
+    }
+    if (args.startDate || args.endDate) {
+      // 'YYYY-MM-DD' 锚定本地当日起止,避免 endDate 当天白天的交易被漏掉
+      where.date = {
+        ...(args.startDate ? { gte: parseDayStart(args.startDate) } : {}),
+        ...(args.endDate ? { lte: parseDayEnd(args.endDate) } : {}),
       }
-      if (args.keyword) {
-        where.OR = [
-          { remark: { contains: args.keyword } },
-          { payer: { contains: args.keyword } },
-        ]
-      }
+    }
+    if (args.keyword) {
+      where.OR = [
+        { remark: { contains: args.keyword } },
+        { payer: { contains: args.keyword } },
+      ]
+    }
 
-      const records = await prisma.record.findMany({
-        where,
-        include: {
-          account: { select: { name: true } },
-          // 转账时需要转入账户名,否则模型看不出 A → B 的方向
-          toAccount: { select: { name: true } },
-        },
-        orderBy: { date: 'desc' },
-        take: Math.min(args.limit ?? 50, 200),
-      })
+    const records = await prisma.record.findMany({
+      where,
+      include: {
+        account: { select: { name: true } },
+        // 转账时需要转入账户名,否则模型看不出 A → B 的方向
+        toAccount: { select: { name: true } },
+      },
+      orderBy: { date: 'desc' },
+      take: Math.min(args.limit ?? 50, 200),
+    })
 
-      const totalCount = await prisma.record.count({ where })
+    const totalCount = await prisma.record.count({ where })
 
-      const totalAmount = records.reduce((sum, r) => {
-        if (r.type === 'INCOME') return sum + r.amount
-        if (r.type === 'EXPENSE') return sum - r.amount
-        return sum // TRANSFER 不计入
-      }, 0)
+    const totalAmount = records.reduce((sum, r) => {
+      if (r.type === 'INCOME') return sum + r.amount
+      if (r.type === 'EXPENSE') return sum - r.amount
+      return sum // TRANSFER 不计入
+    }, 0)
 
-      return desensitize({
-        totalCount,
-        totalAmount: Math.round(totalAmount * 100) / 100,
-        records: records.map((r) => ({
-          id: r.id,
-          type: r.type,
-          amount: r.amount,
-          date: dateKey(r.date),
-          remark: r.remark,
-          categoryCode: r.categoryCode,
-          payer: r.payer,
-          accountName: r.account.name,
-          ...(r.toAccount ? { toAccountName: r.toAccount.name } : {}),
-        })),
-      })
-    }, 'query_records')
+    return desensitize({
+      totalCount,
+      totalAmount: Math.round(totalAmount * 100) / 100,
+      records: records.map((r) => ({
+        id: r.id,
+        type: r.type,
+        amount: r.amount,
+        date: dateKey(r.date),
+        remark: r.remark,
+        categoryCode: r.categoryCode,
+        payer: r.payer,
+        accountName: r.account.name,
+        ...(r.toAccount ? { toAccountName: r.toAccount.name } : {}),
+      })),
+    })
   },
 }

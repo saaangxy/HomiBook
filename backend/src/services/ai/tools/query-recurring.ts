@@ -1,5 +1,5 @@
 import { prisma } from '../../../app.js'
-import { assertIsMember, checkEnums, retryable, desensitize, type ToolResult } from '../security.js'
+import { checkEnums, desensitize, ToolError } from '../security.js'
 import { getNextTriggerTime } from '../../recurring.js'
 import type { ToolDef, ToolContext } from './types.js'
 import { RECURRING_TYPES, type RecurringType } from '@homibook/core'
@@ -22,53 +22,49 @@ export const queryRecurringTool: ToolDef = {
     },
   },
 
-  async execute(args: QueryRecurringArgs, ctx: ToolContext): Promise<ToolResult> {
+  async execute(args: QueryRecurringArgs, ctx: ToolContext) {
     // 入参枚举校验:非法筛选类型直接回报给模型
     const badEnum = checkEnums({ type: [args.type, RECURRING_TYPES] })
-    if (badEnum) return badEnum
+    if (badEnum) throw new ToolError(badEnum.error ?? '参数非法', badEnum.retryable)
 
-    await assertIsMember(ctx.accountBookId, ctx.userId)
+    const where: Record<string, unknown> = { accountBookId: ctx.accountBookId }
+    if (args.type) where.recurringType = args.type
+    if (args.active !== undefined) where.active = args.active
 
-    return retryable(async () => {
-      const where: Record<string, unknown> = { accountBookId: ctx.accountBookId }
-      if (args.type) where.recurringType = args.type
-      if (args.active !== undefined) where.active = args.active
+    const list = await prisma.recurringTransaction.findMany({
+      where,
+      orderBy: [{ active: 'desc' }, { createdAt: 'desc' }],
+      include: {
+        account: { select: { id: true, name: true, type: true } },
+        toAccount: { select: { id: true, name: true, type: true } },
+        repaymentPlans: { orderBy: { period: 'asc' }, select: { period: true, dueDate: true, totalPayment: true, principal: true, interest: true, remainingPrincipal: true, status: true } },
+      },
+    })
 
-      const list = await prisma.recurringTransaction.findMany({
-        where,
-        orderBy: [{ active: 'desc' }, { createdAt: 'desc' }],
-        include: {
-          account: { select: { id: true, name: true, type: true } },
-          toAccount: { select: { id: true, name: true, type: true } },
-          repaymentPlans: { orderBy: { period: 'asc' }, select: { period: true, dueDate: true, totalPayment: true, principal: true, interest: true, remainingPrincipal: true, status: true } },
-        },
-      })
-
-      return desensitize({
-        count: list.length,
-        items: list.map((r) => ({
-          id: r.id,
-          name: r.name,
-          type: r.type,
-          amount: r.amount,
-          recurringType: r.recurringType,
-          cron: r.cron,
-          active: r.active,
-          categoryCode: r.categoryCode,
-          remark: r.remark,
-          tags: JSON.parse(r.tags),
-          account: r.account,
-          toAccount: r.toAccount,
-          nextGenerateAt: r.nextGenerateAt || (r.active ? getNextTriggerTime(r.cron) : null),
-          loanTotalAmount: r.loanTotalAmount,
-          loanRemainingAmount: r.loanRemainingAmount,
-          loanInterestRate: r.loanInterestRate,
-          loanInterestMethod: r.loanInterestMethod,
-          loanStartDate: r.loanStartDate?.toISOString().slice(0, 10),
-          loanTermMonths: r.loanTermMonths,
-          loanMonthlyPayment: r.loanMonthlyPayment,
-        })),
-      })
-    }, 'query_recurring')
+    return desensitize({
+      count: list.length,
+      items: list.map((r) => ({
+        id: r.id,
+        name: r.name,
+        type: r.type,
+        amount: r.amount,
+        recurringType: r.recurringType,
+        cron: r.cron,
+        active: r.active,
+        categoryCode: r.categoryCode,
+        remark: r.remark,
+        tags: JSON.parse(r.tags),
+        account: r.account,
+        toAccount: r.toAccount,
+        nextGenerateAt: r.nextGenerateAt || (r.active ? getNextTriggerTime(r.cron) : null),
+        loanTotalAmount: r.loanTotalAmount,
+        loanRemainingAmount: r.loanRemainingAmount,
+        loanInterestRate: r.loanInterestRate,
+        loanInterestMethod: r.loanInterestMethod,
+        loanStartDate: r.loanStartDate?.toISOString().slice(0, 10),
+        loanTermMonths: r.loanTermMonths,
+        loanMonthlyPayment: r.loanMonthlyPayment,
+      })),
+    })
   },
 }

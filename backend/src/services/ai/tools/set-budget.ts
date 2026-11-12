@@ -1,6 +1,8 @@
 import { prisma } from '../../../app.js'
-import { assertIsMember, checkEnums, retryable, desensitize, type ToolResult } from '../security.js'
-import { BUDGET_TYPES, normalizeBudgetType } from '@homibook/core'
+import { checkEnums, desensitize, ToolError } from '../security.js'
+import { BUDGET_TYPES, BUDGET_TYPE_LABELS, normalizeBudgetType } from '@homibook/core'
+import type { ConfirmPreview } from '../runtime/preview-format.js'
+import type { PreviewScope } from '../runtime/preview-scope.js'
 import type { ToolDef, ToolContext } from './types.js'
 
 /** 入参枚举校验:非法预算类型直接回报给模型(否则会被归一化悄悄记成 FREE)。弹确认卡前与执行时共用 */
@@ -30,72 +32,98 @@ export const setBudgetTool: ToolDef = {
   requireConfirm: true,
   validateArgs,
 
-  async execute(args: any, ctx: ToolContext): Promise<ToolResult> {
+  /** 确认卡：预算金额/周期这类关键字段平铺成卡片，不查预算表（新建或整体覆盖） */
+  async confirmation(args: any, _ctx: ToolContext, scope: PreviewScope): Promise<string> {
+    let categoryLabel = ''
+    if (args.categoryCode) {
+      const map = await scope.categoryLabels([args.categoryCode])
+      categoryLabel = map.get(args.categoryCode) || args.categoryCode
+    }
+
+    const typeLabel = args.type === 'FIXED' ? BUDGET_TYPE_LABELS.FIXED : BUDGET_TYPE_LABELS.FREE
+    const period = args.type === 'FREE'
+      ? `${args.startDate || '?'} ~ ${args.endDate || '?'}`
+      : `${args.year}年${String(args.month).padStart(2, '0')}月`
+
+    const budgetFields: { label: string; value: string }[] = [
+      { label: '名称', value: args.name || '-' },
+      { label: '类型', value: typeLabel },
+      { label: '周期', value: period },
+      { label: '金额', value: Number(args.amount).toFixed(2) },
+    ]
+    if (categoryLabel) budgetFields.push({ label: '关联分类', value: categoryLabel })
+    if (args.remark) budgetFields.push({ label: '备注', value: args.remark })
+
+    const preview: ConfirmPreview = {
+      type: 'budget-card',
+      title: '确认设定预算',
+      budgetFields,
+    }
+    return JSON.stringify(preview)
+  },
+
+  async execute(args: any, ctx: ToolContext) {
     // 入参枚举校验(与弹确认卡前同一份规则)
     const badEnum = validateArgs(args)
-    if (badEnum) return badEnum
+    if (badEnum) throw new ToolError(badEnum.error ?? '参数非法', badEnum.retryable)
 
-    await assertIsMember(ctx.accountBookId, ctx.userId)
+    // upsert: 如果已存在则更新金额
+    const year = Number(args.year)
+    const month = Number(args.month)
+    const amount = Number(args.amount)
+    // 归一化:模型可能不遵守 schema 枚举,非法预算类型会让该预算在所有列表里查不到
+    const budgetType = normalizeBudgetType(args.type)
 
-    return retryable(async () => {
-      // upsert: 如果已存在则更新金额
-      const year = Number(args.year)
-      const month = Number(args.month)
-      const amount = Number(args.amount)
-      // 归一化:模型可能不遵守 schema 枚举,非法预算类型会让该预算在所有列表里查不到
-      const budgetType = normalizeBudgetType(args.type)
+    const existing = await prisma.budget.findUnique({
+      where: {
+        accountBookId_type_year_month_name: {
+          accountBookId: ctx.accountBookId,
+          type: budgetType,
+          year,
+          month,
+          name: args.name,
+        },
+      },
+    })
 
-      const existing = await prisma.budget.findUnique({
-        where: {
-          accountBookId_type_year_month_name: {
-            accountBookId: ctx.accountBookId,
-            type: budgetType,
-            year,
-            month,
-            name: args.name,
-          },
+    let budget
+    if (existing) {
+      budget = await prisma.budget.update({
+        where: { id: existing.id },
+        data: {
+          amount,
+          categoryCode: args.categoryCode,
+          tags: args.tags ? JSON.stringify(args.tags) : undefined,
+          startDate: args.startDate ? new Date(args.startDate) : undefined,
+          endDate: args.endDate ? new Date(args.endDate) : undefined,
+          remark: args.remark,
         },
       })
-
-      let budget
-      if (existing) {
-        budget = await prisma.budget.update({
-          where: { id: existing.id },
-          data: {
-            amount,
-            categoryCode: args.categoryCode,
-            tags: args.tags ? JSON.stringify(args.tags) : undefined,
-            startDate: args.startDate ? new Date(args.startDate) : undefined,
-            endDate: args.endDate ? new Date(args.endDate) : undefined,
-            remark: args.remark,
-          },
-        })
-      } else {
-        budget = await prisma.budget.create({
-          data: {
-            accountBookId: ctx.accountBookId,
-            name: args.name,
-            type: budgetType,
-            year,
-            month,
-            amount,
-            categoryCode: args.categoryCode,
-            tags: args.tags ? JSON.stringify(args.tags) : '[]',
-            startDate: args.startDate ? new Date(args.startDate) : undefined,
-            endDate: args.endDate ? new Date(args.endDate) : undefined,
-            remark: args.remark,
-          },
-        })
-      }
-
-      return desensitize({
-        id: budget.id,
-        name: budget.name,
-        type: budget.type,
-        year: budget.year,
-        month: budget.month,
-        amount: budget.amount,
+    } else {
+      budget = await prisma.budget.create({
+        data: {
+          accountBookId: ctx.accountBookId,
+          name: args.name,
+          type: budgetType,
+          year,
+          month,
+          amount,
+          categoryCode: args.categoryCode,
+          tags: args.tags ? JSON.stringify(args.tags) : '[]',
+          startDate: args.startDate ? new Date(args.startDate) : undefined,
+          endDate: args.endDate ? new Date(args.endDate) : undefined,
+          remark: args.remark,
+        },
       })
-    }, 'set_budget')
+    }
+
+    return desensitize({
+      id: budget.id,
+      name: budget.name,
+      type: budget.type,
+      year: budget.year,
+      month: budget.month,
+      amount: budget.amount,
+    })
   },
 }

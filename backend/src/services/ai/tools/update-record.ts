@@ -1,5 +1,7 @@
 import { prisma } from '../../../app.js'
-import { assertIsMember, checkEnums, retryable, desensitize, type ToolResult } from '../security.js'
+import { checkEnums, desensitize, ToolError } from '../security.js'
+import { TYPE_LABELS, genericPreview, type ConfirmPreview } from '../runtime/preview-format.js'
+import type { PreviewScope } from '../runtime/preview-scope.js'
 import type { ToolDef, ToolContext } from './types.js'
 import { resolveAccountId } from './helpers.js'
 import { refreshAccountBalance } from '../../account.js'
@@ -37,17 +39,87 @@ export const updateRecordTool: ToolDef = {
   requireConfirm: true,
   validateArgs,
 
-  async execute(args: any, ctx: ToolContext): Promise<ToolResult> {
+  /** 确认卡：旧值取当前记录，新值取入参，只在真正变化时列出来 */
+  async confirmation(args: any, _ctx: ToolContext, scope: PreviewScope): Promise<string> {
+    const recordId = args.recordId || ''
+    const record = await scope.record(recordId)
+    if (!record) return genericPreview('修改流水', { error: `记录不存在: ${recordId}` })
+
+    const newCodes: string[] = [args.categoryCode].filter(Boolean)
+    const newAccountIds: string[] = [args.accountId, args.fromAccountId, args.toAccountId].filter(Boolean)
+    const [categoryMap, accountMap] = await Promise.all([
+      scope.categoryLabels([...newCodes, record.categoryCode || ''].filter(Boolean)),
+      scope.accountNames([
+        ...newAccountIds,
+        record.accountId || '',
+        record.fromAccountId || '',
+        record.toAccountId || '',
+      ].filter(Boolean)),
+    ])
+
+    const dateStr = (d: Date | string) => (typeof d === 'string' ? d : dateKey(d))
+
+    const fieldDefs: { key: string; label: string; format: (v: any) => string }[] = [
+      { key: 'type', label: '类型', format: (v) => TYPE_LABELS[v] || v },
+      { key: 'amount', label: '金额', format: (v) => Number(v).toFixed(2) },
+      { key: 'date', label: '日期', format: (v) => dateStr(v) },
+      { key: 'accountId', label: '账户', format: (v) => accountMap.get(v) || v },
+      { key: 'fromAccountId', label: '转出账户', format: (v) => accountMap.get(v) || v },
+      { key: 'toAccountId', label: '转入账户', format: (v) => accountMap.get(v) || v },
+      { key: 'categoryCode', label: '分类', format: (v) => categoryMap.get(v) || v },
+      { key: 'remark', label: '备注', format: (v) => v || '-' },
+      { key: 'payer', label: '交易方', format: (v) => v || '-' },
+    ]
+
+    const fields: { label: string; before: string; after: string }[] = []
+    for (const f of fieldDefs) {
+      const newVal = args[f.key]
+      if (newVal === undefined || newVal === null) continue
+      const before = f.format((record as unknown as Record<string, unknown>)[f.key])
+      const after = f.format(newVal)
+      if (before !== after) fields.push({ label: f.label, before, after })
+    }
+
+    // 附件三种语义互斥：删除 / 追加 / 整体替换
+    const attRemoveCount = args.removeAttachmentIds?.length || 0
+    const attAddCount = args.addAttachmentIds?.length || 0
+    const hasAttReplace = Array.isArray(args.attachmentIds)
+    if (attRemoveCount > 0) fields.push({ label: '附件', before: '-', after: `删除 ${attRemoveCount} 个` })
+    if (attAddCount > 0) fields.push({ label: '附件', before: '-', after: `追加 ${attAddCount} 个` })
+    if (hasAttReplace) fields.push({ label: '附件', before: '-', after: `替换为 ${args.attachmentIds.length} 个` })
+
+    if (fields.length === 0) {
+      return JSON.stringify({
+        type: 'generic',
+        title: '修改流水记录',
+        description: '未检测到任何字段变更',
+        text: `记录 ID: ${record.id}`,
+      } satisfies ConfirmPreview)
+    }
+
+    const preview: ConfirmPreview = {
+      type: 'record-changes',
+      title: '确认修改流水记录',
+      description: `${record.accountName || '-'} · ${categoryMap.get(record.categoryCode || '') || '无分类'} · ${TYPE_LABELS[record.type] || record.type} ${record.amount.toFixed(2)} · ${dateStr(record.date)}`,
+      changes: [{
+        id: record.id,
+        date: dateStr(record.date),
+        fields,
+      }],
+    }
+    return JSON.stringify(preview)
+  },
+
+  async execute(args: any, ctx: ToolContext) {
     // 入参枚举校验(与弹确认卡前同一份规则)
     const badEnum = validateArgs(args)
-    if (badEnum) return badEnum
+    if (badEnum) throw new ToolError(badEnum.error ?? '参数非法', badEnum.retryable)
 
     const existing = await prisma.record.findUnique({ where: { id: args.recordId } })
-    if (!existing) return { success: false, error: '记录不存在', retryable: false }
+    if (!existing) throw new ToolError('记录不存在', false)
 
-    await assertIsMember(existing.accountBookId, ctx.userId)
     if (existing.accountBookId !== ctx.accountBookId) {
-      return { success: false, error: '无权操作该记录', retryable: false }
+      throw new ToolError('无权操作该记录', false)
     }
 
     // 解析账户标识符（支持 accountNo 或 UUID）
@@ -55,21 +127,21 @@ export const updateRecordTool: ToolDef = {
     if (args.accountId) {
       resolvedAccountId = await resolveAccountId(args.accountId, ctx.accountBookId)
       if (!resolvedAccountId) {
-        return { success: false, error: `账户不存在: ${args.accountId}`, retryable: false }
+        throw new ToolError(`账户不存在: ${args.accountId}`, false)
       }
     }
     let resolvedFromId: string | null | undefined
     if (args.fromAccountId) {
       resolvedFromId = await resolveAccountId(args.fromAccountId, ctx.accountBookId)
       if (!resolvedFromId) {
-        return { success: false, error: `转出账户不存在: ${args.fromAccountId}`, retryable: false }
+        throw new ToolError(`转出账户不存在: ${args.fromAccountId}`, false)
       }
     }
     let resolvedToId: string | null | undefined
     if (args.toAccountId) {
       resolvedToId = await resolveAccountId(args.toAccountId, ctx.accountBookId)
       if (!resolvedToId) {
-        return { success: false, error: `转入账户不存在: ${args.toAccountId}`, retryable: false }
+        throw new ToolError(`转入账户不存在: ${args.toAccountId}`, false)
       }
     }
 
@@ -115,49 +187,47 @@ export const updateRecordTool: ToolDef = {
       }
     }
 
-    return retryable(async () => {
-      for (const op of attOps) await op()
+    for (const op of attOps) await op()
 
-      const data: Record<string, unknown> = {}
-      if (args.type) data.type = normalizeRecordType(args.type)
-      if (args.amount != null) data.amount = Number(args.amount)
-      if (args.date) data.date = parseDayStart(args.date)
-      if (resolvedAccountId) data.accountId = resolvedAccountId
-      if (args.categoryCode !== undefined) data.categoryCode = args.categoryCode
-      if (args.remark !== undefined) data.remark = args.remark
-      if (args.payer !== undefined) data.payer = args.payer
-      if (resolvedFromId !== undefined) data.fromAccountId = resolvedFromId
-      if (resolvedToId !== undefined) data.toAccountId = resolvedToId
+    const data: Record<string, unknown> = {}
+    if (args.type) data.type = normalizeRecordType(args.type)
+    if (args.amount != null) data.amount = Number(args.amount)
+    if (args.date) data.date = parseDayStart(args.date)
+    if (resolvedAccountId) data.accountId = resolvedAccountId
+    if (args.categoryCode !== undefined) data.categoryCode = args.categoryCode
+    if (args.remark !== undefined) data.remark = args.remark
+    if (args.payer !== undefined) data.payer = args.payer
+    if (resolvedFromId !== undefined) data.fromAccountId = resolvedFromId
+    if (resolvedToId !== undefined) data.toAccountId = resolvedToId
 
-      // 与 create_record 同口径:转账的 accountId 必须以 fromAccountId 为准。
-      // 只改 fromAccountId 而不动 accountId,会让这条记录重新变成脏数据。
-      const nextType = (data.type as string | undefined) ?? existing.type
-      const nextFrom = (data.fromAccountId as string | null | undefined) ?? existing.fromAccountId
-      if (nextType === 'TRANSFER' && nextFrom) data.accountId = nextFrom
+    // 与 create_record 同口径:转账的 accountId 必须以 fromAccountId 为准。
+    // 只改 fromAccountId 而不动 accountId,会让这条记录重新变成脏数据。
+    const nextType = (data.type as string | undefined) ?? existing.type
+    const nextFrom = (data.fromAccountId as string | null | undefined) ?? existing.fromAccountId
+    if (nextType === 'TRANSFER' && nextFrom) data.accountId = nextFrom
 
-      const record = await prisma.record.update({
-        where: { id: args.recordId },
-        data,
-        include: { account: { select: { name: true } } },
-      })
+    const record = await prisma.record.update({
+      where: { id: args.recordId },
+      data,
+      include: { account: { select: { name: true } } },
+    })
 
-      // 刷新余额缓存:新旧账户都要刷(改金额/改账户/改方向都会影响)
-      const touched = new Set(
-        [existing.accountId, existing.fromAccountId, existing.toAccountId,
-         record.accountId, record.fromAccountId, record.toAccountId].filter(Boolean) as string[],
-      )
-      for (const accId of touched) await refreshAccountBalance(accId)
+    // 刷新余额缓存:新旧账户都要刷(改金额/改账户/改方向都会影响)
+    const touched = new Set(
+      [existing.accountId, existing.fromAccountId, existing.toAccountId,
+       record.accountId, record.fromAccountId, record.toAccountId].filter(Boolean) as string[],
+    )
+    for (const accId of touched) await refreshAccountBalance(accId)
 
-      return desensitize({
-        id: record.id,
-        type: record.type,
-        amount: record.amount,
-        date: dateKey(record.date),
-        accountName: record.account.name,
-        categoryCode: record.categoryCode,
-        remark: record.remark,
-        updated: true,
-      })
-    }, 'update_record')
+    return desensitize({
+      id: record.id,
+      type: record.type,
+      amount: record.amount,
+      date: dateKey(record.date),
+      accountName: record.account.name,
+      categoryCode: record.categoryCode,
+      remark: record.remark,
+      updated: true,
+    })
   },
 }

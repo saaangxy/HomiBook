@@ -5,6 +5,8 @@ export const suggestOptionsTool: ToolDef = {
   displayName: '建议选项',
   promptHint: '用户操作意图明确但缺少具体参数时使用',
   description: '当需要用户选择或补充信息时调用。可同时提出多个问题，一次收集所有缺失信息。向用户展示每个问题的选项列表并等待用户选择或输入，结果会作为工具返回值传给模型继续对话。',
+  // 执行后挂起：返回问题列表，等用户选择/填写后续流
+  pause: 'suggestion',
   parameters: {
     type: 'object',
     properties: {
@@ -48,8 +50,20 @@ export const suggestOptionsTool: ToolDef = {
     required: ['questions'],
   },
 
-  // 由路由层特殊处理，不会走到这里
-  async execute(_args: any, _ctx: ToolContext) {
-    return { success: false, error: 'suggest_options 应由路由层处理', retryable: false }
+  /**
+   * 执行结果就是问题列表本身（挂起卡要渲染的内容）。
+   * 用户选择后的真实取值不在这里构造 —— 那条路径在 /confirm 路由，作为工具结果回填。
+   */
+  async execute(args: { questions?: unknown[] }, _ctx: ToolContext) {
+    const questions = (Array.isArray(args?.questions) ? args.questions : []).map((q) => {
+      const item = q as { question?: unknown; field?: unknown; options?: unknown; allowCustom?: unknown }
+      return {
+        question: String(item?.question ?? ''),
+        field: String(item?.field ?? ''),
+        options: Array.isArray(item?.options) ? item.options : [],
+        allowCustom: item?.allowCustom !== false,
+      }
+    })
+    return { questions }
   },
 }

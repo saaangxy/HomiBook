@@ -108,7 +108,9 @@ export async function generateRecord(rt: RecurringTxParams, client: PrismaLike =
             accountBookId: rt.accountBookId,
             type: normalizeRecordType(rt.type),
             amount,
-            date: now,
+            // 用还款日而非调度时刻：逾期补生成时 now 可能已跨月，
+            // 会让「流水日期」与「备注里的本金/利息（属 planItem 那一期）」对不上
+            date: planItem.dueDate,
             remark: remark.trim(),
             tags: JSON.stringify(tags),
             accountId: rt.accountId,

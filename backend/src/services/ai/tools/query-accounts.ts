@@ -1,6 +1,6 @@
 import { prisma } from '../../../app.js'
 import { computeAccountBalance } from '../../account.js'
-import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
+import { desensitize } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 
 export const queryAccountsTool: ToolDef = {
@@ -15,44 +15,41 @@ export const queryAccountsTool: ToolDef = {
     properties: {},
   },
 
-  async execute(_args: unknown, ctx: ToolContext): Promise<ToolResult> {
-    await assertIsMember(ctx.accountBookId, ctx.userId)
+  async execute(_args: unknown, ctx: ToolContext) {
 
-    return retryable(async () => {
-      const rows = await prisma.account.findMany({
-        where: { accountBookId: ctx.accountBookId, status: 'ACTIVE' },
-        select: {
-          id: true,
-          name: true,
-          type: true,
-          currency: true,
-          accountNo: true,
-          bankName: true,
-          ownerId: true,
-          owner: { select: { nickname: true, email: true } },
-        },
-        orderBy: { name: 'asc' },
-      })
+    const rows = await prisma.account.findMany({
+      where: { accountBookId: ctx.accountBookId, status: 'ACTIVE' },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        currency: true,
+        accountNo: true,
+        bankName: true,
+        ownerId: true,
+        owner: { select: { nickname: true, email: true } },
+      },
+      orderBy: { name: 'asc' },
+    })
 
-      // 余额**实时计算**
-      // 与 REST /api/accounts 的 computedBalance 同口径。
-      const balances = await Promise.all(rows.map(a => computeAccountBalance(a.id)))
+    // 余额**实时计算**
+    // 与 REST /api/accounts 的 computedBalance 同口径。
+    const balances = await Promise.all(rows.map(a => computeAccountBalance(a.id)))
 
-      // 归属人展示名:多成员账本下同一名称可能有多个账户(如各人的「微信」),没有它模型无法区分,
-      // 生成的「请选择账户」选项就会撞名(与 REST /api/accounts 的 ownerName 同口径)
-      const accounts = rows.map(({ owner, ...a }, i) => ({
-        ...a,
-        balance: Math.round(balances[i] * 100) / 100,
-        ownerName: owner?.nickname || owner?.email || null,
-      }))
+    // 归属人展示名:多成员账本下同一名称可能有多个账户(如各人的「微信」),没有它模型无法区分,
+    // 生成的「请选择账户」选项就会撞名(与 REST /api/accounts 的 ownerName 同口径)
+    const accounts = rows.map(({ owner, ...a }, i) => ({
+      ...a,
+      balance: Math.round(balances[i] * 100) / 100,
+      ownerName: owner?.nickname || owner?.email || null,
+    }))
 
-      const totalBalance = accounts.reduce((sum, a) => sum + a.balance, 0)
+    const totalBalance = accounts.reduce((sum, a) => sum + a.balance, 0)
 
-      return desensitize({
-        totalBalance: Math.round(totalBalance * 100) / 100,
-        count: accounts.length,
-        accounts,
-      })
-    }, 'query_accounts')
+    return desensitize({
+      totalBalance: Math.round(totalBalance * 100) / 100,
+      count: accounts.length,
+      accounts,
+    })
   },
 }

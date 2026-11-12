@@ -1,5 +1,5 @@
 import { prisma } from '../../../app.js'
-import { assertIsMember, checkEnums, retryable, desensitize, type ToolResult } from '../security.js'
+import { checkEnums, desensitize, ToolError } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
 import { dayStartOf, parseDayStart, parseDayEnd, dateKey, monthKey } from '../../../lib/date-time.js'
 import { STAT_GRANULARITIES } from '@homibook/core'
@@ -27,127 +27,123 @@ export const queryBalanceHistoryTool: ToolDef = {
     required: ['granularity', 'dateFrom', 'dateTo'],
   },
 
-  async execute(args: BalanceHistoryArgs, ctx: ToolContext): Promise<ToolResult> {
+  async execute(args: BalanceHistoryArgs, ctx: ToolContext) {
     // 入参枚举校验:非法粒度直接回报给模型
     const badEnum = checkEnums({ granularity: [args.granularity, STAT_GRANULARITIES] })
-    if (badEnum) return badEnum
+    if (badEnum) throw new ToolError(badEnum.error ?? '参数非法', badEnum.retryable)
 
-    await assertIsMember(ctx.accountBookId, ctx.userId)
+    const accountFilter = args.accountIds
+      ? args.accountIds.split(',').map((s: string) => s.trim()).filter(Boolean)
+      : null
 
-    return retryable(async () => {
-      const accountFilter = args.accountIds
-        ? args.accountIds.split(',').map((s: string) => s.trim()).filter(Boolean)
-        : null
+    const accounts = await prisma.account.findMany({
+      where: {
+        accountBookId: ctx.accountBookId,
+        ...(accountFilter ? { id: { in: accountFilter } } : {}),
+      },
+      orderBy: { createdAt: 'asc' },
+    })
 
-      const accounts = await prisma.account.findMany({
-        where: {
-          accountBookId: ctx.accountBookId,
-          ...(accountFilter ? { id: { in: accountFilter } } : {}),
-        },
-        orderBy: { createdAt: 'asc' },
+    // 查询范围锚定本地日(与分桶口径一致)
+    const startDate = parseDayStart(args.dateFrom)
+    const endDate = parseDayEnd(args.dateTo)
+
+    const result = []
+
+    for (const account of accounts) {
+      const latestAdjustment = await prisma.balanceAdjustment.findFirst({
+        where: { accountId: account.id, date: { lt: startDate } },
+        orderBy: { date: 'desc' },
       })
 
-      // 查询范围锚定本地日(与分桶口径一致)
-      const startDate = parseDayStart(args.dateFrom)
-      const endDate = parseDayEnd(args.dateTo)
+      const baseBalance = latestAdjustment?.balanceAfter ?? account.initialBalance ?? 0
+      const baseDate = latestAdjustment?.date ?? null
 
-      const result = []
-
-      for (const account of accounts) {
-        const latestAdjustment = await prisma.balanceAdjustment.findFirst({
-          where: { accountId: account.id, date: { lt: startDate } },
-          orderBy: { date: 'desc' },
-        })
-
-        const baseBalance = latestAdjustment?.balanceAfter ?? account.initialBalance ?? 0
-        const baseDate = latestAdjustment?.date ?? null
-
-        const preRecords = await prisma.record.findMany({
-          where: {
-            OR: [
-              { accountId: account.id },
-              { fromAccountId: account.id },
-              { toAccountId: account.id },
-            ],
-            date: {
-              ...(baseDate ? { gt: dayStartOf(baseDate) } : {}),
-              lt: startDate,
-            },
+      const preRecords = await prisma.record.findMany({
+        where: {
+          OR: [
+            { accountId: account.id },
+            { fromAccountId: account.id },
+            { toAccountId: account.id },
+          ],
+          date: {
+            ...(baseDate ? { gt: dayStartOf(baseDate) } : {}),
+            lt: startDate,
           },
-          select: { type: true, amount: true, accountId: true, fromAccountId: true, toAccountId: true },
-        })
+        },
+        select: { type: true, amount: true, accountId: true, fromAccountId: true, toAccountId: true },
+      })
 
-        let runningBalance = baseBalance
-        for (const r of preRecords) {
-          if (r.accountId === account.id && r.type === 'INCOME') runningBalance += r.amount
-          else if (r.accountId === account.id && r.type === 'EXPENSE') runningBalance -= r.amount
-          else if (r.fromAccountId === account.id && r.type === 'TRANSFER') runningBalance -= r.amount
-          else if (r.toAccountId === account.id && r.type === 'TRANSFER') runningBalance += r.amount
-        }
-
-        const rangeRecords = await prisma.record.findMany({
-          where: {
-            OR: [
-              { accountId: account.id },
-              { fromAccountId: account.id },
-              { toAccountId: account.id },
-            ],
-            date: { gte: startDate, lte: endDate },
-          },
-          select: { type: true, amount: true, date: true, accountId: true, fromAccountId: true, toAccountId: true },
-          orderBy: { date: 'asc' },
-        })
-
-        const periodMap: Record<string, number> = {}
-        for (const r of rangeRecords) {
-          const key = args.granularity === 'monthly'
-            ? monthKey(r.date)
-            : dateKey(r.date)
-          if (!periodMap[key]) periodMap[key] = 0
-          if (r.accountId === account.id && r.type === 'INCOME') periodMap[key] += r.amount
-          else if (r.accountId === account.id && r.type === 'EXPENSE') periodMap[key] -= r.amount
-          else if (r.fromAccountId === account.id && r.type === 'TRANSFER') periodMap[key] -= r.amount
-          else if (r.toAccountId === account.id && r.type === 'TRANSFER') periodMap[key] += r.amount
-        }
-
-        const rangeAdjustments = await prisma.balanceAdjustment.findMany({
-          where: { accountId: account.id, date: { gte: startDate, lte: endDate } },
-          orderBy: { date: 'asc' },
-        })
-        const adjustmentMap: Record<string, number> = {}
-        for (const adj of rangeAdjustments) {
-          const key = args.granularity === 'monthly'
-            ? monthKey(adj.date)
-            : dateKey(adj.date)
-          adjustmentMap[key] = adj.balanceAfter
-        }
-
-        // 生成本地日期/月份键序列
-        const keys: string[] = []
-        if (args.granularity === 'monthly') {
-          let [y, m] = monthKey(startDate).split('-').map(Number)
-          const [ey, em] = monthKey(endDate).split('-').map(Number)
-          while (y < ey || (y === ey && m <= em)) {
-            keys.push(`${y}-${String(m).padStart(2, '0')}`)
-            m += 1
-            if (m > 12) { m = 1; y += 1 }
-          }
-        } else {
-          for (let t = startDate.getTime(); t <= endDate.getTime(); t += 86_400_000) {
-            keys.push(dateKey(new Date(t)))
-          }
-        }
-
-        const balances: { date: string; balance: number }[] = keys.map((key) => {
-          if (adjustmentMap[key] !== undefined) runningBalance = adjustmentMap[key]
-          if (periodMap[key] !== undefined) runningBalance += periodMap[key]
-          return { date: key, balance: Math.round(runningBalance * 100) / 100 }
-        })
-
-        result.push({ accountId: account.id, accountName: account.name, balances })
+      let runningBalance = baseBalance
+      for (const r of preRecords) {
+        if (r.accountId === account.id && r.type === 'INCOME') runningBalance += r.amount
+        else if (r.accountId === account.id && r.type === 'EXPENSE') runningBalance -= r.amount
+        else if (r.fromAccountId === account.id && r.type === 'TRANSFER') runningBalance -= r.amount
+        else if (r.toAccountId === account.id && r.type === 'TRANSFER') runningBalance += r.amount
       }
 
-      return desensitize({ accounts: result })
-    }, 'query_balance_history')
+      const rangeRecords = await prisma.record.findMany({
+        where: {
+          OR: [
+            { accountId: account.id },
+            { fromAccountId: account.id },
+            { toAccountId: account.id },
+          ],
+          date: { gte: startDate, lte: endDate },
+        },
+        select: { type: true, amount: true, date: true, accountId: true, fromAccountId: true, toAccountId: true },
+        orderBy: { date: 'asc' },
+      })
+
+      const periodMap: Record<string, number> = {}
+      for (const r of rangeRecords) {
+        const key = args.granularity === 'monthly'
+          ? monthKey(r.date)
+          : dateKey(r.date)
+        if (!periodMap[key]) periodMap[key] = 0
+        if (r.accountId === account.id && r.type === 'INCOME') periodMap[key] += r.amount
+        else if (r.accountId === account.id && r.type === 'EXPENSE') periodMap[key] -= r.amount
+        else if (r.fromAccountId === account.id && r.type === 'TRANSFER') periodMap[key] -= r.amount
+        else if (r.toAccountId === account.id && r.type === 'TRANSFER') periodMap[key] += r.amount
+      }
+
+      const rangeAdjustments = await prisma.balanceAdjustment.findMany({
+        where: { accountId: account.id, date: { gte: startDate, lte: endDate } },
+        orderBy: { date: 'asc' },
+      })
+      const adjustmentMap: Record<string, number> = {}
+      for (const adj of rangeAdjustments) {
+        const key = args.granularity === 'monthly'
+          ? monthKey(adj.date)
+          : dateKey(adj.date)
+        adjustmentMap[key] = adj.balanceAfter
+      }
+
+      // 生成本地日期/月份键序列
+      const keys: string[] = []
+      if (args.granularity === 'monthly') {
+        let [y, m] = monthKey(startDate).split('-').map(Number)
+        const [ey, em] = monthKey(endDate).split('-').map(Number)
+        while (y < ey || (y === ey && m <= em)) {
+          keys.push(`${y}-${String(m).padStart(2, '0')}`)
+          m += 1
+          if (m > 12) { m = 1; y += 1 }
+        }
+      } else {
+        for (let t = startDate.getTime(); t <= endDate.getTime(); t += 86_400_000) {
+          keys.push(dateKey(new Date(t)))
+        }
+      }
+
+      const balances: { date: string; balance: number }[] = keys.map((key) => {
+        if (adjustmentMap[key] !== undefined) runningBalance = adjustmentMap[key]
+        if (periodMap[key] !== undefined) runningBalance += periodMap[key]
+        return { date: key, balance: Math.round(runningBalance * 100) / 100 }
+      })
+
+      result.push({ accountId: account.id, accountName: account.name, balances })
+    }
+
+    return desensitize({ accounts: result })
   },
 }

@@ -10,9 +10,9 @@
  * 实测单次请求炸到 **320 万 token**(远超 1M 上限,上游 400,整轮对话中断)。
  * 视觉问答与供应商能力解耦,也不会撑爆上下文。
  */
+import { ToolError } from '../security.js'
 import type { ToolDef } from './types.js'
 import { prisma } from '../../../app.js'
-import { assertIsMember } from '../security.js'
 import { askImage } from '../image-context.js'
 import { PARTS_PER_CALL } from '../vision-window.js'
 import { stripThinkTags } from '../context-compress.js'
@@ -53,18 +53,17 @@ export const viewImageTool: ToolDef = {
 
   execute: async (args: { attachmentId: string; question?: string; needImage?: boolean; fromPart?: number; toPart?: number }, ctx) => {
     const { userId, accountBookId } = ctx
-    await assertIsMember(accountBookId, userId)
 
     const attachment = await prisma.recordAttachment.findUnique({
       where: { id: args.attachmentId },
       select: { id: true, path: true, originalFilename: true, records: { select: { accountBookId: true } } },
     })
-    if (!attachment) return { success: false, error: '附件不存在', retryable: false }
+    if (!attachment) throw new ToolError('附件不存在', false)
 
     // 与 ocr_receipt 同口径:已关联流水时校验流水属于当前账本
     // 附件是多对多:只要有一条关联记录属于当前账本就放行,全部属于别的账本才拒绝
     if (attachment.records.length > 0 && !attachment.records.some((r) => r.accountBookId === accountBookId)) {
-      return { success: false, error: '无权访问该附件', retryable: false }
+      throw new ToolError('无权访问该附件', false)
     }
 
     // needImage=true:模型明确要求自己看图 —— 不再让视觉模型代答一遍(同一张图花两次调用),
@@ -76,42 +75,34 @@ export const viewImageTool: ToolDef = {
         ? undefined
         : Math.max(fromPart, Math.floor(Number(args.toPart)) || fromPart)
       return {
-        success: true,
-        retryable: false,
-        data: {
-          attachmentId: attachment.id,
-          originalFilename: attachment.originalFilename,
-          requestImage: true,
-          fromPart,
-          toPart,
-          hint:
-            fromPart > 1 || toPart !== undefined
-              ? `原图将在本次回复的下一步注入(第 ${fromPart}~${toPart ?? fromPart + PARTS_PER_CALL - 1} 段,超出部分会按上限收敛),届时你自己看图作答。`
-              : '原图将在本次回复的下一步注入,届时你自己看图作答;本轮可先简述已从摘要中确认的信息。',
-        },
+        attachmentId: attachment.id,
+        originalFilename: attachment.originalFilename,
+        requestImage: true,
+        fromPart,
+        toPart,
+        hint:
+          fromPart > 1 || toPart !== undefined
+            ? `原图将在本次回复的下一步注入(第 ${fromPart}~${toPart ?? fromPart + PARTS_PER_CALL - 1} 段,超出部分会按上限收敛),届时你自己看图作答。`
+            : '原图将在本次回复的下一步注入,届时你自己看图作答;本轮可先简述已从摘要中确认的信息。',
       }
     }
 
     const question = (args.question || '').trim() || '这张图片里有哪些值得注意的视觉细节?'
 
     const res = await askImage(attachment, question, userId)
-    if ('error' in res) return { success: false, error: res.error, retryable: false }
+    if ('error' in res) throw new ToolError(res.error, false)
 
     return {
-      success: true,
-      retryable: false,
-      data: {
-        attachmentId: attachment.id,
-        originalFilename: attachment.originalFilename,
-        question,
-        // 视觉模型常把推理过程写在 think 里并混进答案,主模型收到的是无用英文推理 → 先剥掉
-        answer: stripThinkTags(res.answer),
-        /**
-         * 请求下一轮把该图作为图片重新注入(由 chat.ts 收集并在下次请求时附加一次)。
-         * 不能把 base64 放进 tool-result —— openai-compatible 会当文本,单图就能把请求撑到 300 万 token。
-         */
-        requestImage: !!args.needImage,
-      },
+      attachmentId: attachment.id,
+      originalFilename: attachment.originalFilename,
+      question,
+      // 视觉模型常把推理过程写在 think 里并混进答案,主模型收到的是无用英文推理 → 先剥掉
+      answer: stripThinkTags(res.answer),
+      /**
+       * 请求下一轮把该图作为图片重新注入(由 chat.ts 收集并在下次请求时附加一次)。
+       * 不能把 base64 放进 tool-result —— openai-compatible 会当文本,单图就能把请求撑到 300 万 token。
+       */
+      requestImage: !!args.needImage,
     }
   },
 }

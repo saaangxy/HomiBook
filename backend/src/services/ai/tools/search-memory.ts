@@ -1,5 +1,4 @@
 import type { ToolDef, ToolContext } from './types.js'
-import type { ToolResult } from '../security.js'
 import { searchMemoriesByKeyword } from '../memory.js'
 
 export const searchMemoryTool: ToolDef = {
@@ -17,21 +16,17 @@ export const searchMemoryTool: ToolDef = {
     required: ['query'],
   },
 
-  async execute(args: any, ctx: ToolContext): Promise<ToolResult> {
+  async execute(args: any, ctx: ToolContext) {
     const { query, limit } = args as { query: string; limit?: number }
     const memories = await searchMemoriesByKeyword(ctx.userId, query, limit || 5)
     return {
-      success: true,
-      retryable: false,
-      data: {
-        memories: memories.map(m => ({
-          id: m.id,
-          content: m.content,
-          memoryType: m.memoryType,
-          importance: m.importance,
-        })),
-        count: memories.length,
-      },
+      memories: memories.map(m => ({
+        id: m.id,
+        content: m.content,
+        memoryType: m.memoryType,
+        importance: m.importance,
+      })),
+      count: memories.length,
     }
   },
 }

@@ -1,5 +1,5 @@
 import { prisma } from '../../../app.js'
-import { assertIsMember, checkEnums, retryable, desensitize, type ToolResult } from '../security.js'
+import { checkEnums, desensitize, ToolError } from '../security.js'
 import { DEDUP_DATE_PRECISIONS, buildDuplicateKey } from '@homibook/core'
 import type { ToolDef, ToolContext } from './types.js'
 import { dateKey } from '../../../lib/date-time.js'
@@ -38,52 +38,48 @@ export const detectDuplicatesTool: ToolDef = {
     required: ['matchFields'],
   },
 
-  async execute(args: DetectDuplicatesArgs, ctx: ToolContext): Promise<ToolResult> {
+  async execute(args: DetectDuplicatesArgs, ctx: ToolContext) {
     // 入参枚举校验:日期精度非法值直接回报给模型(null=忽略日期,视为未传故不校验)
     const badEnum = checkEnums({ 'matchFields.date': [args.matchFields?.date, DEDUP_DATE_PRECISIONS] })
-    if (badEnum) return badEnum
+    if (badEnum) throw new ToolError(badEnum.error ?? '参数非法', badEnum.retryable)
 
-    await assertIsMember(ctx.accountBookId, ctx.userId)
+    const records = await prisma.record.findMany({
+      where: { accountBookId: ctx.accountBookId },
+      include: { account: { select: { name: true } } },
+      orderBy: { date: 'asc' },
+    })
 
-    return retryable(async () => {
-      const records = await prisma.record.findMany({
-        where: { accountBookId: ctx.accountBookId },
-        include: { account: { select: { name: true } } },
-        orderBy: { date: 'asc' },
-      })
+    const { matchFields } = args
+    const groups = new Map<string, typeof records>()
 
-      const { matchFields } = args
-      const groups = new Map<string, typeof records>()
+    for (const r of records) {
+      // AI 参数协议不含 ownerId → 显式关闭,分组行为与迁移前一致,同时与 core 契约对齐
+      const key = buildDuplicateKey(r, { ...matchFields, ownerId: false })
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key)!.push(r)
+    }
 
-      for (const r of records) {
-        // AI 参数协议不含 ownerId → 显式关闭,分组行为与迁移前一致,同时与 core 契约对齐
-        const key = buildDuplicateKey(r, { ...matchFields, ownerId: false })
-        if (!groups.has(key)) groups.set(key, [])
-        groups.get(key)!.push(r)
-      }
+    const duplicateGroups = Array.from(groups.entries())
+      .filter(([, recs]) => recs.length > 1)
+      .map(([key, recs]) => ({
+        key,
+        count: recs.length,
+        records: recs.slice(0, 5).map((r) => ({
+          id: r.id,
+          type: r.type,
+          amount: r.amount,
+          date: dateKey(r.date),
+          remark: r.remark,
+          accountName: r.account.name,
+          payer: r.payer,
+        })),
+        totalInGroup: recs.length,
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10)
 
-      const duplicateGroups = Array.from(groups.entries())
-        .filter(([, recs]) => recs.length > 1)
-        .map(([key, recs]) => ({
-          key,
-          count: recs.length,
-          records: recs.slice(0, 5).map((r) => ({
-            id: r.id,
-            type: r.type,
-            amount: r.amount,
-            date: dateKey(r.date),
-            remark: r.remark,
-            accountName: r.account.name,
-            payer: r.payer,
-          })),
-          totalInGroup: recs.length,
-        }))
-        .sort((a, b) => b.count - a.count)
-        .slice(0, 10)
+    const totalDuplicates = duplicateGroups.reduce((sum, g) => sum + g.totalInGroup - 1, 0)
 
-      const totalDuplicates = duplicateGroups.reduce((sum, g) => sum + g.totalInGroup - 1, 0)
-
-      return desensitize({ totalDuplicates, groups: duplicateGroups })
-    }, 'detect_duplicates')
+    return desensitize({ totalDuplicates, groups: duplicateGroups })
   },
 }

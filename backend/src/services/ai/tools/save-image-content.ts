@@ -10,9 +10,9 @@
  *
  * 注意:本工具不修改任何账务数据,requireConfirm 必须为 false(弹确认卡会打断对话)。
  */
+import { ToolError } from '../security.js'
 import type { ToolDef } from './types.js'
 import { prisma } from '../../../app.js'
-import { assertIsMember } from '../security.js'
 
 /** 图中文字的存储上限:注入段本身还有 600 字截断,这里只防模型输出异常长文本 */
 const MAX_TEXT_CHARS = 4000
@@ -25,6 +25,8 @@ export const saveImageContentTool: ToolDef = {
     '把你在这张图片里看到的内容固化下来(摘要 / 图中文字 / 关键字段)。' +
     '这样后续轮次凭这些文字就能记得图片,不必重发图片。' +
     '不会修改任何账务数据,不需要用户确认。每张图各调用一次。',
+  // 只给界面一个「处理中」提示，不落 toolCallEntries（历史回看不留痕）
+  uiHintOnly: true,
   parameters: {
     type: 'object',
     properties: {
@@ -47,23 +49,22 @@ export const saveImageContentTool: ToolDef = {
   ) => {
     // console.log(`记录图片内容 ${args.attachmentId} ${args.summary} ${args.text}`)
     const { userId, accountBookId } = ctx
-    await assertIsMember(accountBookId, userId)
 
     const attachmentId = (args.attachmentId || '').trim()
     const summary = (args.summary || '').trim()
-    if (!attachmentId) return { success: false, error: '缺少 attachmentId', retryable: false }
-    if (!summary) return { success: false, error: '缺少 summary', retryable: false }
+    if (!attachmentId) throw new ToolError('缺少 attachmentId', false)
+    if (!summary) throw new ToolError('缺少 summary', false)
 
     const attachment = await prisma.recordAttachment.findUnique({
       where: { id: attachmentId },
       select: { id: true, records: { select: { accountBookId: true } } },
     })
-    if (!attachment) return { success: false, error: '附件不存在', retryable: false }
+    if (!attachment) throw new ToolError('附件不存在', false)
 
     // 与 view_image / ocr_receipt 同口径:已关联流水时校验流水属于当前账本
     // 附件是多对多:只要有一条关联记录属于当前账本就放行,全部属于别的账本才拒绝
     if (attachment.records.length > 0 && !attachment.records.some((r) => r.accountBookId === accountBookId)) {
-      return { success: false, error: '无权访问该附件', retryable: false }
+      throw new ToolError('无权访问该附件', false)
     }
 
     const text = (args.text || '').trim().slice(0, MAX_TEXT_CHARS)
@@ -79,10 +80,6 @@ export const saveImageContentTool: ToolDef = {
       },
     })
 
-    return {
-      success: true,
-      retryable: false,
-      data: { attachmentId: attachment.id, saved: true },
-    }
+    return { attachmentId: attachment.id, saved: true }
   },
 }

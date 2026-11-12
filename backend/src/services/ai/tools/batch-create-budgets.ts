@@ -1,6 +1,8 @@
 import { prisma } from '../../../app.js'
-import { assertIsMember, checkEnums, retryable, desensitize, type ToolResult } from '../security.js'
-import { BUDGET_TYPES, normalizeBudgetType, type BudgetType } from '@homibook/core'
+import { checkEnums, desensitize, ToolError } from '../security.js'
+import { BUDGET_TYPE_LABELS, BUDGET_TYPES, normalizeBudgetType, type BudgetType } from '@homibook/core'
+import type { ConfirmPreview } from '../runtime/preview-format.js'
+import type { PreviewScope } from '../runtime/preview-scope.js'
 import type { ToolDef, ToolContext } from './types.js'
 
 interface BatchCreateBudgetsArgs {
@@ -43,54 +45,70 @@ export const batchCreateBudgetsTool: ToolDef = {
   requireConfirm: true,
   validateArgs,
 
-  async execute(args: BatchCreateBudgetsArgs, ctx: ToolContext): Promise<ToolResult> {
+  /** 确认卡：同一配置铺到多个月份，月份列表写在一行 */
+  async confirmation(args: any, _ctx: ToolContext, scope: PreviewScope): Promise<string> {
+    const categoryMap = args.categoryCode ? await scope.categoryLabels([args.categoryCode]) : new Map<string, string>()
+    const monthsText = (args.months || []).map((m: number) => `${args.year}年${m}月`).join('、')
+
+    const preview: ConfirmPreview = {
+      type: 'budget-card',
+      title: `确认批量创建 ${(args.months || []).length} 个月份的预算`,
+      budgetFields: [
+        { label: '名称', value: args.name || '-' },
+        { label: '类型', value: args.type === 'FIXED' ? BUDGET_TYPE_LABELS.FIXED : BUDGET_TYPE_LABELS.FREE },
+        { label: '金额', value: `每月 ${(args.amount ?? 0).toFixed(2)}` },
+        { label: '月份', value: monthsText || '-' },
+        ...(args.categoryCode ? [{ label: '关联分类', value: categoryMap.get(args.categoryCode) || args.categoryCode }] : []),
+        ...(args.remark ? [{ label: '备注', value: args.remark }] : []),
+      ],
+    }
+    return JSON.stringify(preview)
+  },
+
+  async execute(args: BatchCreateBudgetsArgs, ctx: ToolContext) {
     // 入参枚举校验(与弹确认卡前同一份规则)
     const badEnum = validateArgs(args)
-    if (badEnum) return badEnum
+    if (badEnum) throw new ToolError(badEnum.error ?? '参数非法', badEnum.retryable)
 
-    await assertIsMember(ctx.accountBookId, ctx.userId)
+    const tagsJson = JSON.stringify(args.tags || [])
+    const created: { month: number; id: string }[] = []
+    // 归一化:模型可能不遵守 schema 枚举,非法预算类型会让该预算在所有列表里查不到
+    const budgetType = normalizeBudgetType(args.type)
 
-    return retryable(async () => {
-      const tagsJson = JSON.stringify(args.tags || [])
-      const created: { month: number; id: string }[] = []
-      // 归一化:模型可能不遵守 schema 枚举,非法预算类型会让该预算在所有列表里查不到
-      const budgetType = normalizeBudgetType(args.type)
-
-      await prisma.$transaction(async (tx) => {
-        for (const month of args.months) {
-          const existing = await tx.budget.findUnique({
-            where: {
-              accountBookId_type_year_month_name: {
-                accountBookId: ctx.accountBookId,
-                type: budgetType,
-                year: args.year,
-                month,
-                name: args.name,
-              },
-            },
-          })
-          if (existing) continue
-
-          const budget = await tx.budget.create({
-            data: {
+    await prisma.$transaction(async (tx) => {
+      for (const month of args.months) {
+        const existing = await tx.budget.findUnique({
+          where: {
+            accountBookId_type_year_month_name: {
               accountBookId: ctx.accountBookId,
-              name: args.name,
               type: budgetType,
               year: args.year,
               month,
-              amount: args.amount,
-              categoryCode: args.categoryCode,
-              tags: tagsJson,
-              startDate: args.startDate ? new Date(args.startDate) : undefined,
-              endDate: args.endDate ? new Date(args.endDate) : undefined,
-              remark: args.remark,
+              name: args.name,
             },
-          })
-          created.push({ month, id: budget.id })
-        }
-      })
+          },
+        })
+        if (existing) continue
 
-      return desensitize({ created: created.length, months: created })
-    }, 'batch_create_budgets')
+        const budget = await tx.budget.create({
+          data: {
+            accountBookId: ctx.accountBookId,
+            name: args.name,
+            type: budgetType,
+            year: args.year,
+            month,
+            amount: args.amount,
+            categoryCode: args.categoryCode,
+            tags: tagsJson,
+            startDate: args.startDate ? new Date(args.startDate) : undefined,
+            endDate: args.endDate ? new Date(args.endDate) : undefined,
+            remark: args.remark,
+          },
+        })
+        created.push({ month, id: budget.id })
+      }
+    })
+
+    return desensitize({ created: created.length, months: created })
   },
 }

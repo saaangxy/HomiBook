@@ -1,5 +1,4 @@
 import type { ToolDef, ToolContext } from './types.js'
-import type { ToolResult } from '../security.js'
 import { listMemories } from '../memory.js'
 
 export const listMemoriesTool: ToolDef = {
@@ -13,20 +12,16 @@ export const listMemoriesTool: ToolDef = {
     properties: {},
   },
 
-  async execute(_args: any, ctx: ToolContext): Promise<ToolResult> {
+  async execute(_args: any, ctx: ToolContext) {
     const memories = await listMemories(ctx.userId)
     return {
-      success: true,
-      retryable: false,
-      data: {
-        memories: memories.map(m => ({
-          id: m.id,
-          content: m.content,
-          memoryType: m.memoryType,
-          importance: m.importance,
-        })),
-        count: memories.length,
-      },
+      memories: memories.map(m => ({
+        id: m.id,
+        content: m.content,
+        memoryType: m.memoryType,
+        importance: m.importance,
+      })),
+      count: memories.length,
     }
   },
 }

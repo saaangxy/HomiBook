@@ -1,7 +1,9 @@
 import type { ToolDef, ToolContext } from './types.js'
 import { prisma } from '../../../app.js'
 import { IMPORT_SOURCE_DEFS, RECORD_TYPES } from '@homibook/core'
-import { checkEnumList, checkEnums } from '../security.js'
+import { checkEnumList, checkEnums, ToolError } from '../security.js'
+import type { ConfirmPreview } from '../runtime/preview-format.js'
+import type { PreviewScope } from '../runtime/preview-scope.js'
 
 /** 映射类型(本工具专属) */
 const MAPPING_TYPES = ['account', 'category'] as const
@@ -24,6 +26,63 @@ export const saveImportMappingTool: ToolDef = {
   description: '创建或更新导入映射规则（账户映射或分类映射）。保存后的规则会在后续导入时自动应用。应在用户确认映射建议后调用。',
   requireConfirm: true,
   validateArgs,
+
+  /** 确认卡：账户映射直接列出，分类映射要把编码翻成中文标签 */
+  async confirmation(args: any, _ctx: ToolContext, scope: PreviewScope): Promise<string> {
+    const { mappingType, source, mappings } = args as {
+      mappingType: 'account' | 'category'
+      source: string
+      mappings: any[]
+    }
+
+    if (!mappings || mappings.length === 0) {
+      return JSON.stringify({
+        type: 'generic',
+        title: '保存导入映射',
+        description: '映射列表为空',
+      } satisfies ConfirmPreview)
+    }
+
+    const sourceLabel: Record<string, string> = { alipay: '支付宝', wechat: '微信', jd: '京东' }
+    const title = mappingType === 'account'
+      ? `确认保存 ${mappings.length} 条账户映射规则（来源: ${sourceLabel[source] || source}）`
+      : `确认保存 ${mappings.length} 条分类映射规则（来源: ${sourceLabel[source] || source}）`
+
+    if (mappingType === 'account') {
+      const preview: ConfirmPreview = {
+        type: 'records-table',
+        title,
+        description: '保存后，后续导入时相同的源账户名将自动匹配到目标账户',
+        columns: ['源账户名', '目标账户', '交易方正则', '说明正则'],
+        rows: mappings.map((m) => [
+          { text: m.sourceAccountName },
+          { text: `${m.targetAccountName}` },
+          { text: m.payerContains || '-' },
+          { text: m.descriptionContains || '-' },
+        ]),
+      }
+      return JSON.stringify(preview)
+    }
+
+    const codes = [...new Set(mappings.map((m) => m.targetCategoryCode))] as string[]
+    const labelMap = await scope.categoryLabels(codes)
+
+    const preview: ConfirmPreview = {
+      type: 'records-table',
+      title,
+      description: '保存后，后续导入时相同的源分类名将自动映射到目标系统分类',
+      columns: ['源分类名', '目标分类', '交易方正则', '说明正则', '记录类型'],
+      rows: mappings.map((m) => [
+        { text: m.sourceCategory },
+        { text: `${labelMap.get(m.targetCategoryCode) || m.targetCategoryCode}` },
+        { text: m.payerContains || '-' },
+        { text: m.descriptionContains || '-' },
+        { text: m.recordType || '-' },
+      ]),
+    }
+    return JSON.stringify(preview)
+  },
+
   parameters: {
     type: 'object',
     properties: {
@@ -55,7 +114,7 @@ export const saveImportMappingTool: ToolDef = {
   async execute(args: any, _ctx: ToolContext) {
     // 入参枚举校验(与弹确认卡前同一份规则)
     const badEnum = validateArgs(args)
-    if (badEnum) return badEnum
+    if (badEnum) throw new ToolError(badEnum.error ?? '参数非法', badEnum.retryable)
 
     const { mappingType, source, mappings } = args as {
       mappingType: 'account' | 'category'
@@ -64,13 +123,13 @@ export const saveImportMappingTool: ToolDef = {
     }
 
     if (!Array.isArray(mappings) || mappings.length === 0) {
-      return { success: false, error: 'mappings 不能为空', retryable: false }
+      throw new ToolError('mappings 不能为空', false)
     }
 
     if (mappingType === 'account') {
       for (const m of mappings) {
         if (!m.sourceAccountName || !m.targetAccountName) {
-          return { success: false, error: '账户映射需要 sourceAccountName 和 targetAccountName', retryable: false }
+          throw new ToolError('账户映射需要 sourceAccountName 和 targetAccountName', false)
         }
       }
 
@@ -99,11 +158,11 @@ export const saveImportMappingTool: ToolDef = {
         results.push(result)
       }
 
-      return { success: true, retryable: false, data: { saved: results.length, mappingType: 'account' } }
+      return { saved: results.length, mappingType: 'account' }
     } else {
       for (const m of mappings) {
         if (!m.sourceCategory || !m.targetCategoryCode) {
-          return { success: false, error: '分类映射需要 sourceCategory 和 targetCategoryCode', retryable: false }
+          throw new ToolError('分类映射需要 sourceCategory 和 targetCategoryCode', false)
         }
       }
 
@@ -116,7 +175,7 @@ export const saveImportMappingTool: ToolDef = {
       const validCodes = new Set(dictEntries.map(d => d.code))
       for (const m of mappings) {
         if (!validCodes.has(m.targetCategoryCode)) {
-          return { success: false, error: `分类编码 "${m.targetCategoryCode}" 不存在`, retryable: false }
+          throw new ToolError(`分类编码 "${m.targetCategoryCode}" 不存在`, false)
         }
       }
 
@@ -148,7 +207,7 @@ export const saveImportMappingTool: ToolDef = {
         results.push(result)
       }
 
-      return { success: true, retryable: false, data: { saved: results.length, mappingType: 'category' } }
+      return { saved: results.length, mappingType: 'category' }
     }
   },
 }

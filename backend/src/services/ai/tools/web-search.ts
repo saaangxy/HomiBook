@@ -1,7 +1,7 @@
 import * as cheerio from 'cheerio'
+import { ToolError } from '../security.js'
 import { prisma } from '../../../app.js'
 import type { ToolDef, ToolContext } from './types.js'
-import type { ToolResult } from '../security.js'
 import { sanitizeExternalText as sanitizeText } from '../sanitize-text.js'
 
 export type SearchEngine = 'bing' | 'baidu' | 'google'
@@ -181,7 +181,7 @@ export const webSearchTool: ToolDef = {
     required: ['query'],
   },
 
-  async execute(args: any, _ctx: ToolContext): Promise<ToolResult> {
+  async execute(args: any, _ctx: ToolContext) {
     const { query, maxResults } = args as { query: string; maxResults?: number }
     const limit = Math.min(maxResults || 5, 10)
 
@@ -190,21 +190,13 @@ export const webSearchTool: ToolDef = {
       const searchFn = ENGINE_FUNCS[engine]
       const results = sanitizeResults(await searchFn(query, limit))
       return {
-        success: true,
-        retryable: false,
-        data: {
-          engine,
-          query,
-          count: results.length,
-          results,
-        },
+        engine,
+        query,
+        count: results.length,
+        results,
       }
     } catch (err: any) {
-      return {
-        success: false,
-        retryable: true,
-        error: `搜索失败: ${err.message || '网络错误'}`,
-      }
+      throw new ToolError(`搜索失败: ${err.message || '网络错误'}`, true)
     }
   },
 }

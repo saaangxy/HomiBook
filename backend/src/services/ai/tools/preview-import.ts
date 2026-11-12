@@ -1,6 +1,6 @@
 import type { ToolDef, ToolContext } from './types.js'
 import { prisma } from '../../../app.js'
-import { assertIsMember, checkEnumList, checkEnums } from '../security.js'
+import { checkEnumList, checkEnums, ToolError } from '../security.js'
 import { type ParsedRow } from '../../import/shared.js'
 import { IMPORT_FILE_MISSING, loadImportFile, parseImportFile } from '../../import/attachment-file.js'
 import { CATEGORY_DICT_GROUPS, findUnknownCategoryCodes, formatDictOptions, validateCategoryResolutions } from '../../import/blocking.js'
@@ -19,6 +19,8 @@ export const previewImportTool: ToolDef = {
   promptHint: 'mode=analyze 仅返回未匹配数据供分析；mode=preview 传入映射规则展示交互卡片供确认',
   description: '解析已上传的账单文件并预览导入数据(mode 说明见参数)。导入的三步流程(analyze→preview→confirm)由系统提示词中的「导入流水数据」技能给出。',
   requireConfirm: false,
+  // 只有「预览」模式的结果才是一张待确认卡；analyze 模式只是查询，直接返回数据
+  pauseAfter: (args, result) => (args?.mode === 'preview' && result.success ? 'confirm' : null),
   parameters: {
     type: 'object',
     properties: {
@@ -69,9 +71,8 @@ export const previewImportTool: ToolDef = {
       ?? checkEnumList('accountResolutions[].action', (args.accountResolutions ?? []).map((r: any) => r.action), ['existing', 'create'] as const)
       ?? checkEnumList('accountResolutions[].accountType', (args.accountResolutions ?? []).map((r: any) => r.accountType), ACCOUNT_TYPES)
       ?? checkEnumList('categoryResolutions[].recordType', (args.categoryResolutions ?? []).map((r: any) => r.recordType), RECORD_TYPES)
-    if (badEnum) return badEnum
+    if (badEnum) throw new ToolError(badEnum.error ?? '参数非法', badEnum.retryable)
 
-    await assertIsMember(ctx.accountBookId, ctx.userId)
     const { attachmentId, source: sourceArg, mode, accountResolutions, categoryResolutions } = args as {
       attachmentId: string
       source?: 'alipay' | 'wechat' | 'jd'
@@ -89,29 +90,25 @@ export const previewImportTool: ToolDef = {
       })
       const unknown = findUnknownCategoryCodes(categoryResolutions.map(c => c.targetCategoryCode), new Set(dictItems.map(d => d.code)))
       if (unknown.length > 0) {
-        return {
-          success: false,
-          retryable: false,
-          error: `分类编码不存在：${unknown.join('、')}。targetCategoryCode 必须是系统字典里的编码，可选值：${formatDictOptions(dictItems)}`,
-        }
+        throw new ToolError(`分类编码不存在：${unknown.join('、')}。targetCategoryCode 必须是系统字典里的编码，可选值：${formatDictOptions(dictItems)}`)
       }
     }
 
     // 兜底类无条件映射 / 自映射校验（与 confirm_import 共用同一份规则）
     const categoryCheck = validateCategoryResolutions(categoryResolutions ?? [])
     if (!categoryCheck.ok) {
-      return { success: false, retryable: false, error: categoryCheck.error }
+      throw new ToolError(categoryCheck.error)
     }
 
     const isAnalyzeMode = mode !== 'preview'
 
     // 账单文件 = 一个附件:按 attachmentId 取行、经 path 读盘(attachmentId 与磁盘名是两个 uuid)
     const file = await loadImportFile(attachmentId)
-    if (!file) return { success: false, error: IMPORT_FILE_MISSING, retryable: false }
+    if (!file) throw new ToolError(IMPORT_FILE_MISSING, false)
 
     // 解析:source 缺省、或按文件名猜错时,回退到按文件内容识别(见 parseImportFile)
     const parsed = parseImportFile(file, sourceArg)
-    if (!parsed.ok) return { success: false, error: parsed.error, retryable: false }
+    if (!parsed.ok) throw new ToolError(parsed.error, false)
     const source = parsed.source
     const parseResult = { rows: parsed.rows, errors: parsed.errors }
 
@@ -201,35 +198,31 @@ export const previewImportTool: ToolDef = {
       const counts = remapped.counts
 
       return {
-        success: true,
-        retryable: false,
-        data: {
-          source,
-          mode: 'analyze',
-          records: unmatchedCategoryRecords.map(r => ({
-            type: r.type, categoryCode: r.categoryCode, payer: r.payer, remark: r.remark,
-          })),
-          unrecognizedRecords: allUnrecognizedRecords.map(r => ({
-            amount: r.amount, accountName: r.accountName, payer: r.payer, remark: r.remark,
-          })),
-          accountUnmatchedRecords,
-          categorySamples,
-          existingRules,
-          existingAccountRules,
-          counts,
-          unmatchedAccounts,
-          unmatchedCategories,
-          allDictItems,
-          accounts,
-          accountBookId: ctx.accountBookId,
-          stats: {
-            totalLines: parseResult.rows.length + parseResult.errors.length,
-            parsedRows: allNormalRecords.length,
-            skippedRows: parseResult.errors.length,
-            unrecognizedCount: allUnrecognizedRecords.length,
-            unmatchedCategoryCount: unmatchedCategoryRecords.length,
-            errors: parseResult.errors,
-          },
+        source,
+        mode: 'analyze',
+        records: unmatchedCategoryRecords.map(r => ({
+          type: r.type, categoryCode: r.categoryCode, payer: r.payer, remark: r.remark,
+        })),
+        unrecognizedRecords: allUnrecognizedRecords.map(r => ({
+          amount: r.amount, accountName: r.accountName, payer: r.payer, remark: r.remark,
+        })),
+        accountUnmatchedRecords,
+        categorySamples,
+        existingRules,
+        existingAccountRules,
+        counts,
+        unmatchedAccounts,
+        unmatchedCategories,
+        allDictItems,
+        accounts,
+        accountBookId: ctx.accountBookId,
+        stats: {
+          totalLines: parseResult.rows.length + parseResult.errors.length,
+          parsedRows: allNormalRecords.length,
+          skippedRows: parseResult.errors.length,
+          unrecognizedCount: allUnrecognizedRecords.length,
+          unmatchedCategoryCount: unmatchedCategoryRecords.length,
+          errors: parseResult.errors,
         },
       }
     }
@@ -307,28 +300,24 @@ export const previewImportTool: ToolDef = {
     })()
 
     return {
-      success: true,
-      retryable: false,
-      data: {
-        source,
-        mode: 'preview',
-        records: allNormalRecords.map(mapRow),
-        unrecognizedRecords: allUnrecognizedRecords.map(mapRow),
-        unmatchedAccounts,
-        unmatchedCategories,
-        allDictItems,
-        accounts,
-        accountBookId: ctx.accountBookId,
-        accountMappingNames: { ...remapped.nameMatched },
-        newAccountCreations: newAccountCreations.length > 0 ? newAccountCreations : undefined,
-        mappedCategories,
-        stats: {
-          totalLines: parseResult.rows.length + parseResult.errors.length,
-          parsedRows: allNormalRecords.length,
-          skippedRows: parseResult.errors.length,
-          unrecognizedCount: allUnrecognizedRecords.length,
-          errors: parseResult.errors,
-        },
+      source,
+      mode: 'preview',
+      records: allNormalRecords.map(mapRow),
+      unrecognizedRecords: allUnrecognizedRecords.map(mapRow),
+      unmatchedAccounts,
+      unmatchedCategories,
+      allDictItems,
+      accounts,
+      accountBookId: ctx.accountBookId,
+      accountMappingNames: { ...remapped.nameMatched },
+      newAccountCreations: newAccountCreations.length > 0 ? newAccountCreations : undefined,
+      mappedCategories,
+      stats: {
+        totalLines: parseResult.rows.length + parseResult.errors.length,
+        parsedRows: allNormalRecords.length,
+        skippedRows: parseResult.errors.length,
+        unrecognizedCount: allUnrecognizedRecords.length,
+        errors: parseResult.errors,
       },
     }
   },

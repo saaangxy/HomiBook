@@ -1,8 +1,8 @@
 import { readFileSync, existsSync } from 'fs'
+import { ToolError } from '../security.js'
 import path from 'path'
 import type { ToolDef } from './types.js'
 import { prisma } from '../../../app.js'
-import { assertIsMember } from '../security.js'
 import { createModel, type ProviderType } from '../providers.js'
 import { loadVisionConfig } from '../vision.js'
 import { prepareVisionImage, describeSlices } from '../image-tile.js'
@@ -25,35 +25,33 @@ export const ocrReceiptTool: ToolDef = {
     const { attachmentId } = args
     const { userId, accountBookId } = ctx
 
-    await assertIsMember(accountBookId, userId)
-
     // 1. 查询附件记录
     const attachment = await prisma.recordAttachment.findUnique({
       where: { id: attachmentId },
       select: { id: true, path: true, originalFilename: true, records: { select: { accountBookId: true } } },
     })
-    if (!attachment) return { success: false, error: '附件不存在', retryable: false }
+    if (!attachment) throw new ToolError('附件不存在', false)
 
     // 如果附件已关联记录，验证记录属于当前账本
     // 附件是多对多:只要有一条关联记录属于当前账本就放行,全部属于别的账本才拒绝
     if (attachment.records.length > 0 && !attachment.records.some((r) => r.accountBookId === accountBookId)) {
-      return { success: false, error: '无权访问该附件', retryable: false }
+      throw new ToolError('无权访问该附件', false)
     }
 
     // 2. 读取图片文件
     const filePath = path.join(process.cwd(), attachment.path.replace(/^\/api\//, ''))
-    if (!existsSync(filePath)) return { success: false, error: '图片文件不存在', retryable: false }
+    if (!existsSync(filePath)) throw new ToolError('图片文件不存在', false)
 
     let imageData: Buffer
     try {
       imageData = readFileSync(filePath)
     } catch {
-      return { success: false, error: '读取图片文件失败', retryable: false }
+      throw new ToolError('读取图片文件失败', false)
     }
 
     // 3. 获取视觉模型配置
     const visionConfig = await loadVisionConfig(userId)
-    if (!visionConfig) return { success: false, error: '未配置视觉模型，请在 AI 设置中配置', retryable: false }
+    if (!visionConfig) throw new ToolError('未配置视觉模型，请在 AI 设置中配置', false)
 
     // 4. 查询账户列表和分类字典（供视觉模型匹配）
     const accounts = await prisma.account.findMany({
@@ -79,7 +77,7 @@ export const ocrReceiptTool: ToolDef = {
     // 只做格式判定就发会被上游按单边尺寸上限拒绝(手机长截图常见,报错文案是误导性的
     // "unsupported image",看着像「OCR 工具在 DeepSeek 上报错」)。
     const prep = await prepareVisionImage(imageData)
-    if ('error' in prep) return { success: false, error: prep.error, retryable: false }
+    if ('error' in prep) throw new ToolError(prep.error, false)
 
     // 6. 调用视觉模型识别
     try {
@@ -136,19 +134,15 @@ ${categoriesContext}
       }
 
       return {
-        success: true,
-        data: {
-          amount: parsed.amount ?? null,
-          date: parsed.date ?? null,
-          counterparty: parsed.counterparty ?? null,
-          accountName: parsed.accountName ?? null,
-          categoryCode: parsed.categoryCode ?? null,
-          rawText: parsed.rawText ?? text,
-        },
-        retryable: false,
+        amount: parsed.amount ?? null,
+        date: parsed.date ?? null,
+        counterparty: parsed.counterparty ?? null,
+        accountName: parsed.accountName ?? null,
+        categoryCode: parsed.categoryCode ?? null,
+        rawText: parsed.rawText ?? text,
       }
     } catch (err: any) {
-      return { success: false, error: `OCR 识别失败: ${err.message}`, retryable: true }
+      throw new ToolError(`OCR 识别失败: ${err.message}`, true)
     }
   },
 }

@@ -15,6 +15,22 @@ export function dayEnd(day: string): Date {
   return new Date(`${day}T23:59:59.999`)
 }
 
+/**
+ * 'YYYY-MM-DD' → 严格校验后的当日 00:00；非法返回 null。
+ *
+ * 与 dayStart 的差别：`new Date('2026-02-30')` 会**静默进位**到 3 月 2 日，
+ * `new Date('2026-13-01')` 则是 Invalid Date（继续算下去会产出 NaN 日期）。
+ * 这里回读年月日做一致性校验，用于贷款起算日这类「错一天就整张还款计划偏移」的场景。
+ */
+export function parseStrictDay(raw: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null
+  const [y, mo, d] = raw.split('-').map(Number)
+  const date = new Date(`${raw}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return null
+  if (date.getFullYear() !== y || date.getMonth() !== mo - 1 || date.getDate() !== d) return null
+  return date
+}
+
 /** 任意时刻 → 其所在业务时区日的 00:00(UTC 时刻),用于"按日对齐"基准点(如余额调整);setHours 按 DST 正确处理 */
 export function dayStartOf(date: Date): Date {
   const d = new Date(date)

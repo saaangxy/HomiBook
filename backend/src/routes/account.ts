@@ -81,7 +81,8 @@ export async function accountRoutes(app: FastifyInstance) {
     }
 
     const accounts = await prisma.account.findMany({
-      where: { accountBookId: bookId },
+      // deletedAt 过滤软删除：删除只改 status=ARCHIVED，不过滤会让已删账户继续出现在列表里
+      where: { accountBookId: bookId, deletedAt: null },
       include: { owner: { select: { id: true, nickname: true, email: true } } },
       orderBy: { createdAt: 'desc' },
     })
@@ -212,6 +213,7 @@ export async function accountRoutes(app: FastifyInstance) {
     const accounts = await prisma.account.findMany({
       where: {
         accountBookId: bookId,
+        deletedAt: null,
         ...(accountFilter ? { id: { in: accountFilter } } : {}),
         ...(ownerId ? { ownerId } : {}),
       },

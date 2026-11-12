@@ -56,29 +56,47 @@ export function desensitize(data: unknown): unknown {
   return result
 }
 
-// 工具调用重试包装
-export async function retryable<T>(
-  fn: () => Promise<T>,
-  label?: string,
-): Promise<ToolResult<T>> {
-  try {
-    const data = await fn()
-    return { success: true, data, retryable: false }
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
-    const statusCode = (err as { statusCode?: number }).statusCode
-
-    // 网络/超时错误 → 可重试
-    const retryablePatterns = ['timeout', 'ETIMEDOUT', 'ECONNREFUSED', 'ECONNRESET', 'fetch failed', 'network']
-    // 权限/冲突错误 → 不可重试
-    const nonRetryableCodes = [401, 403, 404, 409]
-
-    const isRetryable =
-      !nonRetryableCodes.includes(statusCode ?? 0) &&
-      retryablePatterns.some((p) => message.toLowerCase().includes(p.toLowerCase()))
-
-    return { success: false, error: label ? `[${label}] ${message}` : message, retryable: isRetryable }
+/**
+ * 工具业务失败。
+ *
+ * 工具里不再手工拼 `{ success: false, error, retryable }`：成功直接 return 数据，
+ * 失败 throw 这个异常，由 runtime/run-tool 统一转成回传给模型的错误结果。
+ */
+export class ToolError extends Error {
+  constructor(message: string, readonly retryable = false) {
+    super(message)
+    this.name = 'ToolError'
   }
+}
+
+/** 网络/超时类错误 → 值得让模型重试一次 */
+const RETRYABLE_PATTERNS = ['timeout', 'ETIMEDOUT', 'ECONNREFUSED', 'ECONNRESET', 'fetch failed', 'network']
+/** 权限/冲突类状态码 → 重试也不会成功 */
+const NON_RETRYABLE_CODES = [401, 403, 404, 409]
+
+export interface ToolErrorInfo {
+  message: string
+  /** 是否值得给模型一次重试机会 */
+  retryable: boolean
+}
+
+/**
+ * 异常 → 「可回传给模型的错误」+「是否可重试」。
+ *
+ * 工具的 execute 抛出的异常全部由 runTool 在这里归类，
+ * 同一种异常只有一种 retryable 取值。
+ */
+export function classifyToolError(err: unknown): ToolErrorInfo {
+  // 工具主动抛的业务失败：可重试性由抛出处决定，不再靠消息猜
+  if (err instanceof ToolError) return { message: err.message, retryable: err.retryable }
+
+  const message = err instanceof Error ? err.message : String(err)
+  const statusCode = (err as { statusCode?: number }).statusCode
+  const lower = message.toLowerCase()
+  const retryable =
+    !NON_RETRYABLE_CODES.includes(statusCode ?? 0) &&
+    RETRYABLE_PATTERNS.some((p) => lower.includes(p.toLowerCase()))
+  return { message, retryable }
 }
 
 /**
@@ -86,7 +104,7 @@ export async function retryable<T>(
  *
  * 为什么不用「静默归一化」:模型给出非法枚举(如 type="收入"、账户类型 "BANK")时,
  * 归一化会把它悄悄改成默认值(EXPENSE / OTHER / FREE)再落库——用户看到的是记错账且无法察觉。
- * 这里改为返回 retryable 错误,由 chat 路由把 error 文本作为工具结果回传,模型据此改用合法值重试。
+ * 这里返回 retryable 错误,由运行时在执行前统一转成工具结果回传,模型据此改用合法值重试。
  *
  * 约定:
  * - 未传(undefined/null)不算非法,由各工具按「可选/必填」自行判断;

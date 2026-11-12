@@ -1,5 +1,5 @@
 import { prisma } from '../../../app.js'
-import { assertIsMember, retryable, desensitize, type ToolResult } from '../security.js'
+import { desensitize, ToolError } from '../security.js'
 import { refreshAccountBalance } from '../../account.js'
 import { dateKey } from '../../../lib/date-time.js'
 import type { ToolDef, ToolContext } from './types.js'
@@ -38,12 +38,10 @@ export const offsetRecordsTool: ToolDef = {
     required: ['recordIds'],
   },
 
-  async execute(args: OffsetRecordsArgs, ctx: ToolContext): Promise<ToolResult> {
+  async execute(args: OffsetRecordsArgs, ctx: ToolContext) {
     const ids = (args.recordIds ?? []).filter(Boolean)
-    if (ids.length === 0) return { success: false, error: 'recordIds 不能为空', retryable: false }
+    if (ids.length === 0) throw new ToolError('recordIds 不能为空', false)
     const offset = args.offset !== false
-
-    await assertIsMember(ctx.accountBookId, ctx.userId)
 
     // 查询与校验放在 retryable 之外:包装器会把返回值塞进 data,
     // 内部返回的错误对象会变成「success: true + data.error」,模型读不到
@@ -55,26 +53,17 @@ export const offsetRecordsTool: ToolDef = {
       },
     })
     if (records.length === 0) {
-      return { success: false, error: '没有找到这些流水（可能不属于当前账本）', retryable: false }
+      throw new ToolError('没有找到这些流水（可能不属于当前账本）', false)
     }
     if (records.length !== ids.length) {
-      return {
-        success: false,
-        error: `有 ${ids.length - records.length} 条流水不存在或不属于当前账本`,
-        retryable: false,
-      }
+      throw new ToolError(`有 ${ids.length - records.length} 条流水不存在或不属于当前账本`)
     }
 
     const income = records.filter((r) => r.type === 'INCOME').reduce((s, r) => s + r.amount, 0)
     const expense = records.filter((r) => r.type === 'EXPENSE').reduce((s, r) => s + r.amount, 0)
 
     if (offset && Math.abs(income - expense) > 0.005) {
-      return {
-        success: false,
-        error: `平账要求收入合计 = 支出合计：当前收入 ${income.toFixed(2)}、支出 ${expense.toFixed(2)}，差额 ${(income - expense).toFixed(2)}。`
-          + '请改为等额的组合，或改用一次单条处理。',
-        retryable: false,
-      }
+      throw new ToolError(`平账要求收入合计 = 支出合计：当前收入 ${income.toFixed(2)}、支出 ${expense.toFixed(2)}，差额 ${(income - expense).toFixed(2)}。`)
     }
 
     const affected = new Set<string>()
@@ -84,27 +73,25 @@ export const offsetRecordsTool: ToolDef = {
       if (r.toAccountId) affected.add(r.toAccountId)
     }
 
-    return retryable(async () => {
-      await prisma.record.updateMany({
-        where: { id: { in: ids }, accountBookId: ctx.accountBookId },
-        data: { offsetAt: offset ? new Date() : null },
-      })
+    await prisma.record.updateMany({
+      where: { id: { in: ids }, accountBookId: ctx.accountBookId },
+      data: { offsetAt: offset ? new Date() : null },
+    })
 
-      // 平账会改变统计口径 → 涉及账户的余额缓存重算
-      for (const accId of affected) await refreshAccountBalance(accId)
+    // 平账会改变统计口径 → 涉及账户的余额缓存重算
+    for (const accId of affected) await refreshAccountBalance(accId)
 
-      return desensitize({
-        offset,
-        updated: records.length,
-        amount: Math.round(Math.max(income, expense) * 100) / 100,
-        records: records.map((r) => ({
-          id: r.id,
-          type: r.type,
-          amount: r.amount,
-          date: dateKey(r.date),
-          remark: r.remark,
-        })),
-      })
-    }, 'offset_records')
+    return desensitize({
+      offset,
+      updated: records.length,
+      amount: Math.round(Math.max(income, expense) * 100) / 100,
+      records: records.map((r) => ({
+        id: r.id,
+        type: r.type,
+        amount: r.amount,
+        date: dateKey(r.date),
+        remark: r.remark,
+      })),
+    })
   },
 }

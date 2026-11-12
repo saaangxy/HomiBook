@@ -1,6 +1,6 @@
 import * as cheerio from 'cheerio'
+import { ToolError } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
-import type { ToolResult } from '../security.js'
 import { browserFetch } from '../browser-fetch.js'
 import { sanitizeExternalText as sanitizeText } from '../sanitize-text.js'
 
@@ -63,7 +63,7 @@ export const readWebpageTool: ToolDef = {
     required: ['url'],
   },
 
-  async execute(args: any, _ctx: ToolContext): Promise<ToolResult> {
+  async execute(args: any, _ctx: ToolContext) {
     const { url, maxChars } = args as { url: string; maxChars?: number }
     const limit = Math.min(maxChars || 3000, 5000)
 
@@ -72,13 +72,9 @@ export const readWebpageTool: ToolDef = {
     if (fastResult && fastResult.text.length > 100) {
       console.log(`[read_webpage] fetch: url="${url}" chars=${fastResult.text.length}`)
       return {
-        success: true,
-        retryable: false,
-        data: {
-          url,
-          title: sanitizeText(fastResult.title, 200),
-          content: sanitizeText(fastResult.text, limit),
-        },
+        url,
+        title: sanitizeText(fastResult.title, 200),
+        content: sanitizeText(fastResult.text, limit),
       }
     }
 
@@ -88,34 +84,22 @@ export const readWebpageTool: ToolDef = {
       const result = await browserFetch(url, 20000)
 
       if (!result.text || result.text.length < 20) {
-        return {
-          success: false,
-          retryable: false,
-          error: '未能提取到网页内容（页面可能需要登录或已阻止访问）',
-        }
+        throw new ToolError('未能提取到网页内容（页面可能需要登录或已阻止访问）')
       }
 
       console.log(`[read_webpage] puppeteer ok: url="${url}" chars=${result.text.length}`)
 
       return {
-        success: true,
-        retryable: false,
-        data: {
-          url: result.url,
-          title: sanitizeText(result.title, 200),
-          content: sanitizeText(result.text, limit),
-        },
+        url: result.url,
+        title: sanitizeText(result.title, 200),
+        content: sanitizeText(result.text, limit),
       }
     } catch (err: any) {
       const msg = err.message || '未知错误'
       if (msg.includes('net::ERR_BLOCKED') || msg.includes('403')) {
-        return { success: false, retryable: false, error: `网页拒绝访问，该站点可能有反爬措施` }
+        throw new ToolError(`网页拒绝访问，该站点可能有反爬措施`)
       }
-      return {
-        success: false,
-        retryable: true,
-        error: `读取网页失败: ${msg}`,
-      }
+      throw new ToolError(`读取网页失败: ${msg}`, true)
     }
   },
 }

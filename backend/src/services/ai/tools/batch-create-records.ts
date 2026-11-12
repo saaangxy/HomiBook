@@ -1,5 +1,7 @@
 import { prisma } from '../../../app.js'
-import { assertIsMember, checkEnumList, retryable, desensitize, type ToolResult } from '../security.js'
+import { checkEnumList, desensitize, ToolError } from '../security.js'
+import { TYPE_LABELS, type ConfirmPreview } from '../runtime/preview-format.js'
+import type { PreviewScope } from '../runtime/preview-scope.js'
 import type { ToolDef, ToolContext } from './types.js'
 import { resolveAccountId } from './helpers.js'
 import { refreshAccountBalance } from '../../account.js'
@@ -63,15 +65,55 @@ export const batchCreateRecordsTool: ToolDef = {
   requireConfirm: true,
   validateArgs,
 
-  async execute(args: BatchCreateArgs, ctx: ToolContext): Promise<ToolResult> {
+  /** 确认卡：批量列出行，账户与分类名由 scope 一次解出 */
+  async confirmation(args: BatchCreateArgs, _ctx: ToolContext, scope: PreviewScope): Promise<string> {
+    const records = Array.isArray(args?.records) ? args.records : []
+    const codes = records.map((r) => r.categoryCode).filter(Boolean) as string[]
+    const accountIds = records
+      .flatMap((r) => [r.accountId, r.fromAccountId, r.toAccountId])
+      .filter(Boolean) as string[]
+    const [categoryMap, accountMap] = await Promise.all([
+      scope.categoryLabels(codes),
+      scope.accountNames(accountIds),
+    ])
+
+    const rows = records.map((r) => {
+      let accountText = accountMap.get(r.accountId) || r.accountId || '-'
+      if (r.type === 'TRANSFER') {
+        const from = accountMap.get(r.fromAccountId || '') || r.fromAccountId || '-'
+        const to = accountMap.get(r.toAccountId || '') || r.toAccountId || '-'
+        accountText = `${from} → ${to}`
+      }
+      const color = r.type === 'INCOME' ? ('green' as const) : r.type === 'EXPENSE' ? ('red' as const) : undefined
+      return [[
+        { text: r.date || '-' },
+        { text: TYPE_LABELS[r.type] || r.type, color },
+        { text: accountText },
+        { text: categoryMap.get(r.categoryCode || '') || r.categoryCode || '-' },
+        { text: Number(r.amount).toFixed(2), color },
+        { text: r.remark || '-' },
+      ]]
+    })
+
+    // 批量创建的附件是**整体**的（工具只关联到第 1 条），加列会误导成每条都有
+    const attCount = Array.isArray(args.attachmentIds) ? args.attachmentIds.length : 0
+    const preview: ConfirmPreview = {
+      type: 'records-table',
+      title: `确认批量创建 ${records.length} 条流水记录`,
+      description: attCount > 0 ? `${attCount} 个附件将关联到第 1 条记录` : undefined,
+      columns: ['日期', '类型', '账户', '分类', '金额', '备注'],
+      rows: rows.flat(),
+    }
+    return JSON.stringify(preview)
+  },
+
+  async execute(args: BatchCreateArgs, ctx: ToolContext) {
     // 入参枚举校验(与弹确认卡前同一份规则)
     const badEnum = validateArgs(args)
-    if (badEnum) return badEnum
-
-    await assertIsMember(ctx.accountBookId, ctx.userId)
+    if (badEnum) throw new ToolError(badEnum.error ?? '参数非法', badEnum.retryable)
 
     if (!args.records || !Array.isArray(args.records) || args.records.length === 0) {
-      return { success: false, error: 'records 必须是非空数组', retryable: false }
+      throw new ToolError('records 必须是非空数组', false)
     }
 
     // 逐条校验
@@ -90,7 +132,7 @@ export const batchCreateRecordsTool: ToolDef = {
       }
     }
     if (errors.length > 0) {
-      return { success: false, error: errors.join('; '), retryable: false }
+      throw new ToolError(errors.join('; '), false)
     }
 
     // 解析所有账户标识符（支持 accountNo 或 UUID）
@@ -124,64 +166,62 @@ export const batchCreateRecordsTool: ToolDef = {
       resolved.push({ accountId: finalAccountId, fromAccountId: resolvedFromId, toAccountId: resolvedToId })
     }
     if (errors.length > 0) {
-      return { success: false, error: errors.join('; '), retryable: false }
+      throw new ToolError(errors.join('; '), false)
     }
 
-    return retryable(async () => {
-      const created = await prisma.$transaction(
-        args.records.map((r, i) =>
-          prisma.record.create({
-            data: {
-              accountBookId: ctx.accountBookId,
-              type: r.type,
-              amount: Number(r.amount),
-              date: new Date(r.date),
-              remark: r.remark,
-              tags: JSON.stringify(r.tags ?? []),
-              accountId: resolved[i].accountId,
-              fromAccountId: resolved[i].fromAccountId,
-              toAccountId: resolved[i].toAccountId,
-              categoryCode: r.categoryCode,
-              payer: r.payer,
-              ownerId: ctx.userId,
-            },
-            include: { account: { select: { name: true } } },
+    const created = await prisma.$transaction(
+      args.records.map((r, i) =>
+        prisma.record.create({
+          data: {
+            accountBookId: ctx.accountBookId,
+            type: r.type,
+            amount: Number(r.amount),
+            date: new Date(r.date),
+            remark: r.remark,
+            tags: JSON.stringify(r.tags ?? []),
+            accountId: resolved[i].accountId,
+            fromAccountId: resolved[i].fromAccountId,
+            toAccountId: resolved[i].toAccountId,
+            categoryCode: r.categoryCode,
+            payer: r.payer,
+            ownerId: ctx.userId,
+          },
+          include: { account: { select: { name: true } } },
+        }),
+      ),
+    )
+
+    // 关联附件到本批【全部】记录:一张账单截图里往往有多笔,每笔都应能追溯到同一张凭证
+    if (args.attachmentIds && args.attachmentIds.length > 0 && created.length > 0) {
+      await prisma.$transaction(
+        created.map((rec) =>
+          prisma.record.update({
+            where: { id: rec.id },
+            data: { recordAttachments: { connect: args.attachmentIds!.map((id) => ({ id })) } },
           }),
         ),
       )
+    }
 
-      // 关联附件到本批【全部】记录:一张账单截图里往往有多笔,每笔都应能追溯到同一张凭证
-      if (args.attachmentIds && args.attachmentIds.length > 0 && created.length > 0) {
-        await prisma.$transaction(
-          created.map((rec) =>
-            prisma.record.update({
-              where: { id: rec.id },
-              data: { recordAttachments: { connect: args.attachmentIds!.map((id) => ({ id })) } },
-            }),
-          ),
-        )
-      }
+    // 刷新余额缓存(AI 工具不走 routes/record 的刷新逻辑,不补会让 query_accounts 读到旧值)
+    const touched = new Set<string>()
+    for (const x of resolved) {
+      if (x.accountId) touched.add(x.accountId)
+      if (x.toAccountId) touched.add(x.toAccountId)
+    }
+    for (const accId of touched) await refreshAccountBalance(accId)
 
-      // 刷新余额缓存(AI 工具不走 routes/record 的刷新逻辑,不补会让 query_accounts 读到旧值)
-      const touched = new Set<string>()
-      for (const x of resolved) {
-        if (x.accountId) touched.add(x.accountId)
-        if (x.toAccountId) touched.add(x.toAccountId)
-      }
-      for (const accId of touched) await refreshAccountBalance(accId)
-
-      return desensitize({
-        created: created.length,
-        records: created.map((r) => ({
-          id: r.id,
-          type: r.type,
-          amount: r.amount,
-          date: dateKey(r.date),
-          accountName: r.account.name,
-          categoryCode: r.categoryCode,
-          remark: r.remark,
-        })),
-      })
-    }, 'batch_create_records')
+    return desensitize({
+      created: created.length,
+      records: created.map((r) => ({
+        id: r.id,
+        type: r.type,
+        amount: r.amount,
+        date: dateKey(r.date),
+        accountName: r.account.name,
+        categoryCode: r.categoryCode,
+        remark: r.remark,
+      })),
+    })
   },
 }

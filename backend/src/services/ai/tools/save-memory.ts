@@ -1,5 +1,5 @@
 import type { ToolDef, ToolContext } from './types.js'
-import { checkEnums, type ToolResult } from '../security.js'
+import { checkEnums, ToolError } from '../security.js'
 import { saveMemory } from '../memory.js'
 import { MEMORY_TYPES } from '@homibook/core'
 
@@ -24,10 +24,10 @@ export const saveMemoryTool: ToolDef = {
     required: ['content', 'memoryType'],
   },
 
-  async execute(args: any, ctx: ToolContext): Promise<ToolResult> {
+  async execute(args: any, ctx: ToolContext) {
     // 入参枚举校验:非法记忆类型直接回报给模型
     const badEnum = checkEnums({ memoryType: [args.memoryType, MEMORY_TYPES] })
-    if (badEnum) return badEnum
+    if (badEnum) throw new ToolError(badEnum.error ?? '参数非法', badEnum.retryable)
 
     const { content, memoryType, importance, memoryId } = args as {
       content: string
@@ -37,7 +37,7 @@ export const saveMemoryTool: ToolDef = {
     }
     const result = await saveMemory(ctx.userId, content, memoryType, importance, memoryId)
     if (!result.memory) {
-      return { success: false, retryable: false, error: '记忆不存在，无法更新' }
+      throw new ToolError('记忆不存在，无法更新')
     }
     const message = result.created
       ? '记忆已保存'
@@ -45,17 +45,13 @@ export const saveMemoryTool: ToolDef = {
         ? '记忆已更新'
         : '记忆已存在，无变化'
     return {
-      success: true,
-      retryable: false,
-      data: {
-        created: result.created,
-        updated: result.updated,
-        memoryId: result.memory.id,
-        memoryType,
-        content,
-        importance: result.memory.importance,
-        message,
-      },
+      created: result.created,
+      updated: result.updated,
+      memoryId: result.memory.id,
+      memoryType,
+      content,
+      importance: result.memory.importance,
+      message,
     }
   },
 }

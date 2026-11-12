@@ -1,5 +1,4 @@
 import type { ToolDef, ToolContext } from './types.js'
-import type { ToolResult } from '../security.js'
 import { deleteMemory } from '../memory.js'
 
 export const deleteMemoryTool: ToolDef = {
@@ -16,7 +15,7 @@ export const deleteMemoryTool: ToolDef = {
     required: ['memoryId'],
   },
 
-  async execute(args: any, ctx: ToolContext): Promise<ToolResult> {
+  async execute(args: any, ctx: ToolContext) {
     const { memoryId } = args as { memoryId: string }
     const deleted = await deleteMemory(ctx.userId, memoryId)
     return {

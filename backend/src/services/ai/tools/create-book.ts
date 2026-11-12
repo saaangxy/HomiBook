@@ -1,5 +1,6 @@
 import { prisma } from '../../../app.js'
-import { retryable, desensitize, type ToolResult } from '../security.js'
+import { desensitize } from '../security.js'
+import type { ConfirmPreview } from '../runtime/preview-format.js'
 import type { ToolDef, ToolContext } from './types.js'
 
 export const createBookTool: ToolDef = {
@@ -16,29 +17,37 @@ export const createBookTool: ToolDef = {
   },
   requireConfirm: true,
 
-  async execute(args: { name: string }, ctx: ToolContext): Promise<ToolResult> {
-    return retryable(async () => {
-      const book = await prisma.accountBook.create({
-        data: {
-          name: args.name,
-          ownerId: ctx.userId,
-          members: {
-            create: { userId: ctx.userId },
-          },
-        },
-        include: {
-          _count: { select: { members: true } },
-        },
-      })
+  /** 确认卡：只有名称一个字段，平铺即可 */
+  async confirmation(args: { name?: string }): Promise<string> {
+    const preview: ConfirmPreview = {
+      type: 'budget-card',
+      title: '确认创建账本',
+      budgetFields: [{ label: '名称', value: args?.name || '-' }],
+    }
+    return JSON.stringify(preview)
+  },
 
-      return desensitize({
-        id: book.id,
-        name: book.name,
-        ownerId: book.ownerId,
-        role: 'owner',
-        memberCount: book._count.members,
-        created: true,
-      })
-    }, 'create_book')
+  async execute(args: { name: string }, ctx: ToolContext) {
+    const book = await prisma.accountBook.create({
+      data: {
+        name: args.name,
+        ownerId: ctx.userId,
+        members: {
+          create: { userId: ctx.userId },
+        },
+      },
+      include: {
+        _count: { select: { members: true } },
+      },
+    })
+
+    return desensitize({
+      id: book.id,
+      name: book.name,
+      ownerId: book.ownerId,
+      role: 'owner',
+      memberCount: book._count.members,
+      created: true,
+    })
   },
 }

@@ -7,7 +7,7 @@ import {ALL_PROVIDERS, createModel, DEFAULT_BASE_URLS, type ProviderType} from '
 import {VISION_MAX_SIDE} from '../services/ai/image-tile.js'
 import {loadVisionWindow, logVisionImage} from '../services/ai/vision-window.js'
 import {classifyWithKeywords, routeIntent} from '../services/ai/model-router.js'
-import {assertIsMember, loadUserProviderConfig} from '../services/ai/security.js'
+import {assertIsMember, classifyToolError, loadUserProviderConfig} from '../services/ai/security.js'
 import {logToolCall} from '../services/ai/audit.js'
 import {
   ALL_TOOLS,
@@ -16,7 +16,9 @@ import {
   storeImportOverrides,
   TOOL_GROUPS
 } from '../services/ai/tools/index.js'
-import {buildConfirmPreview} from '../services/ai/confirm-preview.js'
+import {runTool} from '../services/ai/runtime/run-tool.js'
+import {createPreviewScope} from '../services/ai/runtime/preview-scope.js'
+import {resolveToolAvailability, WEB_SEARCH_TOOL_NAMES} from '../services/ai/runtime/availability.js'
 import {
   confirmActionSchema,
   createProviderConfigSchema,
@@ -188,9 +190,6 @@ async function injectImagesToLastUserMessage(messages: any[], imageAttachments: 
   return msgs
 }
 
-/** 只给前端一个「读图中」状态、不落库的工具:历史回看时不留痕 */
-const UI_HINT_ONLY_TOOLS = new Set(['save_image_content'])
-
 async function streamAssistantResponse(opts: StreamAssistantOptions) {
   const { reply, sessionId, accountBookId, userId, systemPrompt, messages, parentMessageId, provider, model, apiKey, baseURL, temperature, maxTokens, maxSteps, autoConfirmCreate, disabledTools, runtimeDisabledTools, forceImageSummary } = opts
 
@@ -267,12 +266,15 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
     return next
   }
 
-  // 构建 AI SDK 工具（过滤用户设置里禁用的工具）
-  const disabledSet = new Set(disabledTools)
-  const runtimeDisabledSet = new Set(runtimeDisabledTools ?? [])
+  // 构建 AI SDK 工具：可用性规则统一由 runtime/availability 给出
+  const availability = resolveToolAvailability(ALL_TOOLS, {
+    userDisabled: disabledTools,
+    runtimeDisabled: runtimeDisabledTools,
+    alwaysEnabled: ALWAYS_ENABLED_TOOL_NAMES,
+  })
+  const runtimeDisabledSet = availability.runtimeBlocked
   const aiTools: Record<string, any> = {}
-  for (const tool of ALL_TOOLS) {
-    if (disabledSet.has(tool.name) && !ALWAYS_ENABLED_TOOL_NAMES.has(tool.name)) continue
+  for (const tool of availability.enabled) {
     aiTools[tool.name] = {
       description: tool.description,
       inputSchema: jsonSchema(tool.parameters as Record<string, unknown>),
@@ -301,145 +303,107 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
         sendSSE('tool-call', { toolCallId, toolName: tool.name, args })
         // 读图类工具只给前端一个「读图中」状态:不写进 toolCallEntries ⇒ 不落 assistant.toolCalls,
         // 历史回看不留痕;SSE 照常推,当轮界面才有进度可显示
-        if (!UI_HINT_ONLY_TOOLS.has(tool.name)) {
+        if (!tool.uiHintOnly) {
           toolCallEntries.push({ toolCallId, toolName: tool.name, args, status: 'pending', textOffset: fullText.length })
         }
         activeToolCount++
+
+        // 把 outcome 落到「消息里那一条记录」，避免每个分支各抄一遍 find + assign
+        const syncEntry = (patch: Record<string, unknown>) => {
+          const entry = toolCallEntries.find(e => e.toolCallId === toolCallId)
+          if (entry) Object.assign(entry, patch)
+        }
+        // 结果超过 50 条分帧推送，前端按 merge 指令拼接
+        const sendResult = (result: any, durationMs: number, status: 'success' | 'error') => {
+          const batches = splitResultBatches(result, 50)
+          if (batches.length === 1) {
+            sendSSE('tool-result', { toolCallId, toolName: tool.name, result, durationMs, status })
+            return
+          }
+          for (let i = 0; i < batches.length; i++) {
+            const merge = i === 0
+              ? { total: batches.length }
+              : { action: 'append' as const, batch: i + 1, total: batches.length }
+            sendSSE('tool-result', {
+              toolCallId,
+              toolName: tool.name,
+              result: batches[i],
+              durationMs,
+              status: batches[i].success ? 'success' : 'error',
+              merge,
+            })
+          }
+        }
         try {
-          // ---- switch_book：展示账本列表，暂停等待用户选择切换 ----
-          if (tool.name === 'switch_book') {
-            const result = await tool.execute(args, { userId, accountBookId })
-            const data = (result as any)?.data || {}
-            sendSSE('tool-switch-book', { toolCallId, books: data.books || [], currentBookId: data.currentBookId })
-            const entry = toolCallEntries.find(e => e.toolCallId === toolCallId)
-            if (entry) Object.assign(entry, { result, status: 'switching' })
-            await saveMessageSnapshot()
-            pendingState.confirmations.push({ toolCallId, toolName: tool.name, args })
-            return { __pending: true, toolCallId }
+          // 参数闸门、成员校验、挂起判定、审计全部由运行时接管；
+          // 这里只按 outcome 发 SSE 并登记 pendingState（HTTP 与消息落库属于 adapter 职责）
+          const outcome = await runTool({
+            tool,
+            args,
+            ctx: { userId, accountBookId },
+            autoConfirm: autoConfirmCreate,
+            deps: {
+              assertMember: assertIsMember,
+              logToolCall: (event) => logToolCall({ userId, sessionId, action: 'tool_call', ...event }),
+              scope: createPreviewScope(accountBookId),
+            },
+          })
+
+          if (outcome.kind === 'result') {
+            // view_image 请求「直接看图」→ 记下来,下一次请求把它作为图片注入一次。
+            // fromPart/toPart 是模型指定的分段区间,用于续看或跳读长截图的任意部分。
+            // 跨轮注入属于会话层状态，留在路由而不是工具运行时。
+            if (tool.name === 'view_image' && (args as any)?.needImage && outcome.result.success) {
+              const attachmentId = (outcome.result as any).data?.attachmentId
+              const fromPart = (outcome.result as any).data?.fromPart as number | undefined
+              const toPart = (outcome.result as any).data?.toPart as number | undefined
+              if (attachmentId) {
+                pendingImageInjections.set(sessionId, { attachmentId, at: Date.now(), fromPart, toPart })
+              }
+            }
+            sendResult(outcome.result, outcome.durationMs, outcome.status)
+            syncEntry({ result: outcome.result, durationMs: outcome.durationMs, status: outcome.status })
+            return outcome.result
           }
 
-          // ---- suggest_options：关闭流等待用户选择 ----
-          if (tool.name === 'suggest_options') {
-            const questions: { question: string; field: string; options: string[]; allowCustom: boolean }[] = (args.questions || []).map((q: any) => ({
-              question: q.question, field: q.field, options: q.options, allowCustom: q.allowCustom ?? true,
-            }))
+          // ---- 挂起：先落卡片需要的状态，再由路由发对应 SSE 并登记 pendingState ----
+          if (outcome.reason === 'confirm') {
+            // preview_import / confirm_import 的结果本身就是卡片内容，先推结果再挂起
+            if (outcome.result) {
+              const resultStatus = outcome.result.success ? 'success' : 'error'
+              sendResult(outcome.result, outcome.durationMs, resultStatus)
+              syncEntry({ result: outcome.result, durationMs: outcome.durationMs, status: resultStatus })
+            }
+            if (outcome.preview) {
+              sendSSE('tool-confirm-required', { toolCallId, toolName: tool.name, preview: outcome.preview })
+              syncEntry({ status: 'confirming', preview: outcome.preview })
+            } else {
+              syncEntry({ status: 'confirming' })
+            }
+            await saveMessageSnapshot()
+            pendingState.confirmations.push({ toolCallId, toolName: tool.name, args })
+            return outcome.result ?? { __pending: true, toolCallId }
+          }
+
+          if (outcome.reason === 'suggestion') {
+            // 规范化在工具里做（suggest-options.ts 的 execute），这里只取结果
+            const questions = ((outcome.payload as { questions?: unknown[] } | undefined)?.questions ?? []) as {
+              question: string; field: string; options: string[]; allowCustom: boolean
+            }[]
             sendSSE('tool-suggest-required', { toolCallId, toolName: tool.name, questions })
-            const entry = toolCallEntries.find(e => e.toolCallId === toolCallId)
-            if (entry) Object.assign(entry, { status: 'suggesting', suggestion: { questions } })
+            syncEntry({ status: 'suggesting', suggestion: { questions } })
             await saveMessageSnapshot()
             pendingState.suggestion = { toolCallId, questions }
             return { __pending: true, toolCallId }
           }
 
-          // ---- requireConfirm：关闭流等待用户确认（自动确认开启时直接执行） ----
-          if (tool.requireConfirm) {
-            if (autoConfirmCreate) {
-              // 自动确认：直接执行工具，跳过确认流程
-              const result = await tool.execute(args, { userId, accountBookId })
-              const durationMs = Date.now() - start
-              const status = result.success ? 'success' : 'error'
-              sendSSE('tool-result', { toolCallId, toolName: tool.name, result, durationMs, status })
-              await logToolCall({
-                userId,
-                sessionId,
-                action: 'tool_call',
-                toolName: tool.name,
-                input: args,
-                output: result,
-                durationMs,
-                status
-              })
-              const entry = toolCallEntries.find(e => e.toolCallId === toolCallId)
-              if (entry) Object.assign(entry, { result, durationMs, status })
-              return result
-            }
-            // 入参枚举校验:非法值先回报给模型,不弹确认卡让用户白确认一次
-            // (自动确认分支直接走 execute,其中已有同一份校验)
-            const invalidArgs = tool.validateArgs?.(args)
-            if (invalidArgs) {
-              const durationMs = Date.now() - start
-              sendSSE('tool-result', { toolCallId, toolName: tool.name, result: invalidArgs, durationMs, status: 'error' })
-              await logToolCall({
-                userId,
-                sessionId,
-                action: 'tool_call',
-                toolName: tool.name,
-                input: args,
-                output: invalidArgs,
-                durationMs,
-                status: 'error'
-              })
-              const entry = toolCallEntries.find(e => e.toolCallId === toolCallId)
-              if (entry) Object.assign(entry, { result: invalidArgs, durationMs, status: 'error' })
-              return invalidArgs
-            }
-            const preview = await buildConfirmPreview(tool.name, args, accountBookId, userId)
-            sendSSE('tool-confirm-required', { toolCallId, toolName: tool.name, preview })
-            const entry = toolCallEntries.find(e => e.toolCallId === toolCallId)
-            if (entry) Object.assign(entry, { status: 'confirming', preview })
-            await saveMessageSnapshot()
-            pendingState.confirmations.push({ toolCallId, toolName: tool.name, args })
-            return { __pending: true, toolCallId }
-          }
-
-          // ---- 普通工具：直接执行 ----
-          const result = await tool.execute(args, { userId, accountBookId })
-
-          // view_image 请求「直接看图」→ 记下来,下一次请求把它作为图片注入一次。
-          // fromPart/toPart 是模型指定的分段区间,用于续看或跳读长截图的任意部分。
-          if (tool.name === 'view_image' && (args as any)?.needImage && result.success) {
-            const attachmentId = (result as any).data?.attachmentId
-            const fromPart = (result as any).data?.fromPart as number | undefined
-            const toPart = (result as any).data?.toPart as number | undefined
-            if (attachmentId) {
-              pendingImageInjections.set(sessionId, { attachmentId, at: Date.now(), fromPart, toPart })
-            }
-          }
-
-          const durationMs = Date.now() - start
-          const status = result.success ? 'success' : 'error'
-
-          const batches = splitResultBatches(result, 50)
-          if (batches.length > 1) {
-            for (let i = 0; i < batches.length; i++) {
-              const merge = i === 0 ? { total: batches.length } : { action: 'append' as const, batch: i + 1, total: batches.length }
-              sendSSE('tool-result', { toolCallId, toolName: tool.name, result: batches[i], durationMs, status: batches[i].success ? 'success' : 'error', merge })
-            }
-          } else {
-            sendSSE('tool-result', { toolCallId, toolName: tool.name, result, durationMs, status })
-          }
-
-          // ---- preview_import 预览模式：展示结果后再挂起确认 ----
-          if (tool.name === 'preview_import' && (args as any).mode === 'preview' && result.success) {
-            const entry = toolCallEntries.find(e => e.toolCallId === toolCallId)
-            if (entry) Object.assign(entry, { result, durationMs, status })
-            await saveMessageSnapshot()
-            pendingState.confirmations.push({ toolCallId, toolName: tool.name, args })
-            return result
-          }
-
-          // ---- confirm_import 确认预览模式：展示结果后再挂起确认 ----
-          if (tool.name === 'confirm_import' && result.success && (result as any).data?.mode === 'confirm_preview') {
-            const entry = toolCallEntries.find(e => e.toolCallId === toolCallId)
-            if (entry) Object.assign(entry, { result, durationMs, status })
-            await saveMessageSnapshot()
-            pendingState.confirmations.push({ toolCallId, toolName: tool.name, args })
-            return result
-          }
-
-          await logToolCall({
-            userId,
-            sessionId,
-            action: 'tool_call',
-            toolName: tool.name,
-            input: args,
-            output: result,
-            durationMs,
-            status
-          })
-          const entry = toolCallEntries.find(e => e.toolCallId === toolCallId)
-          if (entry) Object.assign(entry, { result, durationMs, status })
-          return result
+          // switch-book：账本列表由 execute 返回，用户在 /confirm 里选定后再续流
+          const payload = (outcome.payload ?? {}) as { books?: unknown[]; currentBookId?: string }
+          sendSSE('tool-switch-book', { toolCallId, books: payload.books || [], currentBookId: payload.currentBookId })
+          syncEntry({ result: outcome.result, status: 'switching' })
+          await saveMessageSnapshot()
+          pendingState.confirmations.push({ toolCallId, toolName: tool.name, args })
+          return { __pending: true, toolCallId }
         } catch (err: any) {
           const durationMs = Date.now() - start
           sendSSE('tool-result', { toolCallId, toolName: tool.name, error: err.message, durationMs, status: 'error' })
@@ -910,10 +874,13 @@ async function continueWithLLM(reply: any, sessionId: string, accountBookId: str
   // 输出预留必须钳制:模型配置里可能被填成上下文窗口量级(实测 393216),
   // 它既是发给上游的 maxOutputTokens,又要从窗口里减掉,不钳会直接把输入空间挤没。
   const maxTokens = Math.min(activeConfig?.maxTokens ?? prefs.maxTokens, MAX_OUTPUT_TOKENS)
-  const disabledSet = new Set(prefs.disabledTools)
+  // 续写场景只需要工具清单的体积（算上下文预算），不需要 execute
+  const continuationAvailability = resolveToolAvailability(ALL_TOOLS, {
+    userDisabled: prefs.disabledTools,
+    alwaysEnabled: ALWAYS_ENABLED_TOOL_NAMES,
+  })
   const enabledTools: Record<string, any> = {}
-  for (const tool of ALL_TOOLS) {
-    if (disabledSet.has(tool.name) && !ALWAYS_ENABLED_TOOL_NAMES.has(tool.name)) continue
+  for (const tool of continuationAvailability.enabled) {
     enabledTools[tool.name] = { description: tool.description, inputSchema: tool.parameters }
   }
   const historyBudget = computeHistoryBudget(activeConfig?.contextWindow, maxTokens, systemPrompt, enabledTools)
@@ -946,7 +913,7 @@ async function continueWithLLM(reply: any, sessionId: string, accountBookId: str
     autoConfirmCreate: prefs.autoConfirmCreate,
     disabledTools: prefs.disabledTools,
     // 与 /send 同口径:开关关闭时工具仍留在 tools 里,只在执行层拒绝(保证请求前缀稳定)
-    runtimeDisabledTools: enableWebSearch === false ? ['web_search', 'read_webpage'] : undefined,
+    runtimeDisabledTools: enableWebSearch === false ? [...WEB_SEARCH_TOOL_NAMES] : undefined,
     initialSSEEvents,
   })
 }
@@ -1229,13 +1196,15 @@ export async function chatRoutes(app: FastifyInstance) {
      * 否则用户每拨一次联网开关、每发一张图,整段历史的前缀缓存都会失效。
      */
     const userDisabledTools = prefs.disabledTools || []
-    const runtimeDisabledTools: string[] = enableWebSearch === false ? ['web_search', 'read_webpage'] : []
-    const availableTools = ALL_TOOLS.filter(
-      t => !userDisabledTools.includes(t.name) || ALWAYS_ENABLED_TOOL_NAMES.has(t.name),
-    )
+    const runtimeDisabledTools = enableWebSearch === false ? [...WEB_SEARCH_TOOL_NAMES] : []
+    const requestAvailability = resolveToolAvailability(ALL_TOOLS, {
+      userDisabled: userDisabledTools,
+      runtimeDisabled: runtimeDisabledTools,
+      alwaysEnabled: ALWAYS_ENABLED_TOOL_NAMES,
+    })
     // 注入段用:首轮给完整清单,之后按「已禁用/已恢复」发差量(见 planInjection)
     const toolsText = buildToolPromptLines(new Set(userDisabledTools))
-    const toolNames = availableTools.map(t => t.name)
+    const toolNames = requestAvailability.enabled.map(t => t.name)
 
     // ── 图片附件 ──
     const imageAttachments = attachments.filter(a => IMAGE_EXT_RE.test(a.originalFilename))
@@ -1374,7 +1343,7 @@ export async function chatRoutes(app: FastifyInstance) {
         language: prefs.language || 'zh-CN',
         toolsText,
         toolNames,
-        disabledToolCount: ALL_TOOLS.length - availableTools.length,
+        disabledToolCount: ALL_TOOLS.length - requestAvailability.enabled.length,
         // 继承的段(重试)放最前,与新一轮的附件段合并成同一条注入消息(与首次发送的形态一致)
         extraSections: [
           ...inheritedSections,
@@ -1416,7 +1385,7 @@ export async function chatRoutes(app: FastifyInstance) {
     // 输出预留必须钳制:模型配置里可能被填成上下文窗口量级(重试/续写路径同样适用)
     const maxTokens = Math.min(activeConfig?.maxTokens ?? prefs.maxTokens, MAX_OUTPUT_TOKENS)
     const enabledTools: Record<string, any> = {}
-    for (const tool of availableTools) {
+    for (const tool of requestAvailability.enabled) {
       enabledTools[tool.name] = { description: tool.description, inputSchema: tool.parameters }
     }
     const historyBudget = computeHistoryBudget(activeConfig?.contextWindow, maxTokens, systemPrompt, enabledTools)
@@ -1688,6 +1657,20 @@ export async function chatRoutes(app: FastifyInstance) {
     // 若本批包含 switch_book 决定，续流账本上下文切换为新账本
     let continuationBookId: string | null = null
 
+    /**
+     * 决策期审计：字段拼装只此一处，调用点只说明「谁做了哪个决定」。
+     * 与执行期审计（runtime/run-tool.ts）分开——决策发生在工具早已返回之后。
+     */
+    const auditToolDecision = (entry: any, action: 'confirm' | 'reject', result?: unknown) =>
+      logToolCall({
+        userId,
+        sessionId: message.sessionId,
+        action,
+        toolName: entry.toolName,
+        input: entry.args,
+        output: result,
+      })
+
     for (const { toolCallId, approved, data } of decisions) {
       const entry = toolCalls.find((tc: any) => tc.toolCallId === toolCallId)
       if (!entry) continue
@@ -1698,7 +1681,7 @@ export async function chatRoutes(app: FastifyInstance) {
         entry.result = toolResult
         initialSSEEvents.push({ event: 'tool-result', data: { toolCallId, toolName: entry.toolName, result: toolResult, durationMs: 0, status: 'error' } })
         pendingToolResults.push({ toolCallId, toolName: entry.toolName, result: toolResult })
-        await logToolCall({userId, sessionId: message.sessionId, action: 'reject', toolName: entry.toolName})
+        await auditToolDecision(entry, 'reject')
         continue
       }
 
@@ -1743,14 +1726,7 @@ export async function chatRoutes(app: FastifyInstance) {
         initialSSEEvents.push({ event: 'tool-result', data: { toolCallId, toolName: entry.toolName, result: toolResult, durationMs: 0, status: 'success' } })
         pendingToolResults.push({ toolCallId, toolName: entry.toolName, result: toolResult })
         continuationBookId = bookId
-        await logToolCall({
-          userId,
-          sessionId: message.sessionId,
-          action: 'confirm',
-          toolName: entry.toolName,
-          input: entry.args,
-          output: toolResult
-        })
+        await auditToolDecision(entry, 'confirm', toolResult)
         continue
       }
 
@@ -1761,14 +1737,7 @@ export async function chatRoutes(app: FastifyInstance) {
         entry.result = toolResult
         initialSSEEvents.push({ event: 'tool-result', data: { toolCallId, toolName: entry.toolName, result: toolResult, durationMs: 0, status: 'success' } })
         pendingToolResults.push({ toolCallId, toolName: entry.toolName, result: toolResult })
-        await logToolCall({
-          userId,
-          sessionId: message.sessionId,
-          action: 'confirm',
-          toolName: entry.toolName,
-          input: entry.args,
-          output: toolResult
-        })
+        await auditToolDecision(entry, 'confirm', toolResult)
         continue
       }
 
@@ -1782,15 +1751,15 @@ export async function chatRoutes(app: FastifyInstance) {
         continue
       }
 
-      const ctx = { userId, accountBookId }
+      // confirmed: true 让 confirm_import 进入写库阶段；模型传参数无法伪造这一点
+      const ctx = { userId, accountBookId, confirmed: true }
       let toolResult: any
       try {
         if (entry.toolName === 'preview_import') {
           const args = entry.args || {}
           const userOverrides = peekImportOverrides(args.attachmentId as string)
           const mergedArgs = { ...args, accountResolutions: userOverrides?.accountResolutions ?? args.accountResolutions, categoryResolutions: userOverrides?.categoryResolutions ?? args.categoryResolutions }
-          toolResult = await tool.execute(mergedArgs, ctx)
-          const reData = toolResult.data || {}
+          const reData = ((await tool.execute(mergedArgs, ctx)) ?? {}) as any
           toolResult = {
             success: true, retryable: false,
             // confirmed: true 标记该预览已确认，前端 ImportPreviewInteractive 据此切换为「已确认」并禁用按钮（防重复提交）
@@ -1799,28 +1768,22 @@ export async function chatRoutes(app: FastifyInstance) {
         } else if (entry.toolName === 'confirm_import') {
           const args = entry.args || {}
           const userOverrides = peekImportOverrides(args.attachmentId as string)
-          const mergedArgs: any = { ...args, _execute: true }
+          const mergedArgs: any = { ...args }
           if (userOverrides?.ownerId) mergedArgs.ownerId = userOverrides.ownerId
-          toolResult = await tool.execute(mergedArgs, ctx)
+          toolResult = { success: true, data: await tool.execute(mergedArgs, ctx), retryable: false }
         } else {
-          toolResult = await tool.execute(entry.args || {}, ctx)
+          toolResult = { success: true, data: await tool.execute(entry.args || {}, ctx), retryable: false }
         }
-      } catch (err: any) {
-        toolResult = { success: false, error: err.message, retryable: false }
+      } catch (err) {
+        const info = classifyToolError(err)
+        toolResult = { success: false, error: `[${tool.displayName}] ${info.message}`, retryable: info.retryable }
       }
 
       entry.status = toolResult.success ? 'success' : 'error'
       entry.result = toolResult
       initialSSEEvents.push({ event: 'tool-result', data: { toolCallId, toolName: entry.toolName, result: toolResult, durationMs: 0, status: entry.status } })
       pendingToolResults.push({ toolCallId, toolName: entry.toolName, result: toolResult })
-      await logToolCall({
-        userId,
-        sessionId: message.sessionId,
-        action: 'confirm',
-        toolName: entry.toolName,
-        input: entry.args,
-        output: toolResult
-      })
+      await auditToolDecision(entry, 'confirm', toolResult)
     }
 
     // 统一写入 DB

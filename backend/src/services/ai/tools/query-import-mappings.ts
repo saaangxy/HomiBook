@@ -1,6 +1,6 @@
 import type { ToolDef, ToolContext } from './types.js'
 import { prisma } from '../../../app.js'
-import { checkEnums } from '../security.js'
+import { checkEnums, ToolError } from '../security.js'
 import { IMPORT_SOURCES } from '@homibook/core'
 
 /** 映射类型(本工具专属) */
@@ -25,7 +25,7 @@ export const queryImportMappingsTool: ToolDef = {
       source: [args.source, IMPORT_SOURCES],
       mappingType: [args.mappingType, MAPPING_TYPES],
     })
-    if (badEnum) return badEnum
+    if (badEnum) throw new ToolError(badEnum.error ?? '参数非法', badEnum.retryable)
 
     const source = args.source || undefined
     const mappingType = args.mappingType || undefined
@@ -48,10 +48,6 @@ export const queryImportMappingsTool: ToolDef = {
         : Promise.resolve([]),
     ])
 
-    return {
-      success: true,
-      retryable: false,
-      data: { accountMappings, categoryMappings },
-    }
+    return { accountMappings, categoryMappings }
   },
 }
