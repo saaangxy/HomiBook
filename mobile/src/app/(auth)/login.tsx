@@ -59,10 +59,10 @@ export default function LoginScreen() {
         }
         await loginWithApiKey(apiKey, effectiveServerId ?? '');
       }
-      haptics.success();
+      await haptics.success();
       router.replace('/(tabs)');
     } catch (e) {
-      haptics.warn();
+      await haptics.warn();
       // 展示真实报错信息(联调排雷),避免一律吞成「登录失败」
       setError(e instanceof Error ? e.message : '登录失败,请重试');
     } finally {

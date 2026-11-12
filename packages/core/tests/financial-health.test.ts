@@ -8,7 +8,7 @@ import {
   scoreInvestment,
   scoreLeverage,
   scoreSavings,
-} from '../src/financial-health.js';
+} from '../src';
 
 describe('lerpScore', () => {
   it('区间内线性插值并取整', () => {

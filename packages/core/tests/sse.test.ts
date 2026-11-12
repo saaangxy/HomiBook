@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { consumeSSEStream, parseSSEStream } from '../src/ai/sse.js';
-import type { SSEFrame, SseReadableStream } from '../src/ai/sse.js';
+import { consumeSSEStream, parseSSEStream } from '../src';
+import type { SSEFrame, SseReadableStream } from '../src';
 
 describe('parseSSEStream', () => {
   it('解析 event + data JSON 帧', () => {

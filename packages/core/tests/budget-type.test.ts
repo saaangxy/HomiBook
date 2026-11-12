@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BUDGET_TYPES, isBudgetType, normalizeBudgetType } from '../src/types/budget.js'
+import { BUDGET_TYPES, isBudgetType, normalizeBudgetType } from '../src'
 
 // 背景:预算列表按 type(FIXED/FREE)过滤,而各端渲染用 `type === 'FIXED' ? 固定 : 自由` 分支,
 // 非法值会「显示为自由预算但任何列表都查不到」,故写入前归一化。

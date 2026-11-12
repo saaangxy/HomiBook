@@ -1,7 +1,7 @@
 import type {FastifyInstance} from 'fastify'
 import {prisma} from '../app.js'
 import {authenticate, requireAdmin} from '../middleware/auth.js'
-import {updateConfigSchema, createDictionarySchema, updateDictionarySchema} from '../schemas/settings.js'
+import {createDictionarySchema, updateConfigSchema, updateDictionarySchema} from '../schemas/settings.js'
 import path from 'path'
 import fs from 'fs'
 import {z} from 'zod'
@@ -151,10 +151,9 @@ export async function settingsRoutes(app: FastifyInstance) {
                 const {group, code, label, order} = parsed.data
 
                 try {
-                    const item = await prisma.dictionary.create({
+                    return await prisma.dictionary.create({
                         data: {group, code, label, order},
                     })
-                    return item
                 } catch (e: any) {
                     if (e.code === 'P2002') {
                         return reply.status(409).send({message: '该编码已存在'})

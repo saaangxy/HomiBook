@@ -25,12 +25,4 @@ export const MEMORY_TYPE_LABELS: Record<string, string> = {
   extracted: '自动提取',
 };
 
-export interface UserMemoryItem {
-  id: string;
-  userId: string;
-  memoryType: string;
-  content: string;
-  importance: number;
-  createdAt: string;
-  updatedAt: string;
-}
+

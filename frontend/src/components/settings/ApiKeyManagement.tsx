@@ -81,7 +81,7 @@ export function ApiKeyManagement() {
       setCreatedKey(result)
       setCreateApiKeyOpen(false)
       resetApiKeyForm()
-      loadApiKeys()
+      await loadApiKeys()
     } catch (e) {
       setApiKeyFormError(errorMessage(e))
     } finally {
@@ -95,7 +95,7 @@ export function ApiKeyManagement() {
       await apikeyApi.delete(deleteApiKeyTarget.id)
       toast.success('API Key 已删除')
       setDeleteApiKeyTarget(null)
-      loadApiKeys()
+      await loadApiKeys()
     } catch (e) {
       setApiKeysError(errorMessage(e))
     }

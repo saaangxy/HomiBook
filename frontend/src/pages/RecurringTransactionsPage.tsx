@@ -300,7 +300,7 @@ export function RecurringTransactionsPage() {
 
       setDialogOpen(false)
       resetForm()
-      loadData()
+      await loadData()
     } catch (e) { setFormError(errorMessage(e)) }
     finally { setSubmitting(false) }
   }
@@ -310,14 +310,14 @@ export function RecurringTransactionsPage() {
     try {
       await recurringApi.delete(deleteTarget.id)
       setDeleteTarget(null)
-      loadData()
+      await loadData()
     } catch (e) { setError(errorMessage(e)) }
   }
 
   const handleToggle = async (rt: RecurringTransaction) => {
     try {
       await recurringApi.toggle(rt.id)
-      loadData()
+      await loadData()
     } catch (e) { setError(errorMessage(e)) }
   }
 

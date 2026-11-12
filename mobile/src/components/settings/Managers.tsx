@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Modal, Pressable, ScrollView, View } from 'react-native';
 import { Pencil, Plus, Trash2 } from 'lucide-react-native';
 import { useTheme, alpha } from '@/theme';
@@ -105,7 +105,7 @@ export function DictManager() {
       }
       setAdding(false);
       resetForm();
-      load(group);
+      await load(group);
     } catch (e: any) {
       setFormError(e?.message ?? '保存失败');
     } finally {
@@ -120,7 +120,7 @@ export function DictManager() {
       onConfirm: async () => {
         try {
           await settingsApi.deleteDictionaryItem(item.id);
-          load(group);
+          await load(group);
         } catch (e: any) {
           showToast(e?.message ?? '删除失败');
         }
@@ -128,7 +128,6 @@ export function DictManager() {
     });
   };
 
-  const inputStyle = useInputStyle();
   const groupLabel = DICT_GROUPS.find((g) => g.key === group)?.label ?? '';
 
   return (
@@ -215,7 +214,7 @@ export function ApiKeyManager() {
       setCreated(res.key);
       setCreating(false);
       setName('');
-      load();
+      await load();
     } catch (e: any) {
       setFormError(e?.message ?? '创建失败');
     } finally {
@@ -230,7 +229,7 @@ export function ApiKeyManager() {
       onConfirm: async () => {
         try {
           await apikeyApi.delete(item.id);
-          load();
+          await load();
         } catch (e: any) {
           showToast(e?.message ?? '删除失败');
         }
@@ -366,7 +365,7 @@ export function CategoryMappingManager({ dictGroups: _dictGroups }: { dictGroups
       }]);
       showToast(editing ? '分类映射已更新' : '分类映射已添加');
       setFormOpen(false);
-      load(source);
+      await load(source);
     } catch (e: any) {
       setFormError(e?.message ?? '保存失败');
     } finally {
@@ -381,7 +380,7 @@ export function CategoryMappingManager({ dictGroups: _dictGroups }: { dictGroups
       onConfirm: async () => {
         try {
           await importExportApi.deleteMapping(m.id);
-          load(source);
+          await load(source);
         } catch (e: any) {
           showToast(e?.message ?? '删除失败');
         }
@@ -530,7 +529,7 @@ export function AccountMappingManager() {
       showToast(editing ? '账户映射已更新' : '账户映射已添加');
       setFormOpen(false);
       resetForm();
-      load(source);
+      await load(source);
     } catch (e: any) {
       setFormError(e?.message ?? '保存失败');
     } finally {
@@ -545,7 +544,7 @@ export function AccountMappingManager() {
       onConfirm: async () => {
         try {
           await importExportApi.deleteAccountMapping(m.id);
-          load(source);
+          await load(source);
         } catch (e: any) {
           showToast(e?.message ?? '删除失败');
         }

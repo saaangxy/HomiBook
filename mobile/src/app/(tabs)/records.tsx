@@ -271,7 +271,7 @@ export default function RecordsScreen() {
   const onUnoffset = useCallback(async (r: RecordItem) => {
     try {
       await batchOffset([r.id], false);
-      haptics.success();
+      await haptics.success();
       // 本地即时恢复为未平账,避免整页重拉
       setItems((prev) => prev.map((x) => (x.id === r.id ? { ...x, offsetAt: null } : x)));
     } catch {
@@ -298,7 +298,7 @@ export default function RecordsScreen() {
     if (!bookId || exporting) return;
     setExportSheetOpen(false);
     setExporting(true);
-    haptics.tap();
+    await haptics.tap();
     try {
       await exportRecordsCsv(
         {
@@ -312,7 +312,7 @@ export default function RecordsScreen() {
         },
         mode,
       );
-      haptics.success();
+      await haptics.success();
     } catch (e: any) {
       showToast(`导出失败: ${e.message?.slice(0, 200) || '未知错误'}`);
     } finally {

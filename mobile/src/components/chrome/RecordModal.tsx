@@ -219,7 +219,7 @@ export function RecordModal() {
       try {
         if (editingRecord) await updateRecord(editingRecord.id, payload);
         else await addRecord(payload);
-        haptics.success();
+        await haptics.success();
         // 保存成功:直接刷新发起编辑的当前页面(仅前台页响应)
         notifyPageRefresh();
         close();
@@ -246,7 +246,7 @@ export function RecordModal() {
     try {
       if (editingRecord) await updateRecord(editingRecord.id, payload);
       else await addRecord(payload);
-      haptics.success();
+      await haptics.success();
       notifyPageRefresh();
       close();
     } finally {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { isAwaitingUserAction, resolveToolCallStatus } from '../src/ai/tool-status.js';
-import type { ToolCallEntry } from '../src/types/index.js';
+import { isAwaitingUserAction, resolveToolCallStatus } from '../src';
+import type { ToolCallEntry } from '../src';
 
 /** 构造 ToolCallEntry,默认 pending 状态 */
 const tc = (partial: Partial<ToolCallEntry> & Pick<ToolCallEntry, 'toolName'>): ToolCallEntry => ({

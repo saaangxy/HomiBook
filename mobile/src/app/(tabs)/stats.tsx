@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useTheme, alpha, useChartColors } from '@/theme';
 import { useIsFocused } from 'expo-router';
 import {
@@ -20,7 +20,7 @@ import {
   fetchMonthlyTrend, fetchBalanceHistory, fetchAccounts, fetchGroupSummary, fetchCategoryTrend, fetchSummary, fetchRecordsPaged, fetchBookMembers, fetchBudgets, type GroupSummaryItem, type CategoryTrendResult, } from '@/services/records';
 import { fetchRecurring } from '@/services/recurring';
 import { computeRadarMetrics, computeTimeRadar } from '@/lib/financial-health';
-import { accountLabel, isMultiOwnerAccounts, StatGranularity } from '@homibook/core';
+import { accountLabel, isMultiOwnerAccounts } from '@homibook/core';
 
 
 import type { BudgetItem, LedgerMember, RadarMetric, RecordItem, RecordSummary } from '@/types';

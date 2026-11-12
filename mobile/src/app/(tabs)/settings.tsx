@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Linking, Pressable, View } from 'react-native';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
@@ -54,7 +54,7 @@ function useAboutRows() {
 
   const checkUpdate = useCallback(async () => {
     if (checking) return;
-    haptics.tap();
+    await haptics.tap();
     setChecking(true);
     setCheckError('');
     try {

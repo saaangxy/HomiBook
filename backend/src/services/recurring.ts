@@ -1,4 +1,3 @@
-import { prisma } from '../app.js'
 import { CronExpressionParser } from 'cron-parser'
 
 // 等额本息：计算月还款额
@@ -104,14 +103,6 @@ export function getNextTriggerTime(cron: string, fromDate?: Date): Date | null {
   } catch {
     return null
   }
-}
-
-// 计算当前期数（从 startDate 到现在的月份数 + 1）
-export function getCurrentPeriod(startDate: Date, termMonths: number): number {
-  const now = new Date()
-  const monthsDiff = (now.getFullYear() - startDate.getFullYear()) * 12 + (now.getMonth() - startDate.getMonth())
-  const period = monthsDiff + 1
-  return Math.max(1, Math.min(period, termMonths))
 }
 
 // 标签追加"固定收支"

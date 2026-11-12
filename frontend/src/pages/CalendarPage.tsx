@@ -240,9 +240,9 @@ export function CalendarPage() {
 
       setFormOpen(false)
       resetForm()
-      loadDayRecords()
-      loadCalendar()
-      loadAccounts()
+      await loadDayRecords()
+      await loadCalendar()
+      await loadAccounts()
     } catch (e) {
       setFormError(errorMessage(e))
     } finally {
@@ -255,9 +255,9 @@ export function CalendarPage() {
     try {
       await recordApi.delete(deleteTarget.id)
       setDeleteTarget(null)
-      loadDayRecords()
-      loadCalendar()
-      loadAccounts()
+      await loadDayRecords()
+      await loadCalendar()
+      await loadAccounts()
     } catch { /* ignore */ }
   }
 

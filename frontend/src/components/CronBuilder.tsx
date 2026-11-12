@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import cronstrue from 'cronstrue/i18n'
+import * as React from "react";
 
 export interface CronBuilderProps {
   value?: string

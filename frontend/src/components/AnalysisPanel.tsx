@@ -19,6 +19,7 @@ import { PieChart, Users, Wallet, X, List, ChevronLeft, ChevronRight } from 'luc
 import { useChartTheme, type ChartTheme, generateChartColors } from '@/hooks/useChartTheme'
 import { RECORD_TYPE_HEX } from '@/lib/record-type'
 import { STAT_GROUP_BYS, formatMoney, accountLabel, isMultiOwnerAccounts } from '@homibook/core';
+import * as React from "react";
 
 
 

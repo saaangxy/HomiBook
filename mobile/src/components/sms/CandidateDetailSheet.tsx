@@ -121,7 +121,7 @@ export function CandidateDetailSheet({ visible, candidate, previewRow, checked, 
               variant="secondary"
               onPress={async () => {
                 await Clipboard.setStringAsync(candidate.raw || '');
-                haptics.tap();
+                await haptics.tap();
                 showToast('原文已复制');
               }}
             />

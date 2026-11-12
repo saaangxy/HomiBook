@@ -27,11 +27,6 @@ export type RepaymentPlanStatus = 'PENDING' | 'GENERATED';
 /** 还款计划状态全集 */
 export const REPAYMENT_PLAN_STATUSES = ['PENDING', 'GENERATED'] as const;
 
-export const REPAYMENT_PLAN_STATUS_LABELS: Record<RepaymentPlanStatus, string> = {
-  PENDING: '待还款',
-  GENERATED: '已生成',
-};
-
 export interface RecurringTransaction {
   id: string;
   accountBookId: string;

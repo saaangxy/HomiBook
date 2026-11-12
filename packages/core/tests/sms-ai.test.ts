@@ -5,7 +5,7 @@ import {
   truncateSmsAiText,
   type SmsAiExtractCandidate,
   type SmsAiExtractItem,
-} from '../src/sms-ai.js';
+} from '../src';
 
 const item: SmsAiExtractItem = {
   sourceId: 'sms:7',

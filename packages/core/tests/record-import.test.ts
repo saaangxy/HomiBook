@@ -19,8 +19,8 @@ import {
   IMPORT_SOURCE_LABELS,
   TYPE_TO_GROUP,
   type AccountResolution,
-} from '../src/record-import.js';
-import type { PoolAccount, RawAccountCreation, UnmatchedAccountInput } from '../src/record-import.js';
+} from '../src';
+import type { PoolAccount, RawAccountCreation, UnmatchedAccountInput } from '../src';
 
 describe('matchAccountInPoolDetailed', () => {
   const pool: PoolAccount[] = [

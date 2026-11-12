@@ -62,7 +62,7 @@ export default function ProfileScreen() {
     setNickError('');
     try {
       await updateNickname(nick);
-      haptics.success();
+      await haptics.success();
       showToast('昵称已更新');
     } catch (e: any) {
       setNickError(e?.message ?? '保存失败,请重试');
@@ -89,7 +89,7 @@ export default function ProfileScreen() {
     setPwdError('');
     try {
       await apiChangePassword(curPwd, newPwd);
-      haptics.success();
+      await haptics.success();
       showToast('密码已修改');
       setCurPwd(''); setNewPwd(''); setConfirmPwd('');
     } catch (e: any) {

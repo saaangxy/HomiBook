@@ -126,7 +126,7 @@ export function CategoryMappingSettings() {
       setMappingNewDescriptionContains('')
       setMappingNewRecordType('__all__')
       setMappingNewTargetCode('')
-      loadMappings(mappingSource)
+      await loadMappings(mappingSource)
     } catch (e) {
       setMappingFormError(errorMessage(e))
     } finally {
@@ -141,7 +141,7 @@ export function CategoryMappingSettings() {
       await importExportApi.deleteMapping(mappingDeleteTarget.id)
       toast.success('分类映射已删除')
       setMappingDeleteTarget(null)
-      loadMappings(mappingSource)
+      await loadMappings(mappingSource)
     } catch (e) {
       setMappingsError(errorMessage(e))
     }

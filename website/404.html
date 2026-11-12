@@ -51,7 +51,7 @@
     a {
       padding: 10px 20px;
       border-radius: 10px;
-      font-size: 14.5px;
+      font-size: 15px;
       font-weight: 600;
       text-decoration: none;
       transition: transform 0.18s ease;
@@ -86,7 +86,7 @@
   </main>
   <script>
     // 项目站点部署在 /<repo>/ 下，取路径首段拼出站点根
-    var segment = location.pathname.split('/')[1];
+    const segment = location.pathname.split('/')[1];
     if (segment) document.getElementById('home').href = '/' + segment + '/';
   </script>
 </body>

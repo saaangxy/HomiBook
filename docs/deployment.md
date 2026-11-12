@@ -18,10 +18,10 @@
 
 同一版本会同时推送到两个仓库，内容完全一致，按网络情况任选：
 
-| 仓库 | 镜像名 | 说明 |
-|---|---|---|
-| DockerHub | `saaangxy/homibook` | 默认，`docker compose` 直接使用 |
-| GitHub Container Registry | `ghcr.io/saaangxy/homibook` | 国内访问通常更快，公开镜像无需登录 |
+| 仓库                        | 镜像名                         | 说明                       |
+|---------------------------|-----------------------------|--------------------------|
+| DockerHub                 | `saaangxy/homibook`         | 默认，`docker compose` 直接使用 |
+| GitHub Container Registry | `ghcr.io/saaangxy/homibook` | 国内访问通常更快，公开镜像无需登录        |
 
 tag 统一为 `latest` 与 `v<版本号>`（如 `v1.2.3`）。
 
@@ -69,14 +69,14 @@ IMAGE_TAG=v0.0.1 docker compose up -d
 
 ### 环境变量（.env）
 
-| 变量 | 默认值 | 说明 |
-|---|---|---|
-| `PORT` | `8080` | 服务端口（内部 + 对外） |
-| `JWT_SECRET` | 默认密钥 | **务必修改**为随机长字符串 |
-| `DATABASE_PROVIDER` | `sqlite` | `sqlite` / `mysql` / `postgresql` |
-| `DATABASE_URL` | `file:/app/data/dev.db` | 对应数据库连接串 |
-| `IMAGE_REPO` | `saaangxy/homibook` | 镜像仓库；切 GHCR 填 `ghcr.io/saaangxy/homibook` |
-| `IMAGE_TAG` | `latest` | 镜像版本；回滚时填 `v<版本号>` |
+| 变量                  | 默认值                     | 说明                                        |
+|---------------------|-------------------------|-------------------------------------------|
+| `PORT`              | `8080`                  | 服务端口（内部 + 对外）                             |
+| `JWT_SECRET`        | 默认密钥                    | **务必修改**为随机长字符串                           |
+| `DATABASE_PROVIDER` | `sqlite`                | `sqlite` / `mysql` / `postgresql`         |
+| `DATABASE_URL`      | `file:/app/data/dev.db` | 对应数据库连接串                                  |
+| `IMAGE_REPO`        | `saaangxy/homibook`     | 镜像仓库；切 GHCR 填 `ghcr.io/saaangxy/homibook` |
+| `IMAGE_TAG`         | `latest`                | 镜像版本；回滚时填 `v<版本号>`                        |
 
 完整模板见项目根目录 [.env.example](../.env.example)。
 

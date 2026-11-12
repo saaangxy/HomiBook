@@ -27,6 +27,7 @@ import { MAX_ATTACH_MB, useFileIntake } from '@/hooks/use-file-intake'
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle,
 } from '@/components/ui/sheet'
+import * as React from "react";
 
 export function ChatWindow({ dock = false }: { /** 浮窗模式:桌面也把会话列表收进抽屉,给正文让出宽度 */ dock?: boolean } = {}) {
   const [input, setInput] = useState('')
@@ -447,9 +448,9 @@ export function ChatWindow({ dock = false }: { /** 浮窗模式:桌面也把会�
       const res = await importExportApi.uploadImportFile(file)
       // 账单文件本身就是一个附件:把 attachmentId 一起发出去,AI 从附件清单取 id 调 preview_import。
       // 消息里只留一句自然语言请求(见 core buildImportMessage),不再往文本里编码任何 id。
-      handleSend(buildImportMessage({ source: pendingSourceRef.current }), {
+      await handleSend(buildImportMessage({source: pendingSourceRef.current}), {
         attachmentIds: [res.attachmentId],
-        attachments: [{ id: res.attachmentId, url: res.url, originalFilename: res.filename }],
+        attachments: [{id: res.attachmentId, url: res.url, originalFilename: res.filename}],
       })
     } catch {
       // ignore

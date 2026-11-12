@@ -13,11 +13,11 @@
   <link rel="stylesheet" href="./assets/style.css" />
   <script>
     (function () {
-      var root = document.documentElement;
+      const root = document.documentElement;
       root.classList.add('js');
       try {
-        var stored = localStorage.getItem('homibook-theme');
-        var dark = stored ? stored === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const stored = localStorage.getItem('homibook-theme');
+        const dark = stored ? stored === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
         root.dataset.theme = dark ? 'dark' : 'light';
       } catch (e) {
         root.dataset.theme = 'light';

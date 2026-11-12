@@ -236,10 +236,6 @@ export async function fetchProviderBaseURL(provider: string) {
   return api.get<{ baseURL: string; isCustom: boolean }>(`${BASE}/providers/baseurl?provider=${encodeURIComponent(provider)}`)
 }
 
-export async function saveProviderBaseURL(provider: string, baseURL: string) {
-  return api.post<{ success: boolean; baseURL: string; isCustom: boolean }>(`${BASE}/providers/baseurl`, { provider, baseURL })
-}
-
 export async function testProviderConnection(data: { provider: string; apiKey: string; baseURL: string; model?: string; configId?: string }) {
   return api.post<{ success: boolean; message: string; models?: string[] }>(`${BASE}/providers/test`, data)
 }

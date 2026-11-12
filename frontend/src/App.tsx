@@ -17,6 +17,7 @@ import { CalendarPage } from './pages/CalendarPage'
 import { BudgetsPage } from './pages/BudgetsPage'
 import { RecurringTransactionsPage } from './pages/RecurringTransactionsPage'
 import { useAuthStore } from './stores/auth'
+import * as React from "react";
 
 const queryClient = new QueryClient()
 

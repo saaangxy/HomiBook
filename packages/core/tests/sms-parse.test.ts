@@ -5,7 +5,7 @@ import {
   normalizeEpochMs,
   parseTransactionSms,
   screenSms,
-} from '../src/sms-parse.js';
+} from '../src';
 
 // 样本来源标注:
 // - 「真实样本」为用户提供的脱敏短信,字段期望值按实际银行格式锁定;

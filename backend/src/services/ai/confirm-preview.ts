@@ -177,7 +177,7 @@ export async function buildConfirmPreview(
 
 // ---- 各工具预览构建 ----
 
-async function buildDeletePreview(args: any, accountBookId: string): Promise<string> {
+async function buildDeletePreview(args: any, _accountBookId: string): Promise<string> {
   const recordId = args.id || args.recordId
   const record = await prisma.record.findUnique({
     where: { id: recordId },

@@ -3,6 +3,7 @@ import { Bell, Bot, Brain, Check, ChevronDown, ChevronUp, Loader2, Maximize2, Mi
 import { ChatWindow } from './ChatWindow'
 import { useChatStore } from '@/stores/chat'
 import { cn } from '@/lib/utils'
+import * as React from "react";
 
 /**
  * 全局 AI 浮窗入口:右下角浮动按钮唤起可拖拽/可最大化的聊天窗。

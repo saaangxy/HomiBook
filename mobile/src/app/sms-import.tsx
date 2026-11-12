@@ -291,7 +291,7 @@ export default function SmsImportScreen() {
         .sort((a, b) => b.date.localeCompare(a.date))
         .map((c, i) => ({ ...c, rowIndex: i + 1 }));
       setCandidates(list);
-      haptics.tap();
+      await haptics.tap();
       if (list.length === 0) {
         showToast(`近 ${days} 天没有待处理的新交易记录`);
         setSelected(new Set());
@@ -408,7 +408,7 @@ export default function SmsImportScreen() {
     });
     setRules(saved);
     setRulesOpen(false);
-    haptics.success();
+    await haptics.success();
     showToast('筛选规则已保存(重新扫描生效)');
   };
 
@@ -422,7 +422,7 @@ export default function SmsImportScreen() {
 
   /** 打开发件人下拉:候选从本机缓存现读,保证是最近一次扫描后的列表 */
   const openSenderPicker = async () => {
-    haptics.tap();
+    await haptics.tap();
     setSenderOptions(await loadSmsSenders());
     setSendersOpen(true);
   };
@@ -430,7 +430,7 @@ export default function SmsImportScreen() {
   const clearSenderCache = async () => {
     await clearSmsSenders();
     setSenderOptions([]);
-    haptics.success();
+    await haptics.success();
     showToast('已清空发件人候选缓存');
   };
 

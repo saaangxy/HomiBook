@@ -23,6 +23,7 @@ import { bookApi, type BookMember } from '@/api/book'
 import { useAuthStore } from '@/stores/auth'
 import { Upload, FileText, CheckCircle, AlertCircle, ArrowLeft, ArrowRight, ChevronDown } from 'lucide-react'
 import dayjs from 'dayjs'
+import * as React from "react";
 
 interface ImportDialogProps {
   open: boolean

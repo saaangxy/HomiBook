@@ -47,10 +47,10 @@ yarn dev
 
 ### 变量说明
 
-| 变量 | 说明 | 示例 |
-|---|---|---|
-| `DATABASE_PROVIDER` | 数据库类型 | `sqlite` / `mysql` / `postgresql` |
-| `DATABASE_URL` | 连接串 | `file:./prisma/dev.db` / `mysql://...` / `postgresql://...` |
+| 变量                  | 说明    | 示例                                                          |
+|---------------------|-------|-------------------------------------------------------------|
+| `DATABASE_PROVIDER` | 数据库类型 | `sqlite` / `mysql` / `postgresql`                           |
+| `DATABASE_URL`      | 连接串   | `file:./prisma/dev.db` / `mysql://...` / `postgresql://...` |
 
 ### 多数据库机制（Prisma 7 驱动适配器）
 
@@ -134,12 +134,12 @@ npm run dev
 
 ## 常用 npm scripts
 
-| 命令（在 `backend/` 下执行） | 说明 |
-|---|---|
-| `npm run dev` | 启动开发服务器（端口 3002） |
-| `npm run build` | TypeScript 编译 |
-| `npm run db:generate` | 为 sqlite/mysql/postgresql 各生成一份 Prisma Client + schema 副本 |
-| `npm run db:push` | 同步表结构（**仅限本地开发**，勿用于正式库） |
-| `npm run db:migrate` | 生成并应用迁移（`migrate dev`） |
-| `npm run db:migrate:all -- --name <迁移名>` | 对所有已配置数据库一键生成迁移 |
-| `npm run db:deploy` | 部署时应用已提交迁移（`migrate deploy`） |
+| 命令（在 `backend/` 下执行）                     | 说明                                                        |
+|------------------------------------------|-----------------------------------------------------------|
+| `npm run dev`                            | 启动开发服务器（端口 3002）                                          |
+| `npm run build`                          | TypeScript 编译                                             |
+| `npm run db:generate`                    | 为 sqlite/mysql/postgresql 各生成一份 Prisma Client + schema 副本 |
+| `npm run db:push`                        | 同步表结构（**仅限本地开发**，勿用于正式库）                                  |
+| `npm run db:migrate`                     | 生成并应用迁移（`migrate dev`）                                    |
+| `npm run db:migrate:all -- --name <迁移名>` | 对所有已配置数据库一键生成迁移                                           |
+| `npm run db:deploy`                      | 部署时应用已提交迁移（`migrate deploy`）                              |

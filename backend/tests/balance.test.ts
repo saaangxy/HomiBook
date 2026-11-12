@@ -77,7 +77,7 @@ describe('sumDeltasForAccount / 全账本对账', () => {
   ]
 
   it('逐笔累加与公式结果一致', () => {
-    expect(sumDeltasForAccount(records, A)).toBe(1000 - 120 - 300 + 50 + 0)
+    expect(sumDeltasForAccount(records, A)).toBe(1000 - 120 - 300 + 50)
     expect(sumDeltasForAccount(records, B)).toBe(300 - 50 + 20)
   })
 

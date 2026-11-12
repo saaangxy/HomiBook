@@ -9,6 +9,7 @@ import { PasswordStrength } from '../components/PasswordStrength'
 import { ThemeSelector } from '../components/ThemeSelector'
 import { useIsMobile } from '../hooks/use-mobile'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import * as React from "react";
 
 const styles = {
   container: {

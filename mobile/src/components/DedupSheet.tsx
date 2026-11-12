@@ -226,7 +226,7 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
       const ids = confirmedGroups.flatMap((g) => g.records.filter((r) => selectedIds.has(r.id)).map((r) => r.id));
       if (ids.length === 0) { setConfirmOpen(false); return; }
       await batchDeleteRecordsApi(ids);
-      haptics.success();
+      await haptics.success();
       notifyPageRefresh();
       handleClose();
     } catch (e: any) {
@@ -373,7 +373,7 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
           choices: choices[group.records[0].id],
         })),
       );
-      haptics.success();
+      await haptics.success();
       notifyPageRefresh();
       showToast(`已合并 ${res.mergedGroups} 组 / ${res.mergedRecords} 条`);
       setChoices({});

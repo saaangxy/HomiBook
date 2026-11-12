@@ -64,9 +64,6 @@ export const recurringApi = {
   toggle: (id: string) =>
     api.patch<{ active: boolean }>(`/api/recurring/${id}/toggle`, {}),
 
-  getPlan: (id: string) =>
-    api.get<RepaymentPlan[]>(`/api/recurring/${id}/plan`),
-
   loanPreview: (data: {
     total: number
     annualRate: number

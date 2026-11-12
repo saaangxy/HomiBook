@@ -429,7 +429,7 @@ export async function bookRoutes(app: FastifyInstance) {
                 }
             }
         }
-    }, async (req, reply) => {
+    }, async (req) => {
         const {id} = req.params as { id: string }
         const payload = req.user as { id: string }
 

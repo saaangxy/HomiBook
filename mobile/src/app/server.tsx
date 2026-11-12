@@ -113,7 +113,7 @@ export default function ServerScreen() {
       password: s.password,
       apiKey: s.apiKey,
     });
-    haptics.success();
+    await haptics.success();
   };
 
   // 导出服务器配置为 JSON 文件(Android 走 SAF 保存,iOS 走系统分享)
@@ -169,7 +169,7 @@ export default function ServerScreen() {
       if (!Array.isArray(items)) throw new Error('文件格式不正确,缺少服务器列表');
       const { added, skipped } = await importServers(items as never[]);
       await refreshServers();
-      haptics.success();
+      await haptics.success();
       showToast(skipped > 0 ? `导入 ${added} 个,跳过 ${skipped} 个(重复或格式无效)` : `成功导入 ${added} 个服务器配置`);
     } catch (e: any) {
       showToast(`导入失败: ${e?.message || '未知错误'}`);
@@ -180,7 +180,7 @@ export default function ServerScreen() {
 
   const handleServerTap = async (s: Server) => {
     if (loggingIn) return;
-    haptics.tap();
+    await haptics.tap();
     // 有完整凭证(账号+密码 或 API Key) → 一键登录进首页
     if (s.apiKey || (s.account && s.password)) {
       setLoggingIn(s.id);

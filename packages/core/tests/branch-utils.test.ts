@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildActivePath, collectDescendantIds } from '../src/ai/branch-utils.js';
-import type { Message } from '../src/types/index.js';
+import { buildActivePath, collectDescendantIds } from '../src';
+import type { Message } from '../src';
 
 const msg = (id: string, parent?: string, dbId?: string): Message => ({
   id,

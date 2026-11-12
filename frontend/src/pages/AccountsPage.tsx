@@ -152,7 +152,7 @@ export function AccountsPage() {
       })
       setCreateOpen(false)
       resetForm()
-      loadAccounts()
+      await loadAccounts()
     } catch (e) { setFormError(errorMessage(e)) }
     finally { setSubmitting(false) }
   }
@@ -172,7 +172,7 @@ export function AccountsPage() {
       })
       setEditAccount(null)
       resetForm()
-      loadAccounts()
+      await loadAccounts()
     } catch (e) { setFormError(errorMessage(e)) }
     finally { setSubmitting(false) }
   }
@@ -199,7 +199,7 @@ export function AccountsPage() {
       setAdjustRemark('')
       setAdjustError('')
       setSubmitting(false)
-      loadAccounts()
+      await loadAccounts()
     } catch (e) { setAdjustError(errorMessage(e)); setSubmitting(false) }
   }
 
@@ -208,7 +208,7 @@ export function AccountsPage() {
     try {
       await accountApi.delete(deleteTarget.id)
       setDeleteTarget(null)
-      loadAccounts()
+      await loadAccounts()
     } catch (e) { setError(errorMessage(e)) }
   }
 
@@ -216,7 +216,7 @@ export function AccountsPage() {
     const newStatus = account.status === 'ACTIVE' ? 'ARCHIVED' : 'ACTIVE'
     try {
       await accountApi.update(account.id, { status: newStatus } as any)
-      loadAccounts()
+      await loadAccounts()
     } catch (e) { setError(errorMessage(e)) }
   }
 

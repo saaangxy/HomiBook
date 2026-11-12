@@ -22,6 +22,7 @@ import { accountLabel, isMultiOwnerAccounts, errorMessage, parseOptionalAmount, 
 
 
 import { toast } from 'sonner'
+import * as React from "react";
 
 type GroupState = 'pending' | 'confirmed' | 'ignored'
 

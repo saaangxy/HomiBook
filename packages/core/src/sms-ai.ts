@@ -7,8 +7,8 @@
  * 边界:LLM 只负责「文本 → 字段」。账户匹配、分类映射、去重、入账仍走既有确定性管线
  * (services/import/pipeline.ts + /api/records/import),模型输出只作为候选,必须人工确认。
  */
-import type { RecordType } from './types/index.js';
-import { buildAccountLabel, type SmsTransactionCandidate } from './sms-parse.js';
+import type {RecordType} from './types/index.js';
+import {buildAccountLabel, type SmsTransactionCandidate} from './sms-parse.js';
 
 /** 送 AI 解析的一条内容(正文是唯一的敏感字段) */
 export interface SmsAiExtractItem {
@@ -55,11 +55,6 @@ export interface SmsAiExtractCandidate {
   notes: string[];
 }
 
-/** AI 解析开关(本机偏好,默认关闭) */
-export interface SmsAiExtractSettings {
-  enabled: boolean;
-}
-
 /** 把正文裁到上限(按字符计;短信/通知都在数百字内) */
 export function truncateSmsAiText(text: string, limit: number = SMS_AI_MAX_TEXT_LENGTH): string {
   const body = (text ?? '').trim();
@@ -92,7 +87,7 @@ export function toSmsCandidateFromAi(
 
   const confidence = Math.min(0.95, Math.max(0.2, Number(candidate.confidence) || 0.5));
 
-  const result: SmsTransactionCandidate = {
+  return {
     sourceId: item.sourceId,
     raw: item.text,
     sender: item.sender,
@@ -105,9 +100,8 @@ export function toSmsCandidateFromAi(
     payer,
     accountName: accountLabel,
     remark: [item.channel === 'notification' ? '通知' : '短信', 'AI', accountLabel, tradeKind, payer]
-      .filter(Boolean).join(' '),
+        .filter(Boolean).join(' '),
     balance: null,
     confidence,
   };
-  return result;
 }

@@ -15,6 +15,7 @@ import { Wrench, CheckCircle2, XCircle, Loader2, HelpCircle, ChevronDown, Messag
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { ImportPreviewInteractive, type ImportPreviewData } from './ImportPreviewInteractive'
 import { ImportConfirmCard } from './ImportConfirmCard'
+import * as React from "react";
 
 interface Props {
   toolCall: ToolCallEntry

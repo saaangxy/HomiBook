@@ -17,7 +17,7 @@ import {
   summarizeDedupScopeFilter,
   summarizeDuplicateMerge,
 } from '../src';
-import type { DedupKeyRecord, DedupMatchFields, DedupScopeFilter, DuplicateMergeRecord } from '../src/dedup.js';
+import type { DedupKeyRecord, DedupMatchFields, DedupScopeFilter, DuplicateMergeRecord } from '../src';
 
 const rec: DedupKeyRecord = {
   date: '2024-01-15T02:30:00.000Z',

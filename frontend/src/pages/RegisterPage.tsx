@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { Mail, Lock, User } from 'lucide-react'
 import { authApi } from '../api/auth'
+import * as React from "react";
 
 const styles = {
   container: {

@@ -370,9 +370,9 @@ export function RecordsPage() {
     try {
       await recordApi.delete(deleteTarget.id)
       setDeleteTarget(null)
-      loadRecords()
-      loadSummary()
-      loadAccounts()
+      await loadRecords()
+      await loadSummary()
+      await loadAccounts()
     } catch (e) { setError(errorMessage(e)) }
   }
 
@@ -382,9 +382,9 @@ export function RecordsPage() {
       await recordApi.batchDelete(Array.from(selectedIds))
       setBatchDeleteOpen(false)
       setSelectedIds(new Set())
-      loadRecords()
-      loadSummary()
-      loadAccounts()
+      await loadRecords()
+      await loadSummary()
+      await loadAccounts()
     } catch (e) { setError(errorMessage(e)) }
   }
 
@@ -397,9 +397,9 @@ export function RecordsPage() {
     try {
       await recordApi.batchOffset([id], false)
       toast.success('已取消平账')
-      loadRecords()
-      loadSummary()
-      loadAccounts()
+      await loadRecords()
+      await loadSummary()
+      await loadAccounts()
     } catch (e) {
       setError(errorMessage(e))
     }
@@ -410,9 +410,9 @@ export function RecordsPage() {
     try {
       const res = await recordApi.batchOffset(Array.from(selectedIds), offset)
       setSelectedIds(new Set())
-      loadRecords()
-      loadSummary()
-      loadAccounts()
+      await loadRecords()
+      await loadSummary()
+      await loadAccounts()
       toast.success(offset ? `已平账 ${res.updated} 条` : `已取消平账 ${res.updated} 条`)
     } catch (e) { setError(errorMessage(e)) }
   }
@@ -444,9 +444,9 @@ export function RecordsPage() {
   const handleClone = async (record: RecordItem) => {
     try {
       await recordApi.clone(record.id)
-      loadRecords()
-      loadSummary()
-      loadAccounts()
+      await loadRecords()
+      await loadSummary()
+      await loadAccounts()
     } catch (e) { setError(errorMessage(e)) }
   }
 
@@ -484,9 +484,9 @@ export function RecordsPage() {
       )
       setEditChanges(new Map())
       setEditMode(false)
-      loadRecords()
-      loadSummary()
-      loadAccounts()
+      await loadRecords()
+      await loadSummary()
+      await loadAccounts()
     } catch (e) { setError(errorMessage(e)) }
     finally { setSavingEdits(false) }
   }

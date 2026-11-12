@@ -260,8 +260,8 @@ export function BudgetsPage() {
         })
       }
       setDialogOpen(false)
-      loadFixedBudgets()
-      loadFreeBudgets()
+      await loadFixedBudgets()
+      await loadFreeBudgets()
 } catch (e) {
       setFormError(errorMessage(e, '保存失败'))
     } finally {
@@ -275,8 +275,8 @@ export function BudgetsPage() {
     try {
       await budgetApi.delete(deleteTarget.id)
       setDeleteTarget(null)
-      loadFixedBudgets()
-      loadFreeBudgets()
+      await loadFixedBudgets()
+      await loadFreeBudgets()
 } catch { /* ignore */ }
   }
 
@@ -303,8 +303,8 @@ export function BudgetsPage() {
         remark: batchRemark || undefined,
       })
       setBatchOpen(false)
-      loadFixedBudgets()
-      loadFreeBudgets()
+      await loadFixedBudgets()
+      await loadFreeBudgets()
 } catch { /* ignore */ } finally {
       setBatchSaving(false)
     }
@@ -324,8 +324,8 @@ export function BudgetsPage() {
         targetMonths: copyTargets,
       })
       setCopyOpen(false)
-      loadFixedBudgets()
-      loadFreeBudgets()
+      await loadFixedBudgets()
+      await loadFreeBudgets()
 } catch { /* ignore */ } finally {
       setCopySaving(false)
     }
@@ -358,8 +358,8 @@ export function BudgetsPage() {
       await budgetApi.batchUpdate({ ids: Array.from(selectedIds), data })
       setBatchEditOpen(false)
       setSelectedIds(new Set())
-      loadFixedBudgets()
-      loadFreeBudgets()
+      await loadFixedBudgets()
+      await loadFreeBudgets()
 } catch (e) {
       setBatchEditError(errorMessage(e, '批量更新失败'))
     } finally {

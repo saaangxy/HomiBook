@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/dialog'
 import { Download, X, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react'
 import { notifyUnauthorized } from '@/api/http'
+import * as React from "react";
 
 export interface AttachmentItem {
   id: string

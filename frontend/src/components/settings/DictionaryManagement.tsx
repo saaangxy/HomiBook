@@ -95,7 +95,7 @@ export function DictionaryManagement() {
       toast.success('字典项已添加')
       setAddOpen(false)
       resetForm()
-      loadDict(dictTab)
+      await loadDict(dictTab)
     } catch (e) {
       setFormError(errorMessage(e))
     } finally {
@@ -118,7 +118,7 @@ export function DictionaryManagement() {
       toast.success('字典项已更新')
       setEditTarget(null)
       resetForm()
-      loadDict(dictTab)
+      await loadDict(dictTab)
     } catch (e) {
       setFormError(errorMessage(e))
     } finally {
@@ -133,7 +133,7 @@ export function DictionaryManagement() {
       await settingsApi.deleteDictionaryItem(deleteTarget.id)
       toast.success('字典项已删除')
       setDeleteTarget(null)
-      loadDict(dictTab)
+      await loadDict(dictTab)
     } catch (e) {
       setDictError(errorMessage(e))
     }

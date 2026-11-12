@@ -1,28 +1,56 @@
-import type { FastifyInstance } from 'fastify'
-import { streamText, generateText, stepCountIs, jsonSchema } from 'ai'
+import type {FastifyInstance} from 'fastify'
+import {generateText, jsonSchema, stepCountIs, streamText} from 'ai'
 import path from 'path'
-import { prisma } from '../app.js'
-import { authenticate, requireAdmin } from '../middleware/auth.js'
-import { createModel, ALL_PROVIDERS, DEFAULT_BASE_URLS, type ProviderType } from '../services/ai/providers.js'
-import { VISION_MAX_SIDE } from '../services/ai/image-tile.js'
-import { loadVisionWindow, logVisionImage } from '../services/ai/vision-window.js'
-import { routeIntent, classifyWithKeywords } from '../services/ai/model-router.js'
-import { assertIsMember, loadUserProviderConfig } from '../services/ai/security.js'
-import { logToolCall } from '../services/ai/audit.js'
-import { ALL_TOOLS, ALWAYS_ENABLED_TOOL_NAMES, TOOL_GROUPS, storeImportOverrides, peekImportOverrides } from '../services/ai/tools/index.js'
-import { buildConfirmPreview } from '../services/ai/confirm-preview.js'
-import { sendMessageSchema, createSessionSchema, updateSessionSchema, confirmActionSchema, updateAIConfigSchema, createProviderConfigSchema, updateProviderConfigSchema } from '../schemas/chat.js'
-import { detectSkills } from '../services/ai/skills/index.js'
-import { INJECT_ROLE, buildAttachmentSection, collectInjections, enrichAttachmentSections, foldInjections, persistInjectionIfChanged, summarizeInjection, takeOverInjections } from '../services/ai/context-inject.js'
-import { ensureImageTextContexts, type ImageTextContext } from '../services/ai/image-context.js'
-import { dedupeToolCalls, nextToolCallId } from '../services/ai/tool-call-id.js'
-import { loadMemoriesForPrompt, listMemories, deleteMemory, updateMemory } from '../services/ai/memory.js'
-import { estimateTokens } from '../services/ai/token-estimate.js'
-import { compressContext, computeHistoryBudget, stripThinkTags, MAX_OUTPUT_TOKENS } from '../services/ai/context-compress.js'
-import { zSchema } from '../lib/schema-helpers.js'
-import { dateKey } from '../lib/date-time.js'
-import { z } from 'zod'
-import type { ChatInjection } from '@homibook/core'
+import {prisma} from '../app.js'
+import {authenticate, requireAdmin} from '../middleware/auth.js'
+import {ALL_PROVIDERS, createModel, DEFAULT_BASE_URLS, type ProviderType} from '../services/ai/providers.js'
+import {VISION_MAX_SIDE} from '../services/ai/image-tile.js'
+import {loadVisionWindow, logVisionImage} from '../services/ai/vision-window.js'
+import {classifyWithKeywords, routeIntent} from '../services/ai/model-router.js'
+import {assertIsMember, loadUserProviderConfig} from '../services/ai/security.js'
+import {logToolCall} from '../services/ai/audit.js'
+import {
+  ALL_TOOLS,
+  ALWAYS_ENABLED_TOOL_NAMES,
+  peekImportOverrides,
+  storeImportOverrides,
+  TOOL_GROUPS
+} from '../services/ai/tools/index.js'
+import {buildConfirmPreview} from '../services/ai/confirm-preview.js'
+import {
+  confirmActionSchema,
+  createProviderConfigSchema,
+  createSessionSchema,
+  sendMessageSchema,
+  updateAIConfigSchema,
+  updateProviderConfigSchema,
+  updateSessionSchema
+} from '../schemas/chat.js'
+import {detectSkills} from '../services/ai/skills/index.js'
+import {
+  buildAttachmentSection,
+  collectInjections,
+  enrichAttachmentSections,
+  foldInjections,
+  INJECT_ROLE,
+  persistInjectionIfChanged,
+  summarizeInjection,
+  takeOverInjections
+} from '../services/ai/context-inject.js'
+import {ensureImageTextContexts, type ImageTextContext} from '../services/ai/image-context.js'
+import {dedupeToolCalls, nextToolCallId} from '../services/ai/tool-call-id.js'
+import {deleteMemory, listMemories, loadMemoriesForPrompt, updateMemory} from '../services/ai/memory.js'
+import {estimateTokens} from '../services/ai/token-estimate.js'
+import {
+  compressContext,
+  computeHistoryBudget,
+  MAX_OUTPUT_TOKENS,
+  stripThinkTags
+} from '../services/ai/context-compress.js'
+import {zSchema} from '../lib/schema-helpers.js'
+import {dateKey} from '../lib/date-time.js'
+import {z} from 'zod'
+import type {ChatInjection} from '@homibook/core'
 
 declare module 'fastify' {
   interface FastifyContextConfig {
@@ -256,7 +284,16 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
         // 这里静默拒绝并告知模型 —— 不推 SSE,界面不会出现一张失败卡
         if (runtimeDisabledSet.has(tool.name)) {
           const error = `本轮未启用「${tool.displayName}」,请改用其他方式回答`
-          logToolCall({ userId, sessionId, action: 'tool_call', toolName: tool.name, input: args, errorMessage: error, durationMs: 0, status: 'error' })
+          await logToolCall({
+            userId,
+            sessionId,
+            action: 'tool_call',
+            toolName: tool.name,
+            input: args,
+            errorMessage: error,
+            durationMs: 0,
+            status: 'error'
+          })
           return { success: false, error, retryable: false }
         }
         // id 必须唯一:并行调用同名工具时时间戳相同,重复 id 会让上游拒绝整个会话(见 tool-call-id.ts)
@@ -302,7 +339,16 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
               const durationMs = Date.now() - start
               const status = result.success ? 'success' : 'error'
               sendSSE('tool-result', { toolCallId, toolName: tool.name, result, durationMs, status })
-              logToolCall({ userId, sessionId, action: 'tool_call', toolName: tool.name, input: args, output: result, durationMs, status })
+              await logToolCall({
+                userId,
+                sessionId,
+                action: 'tool_call',
+                toolName: tool.name,
+                input: args,
+                output: result,
+                durationMs,
+                status
+              })
               const entry = toolCallEntries.find(e => e.toolCallId === toolCallId)
               if (entry) Object.assign(entry, { result, durationMs, status })
               return result
@@ -313,7 +359,16 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
             if (invalidArgs) {
               const durationMs = Date.now() - start
               sendSSE('tool-result', { toolCallId, toolName: tool.name, result: invalidArgs, durationMs, status: 'error' })
-              logToolCall({ userId, sessionId, action: 'tool_call', toolName: tool.name, input: args, output: invalidArgs, durationMs, status: 'error' })
+              await logToolCall({
+                userId,
+                sessionId,
+                action: 'tool_call',
+                toolName: tool.name,
+                input: args,
+                output: invalidArgs,
+                durationMs,
+                status: 'error'
+              })
               const entry = toolCallEntries.find(e => e.toolCallId === toolCallId)
               if (entry) Object.assign(entry, { result: invalidArgs, durationMs, status: 'error' })
               return invalidArgs
@@ -372,14 +427,32 @@ async function streamAssistantResponse(opts: StreamAssistantOptions) {
             return result
           }
 
-          logToolCall({ userId, sessionId, action: 'tool_call', toolName: tool.name, input: args, output: result, durationMs, status })
+          await logToolCall({
+            userId,
+            sessionId,
+            action: 'tool_call',
+            toolName: tool.name,
+            input: args,
+            output: result,
+            durationMs,
+            status
+          })
           const entry = toolCallEntries.find(e => e.toolCallId === toolCallId)
           if (entry) Object.assign(entry, { result, durationMs, status })
           return result
         } catch (err: any) {
           const durationMs = Date.now() - start
           sendSSE('tool-result', { toolCallId, toolName: tool.name, error: err.message, durationMs, status: 'error' })
-          logToolCall({ userId, sessionId, action: 'tool_call', toolName: tool.name, input: args, errorMessage: err.message, durationMs, status: 'error' })
+          await logToolCall({
+            userId,
+            sessionId,
+            action: 'tool_call',
+            toolName: tool.name,
+            input: args,
+            errorMessage: err.message,
+            durationMs,
+            status: 'error'
+          })
           const entry = toolCallEntries.find(e => e.toolCallId === toolCallId)
           if (entry) Object.assign(entry, { result: { error: err.message }, durationMs, status: 'error' })
           return { success: false, error: err.message, retryable: false }
@@ -1625,7 +1698,7 @@ export async function chatRoutes(app: FastifyInstance) {
         entry.result = toolResult
         initialSSEEvents.push({ event: 'tool-result', data: { toolCallId, toolName: entry.toolName, result: toolResult, durationMs: 0, status: 'error' } })
         pendingToolResults.push({ toolCallId, toolName: entry.toolName, result: toolResult })
-        logToolCall({ userId, sessionId: message.sessionId, action: 'reject', toolName: entry.toolName })
+        await logToolCall({userId, sessionId: message.sessionId, action: 'reject', toolName: entry.toolName})
         continue
       }
 
@@ -1670,7 +1743,14 @@ export async function chatRoutes(app: FastifyInstance) {
         initialSSEEvents.push({ event: 'tool-result', data: { toolCallId, toolName: entry.toolName, result: toolResult, durationMs: 0, status: 'success' } })
         pendingToolResults.push({ toolCallId, toolName: entry.toolName, result: toolResult })
         continuationBookId = bookId
-        logToolCall({ userId, sessionId: message.sessionId, action: 'confirm', toolName: entry.toolName, input: entry.args, output: toolResult })
+        await logToolCall({
+          userId,
+          sessionId: message.sessionId,
+          action: 'confirm',
+          toolName: entry.toolName,
+          input: entry.args,
+          output: toolResult
+        })
         continue
       }
 
@@ -1681,7 +1761,14 @@ export async function chatRoutes(app: FastifyInstance) {
         entry.result = toolResult
         initialSSEEvents.push({ event: 'tool-result', data: { toolCallId, toolName: entry.toolName, result: toolResult, durationMs: 0, status: 'success' } })
         pendingToolResults.push({ toolCallId, toolName: entry.toolName, result: toolResult })
-        logToolCall({ userId, sessionId: message.sessionId, action: 'confirm', toolName: entry.toolName, input: entry.args, output: toolResult })
+        await logToolCall({
+          userId,
+          sessionId: message.sessionId,
+          action: 'confirm',
+          toolName: entry.toolName,
+          input: entry.args,
+          output: toolResult
+        })
         continue
       }
 
@@ -1726,7 +1813,14 @@ export async function chatRoutes(app: FastifyInstance) {
       entry.result = toolResult
       initialSSEEvents.push({ event: 'tool-result', data: { toolCallId, toolName: entry.toolName, result: toolResult, durationMs: 0, status: entry.status } })
       pendingToolResults.push({ toolCallId, toolName: entry.toolName, result: toolResult })
-      logToolCall({ userId, sessionId: message.sessionId, action: 'confirm', toolName: entry.toolName, input: entry.args, output: toolResult })
+      await logToolCall({
+        userId,
+        sessionId: message.sessionId,
+        action: 'confirm',
+        toolName: entry.toolName,
+        input: entry.args,
+        output: toolResult
+      })
     }
 
     // 统一写入 DB
@@ -1778,8 +1872,7 @@ export async function chatRoutes(app: FastifyInstance) {
     const updateData = { ...parsed.data }
     if (!updateData.apiKey) delete updateData.apiKey
 
-    const config = await prisma.userProviderConfig.update({ where: { id }, data: updateData })
-    return config
+    return await prisma.userProviderConfig.update({where: {id}, data: updateData})
   })
 
   // 删除
@@ -1815,7 +1908,7 @@ export async function chatRoutes(app: FastifyInstance) {
     const existing = await prisma.userProviderConfig.findUnique({ where: { id } })
     if (!existing || existing.userId !== userId) return reply.status(404).send({ message: '配置不存在' })
 
-    const copy = await prisma.userProviderConfig.create({
+    return await prisma.userProviderConfig.create({
       data: {
         userId,
         name: `${existing.name} (副本)`,
@@ -1828,14 +1921,12 @@ export async function chatRoutes(app: FastifyInstance) {
         sortOrder: existing.sortOrder + 1,
       },
     })
-    return copy
   })
 
   // 获取助手配置
   app.get('/ai-config', async (req) => {
     const userId = (req as any).user.id as string
-    const config = await loadAIConfig(userId)
-    return config
+    return await loadAIConfig(userId)
   })
 
   // 更新助手配置

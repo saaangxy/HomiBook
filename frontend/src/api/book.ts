@@ -20,9 +20,6 @@ export const bookApi = {
   getBook: (id: string) =>
     api.get<BookDetail>(`/api/books/${id}`),
 
-  updateBook: (id: string, data: { name?: string }) =>
-    api.patch<BookItem>(`/api/books/${id}`, data),
-
   deleteBook: (id: string) =>
     api.delete(`/api/books/${id}`),
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildImportMessage, parseImportMessage, IMPORT_MESSAGE_PREFIX } from '../src/ai/import-message.js';
+import { buildImportMessage, parseImportMessage, IMPORT_MESSAGE_PREFIX } from '../src';
 
 describe('buildImportMessage', () => {
   it('只发一句自然语言请求:不再编码 fileId/source/文件名', () => {

@@ -663,7 +663,7 @@ export default function BudgetPage() {
 
           {copyTargets.length > 0 && (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
-              {copyTargets.map((t, i) => (
+              {copyTargets.map((t) => (
                 <Pressable key={`${t.year}-${t.month}`} onPress={() => toggleCopyTarget(t.year, t.month)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999, backgroundColor: alpha(colors.primary, 0.12) }}>
                   <Text style={{ fontSize: 12, color: colors.primary }}>{t.year}/{t.month}月</Text>
                   <X size={12} color={colors.primary} />

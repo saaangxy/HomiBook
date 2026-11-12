@@ -55,34 +55,30 @@ export interface SseReadableStream {
  * 从 fetch 响应流中持续读取并解析 SSE 事件。
  * @param res        fetch 响应体(需可读流)
  * @param onFrame    每收到一个事件回调
- * @param signal     取消信号
+ * @param _signal    取消信号
  */
 export async function consumeSSEStream(
   res: { body?: SseReadableStream | null },
   onFrame: SSEHandler,
-  signal?: AbortSignal,
+  _signal?: AbortSignal,
 ): Promise<void> {
   if (!res.body) return;
   const reader = res.body.getReader();
   const decoder = new TextDecoder('utf-8');
   let buffer = '';
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value ?? new Uint8Array(), { stream: true });
-      // 按空行切出完整帧
-      let idx = buffer.indexOf('\n\n');
-      while (idx >= 0) {
-        const frameText = buffer.slice(0, idx);
-        buffer = buffer.slice(idx + 2);
-        parseSSEStream(frameText, onFrame);
-        idx = buffer.indexOf('\n\n');
-      }
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value ?? new Uint8Array(), { stream: true });
+    // 按空行切出完整帧
+    let idx = buffer.indexOf('\n\n');
+    while (idx >= 0) {
+      const frameText = buffer.slice(0, idx);
+      buffer = buffer.slice(idx + 2);
+      parseSSEStream(frameText, onFrame);
+      idx = buffer.indexOf('\n\n');
     }
-    // 尾部残留
-    if (buffer.trim()) parseSSEStream(buffer, onFrame);
-  } finally {
-    if (signal?.aborted) return;
   }
+  // 尾部残留
+  if (buffer.trim()) parseSSEStream(buffer, onFrame);
 }

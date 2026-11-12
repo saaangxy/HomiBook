@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ACCOUNT_TYPES, ACCOUNT_TYPE_LABELS, isAccountType, normalizeAccountType } from '../src/types/account.js'
+import { ACCOUNT_TYPES, ACCOUNT_TYPE_LABELS, isAccountType, normalizeAccountType } from '../src'
 
 // 背景:历史数据/外部写入可能存在非法账户类型(真实案例:库里出现 type="BANK" 而非 "BANK_DEBIT"),
 // 客户端会按 type 查图标与标签,非法值直接导致渲染崩溃("Cannot read property 'displayName' of undefined")。

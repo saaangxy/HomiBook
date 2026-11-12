@@ -5,7 +5,7 @@ import {
   isSenderAllowed,
   normalizeSmsFilterRules,
   type SmsFilterRules,
-} from '../src/sms-rules.js';
+} from '../src';
 
 const ABC =
   '【中国农业银行】您尾号5172账户09月17日12:58向xx完成转支交易人民币-100.00，余额611.92，详见掌银。';

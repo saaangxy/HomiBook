@@ -301,7 +301,7 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
     setFile(null);
     setError('');
     setStep('upload');
-    haptics.tap();
+    await haptics.tap();
   };
 
   const handlePickFile = async () => {
@@ -585,7 +585,7 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
   const goConfirm = async () => {
     if (!(await runServerCheck())) return;
     setStep('confirm');
-    haptics.tap();
+    await haptics.tap();
   };
 
   /** 唯一标准 = 服务端裁决:未拿到结果或明确不放行都视为阻断 */
@@ -779,7 +779,7 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
       const result = await confirmImport(payload);
       setImportResult(result);
       setStep('result');
-      haptics.success();
+      await haptics.success();
       notifyPageRefresh();
       onImported?.(result);
     } catch (e: any) {

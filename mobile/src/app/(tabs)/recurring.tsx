@@ -312,7 +312,7 @@ export default function RecurringScreen() {
 
   const toggle = async (t: RecurringTransaction) => {
     await toggleRecurringApi(t.id, !t.active);
-    reload();
+    await reload();
   };
 
   // 删除二次确认(ConfirmSheet 统一替代系统 Alert);先关表单再弹确认(避免叠加)
@@ -327,7 +327,7 @@ export default function RecurringScreen() {
     setRemoving(null);
     await deleteRecurringApi(t.id);
     setEditing(null);
-    reload();
+    await reload();
   };
 
   /**
@@ -402,7 +402,7 @@ export default function RecurringScreen() {
       setSheet(false);
       setEditing(null);
       resetForm();
-      reload();
+      await reload();
     } catch (e) {
       setFormError(e instanceof Error ? e.message : '保存失败');
     } finally {

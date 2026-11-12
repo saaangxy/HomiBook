@@ -118,7 +118,7 @@ export default function SmsSettingsScreen() {
       const granted = await requestSmsPermission();
       setSmsGranted(granted);
       if (granted) {
-        haptics.success();
+        await haptics.success();
         showToast('已获得短信读取权限');
       } else {
         showToast('未获得权限,可稍后在系统设置中开启');
@@ -201,7 +201,7 @@ export default function SmsSettingsScreen() {
       await clearSmsAiCache();
       // 发件人候选缓存也清掉:下次扫描重新累积(筛选规则里已选中的项不受影响)
       await clearSmsSenders();
-      haptics.success();
+      await haptics.success();
       showToast('已清空本机标记');
     } catch (e: any) {
       showToast(`清空失败: ${e?.message || '未知错误'}`);

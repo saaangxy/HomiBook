@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatMoney, formatMoneyShort } from '../src/format.js';
+import { formatMoney, formatMoneyShort } from '../src';
 
 describe('formatMoney', () => {
   it('正数:¥前缀 + 千分位 + 两位小数', () => {

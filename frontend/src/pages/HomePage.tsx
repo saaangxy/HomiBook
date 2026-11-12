@@ -21,6 +21,7 @@ import { accountApi, type AccountItem } from '../api/account'
 import { budgetApi, type BudgetItem } from '../api/budget'
 
 import { RECORD_TYPE_BADGE_CLASS } from '@/lib/record-type'
+import * as React from "react";
 
 /** 首页可管理的卡片(顺序即展示顺序) */
 const HOME_CARDS = [

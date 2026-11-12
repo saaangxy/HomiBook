@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { RECORD_TYPES, isRecordType, normalizeRecordType } from '../src/types/record.js'
-import { RECORD_TYPE_LABELS } from '../src/record-import.js'
+import { RECORD_TYPES, isRecordType, normalizeRecordType } from '../src'
+import { RECORD_TYPE_LABELS } from '../src'
 
 // 背景与账户类型同理:各端按 type 查图标/颜色(如固定收支列表 TYPE_ICON[t.type]),
 // 非法值会直接导致渲染崩溃,故在写入与读取两侧都做归一化兜底。

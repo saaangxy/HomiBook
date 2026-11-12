@@ -30,8 +30,8 @@
 
 体验地址：**https://homibook-demo.onrender.com**
 
-| 账号 | 密码 |
-|---|---|
+| 账号      | 密码         |
+|---------|------------|
 | `admin` | `Ad123456` |
 
 > 演示站为免费实例，SQLite 数据为临时存储，重启后重置；首次访问加载稍慢属正常现象。
@@ -82,14 +82,14 @@
 
 ## 🛠 技术栈
 
-| 端 | 技术 |
-|---|---|
-| 后端 | Node.js + TypeScript (ESM)、Fastify 5、Prisma 7、Zod |
-| Web 前端 | React 19 + TypeScript、Vite、Shadcn/ui、Tailwind CSS 4、React Router DOM 7、Zustand、TanStack Query |
-| 移动端 | React Native 0.86 + Expo 57（expo-router）、NativeWind、Reanimated、Zustand，共享 `@homibook/core` 业务包 |
-| AI | AI SDK、工具调用、Puppeteer 网页抓取 |
-| 数据库 | SQLite / MySQL / PostgreSQL（环境变量切换） |
-| 部署 | 单容器镜像（Fastify 托管前端静态文件）、Docker Compose、CI/CD 自动构建 |
+| 端      | 技术                                                                                             |
+|--------|------------------------------------------------------------------------------------------------|
+| 后端     | Node.js + TypeScript (ESM)、Fastify 5、Prisma 7、Zod                                              |
+| Web 前端 | React 19 + TypeScript、Vite、Shadcn/ui、Tailwind CSS 4、React Router DOM 7、Zustand、TanStack Query  |
+| 移动端    | React Native 0.86 + Expo 57（expo-router）、NativeWind、Reanimated、Zustand，共享 `@homibook/core` 业务包 |
+| AI     | AI SDK、工具调用、Puppeteer 网页抓取                                                                     |
+| 数据库    | SQLite / MySQL / PostgreSQL（环境变量切换）                                                            |
+| 部署     | 单容器镜像（Fastify 托管前端静态文件）、Docker Compose、CI/CD 自动构建                                              |
 
 ## 📂 目录结构
 
@@ -171,12 +171,12 @@ IMAGE_REPO=ghcr.io/saaangxy/homibook docker compose up -d
 
 导入分两步：**先在原 App 里申请导出**，再**把收到的文件传给 HomiBook**。三种来源的支持情况：
 
-| 来源 | 支持格式 | HomiBook 的处理 |
-|---|---|---|
-| 支付宝 | CSV | 自动识别 GBK 编码、自动跳过表头前的说明行 |
-| 微信 | xlsx | 需先自行解压（官方导出为加密压缩包） |
-| 京东 | CSV | 同支付宝 |
-| 其他 | CSV | 需手动配置列映射 |
+| 来源  | 支持格式 | HomiBook 的处理            |
+|-----|------|-------------------------|
+| 支付宝 | CSV  | 自动识别 GBK 编码、自动跳过表头前的说明行 |
+| 微信  | xlsx | 需先自行解压（官方导出为加密压缩包）      |
+| 京东  | CSV  | 同支付宝                    |
+| 其他  | CSV  | 需手动配置列映射                |
 
 ### 导出前须知
 
@@ -215,21 +215,21 @@ IMAGE_REPO=ghcr.io/saaangxy/homibook docker compose up -d
 
 ### 导入到 HomiBook
 
-| 入口 | 位置 |
-|---|---|
-| Web 端 | 流水页顶部「导入」按钮，按向导选择来源、上传文件、确认预览 |
+| 入口    | 位置                                       |
+|-------|------------------------------------------|
+| Web 端 | 流水页顶部「导入」按钮，按向导选择来源、上传文件、确认预览            |
 | AI 助手 | 对话输入框的「导入账单」下拉，选择支付宝 / 微信 / 京东后由 AI 自动分类 |
-| 移动端 | 记录页「导入」入口，或 AI 助手页的「导入账单」 |
+| 移动端   | 记录页「导入」入口，或 AI 助手页的「导入账单」                |
 
 导入前会先弹出**预览卡片**，可修改分类 / 账户映射、按条件筛选、指定归属人，确认后才写入；映射规则会被保存，后续导入同名字段自动命中。
 
 ## 📚 更多文档
 
-| 文档 | 说明 |
-|---|---|
+| 文档                          | 说明                                           |
+|-----------------------------|----------------------------------------------|
 | [开发指南](docs/development.md) | 本地启动、数据库切换（SQLite/MySQL/PostgreSQL）、DDL 迁移规范 |
-| [部署指南](docs/deployment.md) | Docker 单容器部署、环境变量、MySQL/PostgreSQL、升级回滚 |
-| `docs/agents/` | Agent 协作规范（Issue 追踪、标签、领域模型） |
+| [部署指南](docs/deployment.md)  | Docker 单容器部署、环境变量、MySQL/PostgreSQL、升级回滚      |
+| `docs/agents/`              | Agent 协作规范（Issue 追踪、标签、领域模型）                 |
 
 ## 🤝 贡献
 

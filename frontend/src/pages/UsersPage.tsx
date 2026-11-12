@@ -90,7 +90,7 @@ export function UsersPage() {
       await adminApi.createUser({ username: formUsername, email: formEmail, password: formPassword, nickname: formNickname || undefined, role: formRole })
       setCreateOpen(false)
       resetForm()
-      fetchUsers()
+      await fetchUsers()
     } catch (err: any) { setFormError(err.message || '创建失败') }
     finally { setSubmitting(false) }
   }
@@ -99,7 +99,7 @@ export function UsersPage() {
     const newRole = user.role === 'ADMIN' ? 'USER' : 'ADMIN'
     try {
       await adminApi.updateUser(user.id, { role: newRole })
-      fetchUsers()
+      await fetchUsers()
     } catch (err: any) { setError(err.message || '操作失败') }
   }
 
@@ -107,7 +107,7 @@ export function UsersPage() {
     const newStatus = user.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE'
     try {
       await adminApi.updateUser(user.id, { status: newStatus })
-      fetchUsers()
+      await fetchUsers()
     } catch (err: any) { setError(err.message || '操作失败') }
   }
 
@@ -131,7 +131,7 @@ export function UsersPage() {
       await adminApi.deleteUser(targetUser.id)
       setDeleteOpen(false)
       setTargetUser(null)
-      fetchUsers()
+      await fetchUsers()
     } catch (err: any) { setFormError(err.message || '删除失败') }
     finally { setSubmitting(false) }
   }
