@@ -7,14 +7,14 @@ import { recordApi, type RecordSummary } from '@/api/record'
 import { accountApi, type AccountItem } from '@/api/account'
 import { MultiSelect } from '@/components/ui/multi-select'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { recurringApi, type RecurringTransaction } from '@/api/recurring';
+import { recurringApi } from '@/api/recurring';
 import { useBookStore } from '@/stores/book'
 import { useChartTheme, type ChartTheme, generateChartColors } from '@/hooks/useChartTheme'
 import { RECORD_TYPE_HEX, RECORD_TYPE_TEXT_CLASS } from '@/lib/record-type'
 import { TrendingUp, BarChart3, Wallet, Target, HelpCircle } from 'lucide-react'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import dayjs from 'dayjs'
-import { scoreEmergency, scoreDebtBurden, scoreLeverage, scoreSavings, scoreInvestment, scoreFreedom, scoreInsurance, type RadarMetric, formatMoney, isAssetAccountType, isEmergencyAccountType, accountLabel, isMultiOwnerAccounts } from '@homibook/core';
+import { computeRadarMetrics, type RadarMetric, formatMoney, accountLabel, isMultiOwnerAccounts } from '@homibook/core';
 
 
 
@@ -152,98 +152,6 @@ function buildRadarOption(metrics: RadarMetric[], t: ChartTheme): EChartsOption 
       }],
     }],
   }
-}
-
-interface RadarInput {
-  accounts: AccountItem[]
-  loans: RecurringTransaction[]
-  summary: RecordSummary
-  passiveIncome: number
-  insuranceExpense: number
-}
-
-// 家庭财务健康 7 维评分(近 12 个月口径)
-function computeRadarMetrics(input: RadarInput): RadarMetric[] {
-  const act = input.accounts.filter((a) => a.status === 'ACTIVE')
-  // 信用卡余额为负数(欠款),取绝对值作为负债
-  const creditBal = Math.abs(act.filter((a) => a.type === 'CREDIT_CARD').reduce((s, a) => s + (a.computedBalance ?? 0), 0))
-  const totalLiab = creditBal + input.loans.reduce((s, l) => s + (l.loanRemainingAmount ?? 0), 0)
-  // 总资产剔除信用卡,避免重复计算
-  const totalAssets = act.filter((a) => isAssetAccountType(a.type)).reduce((s, a) => s + (a.computedBalance ?? 0), 0)
-  const netAssets = totalAssets - totalLiab
-  const investAssets = act.filter((a) => a.type === 'INVESTMENT').reduce((s, a) => s + (a.computedBalance ?? 0), 0)
-  // 紧急备用金:流动性现金账户
-  const emergency = act.filter((a) => isEmergencyAccountType(a.type)).reduce((s, a) => s + (a.computedBalance ?? 0), 0)
-
-  const monthlyPayment = input.loans.reduce((s, l) => s + (l.amount ?? 0), 0)
-  const income = input.summary.income || 0
-  const expense = input.summary.expense || 0
-  const monthlyIncome = income / 12
-  const monthlyExpense = expense / 12
-
-  const metrics: RadarMetric[] = []
-
-  // 1. 应急能力
-  if (monthlyExpense > 0) {
-    const months = emergency / monthlyExpense
-    metrics.push({ name: '应急能力', value: scoreEmergency(months), detail: `备用金可覆盖 ${months.toFixed(1)} 个月支出` })
-  } else {
-    metrics.push({ name: '应急能力', value: 0, available: false, detail: '数据不足(无支出记录)' })
-  }
-
-  // 2. 偿债压力(反向)
-  if (monthlyPayment > 0 && monthlyIncome > 0) {
-    const ratio = monthlyPayment / monthlyIncome
-    metrics.push({ name: '偿债压力', value: scoreDebtBurden(ratio), detail: `月供占比 ${(ratio * 100).toFixed(1)}%` })
-  } else if (monthlyPayment <= 0) {
-    metrics.push({ name: '偿债压力', value: 100, detail: '无贷款,无负债压力' })
-  } else {
-    metrics.push({ name: '偿债压力', value: 20, available: false, detail: '数据不足(无收入记录)' })
-  }
-
-  // 3. 杠杆水平(反向)
-  if (totalAssets > 0) {
-    const ratio = totalLiab / totalAssets
-    metrics.push({ name: '杠杆水平', value: scoreLeverage(ratio), detail: `负债率 ${(ratio * 100).toFixed(1)}%` })
-  } else if (totalAssets === 0 && totalLiab === 0) {
-    metrics.push({ name: '杠杆水平', value: 100, detail: '无资产与负债' })
-  } else {
-    metrics.push({ name: '杠杆水平', value: 20, available: false, detail: '数据不足(无资产数据)' })
-  }
-
-  // 4. 储蓄能力
-  if (income > 0) {
-    const savings = (income - expense) / income
-    metrics.push({ name: '储蓄能力', value: scoreSavings(savings), detail: `储蓄率 ${(savings * 100).toFixed(1)}%` })
-  } else {
-    metrics.push({ name: '储蓄能力', value: 0, available: false, detail: '数据不足(无收入记录)' })
-  }
-
-  // 5. 投资积累
-  if (netAssets > 0) {
-    const ratio = investAssets / netAssets
-    metrics.push({ name: '投资积累', value: scoreInvestment(ratio), detail: `投资占净资产 ${(ratio * 100).toFixed(1)}%` })
-  } else {
-    metrics.push({ name: '投资积累', value: 0, available: false, detail: '数据不足(净资产非正)' })
-  }
-
-  // 6. 财务自由度
-  if (expense > 0) {
-    const ratio = input.passiveIncome / expense
-    metrics.push({ name: '财务自由度', value: scoreFreedom(ratio), detail: `被动收入覆盖支出 ${(ratio * 100).toFixed(1)}%` })
-  } else {
-    metrics.push({ name: '财务自由度', value: 0, available: false, detail: '数据不足(无支出记录)' })
-  }
-
-  // 7. 保障充足度(保费占比近似)
-  if (income > 0) {
-    const ratio = input.insuranceExpense / income
-    metrics.push({ name: '保障充足度', value: scoreInsurance(ratio), detail: `保费占收入 ${(ratio * 100).toFixed(1)}%` })
-  } else {
-    metrics.push({ name: '保障充足度', value: 0, available: false, detail: '数据不足(无收入记录)' })
-  }
-
-  return metrics
 }
 
 export function StatsOverview() {

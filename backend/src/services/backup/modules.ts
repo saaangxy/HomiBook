@@ -1,40 +1,14 @@
 // 备份/恢复 模块定义与顺序常量
-// 一个"模块"对应前端勾选项；每个模块可能包含多张表（一个表一个 JSON 文件）
+// 模块清单统一由 @homibook/core 提供（前后端共用），这里只做别名转发
+import { BACKUP_MODULES, CORE_MODULE_KEYS, type BackupModuleOption } from '@homibook/core'
+
+export type ModuleOption = BackupModuleOption
 
 /** 核心模块（导出时强制包含，不可取消） */
-export const CORE_MODULES = [
-  'systemConfig',
-  'user',
-  'accountBook',
-  'account',
-  'record',
-] as const
+export const CORE_MODULES = CORE_MODULE_KEYS
 
-export interface ModuleOption {
-  key: string
-  label: string
-  core: boolean
-  /** 是否按所选账本过滤（账本域数据）；全局数据（系统配置/字典/用户等）不受账本过滤 */
-  bookScoped: boolean
-}
-
-/** 前端模块勾选清单（顺序即显示顺序） */
-export const MODULE_OPTIONS: ModuleOption[] = [
-  { key: 'systemConfig', label: '系统配置', core: true, bookScoped: false },
-  { key: 'dictionary', label: '字典', core: false, bookScoped: false },
-  { key: 'holiday', label: '节假日', core: false, bookScoped: false },
-  { key: 'user', label: '用户', core: true, bookScoped: false },
-  { key: 'accountBook', label: '账本', core: true, bookScoped: true },
-  { key: 'account', label: '账户', core: true, bookScoped: true },
-  { key: 'record', label: '流水', core: true, bookScoped: true },
-  { key: 'budget', label: '预算', core: false, bookScoped: true },
-  { key: 'recurring', label: '固定收支', core: false, bookScoped: true },
-  { key: 'importMapping', label: '导入映射', core: false, bookScoped: false },
-  { key: 'aiConfig', label: 'AI 助手配置', core: false, bookScoped: false },
-  { key: 'aiChat', label: 'AI 聊天记录', core: false, bookScoped: true },
-  { key: 'apiKey', label: 'API Key', core: false, bookScoped: false },
-  { key: 'attachments', label: '附件（含文件）', core: false, bookScoped: true },
-]
+/** 模块勾选清单（顺序即显示顺序） */
+export const MODULE_OPTIONS: ModuleOption[] = BACKUP_MODULES
 
 /** 模块 → 数据表文件（不含 .json 后缀，与 Prisma model 名一致） */
 export const MODULE_FILES: Record<string, string[]> = {

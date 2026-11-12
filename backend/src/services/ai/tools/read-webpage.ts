@@ -2,6 +2,7 @@ import * as cheerio from 'cheerio'
 import type { ToolDef, ToolContext } from './types.js'
 import type { ToolResult } from '../security.js'
 import { browserFetch } from '../browser-fetch.js'
+import { sanitizeExternalText as sanitizeText } from '../sanitize-text.js'
 
 /** 通用浏览器请求头（fetch 回退用） */
 function browserHeaders(): Record<string, string> {
@@ -16,28 +17,6 @@ function browserHeaders(): Record<string, string> {
     'Sec-Fetch-Site': 'none',
     'Sec-Fetch-User': '?1',
   }
-}
-
-/** 提示词注入防护 */
-const INJECTION_PATTERNS = [
-  /ignore\s+(all\s+)?previous\s+(instructions?|prompts?|rules?)/gi,
-  /忽略(之前|以上|前面|上述)(的)?(指令|提示|规则|指示)/gi,
-  /you\s+are\s+now\s+/gi,
-  /你(现在|从现在开始)(是|扮演|作为一个)/gi,
-  /system\s*:/gi,
-  /系统\s*[:：]/gi,
-  /<\s*(script|iframe|tool_call|invoke|system)\b[^>]*>/gi,
-  /<\/\s*(script|iframe|tool_call|invoke|system)\s*>/gi,
-]
-
-function sanitizeText(text: string, maxLen: number): string {
-  let cleaned = text
-  for (const pattern of INJECTION_PATTERNS) {
-    cleaned = cleaned.replace(pattern, '[已过滤]')
-  }
-  cleaned = cleaned.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '')
-  if (cleaned.length > maxLen) cleaned = cleaned.slice(0, maxLen) + '...'
-  return cleaned.trim()
 }
 
 function cleanText(text: string): string {

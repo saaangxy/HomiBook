@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { create } from 'zustand'
 import {
   buildActivePath,
-  collectDescendantIds,
+  planRetryRemoval,
   processTextDelta,
   appendThinkingToBlocks,
   isDeltaEvent,
@@ -677,30 +677,11 @@ export const useChatStore = create<ChatState>()((set, get) => {
     const sid = state.currentSessionId
     if (!sid || state.sessionCache[sid]?.isStreaming) return
 
-    const view = viewOf(state.sessionCache[sid] ?? EMPTY_SESSION)
-    const idx = view.messages.findIndex((m) => m.id === assistantMsgId)
-    if (idx <= 0) return
-    const prevUserMsg = view.messages[idx - 1]
-    if (prevUserMsg.role !== 'user') return
+    const data = state.sessionCache[sid] ?? EMPTY_SESSION
+    const plan = planRetryRemoval(data.allMessages, data.branchSelections, assistantMsgId)
+    if (!plan) return
 
-    const text = prevUserMsg.blocks
-      .filter((b) => b.type === 'text')
-      .map((b) => b.content)
-      .join('\n')
-    if (!text) return
-
-    const assistantDbId = view.messages[idx].dbId || view.messages[idx].id
-
-    // 从 allMessages 中删除被替换的助手消息及其所有后代,也删除原用户消息
-    const descendantIds = collectDescendantIds(view.allMessages, assistantDbId)
-    const newAllMessages = view.allMessages.filter(
-      (m) => !descendantIds.has(m.dbId || m.id) && (m.dbId || m.id) !== assistantDbId,
-    )
-    const userMsgId = prevUserMsg.dbId || prevUserMsg.id
-    const filteredAllMessages = newAllMessages.filter((m) => (m.dbId || m.id) !== userMsgId)
-
-    patchSession(set, sid, () => ({ allMessages: filteredAllMessages }))
-
+    patchSession(set, sid, () => ({ allMessages: plan.keptMessages }))
     // 注意：实际发送由 ChatWindow.handleRetry 调用 sendMessage 完成
   },
 

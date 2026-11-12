@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  computeRadarMetrics,
   lerpScore,
   scoreDebtBurden,
   scoreEmergency,
@@ -9,6 +10,7 @@ import {
   scoreLeverage,
   scoreSavings,
 } from '../src';
+import type { RadarInput } from '../src';
 
 describe('lerpScore', () => {
   it('区间内线性插值并取整', () => {
@@ -192,5 +194,47 @@ describe('分段连续性回归(所有评分函数在段边界无跳变)', () =>
 
   it('保障充足度在 0.03/0.05/0.1/0.15/0.2/0.3 处连续', () => {
     [0.03, 0.05, 0.1, 0.15, 0.2, 0.3].forEach((b) => expectContinuous('scoreInsurance', scoreInsurance, b));
+  });
+});
+
+describe('computeRadarMetrics', () => {
+  const base: RadarInput = {
+    accounts: [
+      { type: 'CASH', status: 'ACTIVE', computedBalance: 60000 },
+      { type: 'INVESTMENT', status: 'ACTIVE', computedBalance: 40000 },
+      { type: 'CREDIT_CARD', status: 'ACTIVE', computedBalance: -10000 },
+      { type: 'CASH', status: 'INACTIVE', computedBalance: 999999 },
+    ],
+    loans: [{ amount: 2000, loanRemainingAmount: 20000 }],
+    summary: { income: 240000, expense: 120000 },
+    passiveIncome: 12000,
+    insuranceExpense: 12000,
+  };
+
+  it('输出 7 个维度且顺序稳定', () => {
+    expect(computeRadarMetrics(base).map((m) => m.name)).toEqual([
+      '应急能力',
+      '偿债压力',
+      '杠杆水平',
+      '储蓄能力',
+      '投资积累',
+      '财务自由度',
+      '保障充足度',
+    ]);
+  });
+
+  it('computedBalance 与 balance 两种余额字段算出同一结果', () => {
+    const fromComputed = computeRadarMetrics(base);
+    const fromBalance = computeRadarMetrics({
+      ...base,
+      accounts: base.accounts.map(({ computedBalance, ...rest }) => ({ ...rest, balance: computedBalance })),
+    });
+    expect(fromBalance).toEqual(fromComputed);
+  });
+
+  it('无支出记录时应急能力标记为数据不足', () => {
+    const metric = computeRadarMetrics({ ...base, summary: { income: 0, expense: 0 } })
+      .find((m) => m.name === '应急能力');
+    expect(metric).toMatchObject({ value: 0, available: false });
   });
 });

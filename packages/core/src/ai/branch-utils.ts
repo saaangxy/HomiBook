@@ -58,3 +58,47 @@ export function collectDescendantIds(allMessages: Message[], startDbId: string):
   }
   return ids;
 }
+
+export interface RetryRemovalPlan {
+  /** 重试要重发的文本（原用户消息的文本块拼接） */
+  text: string;
+  /** 被清除的原用户消息 id */
+  userMessageId: string;
+  /** 删除该助手消息及其全部后代、以及原用户消息之后的全量消息 */
+  keptMessages: Message[];
+}
+
+/**
+ * 重试前的清理计划：定位要重试的助手消息，给出需要重发的文本与清理后的消息列表。
+ *
+ * 只做计算、不改状态 —— web / mobile 的 store 各自决定如何落地（都是写回 allMessages）。
+ * 返回 null 表示不可重试：索引为 0、前一条不是用户消息、或原文为空。
+ */
+export function planRetryRemoval(
+  allMessages: Message[],
+  branchSelections: Record<string, string>,
+  assistantMsgId: string,
+): RetryRemovalPlan | null {
+  const messages = buildActivePath(allMessages, branchSelections);
+  const idx = messages.findIndex((m) => m.id === assistantMsgId);
+  if (idx <= 0) return null;
+
+  const prevUser = messages[idx - 1];
+  if (prevUser.role !== 'user') return null;
+
+  const text = prevUser.blocks
+    .filter((b) => b.type === 'text')
+    .map((b) => b.content)
+    .join('\n');
+  if (!text) return null;
+
+  const assistantId = messages[idx].dbId || messages[idx].id;
+  const userId = prevUser.dbId || prevUser.id;
+  const descendants = collectDescendantIds(allMessages, assistantId);
+  const keptMessages = allMessages.filter((m) => {
+    const id = m.dbId || m.id;
+    return !descendants.has(id) && id !== assistantId && id !== userId;
+  });
+
+  return { text, userMessageId: userId, keptMessages };
+}

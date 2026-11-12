@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildActivePath, collectDescendantIds } from '../src';
+import { buildActivePath, collectDescendantIds, planRetryRemoval } from '../src';
 import type { Message } from '../src';
 
 const msg = (id: string, parent?: string, dbId?: string): Message => ({
@@ -121,5 +121,36 @@ describe('collectDescendantIds', () => {
     const parent = msg('p', undefined, 'pd');
     const child = msg('ch', 'pd');
     expect(collectDescendantIds([parent, child], 'pd')).toEqual(new Set(['pd', 'ch']));
+  });
+});
+
+describe('planRetryRemoval', () => {
+  const withText = (m: Message, role: 'user' | 'assistant', text: string): Message => ({
+    ...m,
+    role,
+    blocks: [{ id: `${m.id}-t`, type: 'text', content: text }],
+  });
+
+  const build = (): Message[] => [
+    withText(msg('u1', undefined, 'u1d'), 'user', '第一问'),
+    withText(msg('a1', 'u1d', 'a1d'), 'assistant', '答一'),
+    withText(msg('u2', undefined, 'u2d'), 'user', '第二问'),
+    withText(msg('a2', 'u2d', 'a2d'), 'assistant', '答二'),
+  ];
+
+  it('删除目标助手消息及其后代，同时删除原用户消息', () => {
+    const plan = planRetryRemoval(build(), {}, 'a2');
+    expect(plan).not.toBeNull();
+    expect(plan!.text).toBe('第二问');
+    expect(plan!.keptMessages.map((m) => m.id)).toEqual(['u1', 'a1']);
+  });
+
+  it('索引为 0 的助手消息不可重试', () => {
+    expect(planRetryRemoval([withText(msg('a1'), 'assistant', '答')], {}, 'a1')).toBeNull();
+  });
+
+  it('前一条不是用户消息时不可重试', () => {
+    const messages = [withText(msg('a1'), 'assistant', '答一'), withText(msg('a2'), 'assistant', '答二')];
+    expect(planRetryRemoval(messages, {}, 'a2')).toBeNull();
   });
 });

@@ -1,4 +1,3 @@
-import { notifyUnauthorized } from '@/api/http';
 import { useEffect, useRef, useState } from 'react'
 import dayjs from 'dayjs'
 import { X, Download, Upload } from 'lucide-react'
@@ -14,6 +13,7 @@ import { DateTimePicker } from '@/components/ui/datetime-picker'
 import { DictCombobox } from '@/components/DictCombobox'
 import { TagCombobox } from '@/components/TagCombobox'
 import { recordApi } from '@/api/record'
+import { downloadAttachment } from '@/lib/download-attachment'
 import { useFileIntake, MAX_ATTACH_MB } from '@/hooks/use-file-intake'
 import { accountLabel, errorMessage } from '@homibook/core';
 
@@ -206,38 +206,9 @@ export function RecordFormDialog({ open, editRecord, currentBookId, accounts, mu
 
   const handleDownload = async (url: string, originalFilename: string) => {
     try {
-      const relativePath = url.includes('/api/uploads/')
-        ? `/api/uploads/${url.split('/api/uploads/').pop()}`
-        : url
-      const downloadUrl = `/api/records/download?path=${encodeURIComponent(relativePath)}&name=${encodeURIComponent(originalFilename)}`
-
-      const token = (() => {
-        try {
-          const raw = localStorage.getItem('auth-storage')
-          if (!raw) return null
-          return JSON.parse(raw)?.state?.token || null
-        } catch { return null }
-      })()
-      const headers: Record<string, string> = {}
-      if (token) headers['Authorization'] = `Bearer ${token}`
-
-      const res = await fetch(downloadUrl, { headers })
-      if (!res.ok) {
-        // 附件下载自持 fetch(需要 blob),401 同样上报给上层统一处理
-        notifyUnauthorized(res.status, token, downloadUrl)
-        throw new Error('下载失败')
-      }
-      const blob = await res.blob()
-      const blobUrl = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = blobUrl
-      a.download = originalFilename
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(blobUrl)
-    } catch (err: any) {
-      setFormError(err.message || '下载失败')
+      await downloadAttachment(url, originalFilename)
+    } catch (err) {
+      setFormError(errorMessage(err, '下载失败'))
     }
   }
 

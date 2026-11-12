@@ -156,6 +156,41 @@ export function findSelfMappedCategoryResolutions<T extends CategoryResolutionLi
   })
 }
 
+export type CategoryResolutionCheck = { ok: true } | { ok: false; error: string }
+
+/** 把若干决议拼成「源分类→目标分类」的清单，供错误信息展示 */
+function describeResolutions<T extends CategoryResolutionLike>(resolutions: T[]): string {
+  return resolutions.map(r => `「${r.sourceCategory}」→「${r.targetCategoryCode}」`).join('、')
+}
+
+/**
+ * preview_import / confirm_import 共用的映射校验。
+ *
+ * 两处必须给出完全一致的结论，否则会出现「预览通过、确认失败」的死循环，
+ * 模型无论怎么改都会被其中一边拒绝。
+ */
+export function validateCategoryResolutions<T extends CategoryResolutionLike>(
+  resolutions: T[],
+): CategoryResolutionCheck {
+  const genericBad = findGenericUnconditionalResolutions(resolutions)
+  if (genericBad.length > 0) {
+    return {
+      ok: false,
+      error: `兜底分类不能用无条件规则映射到具体分类：${describeResolutions(genericBad)}。这类分类下的记录互不相关，一条无条件规则会把它们全部误映射。请依据 categorySamples 按交易方/说明分簇，为每条规则补充 payerContains 或 descriptionContains；分不出簇就不要为该分类生成规则。`,
+    }
+  }
+
+  const selfMapped = findSelfMappedCategoryResolutions(resolutions)
+  if (selfMapped.length > 0) {
+    return {
+      ok: false,
+      error: `源分类与目标分类同名：${describeResolutions(selfMapped)}。这条规则等于没有映射，请去掉它，或改为真正要映射到的系统分类。`,
+    }
+  }
+
+  return { ok: true }
+}
+
 /** 分类字典的三个组(收入/支出/转账):导入校验统一用这一份 */
 export const CATEGORY_DICT_GROUPS = [
   'transaction_category_income',

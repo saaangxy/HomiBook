@@ -2,7 +2,7 @@ import type { ToolDef, ToolContext } from './types.js'
 import { prisma } from '../../../app.js'
 import { assertIsMember, checkEnumList, checkEnums } from '../security.js'
 import { createAccountsInTx, saveCategoryMappingsInTx, saveAccountMappingsInTx, AccountResolver, batchCreateRecordsInTx, refreshBalances } from '../../import/execute.js'
-import { CATEGORY_DICT_GROUPS, findGenericUnconditionalResolutions, findSelfMappedCategoryResolutions, findUnknownCategoryCodes, formatDictOptions } from '../../import/blocking.js'
+import { CATEGORY_DICT_GROUPS, findUnknownCategoryCodes, formatDictOptions, validateCategoryResolutions } from '../../import/blocking.js'
 import { remapImportRows } from '../../import/remap.js'
 import { consumeImportOverrides, peekImportOverrides } from './index.js'
 import { IMPORT_FILE_MISSING, loadImportFile, parseImportFile } from '../../import/attachment-file.js'
@@ -90,26 +90,10 @@ export const confirmImportTool: ToolDef = {
       }
     }
 
-    // 兜底类源分类(其他/未知/转账…)不能用无条件规则映射到具体分类(同 preview_import)
-    const genericBad = findGenericUnconditionalResolutions(categoryResolutions ?? [])
-    if (genericBad.length > 0) {
-      const detail = genericBad.map(r => `「${r.sourceCategory}」→「${r.targetCategoryCode}」`).join('、')
-      return {
-        success: false,
-        retryable: false,
-        error: `兜底分类不能用无条件规则映射到具体分类：${detail}。这类分类下的记录互不相关，一条无条件规则会把它们全部误映射。请依据 categorySamples 按交易方/说明分簇，为每条规则补充 payerContains 或 descriptionContains；分不出簇就不要为该分类生成规则。`,
-      }
-    }
-
-    // 源分类与目标分类同名 = 没映射(同 preview_import)
-    const selfMapped = findSelfMappedCategoryResolutions(categoryResolutions ?? [])
-    if (selfMapped.length > 0) {
-      const detail = selfMapped.map(r => `「${r.sourceCategory}」→「${r.targetCategoryCode}」`).join('、')
-      return {
-        success: false,
-        retryable: false,
-        error: `源分类与目标分类同名：${detail}。这条规则等于没有映射，请去掉它，或改为真正要映射到的系统分类。`,
-      }
+    // 兜底类无条件映射 / 自映射校验（与 preview_import 共用同一份规则）
+    const categoryCheck = validateCategoryResolutions(categoryResolutions ?? [])
+    if (!categoryCheck.ok) {
+      return { success: false, retryable: false, error: categoryCheck.error }
     }
 
     const effectiveOwnerId = ownerId || ctx.userId

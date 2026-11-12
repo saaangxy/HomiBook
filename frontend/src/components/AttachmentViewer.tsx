@@ -7,7 +7,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Download, X, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react'
-import { notifyUnauthorized } from '@/api/http'
+import { downloadAttachment } from '@/lib/download-attachment'
 import * as React from "react";
 
 export interface AttachmentItem {
@@ -33,37 +33,10 @@ function isImageUrl(url: string): boolean {
 
 async function downloadFile(url: string, filename: string) {
   try {
-    const relativePath = url.includes('/api/uploads/')
-      ? `/api/uploads/${url.split('/api/uploads/').pop()}`
-      : url
-    const downloadUrl = `/api/records/download?path=${encodeURIComponent(relativePath)}&name=${encodeURIComponent(filename)}`
-
-    const token = (() => {
-      try {
-        const raw = localStorage.getItem('auth-storage')
-        if (!raw) return null
-        return JSON.parse(raw)?.state?.token || null
-      } catch { return null }
-    })()
-    const headers: Record<string, string> = {}
-    if (token) headers['Authorization'] = `Bearer ${token}`
-
-    const res = await fetch(downloadUrl, { headers })
-    if (!res.ok) {
-      // 附件下载自持 fetch(需要 blob),401 同样上报给上层统一处理
-      notifyUnauthorized(res.status, token, downloadUrl)
-      throw new Error('下载失败')
-    }
-    const blob = await res.blob()
-    const blobUrl = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = blobUrl
-    a.download = filename
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(blobUrl)
-  } catch { /* ignore */ }
+    await downloadAttachment(url, filename)
+  } catch {
+    /* 预览弹窗没有错误展示位，失败静默 */
+  }
 }
 
 export function AttachmentViewer({ open, onOpenChange, attachments }: AttachmentViewerProps) {

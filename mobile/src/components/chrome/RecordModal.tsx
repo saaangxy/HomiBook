@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ActivityIndicator, BackHandler, Dimensions, Image, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, BackHandler, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { ImagePlus, X } from 'lucide-react-native';
 import { useTheme, haptics } from '@/theme';
 import { useAppearProgress } from '@/components/ui/useAppearAnimation';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSheetHeight } from '@/hooks/useSheetHeight';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { DatePicker } from '@/components/ui/DatePicker';
@@ -41,26 +42,8 @@ export function RecordModal() {
   const { addRecord, updateRecord, accounts: allAccounts, categories: allCategories } = useRecords();
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
-  // 缓存初始窗口高度:Android 键盘弹出时窗口会 resize 变小,用固定快照保持弹窗高度不变
-  const screenH = useRef(Dimensions.get('window').height).current;
-
-  // 键盘高度:用于键盘弹出时把 sheet 压缩到键盘上方
-  const [kbH, setKbH] = useState(0);
-  useEffect(() => {
-    const show = Keyboard.addListener('keyboardDidShow', (e) => setKbH(e.endCoordinates.height));
-    const hide = Keyboard.addListener('keyboardDidHide', () => setKbH(0));
-    return () => {
-      show.remove();
-      hide.remove();
-    };
-  }, []);
-  // 固定外部高度;键盘弹出时整体缩到键盘上方;
-  // 主 window 为 edge-to-edge 全屏,height 基准含状态栏,显式扣除保证弹窗顶部不越过状态栏
-  const sheetH = Math.round(
-    kbH > 0
-      ? Math.min(screenH * 0.84, screenH - kbH - 12)
-      : Math.min(screenH * 0.84, screenH - insets.top - 12),
-  );
+  // 固定外部高度;键盘弹出时整体缩到键盘上方
+  const sheetH = useSheetHeight(0.84);
 
   // Android 返回键关闭(Modal 替换为主 window 覆盖层后,需自行拦截返回键)
   useEffect(() => {

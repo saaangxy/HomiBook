@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
-import { BackHandler, Dimensions, Keyboard, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { useEffect } from 'react';
+import { BackHandler, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useTheme } from '@/theme';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AIAssistant } from '@/components/chat/AIAssistant';
+import { useSheetHeight } from '@/hooks/useSheetHeight';
 import { useUIShell } from './chrome';
 import { useAppearProgress } from '@/components/ui/useAppearAnimation';
 
@@ -13,26 +13,8 @@ import { useAppearProgress } from '@/components/ui/useAppearAnimation';
 export function AIAssistantModal() {
   const { colors } = useTheme();
   const { aiOpen, closeAI } = useUIShell();
-  const insets = useSafeAreaInsets();
-  // 缓存初始窗口高度:Android 键盘弹出时窗口会 resize,用固定快照保持高度稳定
-  const screenH = useRef(Dimensions.get('window').height).current;
-
-  // 键盘高度:键盘弹出时压缩 sheet
-  const [kbH, setKbH] = useState(0);
-  useEffect(() => {
-    const show = Keyboard.addListener('keyboardDidShow', (e) => setKbH(e.endCoordinates.height));
-    const hide = Keyboard.addListener('keyboardDidHide', () => setKbH(0));
-    return () => {
-      show.remove();
-      hide.remove();
-    };
-  }, []);
-  // 主 window 为 edge-to-edge 全屏,height 基准含状态栏,显式扣除保证弹窗顶部不越过状态栏
-  const sheetH = Math.round(
-    kbH > 0
-      ? Math.min(screenH * 0.92, screenH - kbH - 12)
-      : Math.min(screenH * 0.92, screenH - insets.top - 12),
-  );
+  // 固定高度底部 sheet,键盘弹出时压缩到键盘上方
+  const sheetH = useSheetHeight(0.92);
 
   // Android 返回键关闭(覆盖层需自行拦截返回键)
   useEffect(() => {

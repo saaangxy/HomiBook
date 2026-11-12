@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { buildActivePath, collectDescendantIds, parseContentIntoBlocks, processTextDelta, isAwaitingUserAction, DeltaState, DELTA_FLUSH_MS, isDeltaEvent, isStreamPaused, registerDeltaFlusher, appendThinkingToBlocks, type DeltaEvent } from '@homibook/core';
+import { buildActivePath, planRetryRemoval, parseContentIntoBlocks, processTextDelta, isAwaitingUserAction, DeltaState, DELTA_FLUSH_MS, isDeltaEvent, isStreamPaused, registerDeltaFlusher, appendThinkingToBlocks, type DeltaEvent } from '@homibook/core';
 import { create } from 'zustand';
 import { confirmActionStream, createSession, deleteSession, fetchMessages, fetchSessions, generateSessionTitle, sendMessageStream, updateSession, type SSEEvent } from '@/services/chat';
 
@@ -726,19 +726,10 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     const state = get();
     const sid = state.currentSessionId;
     if (!sid || state.sessionCache[sid]?.isStreaming) return;
-    const view = viewOf(state.sessionCache[sid] ?? EMPTY_SESSION);
-    const idx = view.messages.findIndex((m) => m.id === assistantMsgId);
-    if (idx <= 0) return;
-    const prevUserMsg = view.messages[idx - 1];
-    if (prevUserMsg.role !== 'user') return;
-    const text = prevUserMsg.blocks.filter((b) => b.type === 'text').map((b) => b.content).join('\n');
-    if (!text) return;
-    const assistantDbId = view.messages[idx].dbId || view.messages[idx].id;
-    const descendantIds = collectDescendantIds(view.allMessages, assistantDbId);
-    const kept = view.allMessages.filter((m) => !descendantIds.has(m.dbId || m.id) && (m.dbId || m.id) !== assistantDbId);
-    const userMsgId = prevUserMsg.dbId || prevUserMsg.id;
-    const filteredAllMessages = kept.filter((m) => (m.dbId || m.id) !== userMsgId);
-    patchSession(set, sid, () => ({ allMessages: filteredAllMessages }));
+    const data = state.sessionCache[sid] ?? EMPTY_SESSION;
+    const plan = planRetryRemoval(data.allMessages, data.branchSelections, assistantMsgId);
+    if (!plan) return;
+    patchSession(set, sid, () => ({ allMessages: plan.keptMessages }));
   },
 
   selectBranch: (parentId, childId) => {

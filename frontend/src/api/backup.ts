@@ -1,3 +1,4 @@
+import { BACKUP_MODULES as CORE_BACKUP_MODULES, type BackupModuleOption } from '@homibook/core'
 import { api } from './http'
 
 export interface BackupBook {
@@ -5,30 +6,10 @@ export interface BackupBook {
   name: string
 }
 
-/** 与后端 services/backup/modules.ts 的 MODULE_OPTIONS 保持一致 */
-export interface BackupModule {
-  key: string
-  label: string
-  core: boolean
-  bookScoped: boolean
-}
+/** 模块清单与后端共用（@homibook/core/src/backup.ts），此处只做类型别名 */
+export type BackupModule = BackupModuleOption
 
-export const BACKUP_MODULES: BackupModule[] = [
-  { key: 'systemConfig', label: '系统配置', core: true, bookScoped: false },
-  { key: 'dictionary', label: '字典', core: false, bookScoped: false },
-  { key: 'holiday', label: '节假日', core: false, bookScoped: false },
-  { key: 'user', label: '用户', core: true, bookScoped: false },
-  { key: 'accountBook', label: '账本', core: true, bookScoped: true },
-  { key: 'account', label: '账户', core: true, bookScoped: true },
-  { key: 'record', label: '流水', core: true, bookScoped: true },
-  { key: 'budget', label: '预算', core: false, bookScoped: true },
-  { key: 'recurring', label: '固定收支', core: false, bookScoped: true },
-  { key: 'importMapping', label: '导入映射', core: false, bookScoped: false },
-  { key: 'aiConfig', label: 'AI 助手配置', core: false, bookScoped: false },
-  { key: 'aiChat', label: 'AI 聊天记录', core: false, bookScoped: true },
-  { key: 'apiKey', label: 'API Key', core: false, bookScoped: false },
-  { key: 'attachments', label: '附件（含文件）', core: false, bookScoped: true },
-]
+export const BACKUP_MODULES: BackupModule[] = CORE_BACKUP_MODULES
 
 export interface ExportBackupParams {
   scope: 'full' | 'attachments'
