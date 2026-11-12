@@ -9,6 +9,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build:core": "npm run build -w @homibook/core"
+    "build:core": "npm run build -w @homibook/core",
+    "sync:core": "node sync-core.mjs"
   }
 }

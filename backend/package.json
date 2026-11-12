@@ -44,7 +44,6 @@
     "cron-parser": "^5.5.0",
     "csv-parse": "^6.2.1",
     "fastify": "^4.29.1",
-    "homibook": "file:..",
     "iconv-lite": "^0.7.2",
     "node-cron": "^4.2.1",
     "prisma": "^7.9.1",
