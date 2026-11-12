@@ -2,6 +2,8 @@
   "name": "mobile",
   "main": "index.js",
   "version": "1.2.2",
+  "private": true,
+  "license": "MIT",
   "dependencies": {
     "@expo-google-fonts/bebas-neue": "^0.4.1",
     "@expo-google-fonts/cormorant-garamond": "^0.4.1",
@@ -71,6 +73,5 @@
     "build:ios": "expo run:ios --configuration Release",
     "build:web": "expo export --platform web",
     "lint": "expo lint"
-  },
-  "private": true
+  }
 }
