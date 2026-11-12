@@ -27,16 +27,6 @@ export interface RecordFilter {
   offsetState?: 'pending' | 'offset'
 }
 
-// ---- Prisma 查询 ----
-
-const RECORD_INCLUDE = {
-  account: { select: { id: true, name: true, type: true } },
-  fromAccount: { select: { id: true, name: true } },
-  toAccount: { select: { id: true, name: true } },
-  owner: { select: { id: true, nickname: true, username: true, email: true } },
-  recordAttachments: { select: { id: true, path: true, originalFilename: true } },
-} as const
-
 function parseMultiSelect(value: string): string[] {
   return value.split(',').map((s) => s.trim()).filter(Boolean)
 }
@@ -107,14 +97,6 @@ export function buildRecordWhere(
   }
 
   return where
-}
-
-export function buildRecordQuery(bookId: string, filter: RecordFilter) {
-  return {
-    where: buildRecordWhere(bookId, filter),
-    include: RECORD_INCLUDE,
-    orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] as const,
-  }
 }
 
 // ---- 记录格式化 ----

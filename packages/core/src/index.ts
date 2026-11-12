@@ -2,6 +2,7 @@
 export * from './types/index.js';
 export * from './format.js';
 export * from './ai/sse.js';
+export * from './ai/stream-delta.js';
 export * from './ai/content-parser.js';
 export * from './ai/branch-utils.js';
 export * from './ai/tool-status.js';

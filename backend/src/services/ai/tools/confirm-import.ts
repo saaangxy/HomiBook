@@ -305,7 +305,7 @@ export const confirmImportTool: ToolDef = {
       tags: r.tags,
     }))
 
-    const { accountMap, accountsCreated, affectedAccounts } = await prisma.$transaction(async (tx) => {
+    const { accountsCreated, affectedAccounts } = await prisma.$transaction(async (tx) => {
       const { accountMap, accountsCreated } = await createAccountsInTx(tx, ctx.accountBookId, effectiveOwnerId, accountCreations)
       await saveCategoryMappingsInTx(tx, source, newMappings)
       await saveAccountMappingsInTx(tx, source, newAccountMappings)

@@ -83,7 +83,7 @@ export async function compressContext(params: CompressContextParams): Promise<Co
   }
 
   // ---- Tier 3: 最旧消息 LLM 摘要 ----
-  const { keptMessages, keptIds, removedMessages, removedIds } = cutForSummary(simplified, messageIds, historyBudget)
+  const { keptMessages, removedMessages, removedIds } = cutForSummary(simplified, messageIds, historyBudget)
 
   // 确定需要摘要的新消息（排除已被旧摘要覆盖的）
   const summaryStartIndex = findSummaryStartIndex(removedIds, summaryUpToMessageId)
@@ -100,7 +100,7 @@ export async function compressContext(params: CompressContextParams): Promise<Co
   }
 
   // 生成增量摘要
-  const newSummary = await generateSummary(model, currentSummary, messagesToSummarize).catch((err) => {
+  const newSummary = await generateSummary(model, currentSummary, messagesToSummarize).catch(() => {
     return null
   })
 
@@ -112,7 +112,6 @@ export async function compressContext(params: CompressContextParams): Promise<Co
     // 摘要失败时仅丢弃消息，不注入摘要
   }
 
-  const keptTokens = estimateMessagesTokens(keptMessages)
   console.debug("Tier 3: 最旧消息 LLM 摘要")
   return { messages: keptMessages, systemPrompt: promptWithSummary, newSummary: currentSummary, newSummaryUpToMessageId: currentSummaryUpToId }
 }

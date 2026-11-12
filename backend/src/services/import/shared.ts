@@ -42,17 +42,6 @@ export type AccountMatchResult =
   | { matched: false; ambiguous: true; candidates: AccountCandidate[] }
   | { matched: false; ambiguous: false }
 
-export interface UnmatchedAccount {
-  csvName: string
-  suggestedType: string
-  suggestedName: string
-  bankName?: string
-  accountNo?: string
-  candidates?: AccountCandidate[]
-  /** AI 提供的解析信息（preview 模式带回，供前端展示预填充状态） */
-  aiResolution?: { sourceAccountName: string; action: 'existing' | 'create'; targetAccountId?: string; targetAccountName?: string; accountType?: string }
-}
-
 export interface UnmatchedCategory {
   sourceCategory: string
   suggestedCode: string | null

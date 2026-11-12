@@ -80,13 +80,6 @@ export function startScheduler(client: PrismaLike = prisma, cronLib: CronLike = 
   console.log('[Scheduler] 固定收支调度器已启动')
 }
 
-export function stopScheduler() {
-  recurringTask?.stop()
-  auditCleanupTask?.stop()
-  recurringTask = null
-  auditCleanupTask = null
-}
-
 export async function generateRecord(rt: RecurringTxParams, client: PrismaLike = prisma) {
   const now = new Date()
   let amount = rt.amount

@@ -87,7 +87,7 @@ export async function accountRoutes(app: FastifyInstance) {
     })
 
     // 实时计算每个账户的余额
-    const enriched = await Promise.all(
+    return Promise.all(
       accounts.map(async (a) => {
         const computedBalance = await computeAccountBalance(a.id)
         const base: Record<string, unknown> = {
@@ -99,8 +99,6 @@ export async function accountRoutes(app: FastifyInstance) {
         return sanitizeAccount(base, userId)
       })
     )
-
-    return enriched
   })
 
   // 创建账户

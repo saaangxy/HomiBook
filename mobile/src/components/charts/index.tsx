@@ -403,68 +403,6 @@ export function MultiLineChart({ series, labels, height = CHART_H }: {
   );
 }
 
-// ── 双柱状图(收入/支出对比) ──
-export function DualBarChart({ income, expense, labels, height = CHART_H }: {
-  income: number[]; expense: number[]; labels: string[]; height?: number;
-}) {
-  const { colors } = useTheme();
-  const cc = useChartColors();
-  const n = labels.length;
-  const padL = 44, padR = 8, padT = 20, padB = 24;
-  const chartW = CW - padL - padR;
-  const chartH = height - padT - padB;
-  if (n === 0) {
-    return <Text style={{ fontSize: 12, color: colors.mutedForeground, textAlign: 'center', paddingVertical: 40 }}>暂无数据</Text>;
-  }
-  const maxVal = Math.max(...income, ...expense, 1);
-  const gap = chartW / n;
-  const barW = gap * 0.32;
-
-  return (
-    <ChartInteraction
-      n={n}
-      xFromIdx={(i) => padL + i * gap + gap / 2}
-      idxFromX={(px) => Math.floor((px - padL) / gap)}
-      height={height}
-      renderTip={(idx) => (
-        <>
-          <Text style={{ fontSize: 9, color: colors.mutedForeground }}>{labels[idx]}</Text>
-          <TipRow color={cc.income} label="收入" value={`¥${fmtMoney(income[idx] ?? 0)}`} />
-          <TipRow color={cc.expense} label="支出" value={`¥${fmtMoney(expense[idx] ?? 0)}`} />
-        </>
-      )}
-    >
-      <Svg width={CW} height={height} style={{ alignSelf: 'center' }}>
-        {[0, 0.5, 1].map((t, i) => {
-          const val = t * maxVal;
-          const yy = padT + chartH - (val / maxVal) * chartH;
-          return (
-            <G key={i}>
-              <SvgLine x1={padL} y1={yy} x2={CW - padR} y2={yy} stroke={colors.border} strokeWidth={0.5} strokeDasharray="3,3" />
-              <SvgText x={padL - 4} y={yy + 4} fontSize={9} fill={colors.mutedForeground} textAnchor="end">{fmtMoney(val)}</SvgText>
-            </G>
-          );
-        })}
-        {income.map((v, i) => {
-          const barH = (v / maxVal) * chartH;
-          const bx = padL + i * gap + gap * 0.1;
-          return <Rect key={`i${i}`} x={bx} y={padT + chartH - barH} width={barW} height={barH} fill={cc.income} rx={2} />;
-        })}
-        {expense.map((v, i) => {
-          const barH = (v / maxVal) * chartH;
-          const bx = padL + i * gap + gap * 0.1 + barW + 2;
-          return <Rect key={`e${i}`} x={bx} y={padT + chartH - barH} width={barW} height={barH} fill={cc.expense} rx={2} />;
-        })}
-        {labels.map((l, i) => <SvgText key={i} x={padL + i * gap + gap / 2} y={height - 4} fontSize={9} fill={colors.mutedForeground} textAnchor="middle">{l}</SvgText>)}
-        <Rect x={padL + 8} y={padT - 8} width={8} height={8} fill={cc.income} rx={2} />
-        <SvgText x={padL + 20} y={padT} fontSize={9} fill={colors.mutedForeground}>收入</SvgText>
-        <Rect x={padL + 52} y={padT - 8} width={8} height={8} fill={cc.expense} rx={2} />
-        <SvgText x={padL + 64} y={padT} fontSize={9} fill={colors.mutedForeground}>支出</SvgText>
-      </Svg>
-    </ChartInteraction>
-  );
-}
-
 // ── 堆叠柱状图(分类支出构成;点击图例隐藏/显示该项对齐 web,点击柱段选中) ──
 export function StackedBarChart({ periods, categories, selectedIndex, onSelect, height = 240 }: {
   periods: string[]; categories: { name: string; data: number[] }[]; height?: number;

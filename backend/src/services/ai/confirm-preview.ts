@@ -125,7 +125,7 @@ export async function buildConfirmPreview(
   toolName: string,
   args: any,
   accountBookId: string,
-  userId?: string,
+  _userId?: string,
 ): Promise<string> {
   switch (toolName) {
     case 'delete_record':

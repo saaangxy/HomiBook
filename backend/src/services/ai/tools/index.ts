@@ -191,11 +191,4 @@ export function peekImportOverrides(attachmentId: string): UserImportOverrides |
   return userImportOverrides.get(attachmentId)
 }
 
-// 生成 AI SDK 可用的工具定义列表
-export function buildAITools() {
-  return ALL_TOOLS.map((tool) => ({
-    description: tool.description,
-    parameters: tool.parameters,
-    execute: tool.execute,
-  }))
-}
+

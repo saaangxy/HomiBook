@@ -72,13 +72,12 @@ export async function settingsRoutes(app: FastifyInstance) {
                     }
                 }
             }
-        }, async (req, reply) => {
+        }, async (req) => {
             const {group} = req.params as { group: string }
-            const items = await prisma.dictionary.findMany({
+            return prisma.dictionary.findMany({
                 where: {group},
                 orderBy: {order: 'asc'},
             })
-            return items
         })
 
         // 管理员 — 独立子作用域

@@ -34,7 +34,6 @@ export async function holidayRoutes(app: FastifyInstance) {
     const { year } = req.query as { year?: string }
     const where: any = {}
     if (year) {
-      const y = parseInt(year)
       where.date = {
         gte: new Date(`${year}-01-01`),
         lte: new Date(`${year}-12-31`),

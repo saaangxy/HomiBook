@@ -56,11 +56,10 @@ export async function backupRoutes(app: FastifyInstance) {
       },
     },
   }, async () => {
-    const books = await prisma.accountBook.findMany({
+    return prisma.accountBook.findMany({
       select: { id: true, name: true },
       orderBy: { createdAt: 'asc' },
     })
-    return books
   })
 
   // 导出备份（数据包 / 附件包），返回 zip 下载流

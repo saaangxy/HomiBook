@@ -13,8 +13,6 @@ import { FadeInView } from '@/components/FadeInView';
 import { PasswordStrength } from '@/components/PasswordStrength';
 import { showToast } from '@/components/chrome/Toast';
 
-const ROLE_LABEL: Record<string, string> = { ADMIN: '管理员', USER: '成员' };
-
 const inputStyle = (colors: ReturnType<typeof useTheme>['colors']) => ({
   backgroundColor: colors.elevated,
   borderWidth: 1,

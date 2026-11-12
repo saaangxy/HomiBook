@@ -395,7 +395,6 @@ export default function BudgetPage() {
   const renderBudgetCard = (b: BudgetItem) => {
     const pct = b.amount > 0 ? (b.actualAmount / b.amount) * 100 : 0;
     const barW = Math.min(pct, 100);
-    const over = b.actualAmount > b.amount;
     // 颜色阈值对齐网页端 UsageBar:>100 红、>80 主题色、>60 黄、其余绿
     let barColor = '#22c55e';
     if (pct > 100) barColor = colors.destructive;

@@ -1759,10 +1759,9 @@ export async function chatRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.status(400).send({ message: parsed.error.issues[0].message })
 
     const userId = (req as any).user.id as string
-    const config = await prisma.userProviderConfig.create({
+    return prisma.userProviderConfig.create({
       data: { userId, ...parsed.data, name: parsed.data.name || parsed.data.provider },
     })
-    return config
   })
 
   // 更新

@@ -37,14 +37,6 @@ export interface ChatMessage {
 
 export type SSEEvent = ChatSSEEvent;
 
-export interface BookOption {
-  id: string;
-  name: string;
-  role: string;
-  memberCount: number;
-  isCurrent: boolean;
-}
-
 const BASE = '/api/chat';
 
 // ── 会话/消息 CRUD ──

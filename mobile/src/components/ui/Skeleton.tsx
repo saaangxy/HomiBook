@@ -53,15 +53,4 @@ export function Skeleton({ width = '100%', height = 16, radius = 8, style }: Ske
   );
 }
 
-/** 卡片骨架(汇总卡/列表卡占位) */
-export function CardSkeleton({ lines = 3, style }: { lines?: number; style?: ViewStyle }) {
-  const { palette } = useTheme();
-  return (
-    <View style={[{ gap: 10, padding: 20 }, style]}>
-      <Skeleton width="40%" height={14} radius={palette.radius.input} />
-      {Array.from({ length: lines }).map((_, i) => (
-        <Skeleton key={i} width={i === lines - 1 ? '65%' : '100%'} height={12} radius={palette.radius.input} />
-      ))}
-    </View>
-  );
-}
+

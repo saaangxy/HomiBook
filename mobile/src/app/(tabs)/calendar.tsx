@@ -18,7 +18,7 @@ import { fetchCalendar, fetchRecords, type CalendarDay } from '@/services/record
 import { holidayApi, type HolidayItem } from '@/services/settings';
 import { useRecords } from '@/stores/records';
 import type { RecordItem } from '@/types';
-import { formatMoney, formatMoneyShort } from '@/lib/format';
+import { formatMoneyShort } from '@/lib/format';
 
 const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日'];
 const ROW_FULL = 64; // 日历行高(始终不变,压缩的是可视高度)
@@ -38,7 +38,7 @@ export default function CalendarScreen() {
   const [month, setMonth] = useState(now.getMonth() + 1); // 1-12
   const [selected, setSelected] = useState(now.getDate());
   // 分类图标(图标来源复用 records store 的分类);克隆/删除当日流水
-  const { categories, refresh, cloneRecord, deleteRecord } = useRecords();
+  const { refresh, cloneRecord, deleteRecord } = useRecords();
   const { currentLedger, openRecord } = useUIShell();
   const bookId = currentLedger.id;
   const [ymOpen, setYmOpen] = useState(false);

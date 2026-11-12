@@ -373,7 +373,7 @@ export async function bookRoutes(app: FastifyInstance) {
             tags: ['账本'],
             params: zSchema(z.object({id: z.string()}))
         }
-    }, async (req, reply) => {
+    }, async (req) => {
         const {id} = req.params as { id: string }
         const payload = req.user as { id: string }
 

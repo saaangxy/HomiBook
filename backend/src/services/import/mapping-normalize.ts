@@ -90,9 +90,6 @@ export function normalizeAccountMappings(mappings: AccountMappingLike[]): Normal
   return dedupeBy(normalized, m => [m.sourceAccountName, m.payerContains, m.descriptionContains].join('\u0000'))
 }
 
-/** 单来源规则数上限:超过时保存接口回传提示(防止碎片化) */
-export const MAPPING_COUNT_WARN_LIMIT = 80
-
 /** 是否属于「兜底规则」(条件全空,任何行都能命中) */
 export function isFallbackRule(m: { payerContains?: string; descriptionContains?: string; recordType?: string }): boolean {
   return !m.payerContains && !m.descriptionContains && !m.recordType

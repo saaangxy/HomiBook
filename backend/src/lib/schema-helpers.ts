@@ -9,15 +9,3 @@ export function zSchema(schema: ZodType) {
   delete jsonSchema.$schema
   return jsonSchema
 }
-
-/**
- * 为简单查询参数创建 JSON Schema（不依赖 Zod）
- * 用于只有一个必填 bookId 的简单 GET 接口
- */
-export function bookIdQuery() {
-  return {
-    type: 'object',
-    properties: { bookId: { type: 'string' } },
-    required: ['bookId'],
-  } as const
-}

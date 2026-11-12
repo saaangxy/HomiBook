@@ -106,7 +106,7 @@ export function AccountMappingSettings() {
       setAccountMappingAddOpen(false)
       setAccountMappingEditTarget(null)
       resetAccountMappingForm()
-      loadAccountMappings(accountMappingSource)
+      await loadAccountMappings(accountMappingSource)
     } catch (e) {
       setAccountMappingFormError(errorMessage(e))
     } finally {
@@ -120,7 +120,7 @@ export function AccountMappingSettings() {
       await importExportApi.deleteAccountMapping(accountMappingDeleteTarget.id)
       toast.success('账户映射已删除')
       setAccountMappingDeleteTarget(null)
-      loadAccountMappings(accountMappingSource)
+      await loadAccountMappings(accountMappingSource)
     } catch (e) {
       setAccountMappingsError(errorMessage(e))
     }

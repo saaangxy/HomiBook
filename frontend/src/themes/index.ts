@@ -278,9 +278,6 @@ export const themes: Record<string, Theme> = {
 /** 用户可选的创意主题 ID 列表（不含基础 light/dark） */
 export const creativeThemeIds = ['craft', 'telegram', 'botanical', 'candy', 'mondrian']
 
-/** 所有可选主题 ID（含 system、浅色、深色、创意主题） */
-export const selectableThemeIds = ['system', 'light', 'dark', ...creativeThemeIds]
-
 export const defaultTheme = 'dark'
 
 export function getTheme(id: string): Theme {

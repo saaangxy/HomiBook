@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { buildActivePath, collectDescendantIds, parseContentIntoBlocks, processTextDelta, isAwaitingUserAction, DeltaState } from '@homibook/core';
+import { buildActivePath, collectDescendantIds, parseContentIntoBlocks, processTextDelta, isAwaitingUserAction, DeltaState, DELTA_FLUSH_MS, isDeltaEvent, isStreamPaused, registerDeltaFlusher, appendThinkingToBlocks, type DeltaEvent } from '@homibook/core';
 import { create } from 'zustand';
 import { confirmActionStream, createSession, deleteSession, fetchMessages, fetchSessions, generateSessionTitle, sendMessageStream, updateSession, type SSEEvent } from '@/services/chat';
 
@@ -11,36 +11,8 @@ export type { Message, MessageBlock, ToolCallEntry, SuggestionOption } from '@ho
 
 
 // ── 流式增量刷新调度 ──
-// SSE 的每个 text/reasoning delta 都直接写 store → AIAssistant 整棵树(含全部历史 Markdown)
-// 重渲染一次;实测每秒可达上百帧,Android/Hermes 的 JS 线程被打满后:
-//   1) 触摸事件排队/丢失 → 思考卡、工具卡、输入区按钮(停止/联网/图片/附件)点了没反应;
-//   2) 消息区布局持续变化 → 按压中途收到 ACTION_CANCEL → onPress 被吞(点很多次才展开一次)。
-// 对策:① 同一窗口内的文本增量合并为一次提交;② 手指按住消息列表期间暂停刷新,松手补一次。
-const DELTA_FLUSH_MS = 50;
-
-type DeltaEvent =
-  | Extract<SSEEvent, { type: 'text-delta' }>
-  | Extract<SSEEvent, { type: 'reasoning-delta' }>;
-
-function isDeltaEvent(event: SSEEvent): event is DeltaEvent {
-  return event.type === 'text-delta' || event.type === 'reasoning-delta';
-}
-
-/** 活跃流的补刷函数(暂停解除时立即执行,不再等窗口) */
-const pendingFlushers = new Set<() => void>();
-let streamPaused = false;
-
-/** 按住消息列表/输入区工具行期间暂停流式刷新 / 松手恢复并补刷(AIAssistant 触摸事件驱动) */
-export function setStreamPaused(paused: boolean) {
-  if (streamPaused === paused) return;
-  streamPaused = paused;
-  if (paused || pendingFlushers.size === 0) return;
-  // 延后一个事件循环再补刷:避免在按压释放的同一 tick 里重排布局,干扰 Pressable 的 onPress 判定
-  setTimeout(() => {
-    if (streamPaused) return;
-    for (const flush of [...pendingFlushers]) flush();
-  }, 0);
-}
+// 调度与判定统一在 @homibook/core（与 web 共用），store 只保留本平台特有的接线。
+export { setStreamPaused } from '@homibook/core';
 
 export interface ChatSession {
   id: string;
@@ -190,17 +162,6 @@ type SSEStreamContext = {
   blockIdCounter: { value: number };
 };
 
-/** 把流式 reasoning delta 追加到 thinking 块(与末块合并,否则新建) */
-function appendThinkingToBlocks(blocks: MessageBlock[], content: string, idCounter: { value: number }) {
-  if (!content) return;
-  const last = blocks[blocks.length - 1];
-  if (last && last.type === 'thinking') {
-    blocks[blocks.length - 1] = { ...last, content: last.content + content };
-  } else if (content.trim()) {
-    blocks.push({ id: `block-${++idCounter.value}`, type: 'thinking', content });
-  }
-}
-
 function makeSSEHandler(ctx: SSEStreamContext, onFinish: (event: Extract<SSEEvent, { type: 'finish' }>) => void) {
   const updateMsg = (updater: (msg: Message) => Message) => {
     ctx.get().updateStreamMessage(ctx.sid, ctx.assistantMsgId, updater);
@@ -237,13 +198,13 @@ function makeSSEHandler(ctx: SSEStreamContext, onFinish: (event: Extract<SSEEven
       return { ...msg, blocks };
     });
   };
-  pendingFlushers.add(flushDeltas);
+  const unregisterFlusher = registerDeltaFlusher(flushDeltas);
 
   const scheduleFlush = () => {
-    if (streamPaused || flushTimer) return;
+    if (isStreamPaused() || flushTimer) return;
     flushTimer = setTimeout(() => {
       flushTimer = null;
-      if (!streamPaused) flushDeltas();
+      if (!isStreamPaused()) flushDeltas();
     }, DELTA_FLUSH_MS);
   };
 
@@ -363,7 +324,7 @@ function makeSSEHandler(ctx: SSEStreamContext, onFinish: (event: Extract<SSEEven
 
   const handleDone = () => {
     flushDeltas(); // 收尾前落地残余增量,避免丢字
-    pendingFlushers.delete(flushDeltas);
+    unregisterFlusher();
     clearStreaming(ctx.set, ctx.sid);
 
     const refreshSessions = () => {

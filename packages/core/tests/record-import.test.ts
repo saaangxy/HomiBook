@@ -79,20 +79,32 @@ describe('matchAccountInPoolDetailed', () => {
   });
 
   describe('ownerId 过滤(多用户账本)', () => {
-    it('仅在本人与未设归属人的账户中匹配', () => {
-      // u1 视角:候选为 a1/a3/a4(排除他人 a2)
-      // '支付宝余额' 无精确命中 → 目标名包含账户名 '支付宝' → 命中 a1
-      const r = matchAccountInPoolDetailed('支付宝余额', pool, 'u1');
+    // 严格语义:账户必有归属人,传了 ownerId 就只匹配 ownerId 完全相等的账户
+    const ownerPool: PoolAccount[] = [
+      { id: 'a1', name: '支付宝', ownerId: 'u1' },
+      { id: 'a2', name: '支付宝余额', ownerId: 'u2' },
+      { id: 'a3', name: '微信', ownerId: 'u1' },
+      { id: 'a4', name: '现金' }, // 未设归属人
+    ];
+
+    it('只在本人账户中匹配', () => {
+      // u1 视角:候选 a1/a3,'支付宝余额' 通过「目标名包含账户名」命中本人 a1
+      const r = matchAccountInPoolDetailed('支付宝余额', ownerPool, 'u1');
       expect(r).toEqual({ matched: true, id: 'a1', name: '支付宝' });
     });
 
-    it('匹配到他人精确同名账户时被过滤 → 不匹配', () => {
-      expect(matchAccountInPoolDetailed('支付宝余额', pool, 'u1')).not.toMatchObject({ id: 'a2' });
+    it('他人同名账户不会串到本人视角', () => {
+      // 同一条输入在 u2 视角命中自己的 a2,两人的同名账户互不干扰
+      const r = matchAccountInPoolDetailed('支付宝余额', ownerPool, 'u2');
+      expect(r).toEqual({ matched: true, id: 'a2', name: '支付宝余额' });
     });
 
-    it('未设归属人的账户所有人可匹配(宽松语义)', () => {
-      const r = matchAccountInPoolDetailed('现金', pool, 'u99');
-      expect(r).toEqual({ matched: true, id: 'a4', name: '现金' });
+    it('未设归属人的账户不参与本人视角匹配(严格语义)', () => {
+      expect(matchAccountInPoolDetailed('现金', ownerPool, 'u99')).toEqual({ matched: false, ambiguous: false });
+    });
+
+    it('不传 ownerId 时全池匹配', () => {
+      expect(matchAccountInPoolDetailed('现金', ownerPool)).toEqual({ matched: true, id: 'a4', name: '现金' });
     });
 
     it('过滤后无候选 → 不匹配', () => {

@@ -44,7 +44,6 @@ export function ImageLightbox({ images, initialIndex = 0, onClose }: {
   initialIndex?: number;
   onClose: () => void;
 }) {
-  const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const width = Dimensions.get('window').width;
   const [index, setIndex] = useState(initialIndex);

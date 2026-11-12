@@ -56,30 +56,6 @@ export function desensitize(data: unknown): unknown {
   return result
 }
 
-// 超时控制
-export function withTimeout<T>(promise: Promise<T>, ms: number, label?: string): Promise<T> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => {
-    controller.abort()
-  }, ms)
-
-  // 如果 promise 可接收 abort signal
-  return Promise.race([
-    promise,
-    new Promise<never>((_, reject) => {
-      const onAbort = () => {
-        clearTimeout(timer)
-        reject(new Error(label ? `${label} 超时 (${ms}ms)` : `操作超时 (${ms}ms)`))
-      }
-      if (controller.signal.aborted) {
-        onAbort()
-      } else {
-        controller.signal.addEventListener('abort', onAbort, { once: true })
-      }
-    }),
-  ]).finally(() => clearTimeout(timer))
-}
-
 // 工具调用重试包装
 export async function retryable<T>(
   fn: () => Promise<T>,

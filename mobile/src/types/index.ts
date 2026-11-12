@@ -164,12 +164,6 @@ export interface ShareCodeItem {
   createdAt: string;
 }
 
-export type LedgerMenu = {
-  icon: string;
-  label: string;
-  to?: string;
-};
-
 // ── 本地保留:雷达指标(统计页专用) ──
 export interface RadarMetric {
   name: string;

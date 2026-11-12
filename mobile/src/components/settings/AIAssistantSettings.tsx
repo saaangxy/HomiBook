@@ -6,7 +6,7 @@ import { Text } from '@/components/ui/Text';
 import {
   aiAdminApi, type ProviderInfo, type ToolInfo, type UserProviderConfig,
 } from '@/services/settings';
-import { Btn, Chips, ErrorText, Field, FieldRow, LabeledInput, OptionModal, Section, useInputStyle } from './shared';
+import { Btn, Chips, ErrorText, Field, FieldRow, LabeledInput, OptionModal, Section } from './shared';
 import { useConfirm } from '@/components/chrome/ConfirmSheet';
 import { showToast } from '@/components/chrome/Toast';
 import { useAuth } from '@/stores/auth';
@@ -63,7 +63,6 @@ export function AIAssistantSettings() {
   const [testing, setTesting] = useState(false);
   const [testMsg, setTestMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
-  const [modelPick, setModelPick] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -256,7 +255,6 @@ export function AIAssistantSettings() {
     });
   };
 
-  const inputStyle = useInputStyle();
 
   const [slotPick, setSlotPick] = useState<null | 'simpleConfigId' | 'complexConfigId' | 'visionConfigId'>(null);
   const SLOT_LABELS: Record<string, string> = { simpleConfigId: '简单任务模型', complexConfigId: '复杂任务模型', visionConfigId: '视觉模型' };

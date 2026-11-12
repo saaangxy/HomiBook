@@ -114,14 +114,6 @@ export function getCurrentPeriod(startDate: Date, termMonths: number): number {
   return Math.max(1, Math.min(period, termMonths))
 }
 
-// 获取当前期对应的还款计划项
-export function getCurrentPlanItem(recurringId: string, startDate: Date, termMonths: number) {
-  const period = getCurrentPeriod(startDate, termMonths)
-  return prisma.repaymentPlan.findFirst({
-    where: { recurringTransactionId: recurringId, period },
-  })
-}
-
 // 标签追加"固定收支"
 export function ensureFixedTag(tags: string[]): string[] {
   const fixed = '固定收支'

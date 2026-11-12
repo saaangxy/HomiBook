@@ -4,6 +4,12 @@ import {
   buildActivePath,
   collectDescendantIds,
   processTextDelta,
+  appendThinkingToBlocks,
+  isDeltaEvent,
+  isStreamPaused,
+  registerDeltaFlusher,
+  DELTA_FLUSH_MS,
+  type DeltaEvent,
   type DeltaState,
   type Message,
   type MessageBlock,
@@ -20,35 +26,8 @@ import { useBookStore } from './book'
 export type { Message, MessageBlock, SuggestionOption, ToolCallEntry }
 
 // ── 流式增量刷新调度 ──
-// SSE 的每个 text/reasoning delta 都直接写 store → 整棵消息树(含全部历史 Markdown)重渲染一次;
-// 实测每秒可达上百帧,除了白白烧 CPU,还会让消息区布局持续位移:
-//   mousedown/mouseup 落到不同元素上 → click 目标变成共同祖先 → 卡片/按钮「点不动」。
-// 对策:① 同一窗口内的文本增量合并为一次提交;② 按住聊天区域期间暂停刷新,松手补一次。
-const DELTA_FLUSH_MS = 50
-
-type DeltaEvent =
-  | Extract<SSEEvent, { type: 'text-delta' }>
-  | Extract<SSEEvent, { type: 'reasoning-delta' }>
-
-function isDeltaEvent(event: SSEEvent): event is DeltaEvent {
-  return event.type === 'text-delta' || event.type === 'reasoning-delta'
-}
-
-/** 活跃流的补刷函数(暂停解除时立即执行,不再等窗口) */
-const pendingFlushers = new Set<() => void>()
-let streamPaused = false
-
-/** 按住聊天区域(消息列表/输入区工具行)期间暂停流式刷新 / 松手恢复并补刷 */
-export function setStreamPaused(paused: boolean) {
-  if (streamPaused === paused) return
-  streamPaused = paused
-  if (paused || pendingFlushers.size === 0) return
-  // 延后一个事件循环再补刷:避免在按压释放的同一 tick 里重排 DOM,干扰 click 判定
-  setTimeout(() => {
-    if (streamPaused) return
-    for (const flush of [...pendingFlushers]) flush()
-  }, 0)
-}
+// 调度与判定统一在 @homibook/core（与 mobile 共用），store 只保留本平台特有的接线。
+export { setStreamPaused } from '@homibook/core'
 
 export interface ChatSession {
   id: string
@@ -185,17 +164,6 @@ type SSEStreamContext = {
   blockIdCounter: { value: number }
 }
 
-/** 把流式 reasoning delta 追加到 thinking 块(与末块合并,否则新建) */
-function appendThinkingToBlocks(blocks: MessageBlock[], content: string, idCounter: { value: number }) {
-  if (!content) return
-  const last = blocks[blocks.length - 1]
-  if (last && last.type === 'thinking') {
-    blocks[blocks.length - 1] = { ...last, content: last.content + content }
-  } else if (content.trim()) {
-    blocks.push({ id: `block-${++idCounter.value}`, type: 'thinking', content })
-  }
-}
-
 function makeSSEHandler(
   ctx: SSEStreamContext,
   onFinish: (event: Extract<SSEEvent, { type: 'finish' }>) => void,
@@ -238,13 +206,13 @@ function makeSSEHandler(
       return { ...msg, blocks }
     })
   }
-  pendingFlushers.add(flushDeltas)
+  const unregisterFlusher = registerDeltaFlusher(flushDeltas)
 
   const scheduleFlush = () => {
-    if (streamPaused || flushTimer) return
+    if (isStreamPaused() || flushTimer) return
     flushTimer = setTimeout(() => {
       flushTimer = null
-      if (!streamPaused) flushDeltas()
+      if (!isStreamPaused()) flushDeltas()
     }, DELTA_FLUSH_MS)
   }
 
@@ -374,7 +342,7 @@ function makeSSEHandler(
 
   const handleDone = () => {
     flushDeltas() // 收尾前落地残余增量,避免丢字
-    pendingFlushers.delete(flushDeltas)
+    unregisterFlusher()
     updateMsg((msg) => ({ ...msg, isStreaming: false }))
     clearStreaming(ctx.set, ctx.sid)
 

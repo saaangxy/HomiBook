@@ -283,7 +283,6 @@ export default function StatsPage() {
     let cancel = false;
     setTimeLoading(true);
     setBarSelected(null);
-    const granularity: StatGranularity = tab === 'yearly' ? 'monthly' : 'daily';
     const trendParams = tab === 'yearly'
       ? { granularity: 'monthly' as const, year, dateFrom: range.dateFrom, dateTo: range.dateTo }
       : tab === 'monthly'

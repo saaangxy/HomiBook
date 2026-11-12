@@ -57,11 +57,10 @@ export async function loadMemoriesForPrompt(userId: string, query: string, limit
       })
       // 合并去重
       const seen = new Set(topMemories.map(m => m.id))
-      const merged = [...topMemories, ...matched.filter(m => !seen.has(m.id))]
-        // id 兜底保证「同重要度 → 同顺序」:注入文本逐字节稳定是前缀缓存命中的前提
+      // id 兜底保证「同重要度 → 同顺序」:注入文本逐字节稳定是前缀缓存命中的前提
+      result = [...topMemories, ...matched.filter(m => !seen.has(m.id))]
         .sort((a, b) => b.importance - a.importance || a.id.localeCompare(b.id))
         .slice(0, limit)
-      result = merged
     }
   }
 

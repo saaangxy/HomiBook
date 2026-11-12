@@ -160,13 +160,11 @@ export async function authRoutes(app: FastifyInstance) {
     if (parsed.data.nickname !== undefined) data.nickname = parsed.data.nickname
     if (parsed.data.theme !== undefined) data.theme = parsed.data.theme
 
-    const user = await prisma.user.update({
+    return prisma.user.update({
       where: { id: payload.id },
       data,
       select: { id: true, email: true, username: true, nickname: true, role: true, theme: true },
     })
-
-    return user
   })
 
   // 修改密码

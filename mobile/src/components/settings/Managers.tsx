@@ -39,7 +39,6 @@ function HeadRow({ title, btnTitle, onBtn }: { title: string; btnTitle: string; 
 }
 
 function OpIcon({ onPress, children }: { onPress: () => void; children: React.ReactNode }) {
-  const { colors } = useTheme();
   return (
     <Pressable hitSlop={6} onPress={onPress} style={{ width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 8 }}>
       {children}
@@ -305,7 +304,7 @@ const RECORD_TYPE_OPTIONS = [
 
 const TYPE_LABEL: Record<string, string> = RECORD_TYPE_LABELS;
 
-export function CategoryMappingManager({ dictGroups }: { dictGroups: string[] }) {
+export function CategoryMappingManager({ dictGroups: _dictGroups }: { dictGroups: string[] }) {
   const { colors } = useTheme();
   const [source, setSource] = useState('alipay');
   const [items, setItems] = useState<CategoryMapping[]>([]);

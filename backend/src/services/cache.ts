@@ -15,13 +15,6 @@ class TTLCache {
   set(key: string, value: unknown, ttlMs: number) {
     this.store.set(key, { value, expiresAt: Date.now() + ttlMs })
   }
-
-  // 按前缀失效(为将来事件驱动失效留口)
-  invalidateByPrefix(prefix: string) {
-    for (const k of [...this.store.keys()]) {
-      if (k.startsWith(prefix)) this.store.delete(k)
-    }
-  }
 }
 
 // 账户余额历史缓存

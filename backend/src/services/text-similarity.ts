@@ -43,8 +43,5 @@ export function textSimilarity(a?: string | null, b?: string | null): number {
   return total === 0 ? 0 : Math.round((2 * overlap / total) * 1000) / 1000
 }
 
-/** 阈值(0~1)判断;阈值 <= 0 视为不启用 */
-export function meetsSimilarity(a: string | undefined | null, b: string | undefined | null, min: number): boolean {
-  if (min <= 0) return true
-  return textSimilarity(a, b) >= min
-}
+
+

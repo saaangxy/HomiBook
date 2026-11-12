@@ -51,16 +51,6 @@ export async function markSmsProcessed(ids: string[]): Promise<void> {
   await writeAll(next.length > MAX_ITEMS ? next.slice(next.length - MAX_ITEMS) : next);
 }
 
-/** 撤销部分标记(自动记账回滚:这批短信/通知应重新回到候选列表) */
-export async function unmarkSmsProcessed(ids: string[]): Promise<void> {
-  const drop = new Set(ids.filter(Boolean));
-  if (drop.size === 0) return;
-  const cur = await readAll();
-  const next = cur.filter((e) => !drop.has(e.id));
-  if (next.length === cur.length) return;
-  await writeAll(next);
-}
-
 /** 清空标记(用户在系统里删掉导入的流水后,需要重新扫描这些短信) */
 export async function clearProcessedSmsIds(): Promise<void> {
   await writeAll([]);

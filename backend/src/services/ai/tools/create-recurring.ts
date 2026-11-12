@@ -129,7 +129,6 @@ export const createRecurringTool: ToolDef = {
           ? generateEqualPrincipalPlan(args.loanTotalAmount, args.loanInterestRate, args.loanTermMonths, startDate)
           : generateEqualInstallmentPlan(args.loanTotalAmount, args.loanInterestRate, args.loanTermMonths, startDate)
 
-        const now = new Date()
         const planData = plan.map((p) => ({
           recurringTransactionId: rt.id,
           period: p.period,

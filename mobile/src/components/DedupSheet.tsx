@@ -88,7 +88,6 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
   const [amountMinText, setAmountMinText] = useState('');
   const [amountMaxText, setAmountMaxText] = useState('');
   const [groups, setGroups] = useState<DuplicateGroup[]>([]);
-  const [totalDuplicates, setTotalDuplicates] = useState(0);
   const [detected, setDetected] = useState(false);
   const [detecting, setDetecting] = useState(false);
   const [error, setError] = useState('');
@@ -135,7 +134,6 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
 
   const reset = () => {
     setGroups([]);
-    setTotalDuplicates(0);
     setDetected(false);
     setDetecting(false);
     setRunning(false);
@@ -177,7 +175,6 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
       setGroups(result.groups);
       setGroupStates(Object.fromEntries(result.groups.map((g) => [g.key, 'pending' as GroupStatus])));
       setStatusFilter('all');
-      setTotalDuplicates(result.totalDuplicates);
       setDetected(true);
       // 默认勾选:每组保留最早的(第一条),勾选其余
       const toDelete = new Set<string>();
@@ -288,8 +285,6 @@ export function DedupSheet({ visible, onClose, bookId }: DedupSheetProps) {
     }
     return map;
   }, [groups]);
-  const cleanCount = groups.filter((g) => !groupInfo.get(g)?.dirty).length;
-  const conflictCount = groups.length - cleanCount;
   // 组级状态:全部 / 待处理 / 已确认 / 忽略(数量随时反映当前检测结果)
   const statusCounts = useMemo(() => {
     const c = { pending: 0, confirmed: 0, ignored: 0 };

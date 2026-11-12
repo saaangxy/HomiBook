@@ -62,7 +62,7 @@ export async function adminRoutes(app: FastifyInstance) {
         },
       },
     },
-  }, async (req, reply) => {
+  }, async () => {
     const users = await prisma.user.findMany({
       select: {
         id: true,
@@ -158,7 +158,7 @@ export async function adminRoutes(app: FastifyInstance) {
       }
     }
 
-    const updated = await prisma.user.update({
+    return prisma.user.update({
       where: { id, deletedAt: null },
       data: parsed.data,
       select: {
@@ -171,8 +171,6 @@ export async function adminRoutes(app: FastifyInstance) {
         createdAt: true,
       },
     })
-
-    return updated
   })
 
   // 修改用户密码
