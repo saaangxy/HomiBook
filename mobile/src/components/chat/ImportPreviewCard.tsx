@@ -8,7 +8,12 @@ import { Text } from '@/components/ui/Text';
 import { useChatStore } from '@/stores/chat';
 import { checkImport } from '@/services/import';
 import { MiniTable } from './MiniTable';
-import { ACCOUNT_TYPE_LABELS, RECORD_TYPE_LABELS, TYPE_TO_GROUP, adoptSuggestedAccountResolutions, computeImportProgress, initAccountResolutions, type AccountResolution, type ToolCallEntry, accountLabel, isMultiOwnerAccounts } from '@homibook/core';
+import {
+  ACCOUNT_TYPE_LABELS, RECORD_TYPE_LABELS, TYPE_TO_GROUP, adoptSuggestedAccountResolutions, computeImportProgress,
+  initAccountResolutions, type AccountResolution, type ToolCallEntry, accountLabel, isMultiOwnerAccounts,
+  toAccountResolutionPayload, toCategoryResolutionPayload, toUnrecognizedResolutionPayload,
+  type CategoryResolutionEntry, type UnrecognizedResolutionDraft,
+} from '@homibook/core';
 
 
 
@@ -92,14 +97,16 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
         sourceCategory: uc.sourceCategory,
         type: uc.aiRecordType || uc.types?.[0] || '',
         targetCode: uc.suggestedCode || '',
+        // AI 卡片的「保存」同时是提交开关（见 toCategoryResolutionPayload 的 onlySaved），
+        // 默认必须为 true，否则确认导入时默认不提交任何分类映射
         save: true,
         payerContains: uc.payerContains || '',
         descriptionContains: uc.descriptionContains || '',
       })),
   );
   // 未识别记录的手动指定
-  const [unrecRes, setUnrecRes] = useState<Record<number, { type: string; accountId: string; categoryCode: string; toAccountId: string }>>(() => {
-    const unres: Record<number, { type: string; accountId: string; categoryCode: string; toAccountId: string }> = {};
+  const [unrecRes, setUnrecRes] = useState<Record<number, UnrecognizedResolutionDraft>>(() => {
+    const unres: Record<number, UnrecognizedResolutionDraft> = {};
     for (const r of unrec) {
       unres[r.rowIndex] = { type: '', accountId: r.accountId || accounts[0]?.id || '', toAccountId: r.toAccountId || '', categoryCode: r.mappedCategoryCode || r.categoryCode || '' };
     }
@@ -271,34 +278,22 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
     setConfirmError('');
     const overrides: Record<string, unknown> = {};
     if (aiArgs.attachmentId) overrides.attachmentId = aiArgs.attachmentId;
-    const userAccounts = Object.entries(accountRes).map(([csvName, res]) =>
-      res.action === 'existing'
-        ? { sourceAccountName: csvName, action: 'existing', targetAccountId: res.accountId }
-        : { sourceAccountName: csvName, action: 'create', targetAccountName: res.name, accountType: res.type },
-    ).filter((r) => (r as any).targetAccountId || (r as any).targetAccountName);
+    // 账户映射：只提交完整项（existing 需 accountId，create 需 name+type）
+    const userAccounts = toAccountResolutionPayload(accountRes, { onlyComplete: true });
     if (userAccounts.length > 0) overrides.accountResolutions = userAccounts;
-    const userCats = categoryRes.filter((cr) => cr.targetCode && cr.save).map((cr) => ({
+    // 分类映射：AI 卡片只提交勾了「保存」的项
+    const categoryEntries: CategoryResolutionEntry[] = categoryRes.map((cr) => ({
       sourceCategory: cr.sourceCategory,
-      targetCategoryCode: cr.targetCode,
       recordType: cr.type,
-      payerContains: cr.payerContains || undefined,
-      descriptionContains: cr.descriptionContains || undefined,
+      targetCode: cr.targetCode,
+      save: cr.save,
+      payerContains: cr.payerContains,
+      descriptionContains: cr.descriptionContains,
     }));
+    const userCats = toCategoryResolutionPayload(categoryEntries, { onlySaved: true });
     if (userCats.length > 0) overrides.categoryResolutions = userCats;
-    const userUnrec = unrec.filter((r) => {
-      const res = unrecRes[r.rowIndex];
-      // 转账必须指定转入账户,否则该行仍算未设置(跳过)
-      return res?.type && res?.accountId && (res.type !== 'TRANSFER' || !!res.toAccountId);
-    }).map((r) => {
-      const res = unrecRes[r.rowIndex];
-      return {
-        rowIndex: r.rowIndex,
-        type: res.type,
-        accountId: res.accountId,
-        categoryCode: res.categoryCode || '',
-        toAccountId: res.type === 'TRANSFER' ? res.toAccountId : undefined,
-      };
-    });
+    // 未识别行：只提交完整处置（转账必须有转入账户）
+    const userUnrec = toUnrecognizedResolutionPayload(unrecRes, { onlyComplete: true });
     if (userUnrec.length > 0) overrides.unrecognizedResolutions = userUnrec;
 
     try {

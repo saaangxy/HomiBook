@@ -14,7 +14,16 @@ import { useAuth } from '@/stores/auth';
 import { fetchBookMembers } from '@/services/records';
 import {
   analyzeImportCsv, confirmImport, isBillFile, previewImport, type DictEntry, type ImportPreviewResult, type ParsedImportRow, } from '@/services/import';
-import { ACCOUNT_TYPE_LABELS, IMPORT_COLUMN_FIELDS, IMPORT_SOURCE_DEFS, IMPORT_TYPE_LABELS, TYPE_TO_GROUP, adoptSuggestedAccountResolutions, autoDetectColumns, autoDetectTypeMapping, canProceedImport, computeImportProgress, detectTypeValues, initAccountResolutions, isColumnMappingValid, matchAccountInPool, mergeAccountCreations, type AccountResolution, type ImportColumnField, type ImportSource, accountLabel } from '@homibook/core';
+import {
+  ACCOUNT_TYPE_LABELS, IMPORT_COLUMN_FIELDS, IMPORT_SOURCE_DEFS, IMPORT_TYPE_LABELS, TYPE_TO_GROUP,
+  adoptSuggestedAccountResolutions, autoDetectColumns, autoDetectTypeMapping, canProceedImport,
+  computeImportProgress, detectTypeValues, initAccountResolutions, isColumnMappingValid, matchAccountInPool,
+  mergeAccountCreations, type AccountResolution, type ImportColumnField, type ImportSource, accountLabel,
+  buildCategoryResolutionKey, findBestCategoryResolution, initCategoryResolutionDrafts,
+  toAccountResolutionPayload, toCategoryResolutionEntries, toCategoryResolutionPayload,
+  toUnrecognizedResolutionPayload,
+  type CategoryResolutionDraft, type UnrecognizedResolutionDraft,
+} from '@homibook/core';
 
 
 
@@ -34,12 +43,7 @@ type Step = 'source' | 'upload' | 'columnMapping' | 'preview' | 'confirm' | 'res
 
 // 账户解析类型与默认值初始化统一来自 @homibook/core(与 AI 导入卡共用策略)
 
-interface CategoryResolution {
-  targetCode: string;
-  save: boolean;
-  payerContains: string;
-  descriptionContains: string;
-}
+// 分类决议草稿的类型与初始化统一来自 @homibook/core（见 import-wizard）
 
 interface PickedFile {
   uri: string;
@@ -191,9 +195,9 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
   const [prevFilterAccount, setPrevFilterAccount] = useState('');
   const [confirmVisible, setConfirmVisible] = useState(CONFIRM_PAGE_SIZE);
   const [accountRes, setAccountRes] = useState<Record<string, AccountResolution>>({});
-  const [categoryRes, setCategoryRes] = useState<Record<string, CategoryResolution>>({});
+  const [categoryRes, setCategoryRes] = useState<Record<string, CategoryResolutionDraft>>({});
   // toAccountId(转入账户)仅在类型为「转账」时使用
-  const [unrecognizedRes, setUnrecognizedRes] = useState<Record<number, { type: string; accountId: string; categoryCode: string; toAccountId: string }>>({});
+  const [unrecognizedRes, setUnrecognizedRes] = useState<Record<number, UnrecognizedResolutionDraft>>({});
   // 未识别行「同意跳过」需用户显式勾选(门禁见 core canProceedImport)
   const [agreeSkipUnrecognized, setAgreeSkipUnrecognized] = useState(false);
 
@@ -370,13 +374,11 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
     setPrevVisible(PREVIEW_PAGE_SIZE);
     // 初始化账户解析:有候选默认选第一个,无候选默认新建(统一策略见 core initAccountResolutions)
     setAccountRes(initAccountResolutions(result.unmatchedAccounts));
-    // 初始化分类解析
-    const catRes: Record<string, CategoryResolution> = {};
-    for (const uc of result.unmatchedCategories) {
-      const key = `${uc.sourceCategory}::${uc.types[0] ?? 'EXPENSE'}`;
-      catRes[key] = { targetCode: uc.suggestedCode ?? '', save: false, payerContains: '', descriptionContains: '' };
-    }
-    setCategoryRes(catRes);
+    // 初始化分类解析（移动端默认不保存规则，与改造前的 save:false 一致）
+    setCategoryRes(initCategoryResolutionDrafts(
+      result.unmatchedCategories.map((uc) => ({ ...uc, types: [uc.types[0] ?? 'EXPENSE'] })),
+      { saveByDefault: false },
+    ));
     setUnrecognizedRes({});
   };
 
@@ -411,29 +413,11 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
 
   // ── 组装确认数据(对齐 web buildImportData) ──
 
-  const findBestCategoryResolution = (sourceCategory: string, recordType: string, payer: string | null, remark: string | null): string | null => {
-    let best: string | null = null;
-    let bestScore = -1;
-    for (const [key, cr] of Object.entries(categoryRes)) {
-      if (!cr.targetCode) continue;
-      const parts = key.split('::');
-      if (parts[0] !== sourceCategory || parts[1] !== recordType) continue;
-      let score = 0;
-      if (cr.payerContains) {
-        if (payer && payer.includes(cr.payerContains)) score += 2;
-        else continue;
-      }
-      if (cr.descriptionContains) {
-        if (remark && remark.includes(cr.descriptionContains)) score += 1;
-        else continue;
-      }
-      if (score > bestScore) {
-        bestScore = score;
-        best = cr.targetCode;
-      }
-    }
-    return best;
-  };
+  // 分类决议条目(复合键已解析):记录分类与保存规则共用同一份
+  const categoryEntries = useMemo(() => toCategoryResolutionEntries(categoryRes), [categoryRes]);
+
+  const findBestResolution = (sourceCategory: string, recordType: string, payer: string | null, remark: string | null): string | null =>
+    findBestCategoryResolution(categoryEntries, { sourceCategory, recordType, payer, remark });
 
   // 可映射的分类:排除只出现在「类型未识别」记录上的分类
   // (它们走「需手动处理」区块,否则会"列不出来又挡住门禁")
@@ -450,7 +434,7 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
     accountResolutions: accountRes,
     categoryResolutions: mappableCategories.map((uc) => ({
       sourceCategory: uc.sourceCategory,
-      targetCode: categoryRes[`${uc.sourceCategory}::${uc.types[0] ?? 'EXPENSE'}`]?.targetCode,
+      targetCode: categoryRes[buildCategoryResolutionKey(uc.sourceCategory, uc.types[0] ?? 'EXPENSE')]?.targetCode,
     })),
     unrecognizedRecords: preview?.unrecognizedRecords ?? [],
     unrecognizedResolutions: unrecognizedRes,
@@ -477,26 +461,9 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
     // 决议先构造:预置预览(服务端复核)与文件路径(上传复核)用的是同一份
     const effectiveOwner = override?.ownerId ?? selectedOwnerId;
     const ownerId = effectiveOwner === '__self__' ? undefined : effectiveOwner;
-    const accountResForServer = Object.entries(override?.accountResolutions ?? accountRes).map(([sourceAccountName, r]) => ({
-      sourceAccountName,
-      action: r.action,
-      targetAccountId: r.action === 'existing' ? r.accountId : undefined,
-      targetAccountName: r.action === 'create' ? r.name : undefined,
-      accountType: r.action === 'create' ? r.type : undefined,
-    }));
-    const catResForServer = Object.entries(categoryRes)
-      .filter(([, cr]) => !!cr.targetCode)
-      .map(([key, cr]) => {
-        const [sourceCategory, type] = key.split('::');
-        return {
-          sourceCategory,
-          targetCategoryCode: cr.targetCode,
-          recordType: type && !type.startsWith('e') ? type : undefined,
-          payerContains: cr.payerContains || undefined,
-          descriptionContains: cr.descriptionContains || undefined,
-        };
-      });
-    const unrecResForServer = Object.entries(unrecognizedRes).map(([rowIndex, r]) => ({ rowIndex: Number(rowIndex), ...r }));
+    const accountResForServer = toAccountResolutionPayload(override?.accountResolutions ?? accountRes);
+    const catResForServer = toCategoryResolutionPayload(categoryEntries);
+    const unrecResForServer = toUnrecognizedResolutionPayload(unrecognizedRes);
 
     // 预置预览(短信 / 通知记账)没有上传文件,/import/check 用不了。
     // 由调用方提供 presetServerCheck(→ /api/sms/check),服务端用**同一套** remapImportRows 裁决,
@@ -647,7 +614,7 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
         toAccountId = matchAccountInPool(r.toAccountName, ownerPool, effectiveOwnerId)?.id || r.toAccountName;
       }
 
-      const userResolution = r.categoryCode ? findBestCategoryResolution(r.categoryCode, r.type, r.payer ?? null, r.remark ?? null) : null;
+      const userResolution = r.categoryCode ? findBestResolution(r.categoryCode, r.type, r.payer ?? null, r.remark ?? null) : null;
       return {
         date: r.date,
         type: r.type,
@@ -710,18 +677,7 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
       if (!accountMappingSet.has(key)) accountMappingSet.set(key, { sourceAccountName: csvName, targetAccountName: targetName });
     }
 
-    const newMappings = Object.entries(categoryRes)
-      .filter(([, cr]) => cr.save && cr.targetCode)
-      .map(([key, cr]) => {
-        const parts = key.split('::');
-        return {
-          sourceCategory: parts[0],
-          targetCategoryCode: cr.targetCode,
-          recordType: parts[1],
-          payerContains: cr.payerContains || undefined,
-          descriptionContains: cr.descriptionContains || undefined,
-        };
-      });
+    const newMappings = toCategoryResolutionPayload(categoryEntries, { onlySaved: true });
 
     const allRecords = (records as any[]).concat(resolvedUnrecognized);
     return {

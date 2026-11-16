@@ -15,7 +15,15 @@ import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/comp
 import { importExportApi, type UnmatchedAccount, type UnmatchedCategory, type ParsedImportRow, type DictEntry } from '@/api/import-export'
 import { ACCOUNT_TYPE_LABELS, type AccountItem, type AccountType } from '@/api/account'
 import { RECORD_TYPE_LABELS as TYPE_LABELS, RECORD_TYPE_TEXT_CLASS as TYPE_COLORS, RECORD_TYPE_CONTAINER_CLASS } from '@/lib/record-type';
-import { accountLabel, isMultiOwnerAccounts, errorMessage, IMPORT_COLUMN_FIELDS, adoptSuggestedAccountResolutions, autoDetectColumns, computeImportProgress, detectTypeValues, autoDetectTypeMapping, initAccountResolutions, matchAccountInPool, type AccountResolution } from '@homibook/core';
+import {
+  accountLabel, isMultiOwnerAccounts, errorMessage, IMPORT_COLUMN_FIELDS, adoptSuggestedAccountResolutions,
+  autoDetectColumns, computeImportProgress, detectTypeValues, autoDetectTypeMapping, initAccountResolutions,
+  matchAccountInPool, type AccountResolution,
+  buildCategoryResolutionKey, findBestCategoryResolution, initCategoryResolutionDrafts, initUnrecognizedResolutionDrafts,
+  toAccountResolutionPayload, toCategoryResolutionEntries, toCategoryResolutionPayload,
+  toUnrecognizedResolutionPayload,
+  type CategoryResolutionDraft, type UnrecognizedResolutionDraft,
+} from '@homibook/core';
 
 
 
@@ -121,7 +129,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
 
   // 用户的选择(账户解析类型与初始化统一来自 @homibook/core)
   const [accountResolutions, setAccountResolutions] = useState<Record<string, AccountResolution>>({})
-  const [categoryResolutions, setCategoryResolutions] = useState<Record<string, { targetCode: string; save: boolean; payerContains: string; descriptionContains: string }>>({})
+  const [categoryResolutions, setCategoryResolutions] = useState<Record<string, CategoryResolutionDraft>>({})
   const [showAllRecords, setShowAllRecords] = useState(false)
   const [filterCategory, setFilterCategory] = useState('')
   const [filterType, setFilterType] = useState('')
@@ -139,7 +147,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
   // 无法自动识别的记录（不计收支未知类型）
   const [unrecognizedRecords, setUnrecognizedRecords] = useState<ParsedImportRow[]>([])
   // toAccountId(转入账户)仅在类型为「转账」时使用
-  const [unrecognizedResolutions, setUnrecognizedResolutions] = useState<Record<number, { type: string; accountId: string; categoryCode: string; toAccountId: string }>>({})
+  const [unrecognizedResolutions, setUnrecognizedResolutions] = useState<Record<number, UnrecognizedResolutionDraft>>({})
   // 未识别行「同意跳过」需用户显式勾选(门禁见 core canProceedImport)
   const [agreeSkipUnrecognized, setAgreeSkipUnrecognized] = useState(false)
 
@@ -309,26 +317,10 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
       setAccountResolutions(initAccountResolutions(result.unmatchedAccounts))
 
       // 初始化分类映射
-      const initCategoryResolutions: Record<string, { targetCode: string; save: boolean; payerContains: string; descriptionContains: string }> = {}
-      for (const uc of result.unmatchedCategories) {
-        for (const type of uc.types) {
-          const key = `${uc.sourceCategory}::${type}`
-          initCategoryResolutions[key] = {
-            targetCode: uc.suggestedCode || '',
-            save: false,
-            payerContains: '',
-            descriptionContains: '',
-          }
-        }
-      }
-      setCategoryResolutions(initCategoryResolutions)
+      setCategoryResolutions(initCategoryResolutionDrafts(result.unmatchedCategories, { saveByDefault: false }))
 
       // 初始化无法识别记录的处理
-      const initUnrecognizedResolutions: Record<number, { type: string; accountId: string; categoryCode: string; toAccountId: string }> = {}
-      for (const r of result.unrecognizedRecords) {
-        initUnrecognizedResolutions[r.rowIndex] = { type: '', accountId: '', categoryCode: '', toAccountId: '' }
-      }
-      setUnrecognizedResolutions(initUnrecognizedResolutions)
+      setUnrecognizedResolutions(initUnrecognizedResolutionDrafts(result.unrecognizedRecords))
 
       setComboOpen(null)
       setCategorySearch('')
@@ -365,14 +357,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
       setAccountResolutions(initAccountResolutions(result.unmatchedAccounts))
 
       // 初始化分类映射（按 sourceCategory::type 复合键，不同类型独立映射）
-      const catRes: typeof categoryResolutions = {}
-      for (const uc of result.unmatchedCategories) {
-        for (const t of uc.types) {
-          const key = `${uc.sourceCategory}::${t}`
-          catRes[key] = { targetCode: uc.suggestedCode || '', save: true, payerContains: '', descriptionContains: '' }
-        }
-      }
-      setCategoryResolutions(catRes)
+      setCategoryResolutions(initCategoryResolutionDrafts(result.unmatchedCategories, { saveByDefault: false }))
 
       // 初始化无法识别的记录
       setUnrecognizedRecords(result.unrecognizedRecords || [])
@@ -413,7 +398,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
     categoryResolutions: unmatchedCategories.flatMap(uc =>
       uc.types.filter(type => type !== 'UNKNOWN').map(type => ({
         sourceCategory: uc.sourceCategory,
-        targetCode: categoryResolutions[`${uc.sourceCategory}::${type}`]?.targetCode,
+        targetCode: categoryResolutions[buildCategoryResolutionKey(uc.sourceCategory, type)]?.targetCode,
       })),
     ),
     unrecognizedRecords,
@@ -438,27 +423,9 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
     setChecking(true)
     const effectiveOwner = override?.ownerId ?? selectedOwnerId
     const ownerId = effectiveOwner === '__self__' ? undefined : effectiveOwner
-    const accountRes = Object.entries(override?.accountResolutions ?? accountResolutions).map(([sourceAccountName, r]) => ({
-      sourceAccountName,
-      action: r.action,
-      targetAccountId: r.action === 'existing' ? r.accountId : undefined,
-      targetAccountName: r.action === 'create' ? r.name : undefined,
-      accountType: r.action === 'create' ? r.type : undefined,
-    }))
-    const catRes = Object.entries(categoryResolutions)
-      .filter(([, cr]) => !!cr.targetCode)
-      .map(([key, cr]) => {
-        const [sourceCategory, type] = key.split('::')
-        return {
-          sourceCategory,
-          targetCategoryCode: cr.targetCode,
-          // 手动复制的分类项 key 带 ::e{id} 后缀,不是收支类型
-          recordType: type && !type.startsWith('e') ? type : undefined,
-          payerContains: cr.payerContains || undefined,
-          descriptionContains: cr.descriptionContains || undefined,
-        }
-      })
-    const unrecRes = Object.entries(unrecognizedResolutions).map(([rowIndex, r]) => ({ rowIndex: Number(rowIndex), ...r }))
+    const accountRes = toAccountResolutionPayload(override?.accountResolutions ?? accountResolutions)
+    const catRes = toCategoryResolutionPayload(toCategoryResolutionEntries(categoryResolutions))
+    const unrecRes = toUnrecognizedResolutionPayload(unrecognizedResolutions)
 
     try {
       const res = await importExportApi.preview(file, source, bookId, columnMapping, typeMapping, headerRow, {
@@ -536,50 +503,22 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
       ownerId: effectiveOwnerId || undefined,
     }))
 
+    // 分类决议条目(复合键已解析):保存规则与记录分类共用同一份
+    const categoryEntries = toCategoryResolutionEntries(categoryResolutions)
+
     // 构建分类映射保存列表
-    const mappingSet = new Map<string, { sourceCategory: string; targetCategoryCode: string; recordType?: string; payerContains?: string; descriptionContains?: string }>()
-    for (const [key, res] of Object.entries(categoryResolutions)) {
-      if (!res.save || !res.targetCode) continue
-      const parts = key.split('::')
-      const sourceCategory = parts[0]
-      const recordType = parts[1] // INCOME | EXPENSE | TRANSFER
-      if (removedKeys[sourceCategory]) continue
-      const dedupeKey = `${sourceCategory}||${res.payerContains || ''}||${res.descriptionContains || ''}||${recordType}`
-      mappingSet.set(dedupeKey, {
-        sourceCategory,
-        targetCategoryCode: res.targetCode,
-        recordType,
-        payerContains: res.payerContains || undefined,
-        descriptionContains: res.descriptionContains || undefined,
-      })
+    const savedMappings = toCategoryResolutionPayload(categoryEntries, { onlySaved: true })
+      .filter((m) => !removedKeys[m.sourceCategory])
+    const mappingSet = new Map<string, typeof savedMappings[number]>()
+    for (const m of savedMappings) {
+      const dedupeKey = `${m.sourceCategory}||${m.payerContains || ''}||${m.descriptionContains || ''}||${m.recordType || ''}`
+      mappingSet.set(dedupeKey, m)
     }
     const newMappings = Array.from(mappingSet.values())
 
-    // 按匹配分数从 categoryResolutions 中找最佳映射（类似后端 findBestMapping）
-    const findBestResolution = (sourceCategory: string, recordType: string, payer: string | null, remark: string): string | null => {
-      let best: string | null = null
-      let bestScore = -1
-      for (const [key, cr] of Object.entries(categoryResolutions)) {
-        if (!cr.targetCode) continue
-        // key 格式: sourceCategory::type 或 sourceCategory::type::eN
-        const parts = key.split('::')
-        if (parts[0] !== sourceCategory || parts[1] !== recordType) continue
-        let score = 0
-        if (cr.payerContains) {
-          if (payer && payer.includes(cr.payerContains)) score += 2
-          else continue
-        }
-        if (cr.descriptionContains) {
-          if (remark && remark.includes(cr.descriptionContains)) score += 1
-          else continue
-        }
-        if (score > bestScore) {
-          bestScore = score
-          best = cr.targetCode
-        }
-      }
-      return best
-    }
+    // 按匹配分数找最佳映射（口径与后端 findBestMapping 一致）
+    const findBestResolution = (sourceCategory: string, recordType: string, payer: string | null, remark: string): string | null =>
+      findBestCategoryResolution(categoryEntries, { sourceCategory, recordType, payer, remark })
 
     // 构建记录列表
     const records = previewRecords.map(r => {
@@ -1321,7 +1260,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                             const filteredItems = allDictItems.filter(d => allowedGroups.includes(d.group))
                             const updateCr = (patch: Partial<typeof cr>) => setCategoryResolutions({
                               ...categoryResolutions,
-                              [compositeKey]: { ...cr, targetCode: cr?.targetCode ?? '', save: cr?.save ?? true, payerContains: cr?.payerContains ?? '', descriptionContains: cr?.descriptionContains ?? '', ...patch },
+                              [compositeKey]: { ...cr, targetCode: cr?.targetCode ?? '', save: cr?.save ?? false, payerContains: cr?.payerContains ?? '', descriptionContains: cr?.descriptionContains ?? '', ...patch },
                             })
                             return (
                             <div key={compositeKey} className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 flex-wrap">
@@ -1393,7 +1332,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                               <label className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer whitespace-nowrap">
                                 <input
                                   type="checkbox"
-                                  checked={cr?.save ?? true}
+                                  checked={cr?.save ?? false}
                                   onChange={(e) => updateCr({ save: e.target.checked })}
                                   className="rounded"
                                 />
@@ -1409,7 +1348,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                                   setExtraUnmatched([...extraUnmatched, { id: newId, sourceCategory: uc.sourceCategory, types: [type] }])
                                   const key = `${uc.sourceCategory}::${type}::e${newId}`
                                   const orig = categoryResolutions[compositeKey]
-                                  setCategoryResolutions({ ...categoryResolutions, [key]: { targetCode: '', save: true, payerContains: orig?.payerContains || '', descriptionContains: orig?.descriptionContains || '' } })
+                                  setCategoryResolutions({ ...categoryResolutions, [key]: { targetCode: '', save: false, payerContains: orig?.payerContains || '', descriptionContains: orig?.descriptionContains || '' } })
                                 }}
                                 title="复制"
                               >

@@ -2,7 +2,12 @@ import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { markSubmitted, isSubmitted, clearSubmitted } from '@/lib/ai-submit'
 import { ACCOUNT_TYPE_LABELS, type AccountType } from '@/api/account'
-import { accountLabel, isMultiOwnerAccounts, adoptSuggestedAccountResolutions, computeImportProgress, initAccountResolutions, RECORD_TYPE_LABELS, TYPE_TO_GROUP as coreTypeToGroup, type AccountResolution } from '@homibook/core'
+import {
+  accountLabel, isMultiOwnerAccounts, adoptSuggestedAccountResolutions, computeImportProgress, initAccountResolutions,
+  RECORD_TYPE_LABELS, TYPE_TO_GROUP as coreTypeToGroup, type AccountResolution,
+  toAccountResolutionPayload, toCategoryResolutionPayload, toUnrecognizedResolutionPayload,
+  type CategoryResolutionEntry, type UnrecognizedResolutionDraft,
+} from '@homibook/core'
 
 
 import { RECORD_TYPE_TEXT_CLASS } from '@/lib/record-type'
@@ -154,6 +159,8 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
         sourceCategory: uc.sourceCategory,
         type: uc.aiRecordType || uc.types[0] || '',
         targetCode: uc.suggestedCode || '',
+        // AI 卡片的「保存」同时是提交开关（见 toCategoryResolutionPayload 的 onlySaved），
+        // 默认必须为 true，否则确认导入时默认不提交任何分类映射
         save: true,
         payerContains: uc.payerContains || '',
         descriptionContains: uc.descriptionContains || '',
@@ -161,9 +168,8 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
   )
 
   // 未识别记录解析(toAccountId 仅在类型为「转账」时使用)
-  type UnrecognizedResolution = { type: string; accountId: string; categoryCode: string; toAccountId: string }
-  const [unrecognizedResolutions, setUnrecognizedResolutions] = useState<Record<number, UnrecognizedResolution>>(() => {
-    const unresRes: Record<number, UnrecognizedResolution> = {}
+  const [unrecognizedResolutions, setUnrecognizedResolutions] = useState<Record<number, UnrecognizedResolutionDraft>>(() => {
+    const unresRes: Record<number, UnrecognizedResolutionDraft> = {}
     for (const r of data.unrecognizedRecords || []) {
       unresRes[r.rowIndex] = { type: '', accountId: r.accountId || accounts[0]?.id || '', toAccountId: r.toAccountId || '', categoryCode: r.mappedCategoryCode || r.categoryCode || '' }
     }
@@ -590,7 +596,7 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
               const res = unrecognizedResolutions[r.rowIndex] || { type: '', accountId: '', categoryCode: '', toAccountId: '' }
               // 转账还要有转入账户才算设置完成
               const isResolved = !!res.type && !!res.accountId && (res.type !== 'TRANSFER' || !!res.toAccountId)
-              const updateRes = (patch: Partial<UnrecognizedResolution>) =>
+              const updateRes = (patch: Partial<UnrecognizedResolutionDraft>) =>
                 setUnrecognizedResolutions(prev => ({ ...prev, [r.rowIndex]: { ...res, ...patch } }))
 
               return (
@@ -679,46 +685,24 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
                   const attachmentId = aiArgs?.attachmentId
                   if (attachmentId) overrides.attachmentId = attachmentId
 
-                  // 构建用户修改后的账户映射
-                  const userAccountResolutions: { sourceAccountName: string; action: 'existing' | 'create'; targetAccountId?: string; targetAccountName?: string; accountType?: string }[] = []
-                  for (const [csvName, res] of Object.entries(accountResolutions)) {
-                    if (res.action === 'existing' && res.accountId) {
-                      userAccountResolutions.push({ sourceAccountName: csvName, action: 'existing', targetAccountId: res.accountId })
-                    } else if (res.action === 'create' && res.name) {
-                      userAccountResolutions.push({ sourceAccountName: csvName, action: 'create', targetAccountName: res.name, accountType: res.type })
-                    }
-                  }
+                  // 账户映射：只提交完整项（existing 需 accountId，create 需 name+type）
+                  const userAccountResolutions = toAccountResolutionPayload(accountResolutions, { onlyComplete: true })
                   if (userAccountResolutions.length > 0) overrides.accountResolutions = userAccountResolutions
 
-                  // 构建用户修改后的分类映射
-                  const userCategoryResolutions: { sourceCategory: string; targetCategoryCode: string; recordType?: string; payerContains?: string; descriptionContains?: string }[] = []
-                  for (const cr of categoryResolutions) {
-                    if (!cr.targetCode || !cr.save) continue
-                    userCategoryResolutions.push({
-                      sourceCategory: cr.sourceCategory,
-                      targetCategoryCode: cr.targetCode,
-                      recordType: cr.type,
-                      payerContains: cr.payerContains || undefined,
-                      descriptionContains: cr.descriptionContains || undefined,
-                    })
-                  }
+                  // 分类映射：AI 卡片只提交勾了「保存」的项
+                  const categoryEntries: CategoryResolutionEntry[] = categoryResolutions.map(cr => ({
+                    sourceCategory: cr.sourceCategory,
+                    recordType: cr.type,
+                    targetCode: cr.targetCode,
+                    save: cr.save,
+                    payerContains: cr.payerContains,
+                    descriptionContains: cr.descriptionContains,
+                  }))
+                  const userCategoryResolutions = toCategoryResolutionPayload(categoryEntries, { onlySaved: true })
                   if (userCategoryResolutions.length > 0) overrides.categoryResolutions = userCategoryResolutions
 
-                  // 构建未识别记录的手动指定
-                  const userUnrecognizedResolutions: { rowIndex: number; type: string; accountId: string; categoryCode: string; toAccountId?: string }[] = []
-                  for (const r of unrecognizedRecords) {
-                    const res = unrecognizedResolutions[r.rowIndex]
-                    // 转账必须指定转入账户,否则该行仍算未设置(跳过)
-                    if (res?.type && res?.accountId && (res.type !== 'TRANSFER' || !!res.toAccountId)) {
-                      userUnrecognizedResolutions.push({
-                        rowIndex: r.rowIndex,
-                        type: res.type,
-                        accountId: res.accountId,
-                        categoryCode: res.categoryCode || '',
-                        toAccountId: res.type === 'TRANSFER' ? res.toAccountId : undefined,
-                      })
-                    }
-                  }
+                  // 未识别行：只提交完整处置（转账必须有转入账户）
+                  const userUnrecognizedResolutions = toUnrecognizedResolutionPayload(unrecognizedResolutions, { onlyComplete: true })
                   if (userUnrecognizedResolutions.length > 0) overrides.unrecognizedResolutions = userUnrecognizedResolutions
 
                   // 服务端裁决(与手动向导「下一步」同一道校验):未通过就停在卡片上,不执行导入
