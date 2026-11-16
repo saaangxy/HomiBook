@@ -15,6 +15,7 @@ import { importExportRoutes } from './routes/import-export.js'
 import { smsRoutes } from './routes/sms.js'
 import { backupRoutes } from './routes/backup.js'
 import { chatRoutes } from './routes/chat.js'
+import { aiConfigRoutes } from './routes/ai-config.js'
 import { seedDefaults } from './seed.js'
 import { startScheduler } from './services/scheduler.js'
 import { APP_VERSION } from './version.js'
@@ -53,6 +54,8 @@ async function main() {
   app.register(smsRoutes, { prefix: '/api/sms' })
   app.register(backupRoutes, { prefix: '/api/settings/backup' })
   app.register(chatRoutes, { prefix: '/api/chat' })
+  // AI 配置类接口（供应商配置 / 助手偏好 / 记忆 / 供应商探测）与对话共用 /api/chat 前缀
+  app.register(aiConfigRoutes, { prefix: '/api/chat' })
 
   // 启动固定收支调度器
   startScheduler()
