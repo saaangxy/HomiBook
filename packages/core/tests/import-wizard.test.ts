@@ -3,7 +3,9 @@ import {
   buildCategoryResolutionKey,
   findBestCategoryResolution,
   initCategoryResolutionDrafts,
+  initCategoryResolutionEntries,
   initUnrecognizedResolutionDrafts,
+  isCategoryCodeValidForType,
   parseCategoryResolutionKey,
   toAccountResolutionPayload,
   toCategoryResolutionEntries,
@@ -49,6 +51,96 @@ describe('initCategoryResolutionDrafts', () => {
 
   it('saveByDefault 原样透传（不设内部默认值）', () => {
     expect(initCategoryResolutionDrafts(unmatched, { saveByDefault: true })['餐饮::EXPENSE'].save).toBe(true);
+  });
+
+  it('传 dictItems 时，跨收支类型的建议值不预填（否则服务端会判未映射）', () => {
+    const dictItems = [
+      { code: '红包', group: 'transaction_category_income' },
+      { code: '保险', group: 'transaction_category_expense' },
+      { code: '信用借还', group: 'transaction_category_transfer' },
+    ];
+    const drafts = initCategoryResolutionDrafts(
+      [{ sourceCategory: '转账红包', types: ['EXPENSE', 'INCOME'], suggestedCode: '红包' }],
+      { saveByDefault: false, dictItems },
+    );
+    expect(drafts['转账红包::EXPENSE'].targetCode).toBe('');
+    expect(drafts['转账红包::INCOME'].targetCode).toBe('红包');
+  });
+
+  it('传 dictItems 时，同类型的建议值保留', () => {
+    const dictItems = [{ code: '保险', group: 'transaction_category_expense' }];
+    const drafts = initCategoryResolutionDrafts(
+      [{ sourceCategory: '保险', types: ['EXPENSE'], suggestedCode: '保险' }],
+      { saveByDefault: false, dictItems },
+    );
+    expect(drafts['保险::EXPENSE'].targetCode).toBe('保险');
+  });
+});
+
+describe('initCategoryResolutionEntries（AI 预览卡）', () => {
+  const dictItems = [
+    { code: '人情往来', group: 'transaction_category_expense' },
+    { code: '转账', group: 'transaction_category_transfer' },
+  ];
+
+  it('UNKNOWN 类型不建条目（这些行走「需手动处理」）', () => {
+    const entries = initCategoryResolutionEntries([
+      { sourceCategory: '转账', types: ['UNKNOWN', 'EXPENSE'], suggestedCode: '人情往来' },
+    ], { saveByDefault: true, dictItems });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ sourceCategory: '转账', recordType: 'EXPENSE', targetCode: '人情往来' });
+  });
+
+  it('全是 UNKNOWN 时完全不建（否则 recordType=UNKNOWN 永远匹配不上）', () => {
+    expect(initCategoryResolutionEntries([
+      { sourceCategory: '转账', types: ['UNKNOWN'], suggestedCode: '人情往来' },
+    ], { saveByDefault: true, dictItems })).toHaveLength(0);
+  });
+
+  it('aiRecordType 优先于 types', () => {
+    const entries = initCategoryResolutionEntries([
+      { sourceCategory: '转账', types: ['EXPENSE'], aiRecordType: 'TRANSFER', suggestedCode: '转账' },
+    ], { saveByDefault: true, dictItems });
+    expect(entries).toHaveLength(1);
+    expect(entries[0].recordType).toBe('TRANSFER');
+  });
+
+  it('多类型展开，跨组建议值置空', () => {
+    const entries = initCategoryResolutionEntries([
+      { sourceCategory: '群收款', types: ['EXPENSE', 'TRANSFER'], suggestedCode: '人情往来' },
+    ], { saveByDefault: true, dictItems });
+    expect(entries.map((e) => [e.recordType, e.targetCode])).toEqual([
+      ['EXPENSE', '人情往来'],
+      ['TRANSFER', ''],
+    ]);
+  });
+
+  it('saveByDefault 透传', () => {
+    const [entry] = initCategoryResolutionEntries([
+      { sourceCategory: '群收款', types: ['EXPENSE'], suggestedCode: '' },
+    ], { saveByDefault: false, dictItems });
+    expect(entry.save).toBe(false);
+  });
+});
+
+describe('isCategoryCodeValidForType', () => {
+  const dictItems = [
+    { code: '红包', group: 'transaction_category_income' },
+    { code: '保险', group: 'transaction_category_expense' },
+    { code: '信用借还', group: 'transaction_category_transfer' },
+  ];
+
+  it('按收支类型匹配字典组', () => {
+    expect(isCategoryCodeValidForType('保险', 'EXPENSE', dictItems)).toBe(true);
+    expect(isCategoryCodeValidForType('保险', 'INCOME', dictItems)).toBe(false);
+    expect(isCategoryCodeValidForType('红包', 'INCOME', dictItems)).toBe(true);
+    expect(isCategoryCodeValidForType('信用借还', 'TRANSFER', dictItems)).toBe(true);
+  });
+
+  it('类型未知或编码为空一律不合法', () => {
+    expect(isCategoryCodeValidForType('保险', 'UNKNOWN', dictItems)).toBe(false);
+    expect(isCategoryCodeValidForType('', 'EXPENSE', dictItems)).toBe(false);
+    expect(isCategoryCodeValidForType(null, 'EXPENSE', dictItems)).toBe(false);
   });
 });
 

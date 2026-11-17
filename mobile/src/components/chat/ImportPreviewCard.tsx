@@ -11,6 +11,7 @@ import { MiniTable } from './MiniTable';
 import {
   ACCOUNT_TYPE_LABELS, RECORD_TYPE_LABELS, TYPE_TO_GROUP, adoptSuggestedAccountResolutions, computeImportProgress,
   initAccountResolutions, type AccountResolution, type ToolCallEntry, accountLabel, isMultiOwnerAccounts,
+  initCategoryResolutionEntries,
   toAccountResolutionPayload, toCategoryResolutionPayload, toUnrecognizedResolutionPayload,
   type CategoryResolutionEntry, type UnrecognizedResolutionDraft,
 } from '@homibook/core';
@@ -89,20 +90,21 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
   );
   // 分类解析规则(可复制成多条,带正则条件与保存开关)
   interface CategoryResolution { id: string; sourceCategory: string; type: string; targetCode: string; save: boolean; payerContains: string; descriptionContains: string }
+  // 每种收支类型一条；UNKNOWN 不建（交给「需手动处理」区块），跨类型建议值会被 dictItems 校验置空
   const [categoryRes, setCategoryRes] = useState<CategoryResolution[]>(() =>
-    (data.unmatchedCategories ?? [])
-      .filter((uc: any) => uc.aiRecordType || uc.types?.[0])
-      .map((uc: any, i: number) => ({
-        id: String(i),
-        sourceCategory: uc.sourceCategory,
-        type: uc.aiRecordType || uc.types?.[0] || '',
-        targetCode: uc.suggestedCode || '',
-        // AI 卡片的「保存」同时是提交开关（见 toCategoryResolutionPayload 的 onlySaved），
-        // 默认必须为 true，否则确认导入时默认不提交任何分类映射
-        save: true,
-        payerContains: uc.payerContains || '',
-        descriptionContains: uc.descriptionContains || '',
-      })),
+    initCategoryResolutionEntries(data.unmatchedCategories ?? [], {
+      // AI 卡片的「保存」同时是提交开关（见 toCategoryResolutionPayload 的 onlySaved），默认必须为 true
+      saveByDefault: true,
+      dictItems,
+    }).map((e, i) => ({
+      id: String(i),
+      sourceCategory: e.sourceCategory,
+      type: e.recordType || '',
+      targetCode: e.targetCode,
+      save: e.save,
+      payerContains: e.payerContains,
+      descriptionContains: e.descriptionContains,
+    })),
   );
   // 未识别记录的手动指定
   const [unrecRes, setUnrecRes] = useState<Record<number, UnrecognizedResolutionDraft>>(() => {

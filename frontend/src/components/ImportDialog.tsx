@@ -316,8 +316,11 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
       // 初始化账户选择(统一策略见 core initAccountResolutions)
       setAccountResolutions(initAccountResolutions(result.unmatchedAccounts))
 
-      // 初始化分类映射
-      setCategoryResolutions(initCategoryResolutionDrafts(result.unmatchedCategories, { saveByDefault: false }))
+      // 初始化分类映射（dictItems 用于校验建议值是否属于该收支类型的字典组）
+      setCategoryResolutions(initCategoryResolutionDrafts(result.unmatchedCategories, {
+        saveByDefault: false,
+        dictItems: result.allDictItems,
+      }))
 
       // 初始化无法识别记录的处理
       setUnrecognizedResolutions(initUnrecognizedResolutionDrafts(result.unrecognizedRecords))
@@ -357,7 +360,10 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
       setAccountResolutions(initAccountResolutions(result.unmatchedAccounts))
 
       // 初始化分类映射（按 sourceCategory::type 复合键，不同类型独立映射）
-      setCategoryResolutions(initCategoryResolutionDrafts(result.unmatchedCategories, { saveByDefault: false }))
+      setCategoryResolutions(initCategoryResolutionDrafts(result.unmatchedCategories, {
+        saveByDefault: false,
+        dictItems: result.allDictItems,
+      }))
 
       // 初始化无法识别的记录
       setUnrecognizedRecords(result.unrecognizedRecords || [])

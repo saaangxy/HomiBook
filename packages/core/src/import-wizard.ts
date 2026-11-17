@@ -9,7 +9,12 @@
  * - `onlyComplete`：AI 卡片只提交「用户真正处置完」的行；向导提交全量，由服务端裁决。
  * - `onlySaved`：AI 卡片把「保存规则」当作提交与否的开关；向导的 `save` 只影响 newMappings。
  */
-import { type AccountResolution, isAccountResolutionComplete, isUnrecognizedResolutionComplete } from './record-import.js';
+import {
+  type AccountResolution,
+  isAccountResolutionComplete,
+  isUnrecognizedResolutionComplete,
+  TYPE_TO_GROUP,
+} from './record-import.js';
 
 // ── 类型（UI state 与后端 payload 各一套，中间由下面的投影函数转换） ──
 
@@ -81,20 +86,48 @@ export function parseCategoryResolutionKey(key: string): { sourceCategory: strin
 // ── 初始化 ──
 
 /**
+ * 目标分类是否属于该记录的收支类型。
+ *
+ * 服务端 `applyCategoryMappings` 会按这条规则把不匹配的映射判为「未映射」
+ * （`isCategoryCodeValidForType` → `mappedCategoryCode = null`），前端预填时必须同口径，
+ * 否则会出现「界面上选好了、服务端说未映射」。
+ *
+ * 类型未知（UNKNOWN / 无对应字典组）一律视为不合法：这类记录走「需手动处理」区块。
+ */
+export function isCategoryCodeValidForType(
+  code: string | null | undefined,
+  recordType: string,
+  dictItems: { code: string; group: string }[],
+): boolean {
+  if (!code) return false;
+  const group = TYPE_TO_GROUP[recordType];
+  if (!group) return false;
+  return dictItems.some((d) => d.code === code && d.group === group);
+}
+
+/**
  * 分类决议草稿初始化：每个「源分类 × 收支类型」一条。
  *
  * ⚠️ `saveByDefault` 由调用方决定，core 不设默认值 —— 历史上 web 的两条解析路径分别是
  * true / false，把它统一成常量会静默改变「是否自动积累映射规则」的产品行为。
+ *
+ * ⚠️ 传 `dictItems` 时会校验建议值：后端 `unmatchedCategories` 按**源分类**聚合、只给一个
+ * `suggestedCode`，同一源分类跨收支类型时（如「转账红包」既有支出行又有收入行），这个建议值
+ * 只对其中一半类型合法。直接预填另一半会被服务端判成「目标分类与收支类型不符」→ 永远未映射。
  */
 export function initCategoryResolutionDrafts(
   unmatchedCategories: { sourceCategory: string; types: string[]; suggestedCode?: string | null }[],
-  opts: { saveByDefault: boolean },
+  opts: { saveByDefault: boolean; dictItems?: { code: string; group: string }[] },
 ): Record<string, CategoryResolutionDraft> {
   const drafts: Record<string, CategoryResolutionDraft> = {};
   for (const uc of unmatchedCategories) {
     for (const type of uc.types) {
+      const suggested = uc.suggestedCode || '';
+      const targetCode = opts.dictItems && !isCategoryCodeValidForType(suggested, type, opts.dictItems)
+        ? ''
+        : suggested;
       drafts[buildCategoryResolutionKey(uc.sourceCategory, type)] = {
-        targetCode: uc.suggestedCode || '',
+        targetCode,
         save: opts.saveByDefault,
         payerContains: '',
         descriptionContains: '',
@@ -102,6 +135,36 @@ export function initCategoryResolutionDrafts(
     }
   }
   return drafts;
+}
+
+/**
+ * AI 预览卡的分类决议初始化：把 `unmatchedCategories` 展开成「每种收支类型一条」的扁平条目。
+ *
+ * 与 `initCategoryResolutionDrafts` 的两点差异：
+ * - AI 给了明确类型（aiRecordType）时以它为准，否则用该源分类出现过的全部类型；
+ * - **UNKNOWN 不建条目** —— 这类行由「需手动处理」区块处置。用 UNKNOWN 当 recordType 提交，
+ *   服务端按 `recordType === row.type` 匹配，永远命中不了，表现为「选了分类仍报未映射」。
+ */
+export function initCategoryResolutionEntries(
+  unmatchedCategories: {
+    sourceCategory: string
+    types: string[]
+    suggestedCode?: string | null
+    aiRecordType?: string
+  }[],
+  opts: { saveByDefault: boolean; dictItems?: { code: string; group: string }[] },
+): CategoryResolutionEntry[] {
+  const drafts = initCategoryResolutionDrafts(
+    unmatchedCategories.map((uc) => ({
+      sourceCategory: uc.sourceCategory,
+      types: uc.aiRecordType && uc.aiRecordType !== 'UNKNOWN'
+        ? [uc.aiRecordType]
+        : uc.types.filter((t) => t !== 'UNKNOWN'),
+      suggestedCode: uc.suggestedCode,
+    })),
+    opts,
+  );
+  return toCategoryResolutionEntries(drafts);
 }
 
 /** 未识别行处置草稿初始化：全部置空，等用户填 */

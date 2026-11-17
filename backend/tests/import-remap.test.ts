@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { applyUnrecognizedResolutions } from '../src/services/import/apply-decisions.js';
+import { filterTransfersMissingTo } from '../src/services/import/remap.js';
 import type { ParsedRow } from '../src/services/import/shared.js';
 
 const row = (over: Partial<ParsedRow> & { rowIndex: number }): ParsedRow => ({
@@ -79,5 +80,32 @@ describe('applyUnrecognizedResolutions', () => {
     applyUnrecognizedResolutions([original], [{ rowIndex: 1, type: 'EXPENSE', accountId: 'acc-1' }]);
     expect(original.type).toBe('UNKNOWN');
     expect(original.accountId).toBeUndefined();
+  });
+});
+
+describe('filterTransfersMissingTo', () => {
+  const transfer = (over: Partial<ParsedRow> = {}) =>
+    row({ rowIndex: 1, type: 'TRANSFER', accountId: 'acc-1', toAccountName: '花呗', ...over });
+
+  it('已有转入账户 id 的转账不算缺失', () => {
+    expect(filterTransfersMissingTo([transfer({ toAccountId: 'acc-2' })])).toHaveLength(0);
+  });
+
+  it('转入账户没有 id、也不在待新建集合 → 计入缺失', () => {
+    expect(filterTransfersMissingTo([transfer({ toAccountId: null })])).toHaveLength(1);
+  });
+
+  it('转入账户待新建(create 决议) → 不算缺失', () => {
+    const rows = [transfer({ toAccountId: null, toAccountName: '花呗' })];
+    expect(filterTransfersMissingTo(rows, { willCreateNames: new Set(['花呗']) })).toHaveLength(0);
+  });
+
+  it('账单里没有转入账户名 → 即使有待新建集合也算缺失', () => {
+    const rows = [transfer({ toAccountId: null, toAccountName: null })];
+    expect(filterTransfersMissingTo(rows, { willCreateNames: new Set(['花呗']) })).toHaveLength(1);
+  });
+
+  it('非转账行不受影响', () => {
+    expect(filterTransfersMissingTo([row({ rowIndex: 2, type: 'EXPENSE', toAccountId: null })])).toHaveLength(0);
   });
 });

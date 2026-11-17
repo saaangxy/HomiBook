@@ -375,10 +375,10 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
     // 初始化账户解析:有候选默认选第一个,无候选默认新建(统一策略见 core initAccountResolutions)
     setAccountRes(initAccountResolutions(result.unmatchedAccounts));
     // 初始化分类解析（移动端默认不保存规则，与改造前的 save:false 一致）
-    setCategoryRes(initCategoryResolutionDrafts(
-      result.unmatchedCategories.map((uc) => ({ ...uc, types: [uc.types[0] ?? 'EXPENSE'] })),
-      { saveByDefault: false },
-    ));
+    setCategoryRes(initCategoryResolutionDrafts(result.unmatchedCategories, {
+      saveByDefault: false,
+      dictItems: result.allDictItems,
+    }));
     setUnrecognizedRes({});
   };
 
@@ -432,10 +432,14 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
   const progress = computeImportProgress({
     unmatchedAccounts: preview?.unmatchedAccounts ?? [],
     accountResolutions: accountRes,
-    categoryResolutions: mappableCategories.map((uc) => ({
-      sourceCategory: uc.sourceCategory,
-      targetCode: categoryRes[buildCategoryResolutionKey(uc.sourceCategory, uc.types[0] ?? 'EXPENSE')]?.targetCode,
-    })),
+    // 同一源分类可能出现在多种收支类型下,每种类型各一条决议(与 web 向导口径一致)
+    categoryResolutions: mappableCategories.flatMap((uc) => {
+      const types = uc.types.filter((t) => t !== 'UNKNOWN');
+      return (types.length > 0 ? types : ['EXPENSE']).map((type) => ({
+        sourceCategory: uc.sourceCategory,
+        targetCode: categoryRes[buildCategoryResolutionKey(uc.sourceCategory, type)]?.targetCode,
+      }));
+    }),
     unrecognizedRecords: preview?.unrecognizedRecords ?? [],
     unrecognizedResolutions: unrecognizedRes,
   });
@@ -1209,11 +1213,15 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
                   <Text variant="muted" style={{ fontSize: 11, marginBottom: 8 }}>
                     为源分类选择目标系统分类;勾选保存后,后续导入自动映射
                   </Text>
-                  {mappableCategories.map((uc) => {
-                    const key = `${uc.sourceCategory}::${uc.types[0] ?? 'EXPENSE'}`;
+                  {mappableCategories.flatMap((uc) => {
+                    // 同一源分类可能出现在多种收支类型下(如「转账」既有支出行又有转账行),每种类型各一条决议:
+                    // 只建一条会让另一种类型的行永远未映射(与 web 向导口径一致)。
+                    const types = uc.types.filter((t) => t !== 'UNKNOWN');
+                    return (types.length > 0 ? types : ['EXPENSE']).map((type) => {
+                    const key = buildCategoryResolutionKey(uc.sourceCategory, type);
                     const cr = categoryRes[key];
-                    const typeLabel = IMPORT_TYPE_LABELS[uc.types[0] as keyof typeof IMPORT_TYPE_LABELS] ?? uc.types[0] ?? '支出';
-                    const typeColor = semanticTypeColor(colors, uc.types[0], colors.mutedForeground);
+                    const typeLabel = IMPORT_TYPE_LABELS[type as keyof typeof IMPORT_TYPE_LABELS] ?? type;
+                    const typeColor = semanticTypeColor(colors, type, colors.mutedForeground);
                     return (
                       <View key={key} style={{ padding: 10, borderRadius: 12, backgroundColor: colors.muted, marginBottom: 8 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>
@@ -1261,6 +1269,7 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
                         </Pressable>
                       </View>
                     );
+                    });
                   })}
                 </View>
               ) : null}

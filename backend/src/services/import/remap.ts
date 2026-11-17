@@ -122,7 +122,7 @@ export async function remapImportRows(opts: RemapOptions) {
 
   // 转账必须有转入账户:否则这笔钱在目标账户上永远不出现(只在源账户扣款),
   // 余额会对不上。转账的 accountId 已确认恒等于 fromAccountId,不能拿它兜底。
-  const transfersMissingTo = finalRows.filter(r => r.type === 'TRANSFER' && !r.toAccountId)
+  const transfersMissingTo = filterTransfersMissingTo(finalRows, { willCreateNames })
   if (transfersMissingTo.length > 0) {
     blockReasons.push(`有 ${transfersMissingTo.length} 条转账缺少转入账户，请先指定`)
   }
@@ -166,4 +166,24 @@ export async function remapImportRows(opts: RemapOptions) {
     /** canProceed 为 false 时的逐条原因(人类可读) */
     blockReasons,
   }
+}
+
+/**
+ * 找出「缺转入账户」的转账行。
+ *
+ * `toAccountId` 只反映「已匹配到**现有**账户」。转入账户若走的是「新建账户」决议，
+ * preview 阶段还没有 id（`applyAccountMappings` 的 create 分支只登记 newAccountCreations，
+ * 不写 idMap），但它会在导入时一并创建 —— 与转出账户同口径，不能按「缺转入」拦下，
+ * 否则用户怎么设账户都过不去。
+ */
+export function filterTransfersMissingTo(
+  rows: ParsedRow[],
+  opts: { willCreateNames?: ReadonlySet<string> } = {},
+): ParsedRow[] {
+  const willCreate = opts.willCreateNames
+  return rows.filter(r =>
+    r.type === 'TRANSFER'
+    && !r.toAccountId
+    && !(willCreate && r.toAccountName && willCreate.has(r.toAccountName)),
+  )
 }
