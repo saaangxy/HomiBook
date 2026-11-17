@@ -1,11 +1,44 @@
 import { describe, expect, it } from 'vitest';
 import {
+  accountMappingKey,
+  categoryMappingKey,
   dedupeBy,
   isFallbackRule,
   normalizeAccountMappings,
   normalizeCategoryMappings,
   normalizeCondition,
 } from '../src/services/import/mapping-normalize.js';
+
+describe('映射唯一键', () => {
+  it('分类键：字段相同即相等（与书写顺序无关）', () => {
+    const a = { sourceCategory: '群收款', targetCategoryCode: 'X', payerContains: '张三', descriptionContains: '', recordType: 'EXPENSE' };
+    const b = { targetCategoryCode: 'X', recordType: 'EXPENSE', sourceCategory: '群收款', payerContains: '张三', descriptionContains: '' };
+    expect(categoryMappingKey(a)).toBe(categoryMappingKey(b));
+  });
+
+  it('分类键：缺省条件与空串等价', () => {
+    expect(categoryMappingKey({ sourceCategory: 'A', targetCategoryCode: 'X' }))
+      .toBe(categoryMappingKey({ sourceCategory: 'A', targetCategoryCode: 'Y', payerContains: '', descriptionContains: '', recordType: '' }));
+  });
+
+  it('分类键：源分类含 :: 不会被当成多段', () => {
+    const key = categoryMappingKey({ sourceCategory: 'A::B', targetCategoryCode: 'X', payerContains: 'C' });
+    expect(key.split('\u0000')).toEqual(['A::B', 'C', '', '']);
+  });
+
+  it('分类键：任一条件不同即不等', () => {
+    const base = { sourceCategory: 'A', targetCategoryCode: 'X' };
+    expect(categoryMappingKey(base)).not.toBe(categoryMappingKey({ ...base, recordType: 'EXPENSE' }));
+    expect(categoryMappingKey(base)).not.toBe(categoryMappingKey({ ...base, payerContains: '张三' }));
+  });
+
+  it('账户键：条件不含 recordType', () => {
+    expect(accountMappingKey({ sourceAccountName: '招行', targetAccountName: 'a' }))
+      .toBe(accountMappingKey({ sourceAccountName: '招行', targetAccountName: 'b', payerContains: '', descriptionContains: '' }));
+    expect(accountMappingKey({ sourceAccountName: '招行', targetAccountName: 'a', payerContains: '张三' }))
+      .not.toBe(accountMappingKey({ sourceAccountName: '招行', targetAccountName: 'a' }));
+  });
+});
 
 describe('normalizeCondition', () => {
   it('trim + 折叠连续空白 + 全角转半角', () => {

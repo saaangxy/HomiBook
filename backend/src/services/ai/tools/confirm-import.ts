@@ -249,8 +249,8 @@ export const confirmImportTool: ToolDef = {
           accountsToCreate: accountCreations.length,
         },
         ownerId: effectiveOwnerId,
-        // 服务端裁决:未决原因(空数组 = 可以执行)
-        canProceed: blockReasons.length === 0,
+        // 服务端裁决:直接采用 remapImportRows 的结论(与 /import/preview 同一口径),不再自己判一遍
+        canProceed: remapped.canProceed,
         blockReasons,
         // 未处置的未识别行会被跳过(用户点确认即视为同意),只回报数量
         skippedUnrecognized: remapped.unresolved.unrecognized.length,
@@ -264,8 +264,8 @@ export const confirmImportTool: ToolDef = {
 
     // ---- 阶段2：执行导入 ----
     // 服务端唯一裁决:有未决项就不执行(避免静默建账户 / 写入未映射分类),原因回传
-    if (blockReasons.length > 0) {
-      throw new ToolError(blockReasons.join('；'), false)
+    if (!remapped.canProceed) {
+      throw new ToolError(blockReasons.join('；') || '存在未处理的导入问题，请先修正', false)
     }
 
     // 源账户名 → 目标账户名(remap 已给出:名称匹配到的账户名 / 本次将新建的账户名)

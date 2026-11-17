@@ -1,6 +1,7 @@
 import { prisma } from '../../app.js'
 import { matchAccountInPoolDetailed, normalizeAccountName, pickAccountMappingCandidates } from '@homibook/core'
 import { CATEGORY_DICT_GROUPS, shouldMarkCategoryUnmatched } from './blocking.js'
+import { categoryMappingKey } from './mapping-normalize.js'
 
 // ======================== 工具函数 ========================
 
@@ -298,10 +299,10 @@ export async function applyCategoryMappings(
         descriptionContains: cr.descriptionContains || '',
         targetCategoryCode: cr.targetCategoryCode,
       }
-      merged.set(`${entry.sourceCategory}::${entry.recordType}::${entry.payerContains}::${entry.descriptionContains}`, entry)
+      merged.set(categoryMappingKey(entry), entry)
     }
     for (const m of allMappings) {
-      const key = `${m.sourceCategory}::${m.recordType}::${m.payerContains}::${m.descriptionContains}`
+      const key = categoryMappingKey(m)
       if (!merged.has(key)) merged.set(key, m)
     }
     allMappings.length = 0

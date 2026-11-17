@@ -13,7 +13,7 @@
  * 目的:让第二步页面 / 预览卡看到的就是实际落库的(消除客户端本地拼装与服务端口径的漂移)。
  * 账户/分类决议的合并算法仍走 shared.ts(单一来源),未识别行处置走 apply-decisions.ts。
  */
-import { canProceedImport, computeImportProgress } from '@homibook/core'
+import { computeImportProgress } from '@homibook/core'
 import { applyAccountMappings, applyCategoryMappings, type ParsedRow } from './shared.js'
 import { resolveImportAccounts } from './pipeline.js'
 import { applyUnrecognizedResolutions, type UnrecognizedResolutionInput } from './apply-decisions.js'
@@ -106,11 +106,7 @@ export async function remapImportRows(opts: RemapOptions) {
     unrecognizedRecords: unresolvedUnrecognized,
   })
 
-  // ---- 服务端唯一裁决(前端不再自行判定,避免两侧口径漂移) ----
-  // 能否进入下一步 / 确认导入:账户与分类都不能有未决项,未识别行要么没有要么已同意跳过,
-  // 且确实有可写入的流水。判定函数复用 core canProceedImport(与计数同源)。
-  const canProceed =
-    finalRows.length > 0 && canProceedImport(counts, { agreeSkipUnrecognized: confirmSkipUnrecognized })
+  // ---- 阻断项(也是下面 canProceed 的唯一依据) ----
   const blockReasons: string[] = [
     ...blocking.filter(b => b.willFailAtImport).map(b => b.reason),
     ...unmatchedCategories.map(uc => `分类「${uc.sourceCategory}」未映射到系统分类`),
@@ -138,6 +134,13 @@ export async function remapImportRows(opts: RemapOptions) {
   if (invalidCategoryNames.length > 0) {
     blockReasons.push(`分类不在字典中：${invalidCategoryNames.slice(0, 5).join('、')}`)
   }
+
+  // ---- 服务端唯一裁决(前端不再自行判定,避免两侧口径漂移) ----
+  // 只有「零阻断项」才放行。此前用的是 counts 口径(canProceedImport),它只覆盖
+  // 账户/分类/未识别三项,漏掉上面「转账缺转入」与「分类不在字典」——
+  // 这两类要到 /import 提交才 400,用户在预览页看不到,confirm_import 又自己用
+  // blockReasons.length 判一遍(两套裁决)。现在所有入口只认这一个值。
+  const canProceed = blockReasons.length === 0
 
   return {
     finalRows,

@@ -45,6 +45,21 @@ export interface NormalizedCategoryMapping {
 }
 
 /**
+ * 分类映射的唯一键 = 匹配条件(源分类 + 两个正则条件 + 记录类型)。
+ *
+ * ⚠️ **只此一处**:`shared.ts` 用它做「AI 决议覆盖 DB 规则」的合并键,
+ * `normalizeCategoryMappings` 用它做保存前去重。两处必须同口径 —— 否则同一份决议
+ * 在「运行时匹配」和「落库去重」里会被当成两条不同规则(历史上正是各拼一遍:
+ * 一处 `source::type::payer::desc`,一处 `[...].join('\0')`)。
+ *
+ * 分隔符用 `\u0000` 而不是 `::`:源分类名里可能出现冒号。
+ * 键函数**不做归一化**,调用方若要「空格/全角等价」需先过 `normalizeCondition`。
+ */
+export function categoryMappingKey(m: CategoryMappingLike): string {
+  return [m.sourceCategory, m.payerContains ?? '', m.descriptionContains ?? '', m.recordType ?? ''].join('\u0000')
+}
+
+/**
  * 规则里的 recordType:只接受合法类型,其余(含空)一律归为 ''(不限类型)。
  * 刻意不用 core 的 normalizeRecordType —— 它对非法值兜底成 EXPENSE,
  * 会让"不限类型"的规则静默变成"只匹配支出"。
@@ -62,7 +77,7 @@ export function normalizeCategoryMappings(mappings: CategoryMappingLike[]): Norm
     descriptionContains: normalizeCondition(m.descriptionContains),
     recordType: normalizeRuleRecordType(m.recordType),
   }))
-  return dedupeBy(normalized, m => [m.sourceCategory, m.payerContains, m.descriptionContains, m.recordType].join('\u0000'))
+  return dedupeBy(normalized, categoryMappingKey)
 }
 
 export interface AccountMappingLike {
@@ -79,6 +94,11 @@ export interface NormalizedAccountMapping {
   descriptionContains: string
 }
 
+/** 账户映射的唯一键(条件不含 recordType) */
+export function accountMappingKey(m: AccountMappingLike): string {
+  return [m.sourceAccountName, m.payerContains ?? '', m.descriptionContains ?? ''].join('\u0000')
+}
+
 /** 账户映射:归一化条件 + 同唯一键去重(保留最后一条 = 本次决议) */
 export function normalizeAccountMappings(mappings: AccountMappingLike[]): NormalizedAccountMapping[] {
   const normalized = mappings.map(m => ({
@@ -87,7 +107,7 @@ export function normalizeAccountMappings(mappings: AccountMappingLike[]): Normal
     payerContains: normalizeCondition(m.payerContains),
     descriptionContains: normalizeCondition(m.descriptionContains),
   }))
-  return dedupeBy(normalized, m => [m.sourceAccountName, m.payerContains, m.descriptionContains].join('\u0000'))
+  return dedupeBy(normalized, accountMappingKey)
 }
 
 /** 是否属于「兜底规则」(条件全空,任何行都能命中) */
