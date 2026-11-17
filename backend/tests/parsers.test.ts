@@ -421,9 +421,29 @@ describe('parseWechatXlsx', () => {
     expect(r.rows[0].type).toBe('INCOME');
   });
 
-  it('退款状态 → INCOME', () => {
-    const r = parseWechatXlsx(wechatXlsx([WX_HEADER, wxRow({ status: '已退款' })]));
+  it('方向只由「收/支」决定：退款状态不参与翻转', () => {
+    const r = parseWechatXlsx(wechatXlsx([WX_HEADER, wxRow({ status: '已退款', direction: '支出' })]));
+    expect(r.rows[0].type).toBe('EXPENSE');
+  });
+
+  it('已退款(¥X) 部分退款标注 + 支出 → EXPENSE', () => {
+    const r = parseWechatXlsx(wechatXlsx([WX_HEADER, wxRow({ status: '已退款(¥5.40)', direction: '支出', tradeType: '商户消费' })]));
+    expect(r.rows[0].type).toBe('EXPENSE');
+    expect(r.rows[0].amount).toBe(25);
+  });
+
+  it('已退款¥X 退款入账行 + 收入 → INCOME', () => {
+    const r = parseWechatXlsx(wechatXlsx([WX_HEADER, wxRow({ status: '已退款¥5.40', direction: '收入', tradeType: '快团团-退款' })]));
     expect(r.rows[0].type).toBe('INCOME');
+  });
+
+  it('已全额退款：支出行保持 EXPENSE，退款行（+收入）为 INCOME', () => {
+    // 微信的全额退款会成对出现两条：原消费(支出) + 退款(收入)。
+    // 若把支出行也翻成收入，同一笔钱会被记两次收入
+    const spend = parseWechatXlsx(wechatXlsx([WX_HEADER, wxRow({ status: '已全额退款', direction: '支出', tradeType: '商户消费' })]));
+    expect(spend.rows[0].type).toBe('EXPENSE');
+    const refund = parseWechatXlsx(wechatXlsx([WX_HEADER, wxRow({ status: '已全额退款', direction: '收入', tradeType: '京东商城平台商户-退款' })]));
+    expect(refund.rows[0].type).toBe('INCOME');
   });
 
   it('零钱充值 → TRANSFER 到 微信', () => {

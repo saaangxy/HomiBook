@@ -8,8 +8,8 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "npm run build --prefix ../packages/core && tsx watch src/index.ts",
-    "build": "npm run build --prefix ../packages/core && tsc",
+    "dev": "npm run build --prefix ../packages/core && npm run sync:core --prefix .. && tsx watch src/index.ts",
+    "build": "npm run build --prefix ../packages/core && npm run sync:core --prefix .. && tsc",
     "start": "node dist/index.js",
     "check:balance": "tsx src/scripts/check-balance.ts",
     "prebuild": "node prisma/generate-all.mjs",

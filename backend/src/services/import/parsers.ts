@@ -347,9 +347,13 @@ export function parseWechatXlsx(buffer: Buffer): { rows: ParsedRow[]; errors: st
       let recordType: 'INCOME' | 'EXPENSE' | 'TRANSFER' | 'UNKNOWN' = 'EXPENSE'
       let toAccountName: string | null = null
 
-      if (status.includes('退款') || status.includes('已退款')) {
-        recordType = 'INCOME'
-      } else if (tradeType === '零钱充值') {
+      // 方向完全由「收/支」列决定 —— 微信的退款是**成对**出现的:
+      //   原消费行(收/支=支出,状态「已退款(¥X)」或「已全额退款」)
+      // + 退款行(收/支=收入,状态「已退款¥X」,交易类型「XXX-退款」)
+      // 状态列只描述这笔交易退了多少,不能拿来翻方向:翻一次就会把消费记成退款/收入,
+      // 全额退款还会和退款行一起重复计收入。
+      // 「收/支」为「/」的只有零钱充值/提现,按交易类型判为账户间转账。
+      if (tradeType === '零钱充值') {
         recordType = 'TRANSFER'
         toAccountName = '微信'
       } else if (tradeType === '零钱提现') {
