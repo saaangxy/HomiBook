@@ -2,7 +2,7 @@
   "expo": {
     "name": "homibook",
     "slug": "homibook-mobile",
-    "version": "1.2.2",
+    "version": "1.2.4",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "homibook",
@@ -12,7 +12,7 @@
     },
     "android": {
       "package": "com.saaangxy.homibook",
-      "versionCode": 8,
+      "versionCode": 9,
       "adaptiveIcon": {
         "backgroundColor": "#fdf8ee",
         "foregroundImage": "./assets/images/android-icon-foreground.png"

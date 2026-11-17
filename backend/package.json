@@ -1,6 +1,6 @@
 {
   "name": "homibook-backend",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -9,7 +9,8 @@
   },
   "scripts": {
     "dev": "npm run build --prefix ../packages/core && npm run sync:core --prefix .. && tsx watch src/index.ts",
-    "build": "npm run build --prefix ../packages/core && npm run sync:core --prefix .. && tsc",
+    "build": "npm run build --prefix ../packages/core && tsc",
+    "build:local": "npm run prebuild && npm run build --prefix ../packages/core && npm run sync:core --prefix .. && tsc",
     "start": "node dist/index.js",
     "check:balance": "tsx src/scripts/check-balance.ts",
     "prebuild": "node prisma/generate-all.mjs",
