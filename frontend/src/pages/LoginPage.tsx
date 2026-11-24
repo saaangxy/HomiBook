@@ -7,6 +7,7 @@ import { useAuthStore } from '../stores/auth'
 import { resetAccountCaches } from '../stores/reset-account'
 import { PasswordStrength } from '../components/PasswordStrength'
 import { ThemeSelector } from '../components/ThemeSelector'
+import { Spinner } from '../components/ui/spinner'
 import { useIsMobile } from '../hooks/use-mobile'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import * as React from "react";
@@ -274,15 +275,24 @@ export function LoginPage() {
   const [hoverStates, setHoverStates] = useState<Record<string, boolean>>({})
   const [focusedInput, setFocusedInput] = useState<string | null>(null)
   const [registrationOpen, setRegistrationOpen] = useState(true)
+  const [hasUsers, setHasUsers] = useState(true)
+  const [configLoaded, setConfigLoaded] = useState(false)
   const [themePopover, setThemePopover] = useState(false)
   const navigate = useNavigate()
   const { setAuth } = useAuthStore()
   const isMobile = useIsMobile()
 
+  // 首次部署（系统中还没有任何用户）只展示注册页，首个账户自动成为管理员
+  const isFirstRun = configLoaded && !hasUsers
+
   useEffect(() => {
     settingsApi.getPublicConfig()
-      .then((cfg) => setRegistrationOpen(cfg.registrationOpen))
+      .then((cfg) => {
+        setRegistrationOpen(cfg.registrationOpen)
+        setHasUsers(cfg.hasUsers !== false)
+      })
       .catch(() => setRegistrationOpen(true))
+      .finally(() => setConfigLoaded(true))
   }, [])
 
   useEffect(() => {
@@ -314,6 +324,14 @@ export function LoginPage() {
 
     try {
       await authApi.register(registerUsername, registerEmail, registerPassword, registerNickname || undefined)
+      if (isFirstRun) {
+        // 首个管理员账户创建成功后直接登录，进入「开始使用」流程
+        const res = await authApi.login(registerUsername, registerPassword)
+        resetAccountCaches()
+        setAuth(res.token, res.user)
+        navigate('/')
+        return
+      }
       setIsActive(false)
       setError('')
     } catch (err: any) {
@@ -412,11 +430,15 @@ export function LoginPage() {
 
   const registerForm = (
     <form onSubmit={handleRegister} style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-      <h2 style={styles.formTitle}>{isMobile ? '注册' : '创建账号'}</h2>
-      <p style={styles.formSubtitle}>开始管理你的家庭财务</p>
+      <h2 style={styles.formTitle}>
+        {isFirstRun ? '创建管理员账户' : isMobile ? '注册' : '创建账号'}
+      </h2>
+      <p style={styles.formSubtitle}>
+        {isFirstRun ? '欢迎使用 HomiBook，先创建你的管理员账户' : '注册后即可与家人共同记账'}
+      </p>
       <input
         type="text"
-        placeholder="账号"
+        placeholder="登录账号"
         value={registerUsername}
         onChange={(e) => setRegisterUsername(e.target.value)}
         style={getInputStyle('regUsername')}
@@ -426,7 +448,7 @@ export function LoginPage() {
       />
       <input
         type="text"
-        placeholder="昵称（可选）"
+        placeholder="昵称（选填）"
         value={registerNickname}
         onChange={(e) => setRegisterNickname(e.target.value)}
         style={getInputStyle('regNickname')}
@@ -446,7 +468,7 @@ export function LoginPage() {
       <div style={{ position: 'relative', width: '100%' }}>
         <input
           type={showRegPass ? 'text' : 'password'}
-          placeholder="密码"
+          placeholder="设置密码"
           value={registerPassword}
           onChange={(e) => setRegisterPassword(e.target.value)}
           style={{ ...getInputStyle('regPass'), paddingRight: '44px' }}
@@ -495,7 +517,7 @@ export function LoginPage() {
           onMouseLeave={() => setHoverStates({ ...hoverStates, signUp: false })}
           disabled={isLoading}
         >
-          {isLoading ? '创建中...' : '立即创建'}
+          {isLoading ? '创建中...' : isFirstRun ? '创建并进入' : '创建账户'}
         </button>
       </div>
     </form>
@@ -538,8 +560,43 @@ export function LoginPage() {
         <h2 style={styles.headerTitle}>Homibook</h2>
       </div>
 
-      {/* 移动端：竖排 Tab 卡 */}
-      {isMobile ? (
+      {/* 配置加载中：避免首次部署时先闪一下登录表单 */}
+      {!configLoaded ? (
+        <div
+          className="login-card"
+          style={{
+            position: 'relative' as const,
+            width: 'min(420px, 92vw)',
+            maxWidth: '100%',
+            borderRadius: '28px',
+            border: '1px solid hsl(var(--border))',
+            backgroundColor: 'hsl(var(--card))',
+            padding: '72px 40px',
+          }}
+        >
+          <Spinner size="lg" />
+        </div>
+      ) : isFirstRun ? (
+        /* 首次部署：只展示创建管理员账户 */
+        <div
+          className="login-card"
+          style={{
+            position: 'relative' as const,
+            width: 'min(440px, 92vw)',
+            maxWidth: '100%',
+            borderRadius: '28px',
+            overflow: 'hidden',
+            boxShadow: '0 25px 50px -12px hsl(var(--foreground) / 0.15)',
+            border: '1px solid hsl(var(--border))',
+            backgroundColor: 'hsl(var(--card))',
+            padding: isMobile ? '28px 22px' : '40px 44px',
+            maxHeight: 'calc(100vh - 140px)',
+            overflowY: 'auto',
+          }}
+        >
+          {registerForm}
+        </div>
+      ) : isMobile ? (
         <div
           className="login-card"
           style={{
