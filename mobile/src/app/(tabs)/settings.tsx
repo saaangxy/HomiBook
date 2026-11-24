@@ -2,15 +2,13 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Linking, Pressable, View } from 'react-native';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
-import { Bot, Brain, ChevronDown, ChevronRight, CircleUserRound, ExternalLink, Key, LogOut, MessageSquareText, Palette, RefreshCw, Server, ServerCog, Smartphone, User } from 'lucide-react-native';
+import { Bot, ChevronDown, ChevronRight, CircleUserRound, ExternalLink, LogOut, MessageSquareText, Palette, RefreshCw, Server, ServerCog, Smartphone, User } from 'lucide-react-native';
 import { useTheme, alpha, haptics } from '@/theme';
 import { useAuth } from '@/stores/auth';
 import { Screen } from '@/components/Screen';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { FadeInView } from '@/components/FadeInView';
-import { ApiKeyManager } from '@/components/settings/Managers';
-import { UserMemorySettings } from '@/components/ai/UserMemorySettings';
 import { AIAssistantSettings } from '@/components/settings/AIAssistantSettings';
 import { ConfirmProvider } from '@/components/chrome/ConfirmSheet';
 import { fetchAppVersion, fetchLatestRelease, type LatestRelease } from '@/services/settings';
@@ -118,14 +116,10 @@ export default function SettingsScreen() {
   const aboutRows = useAboutRows();
   // AI 助手默认折叠收起,点头部展开(展开时才挂载并拉取配置)
   const [aiOpen, setAiOpen] = useState(false);
-  // AI 记忆默认折叠收起,点头部展开(展开时才挂载并拉取记忆列表)
-  const [memoryOpen, setMemoryOpen] = useState(false);
-  // API Key 同样默认折叠,展开时才拉取列表
-  const [apiKeysOpen, setApiKeysOpen] = useState(false);
 
   return (
     /*
-      页面层 ConfirmProvider:AI 助手配置 / API Key 等子组件用 useConfirm() 触发删除二次确认。
+      页面层 ConfirmProvider:AI 助手配置等子组件用 useConfirm() 触发删除二次确认。
       必须包在 Screen 之外 —— ConfirmSheet 用 absoluteFill 定位,若落在 ScrollView 的内容里
       会随内容撑高、弹窗跑到屏幕外(见 ConfirmSheet.tsx 顶部说明)。
     */
@@ -205,55 +199,6 @@ export default function SettingsScreen() {
             </Pressable>
             {/* 展开时才挂载,配置随展开懒加载 */}
             {aiOpen && <View style={{ marginTop: 12 }}><AIAssistantSettings /></View>}
-          </Card>
-        </FadeInView>
-
-        {/* ══ AI 记忆(所有用户可见,对齐 web 设置页;默认折叠) ══ */}
-        <GroupTitle title="AI 记忆" />
-        <FadeInView index={3}>
-          <Card className="px-5 py-4 mb-2">
-            <Pressable
-              onPress={() => {
-                setMemoryOpen((v) => !v);
-                haptics.tap();
-              }}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}
-            >
-              <View style={{ width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: alpha(colors.primary, 0.12) }}>
-                <Brain size={16} color={colors.primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 15, fontWeight: '500' }}>我的 AI 记忆</Text>
-                <Text variant="muted" style={{ fontSize: 11.5, marginTop: 1 }}>AI 自动记录的消费习惯与记账偏好</Text>
-              </View>
-              {memoryOpen ? <ChevronDown size={16} color={colors.mutedForeground} /> : <ChevronRight size={16} color={colors.mutedForeground} />}
-            </Pressable>
-            {/* 展开时才挂载,记忆列表随展开懒加载 */}
-            {memoryOpen && <View style={{ marginTop: 12 }}><UserMemorySettings /></View>}
-          </Card>
-        </FadeInView>
-
-        {/* ══ API Key(所有用户可见;默认折叠,展开时才挂载拉取) ══ */}
-        <GroupTitle title="API Key" />
-        <FadeInView index={4}>
-          <Card className="px-5 py-4 mb-2">
-            <Pressable
-              onPress={() => {
-                setApiKeysOpen((v) => !v);
-                haptics.tap();
-              }}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}
-            >
-              <View style={{ width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: alpha(colors.primary, 0.12) }}>
-                <Key size={16} color={colors.primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 15, fontWeight: '500' }}>API Key 管理</Text>
-                <Text variant="muted" style={{ fontSize: 11.5, marginTop: 1 }}>创建用于接口调用的访问密钥</Text>
-              </View>
-              {apiKeysOpen ? <ChevronDown size={16} color={colors.mutedForeground} /> : <ChevronRight size={16} color={colors.mutedForeground} />}
-            </Pressable>
-            {apiKeysOpen && <View style={{ marginTop: 12 }}><ApiKeyManager /></View>}
           </Card>
         </FadeInView>
 

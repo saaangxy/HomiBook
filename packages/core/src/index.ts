@@ -18,3 +18,4 @@ export * from './sms-parse.js';
 export * from './sms-rules.js';
 export * from './sms-ai.js';
 export * from './financial-health.js';
+export * from './mcp.js';

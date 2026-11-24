@@ -1,4 +1,4 @@
-import { errorMessage } from '@homibook/core'
+import { errorMessage, buildMcpCliCommand, buildMcpClientConfig, groupMcpTools, MCP_CONFIG_KEYS, MCP_ENDPOINT, resolveMcpUrl, splitMcpTools } from '@homibook/core'
 import { useEffect, useState } from 'react'
 import {
   AccordionContent,
@@ -16,17 +16,6 @@ import { useAuthStore } from '@/stores/auth'
 import { Plug, Copy, Check, ShieldCheck, Wrench } from 'lucide-react'
 import { toast } from 'sonner'
 
-/** 按业务分类分组（保持后端返回顺序） */
-function groupByCategory(tools: McpToolInfo[]) {
-  const groups: Array<{ category: string; tools: McpToolInfo[] }> = []
-  for (const tool of tools) {
-    const group = groups.find((g) => g.category === tool.category)
-    if (group) group.tools.push(tool)
-    else groups.push({ category: tool.category, tools: [tool] })
-  }
-  return groups
-}
-
 /** 工具能力清单 */
 function ToolList({ tools, emptyText }: { tools: McpToolInfo[]; emptyText: string }) {
   if (tools.length === 0) {
@@ -35,7 +24,7 @@ function ToolList({ tools, emptyText }: { tools: McpToolInfo[]; emptyText: strin
 
   return (
     <div className="space-y-3">
-      {groupByCategory(tools).map((group) => (
+      {groupMcpTools(tools).map((group) => (
         <div key={group.category}>
           <div className="text-xs font-medium text-muted-foreground mb-1.5">{group.category}</div>
           <div className="flex flex-wrap gap-1.5">
@@ -73,41 +62,34 @@ export function MCPSettings() {
       .finally(() => setLoading(false))
   }, [])
 
-  const endpoint = `${window.location.origin}${info?.endpoint ?? '/api/mcp'}`
-
-  const configSnippet = `{
-  "mcpServers": {
-    "homibook": {
-      "type": "streamable-http",
-      "url": "${endpoint}",
-      "headers": {
-        "Authorization": "Bearer <你的 API Key>"
-      }
-    }
-  }
-}`
+  const endpoint = resolveMcpUrl(window.location.origin, info?.endpoint ?? MCP_ENDPOINT)
+  const configSnippet = buildMcpClientConfig(endpoint)
+  const cliCommand = buildMcpCliCommand(endpoint)
+  const { read: readTools, write: writeTools } = splitMcpTools(info?.tools ?? [])
 
   const updateFlag = async (key: 'mcpEnabled' | 'mcpWriteEnabled', value: boolean) => {
     setSaving(true)
     setError('')
     try {
       // 关闭服务时一并收回写权限，避免下次开启时仍保留高危权限
-      const revokeWrite = key === 'mcpEnabled' && !value && info?.writeEnabled
+      const revokeWrite = key === MCP_CONFIG_KEYS.enabled && !value && info?.writeEnabled
       await settingsApi.updateConfig(
-        revokeWrite ? { mcpEnabled: false, mcpWriteEnabled: false } : { [key]: value },
+        revokeWrite
+          ? { [MCP_CONFIG_KEYS.enabled]: false, [MCP_CONFIG_KEYS.writeEnabled]: false }
+          : { [key]: value },
       )
       setInfo((prev) =>
         prev
           ? {
               ...prev,
               // 配置键与接口返回字段不同名：mcpEnabled → enabled，mcpWriteEnabled → writeEnabled
-              ...(key === 'mcpEnabled' ? { enabled: value } : { writeEnabled: value }),
+              ...(key === MCP_CONFIG_KEYS.enabled ? { enabled: value } : { writeEnabled: value }),
               ...(revokeWrite ? { writeEnabled: false } : {}),
             }
           : prev,
       )
       toast.success(
-        key === 'mcpEnabled'
+        key === MCP_CONFIG_KEYS.enabled
           ? (value ? 'MCP 服务已开启' : 'MCP 服务已关闭')
           : (value ? '已允许 MCP 写操作' : '已禁止 MCP 写操作'),
       )
@@ -169,7 +151,7 @@ export function MCPSettings() {
                     aria-label="启用 MCP 服务"
                     checked={info?.enabled ?? false}
                     disabled={saving}
-                    onCheckedChange={(v) => updateFlag('mcpEnabled', v)}
+                    onCheckedChange={(v) => updateFlag(MCP_CONFIG_KEYS.enabled, v)}
                   />
                 </div>
 
@@ -189,7 +171,7 @@ export function MCPSettings() {
                     aria-label="允许 MCP 写操作"
                     checked={info?.writeEnabled ?? false}
                     disabled={saving || !info?.enabled}
-                    onCheckedChange={(v) => updateFlag('mcpWriteEnabled', v)}
+                    onCheckedChange={(v) => updateFlag(MCP_CONFIG_KEYS.writeEnabled, v)}
                   />
                 </div>
               </>
@@ -260,7 +242,7 @@ export function MCPSettings() {
                 <code className="mx-1 bg-muted px-1 py-0.5 rounded">streamable-http</code>。Claude Code 也可用命令行添加：
               </p>
               <code className="block bg-muted/50 border rounded-lg p-3 text-xs font-mono break-all select-all">
-                claude mcp add --transport http homibook {endpoint} --header "Authorization: Bearer &lt;你的 API Key&gt;"
+                {cliCommand}
               </code>
             </div>
 
@@ -276,7 +258,7 @@ export function MCPSettings() {
                   <span className="text-xs text-muted-foreground">查询、统计与记忆读取，始终可用</span>
                 </div>
                 <ToolList
-                  tools={(info?.tools ?? []).filter((t) => !t.write)}
+                  tools={readTools}
                   emptyText="暂无可用工具"
                 />
               </div>
@@ -290,7 +272,7 @@ export function MCPSettings() {
                   <Wrench size={13} className="text-muted-foreground" />
                 </div>
                 <ToolList
-                  tools={(info?.tools ?? []).filter((t) => t.write)}
+                  tools={writeTools}
                   emptyText="暂无写操作工具"
                 />
               </div>

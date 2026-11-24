@@ -475,7 +475,7 @@ export function AIAssistantSettings() {
       </div>
 
       {/* ==================== 二级手风琴 ==================== */}
-      <Accordion type="multiple" defaultValue={['chat-settings', 'provider-configs', 'tools']} className="space-y-3">
+      <Accordion type="multiple" defaultValue={['chat-settings', 'provider-configs']} className="space-y-3">
         {/* 对话设置 */}
         <AccordionItem value="chat-settings" className="border rounded-lg">
           <AccordionTrigger className="px-4 py-3 text-sm font-semibold hover:no-underline">

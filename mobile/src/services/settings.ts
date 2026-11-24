@@ -1,4 +1,5 @@
 import { http } from './http';
+import type { McpInfo } from '@homibook/core';
 
 // 设置页数据访问层(对齐 web settingsApi/apikeyApi/importExportApi/holidayApi 及 AI 配置端点)
 
@@ -20,6 +21,8 @@ export const settingsApi = {
     defaultTheme?: string;
     jwtExpiresIn?: string;
     auditLogRetentionDays?: string;
+    mcpEnabled?: boolean;
+    mcpWriteEnabled?: boolean;
   }) => http.put<{ success: boolean }>('/api/settings/config', data),
   getDictionary: (group: string) => http.get<DictItem[]>(`/api/settings/dictionary/${group}`),
   createDictionaryItem: (data: { group: string; code: string; label: string; order?: number }) =>
@@ -57,6 +60,11 @@ export const apikeyApi = {
   list: () => http.get<ApiKeyItem[]>('/api/apikeys'),
   create: (data: { name: string }) => http.post<{ id: string; name: string; prefix: string; key: string }>('/api/apikeys', data),
   delete: (id: string) => http.delete<{ success: boolean }>(`/api/apikeys/${id}`),
+};
+
+/** MCP 服务状态与工具目录(类型与配置生成逻辑在 @homibook/core,与 web 共用) */
+export const mcpApi = {
+  info: () => http.get<McpInfo>('/api/mcp/info'),
 };
 
 export interface CategoryMapping {
