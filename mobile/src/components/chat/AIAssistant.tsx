@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { buildImportMessage, parseImportMessage, IMPORT_AI_SOURCES, IMPORT_SOURCE_LABELS } from '@homibook/core';
 import { ActivityIndicator, BackHandler, FlatList, Image, NativeScrollEvent, NativeSyntheticEvent, Platform, Pressable, SectionList, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { cancelAnimation, Easing, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 import Markdown from 'react-native-markdown-display';
 import { ArrowDown, Bot, Brain, Camera, ChevronDown, ChevronLeft, ChevronRight, FileText, FileUp, Globe, ImagePlus, List, Pencil, Plus, RefreshCw, Send, Sparkles, StopCircle, Trash2, X } from 'lucide-react-native';
 import { useTheme, alpha, haptics } from '@/theme';
@@ -139,6 +139,36 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
   }, [sessions, todayKey]);
   // 服务端返回的附件/图片 url 多为相对路径,统一转完整地址(含 host 校准,见 http.resolveRemoteUrl)
   const isStreaming = useChatStore((s) => s.sessionCache[s.currentSessionId ?? '']?.isStreaming ?? false);
+
+  // 回复中的「停止」按钮:呼吸光晕 + 图标脉冲(一轮约 1.6s,与 web 端节奏一致)
+  const stopPulse = useSharedValue(0);
+  useEffect(() => {
+    if (isStreaming) {
+      stopPulse.value = withRepeat(
+        withTiming(1, { duration: 800, easing: Easing.inOut(Easing.ease) }),
+        -1,
+        true,
+      );
+    } else {
+      cancelAnimation(stopPulse);
+      stopPulse.value = withTiming(0, { duration: 160 });
+    }
+    return () => cancelAnimation(stopPulse);
+  }, [isStreaming, stopPulse]);
+
+  // worklet(useAnimatedStyle)运行在 UI 线程,不能调用 alpha 这类普通 JS 函数 —— 颜色先在 JS 线程算好
+  const stopColor = colors.destructive;
+  const stopBorderColor = alpha(stopColor, 0.5);
+  const stopGlowColor = alpha(stopColor, 0.14);
+
+  // 与 web `.stop-btn-streaming` 对齐:透明底 + 内发光呼吸(用内部遮罩模拟 inset shadow),无外阴影
+  const stopGlowAnim = useAnimatedStyle(() => ({
+    opacity: 0.15 + stopPulse.value * 0.6,
+  }));
+  /** 图标收缩脉冲(与 web 的 stop-icon-pulse 一致) */
+  const stopIconAnim = useAnimatedStyle(() => ({
+    transform: [{ scale: 1 - stopPulse.value * 0.18 }],
+  }));
 
   /** 用户发送的消息(按列表顺序):右侧导航条据此渲染缩略标记,拖动时用 text 做气泡预览 */
   const navItems = useMemo(() => {
@@ -964,12 +994,21 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
             </Pressable>
             <View style={{ flex: 1 }} />
             {isStreaming ? (
+              // 停止按钮:与 web 一致 —— 透明底 + 红描边/文字 + 内发光呼吸 + 图标脉冲
               <Pressable
                 onPress={() => stopStreaming()}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, height: 32, borderRadius: 999, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.muted }}
+                hitSlop={6}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, height: 32, borderRadius: 999, borderWidth: 1, borderColor: stopBorderColor, overflow: 'hidden' }}
               >
-                <StopCircle size={15} color={colors.foreground} />
-                <Text style={{ fontSize: 12, color: colors.foreground, fontWeight: '500' }}>停止</Text>
+                {/* 内发光层:模拟 web 的 inset shadow,只呼吸透明度 */}
+                <Animated.View
+                  pointerEvents="none"
+                  style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: stopGlowColor }, stopGlowAnim]}
+                />
+                <Animated.View style={stopIconAnim}>
+                  <StopCircle size={15} color={stopColor} />
+                </Animated.View>
+                <Text style={{ fontSize: 12, color: stopColor, fontWeight: '500' }}>停止</Text>
               </Pressable>
             ) : (
               <Pressable
