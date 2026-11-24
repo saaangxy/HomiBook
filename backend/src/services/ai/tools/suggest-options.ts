@@ -1,3 +1,4 @@
+import { normalizeSuggestionQuestions } from '@homibook/core'
 import type { ToolDef, ToolContext } from './types.js'
 
 export const suggestOptionsTool: ToolDef = {
@@ -39,7 +40,8 @@ export const suggestOptionsTool: ToolDef = {
               description:
                 '可选项列表。简单场景用字符串（如 ["现金","微信钱包"]）；' +
                 '需要区分同名项（如同名账户）或展示值与实际值不同时用 {label,value}，' +
-                '例如 [{"label":"微信 · 张三","value":"<账户ID>"}]',
+                '例如 [{"label":"微信 · 张三","value":"<账户ID>"}]。' +
+                'label/value 必须作为 JSON 对象字段输出，禁止写成 <label>…</label>、<value>…</value> 这类标签文本',
             },
             allowCustom: { type: 'boolean', description: '是否允许用户自定义输入，默认 true' },
           },
@@ -55,15 +57,7 @@ export const suggestOptionsTool: ToolDef = {
    * 用户选择后的真实取值不在这里构造 —— 那条路径在 /confirm 路由，作为工具结果回填。
    */
   async execute(args: { questions?: unknown[] }, _ctx: ToolContext) {
-    const questions = (Array.isArray(args?.questions) ? args.questions : []).map((q) => {
-      const item = q as { question?: unknown; field?: unknown; options?: unknown; allowCustom?: unknown }
-      return {
-        question: String(item?.question ?? ''),
-        field: String(item?.field ?? ''),
-        options: Array.isArray(item?.options) ? item.options : [],
-        allowCustom: item?.allowCustom !== false,
-      }
-    })
-    return { questions }
+    // 兼容模型把 label/value 写成标签文本的情况:统一解析成 {label,value}
+    return { questions: normalizeSuggestionQuestions(Array.isArray(args?.questions) ? args.questions : []) }
   },
 }

@@ -3,7 +3,7 @@ import { markSubmitted, isSubmitted } from '@/lib/ai-submit';
 import { getToolDisplayName } from '@/lib/tool-names'
 import type { ToolCallEntry, SuggestionOption } from '@/stores/chat'
 import { useChatStore, useSessionView, getSessionView } from '@/stores/chat'
-import { ACCOUNT_TYPE_LABELS, BUDGET_TYPE_LABELS, resolveToolCallStatus, isAwaitingUserAction, accountLabel, isMultiOwnerAccounts } from '@homibook/core';
+import { ACCOUNT_TYPE_LABELS, BUDGET_TYPE_LABELS, resolveToolCallStatus, isAwaitingUserAction, accountLabel, isMultiOwnerAccounts, normalizeSuggestionQuestions } from '@homibook/core';
 
 
 import { RECORD_TYPE_LABELS, RECORD_TYPE_TEXT_CLASS, RECORD_TYPE_BADGE_CLASS } from '@/lib/record-type'
@@ -695,7 +695,8 @@ function SuggestionView({
   toolCallId: string
   expired?: boolean
 }) {
-  const { questions } = suggestion
+  // 历史消息里可能是模型写出的 <label>/<value> 标签文本,渲染前统一归一化
+  const questions = normalizeSuggestionQuestions(suggestion.questions)
   const [selectedOption, setSelectedOption] = useState<Record<string, string>>({})
   const [customInputs, setCustomInputs] = useState<Record<string, string>>({})
   const [submitted, setSubmitted] = useState(false)

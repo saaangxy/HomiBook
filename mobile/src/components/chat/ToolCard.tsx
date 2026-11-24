@@ -7,7 +7,7 @@ import { useChatStore, useSessionView } from '@/stores/chat';
 import { getToolDisplayName } from '@/services/chat';
 import { settingsApi } from '@/services/settings';
 import { MiniTable, computeColWidths } from './MiniTable';
-import { accountLabel, isMultiOwnerAccounts, ACCOUNT_TYPE_LABELS, BUDGET_TYPE_LABELS, IMPORT_SOURCE_LABELS, RECORD_TYPE_LABELS, resolveToolCallStatus, isAwaitingUserAction, ToolCallEntry } from '@homibook/core';
+import { accountLabel, isMultiOwnerAccounts, ACCOUNT_TYPE_LABELS, BUDGET_TYPE_LABELS, IMPORT_SOURCE_LABELS, RECORD_TYPE_LABELS, resolveToolCallStatus, isAwaitingUserAction, normalizeSuggestionQuestions, ToolCallEntry } from '@homibook/core';
 
 
 import { ImportPreviewCard } from './ImportPreviewCard';
@@ -448,7 +448,8 @@ export function ToolCard({ toolCall, bookId, stale }: { toolCall: ToolCallEntry;
     if (!sel) return '';
     return sel === '__custom__' ? (custom[field] || '').trim() : sel;
   };
-  const suggestionQuestions = suggestion?.questions;
+  // 历史消息里可能是模型写出的 <label>/<value> 标签文本,渲染前统一归一化
+  const suggestionQuestions = suggestion?.questions ? normalizeSuggestionQuestions(suggestion.questions) : undefined;
   const allFilled = (suggestionQuestions ?? []).every((q) => !!getValue(q.field));
 
   const btnText = { fontSize: 12.5, fontWeight: '600' as const };
