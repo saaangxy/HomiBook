@@ -8,6 +8,8 @@ export const updateConfigSchema = z.object({
   defaultTheme: z.string().optional().describe('默认主题'),
   jwtExpiresIn: z.enum(['1d', '7d', '30d']).optional().describe('JWT过期时间'),
   auditLogRetentionDays: z.enum(['7', '30', '90', '180']).optional().describe('AI审计日志保留天数'),
+  mcpEnabled: z.boolean().optional().describe('是否启用 MCP 服务'),
+  mcpWriteEnabled: z.boolean().optional().describe('MCP 是否允许写操作'),
 })
 
 export const createDictionarySchema = z.object({

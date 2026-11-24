@@ -32,6 +32,7 @@
     "@fastify/static": "^7.0.4",
     "@fastify/swagger": "^8.15.0",
     "@homibook/core": "file:../packages/core",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@prisma/adapter-better-sqlite3": "^7.9.1",
     "@prisma/adapter-mariadb": "^7.9.1",
     "@prisma/adapter-pg": "^7.9.1",

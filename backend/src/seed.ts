@@ -3,6 +3,8 @@ import { prisma } from './app.js'
 const DEFAULT_CONFIG: Record<string, string> = {
   registrationOpen: JSON.stringify(true),
   defaultCurrency: JSON.stringify('CNY'),
+  mcpEnabled: JSON.stringify(false),
+  mcpWriteEnabled: JSON.stringify(false),
 }
 
 const DEFAULT_DICTIONARIES: Array<{ group: string; code: string; label: string; order: number }> = [

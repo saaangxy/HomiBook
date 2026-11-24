@@ -11,6 +11,7 @@ import { OrphanAttachmentsSettings } from '@/components/settings/OrphanAttachmen
 import { CategoryMappingSettings } from '@/components/settings/CategoryMappingSettings'
 import { AccountMappingSettings } from '@/components/settings/AccountMappingSettings'
 import { ApiKeyManagement } from '@/components/settings/ApiKeyManagement'
+import { MCPSettings } from '@/components/settings/MCPSettings'
 import { useAuthStore } from '@/stores/auth'
 import { AIAssistantSettings } from '@/components/ai/AISettings'
 import { AIMemorySettings } from '@/components/ai/AIMemorySettings'
@@ -131,6 +132,9 @@ export function SettingsPage() {
 
         {/* API Key 管理 */}
         <ApiKeyManagement />
+
+        {/* MCP 服务 */}
+        <MCPSettings />
 
         {/* 关于 */}
         <AccordionItem value="about" className="border rounded-xl px-5">

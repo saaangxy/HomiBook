@@ -31,6 +31,8 @@ function desensitizeIdCard(idCard: string): string {
 
 // 脱敏：数据对象中自动检测并脱敏敏感字段
 export function desensitize(data: unknown): unknown {
+  // Date 等非普通对象原样保留：继续递归会按可枚举属性展开成空对象
+  if (data instanceof Date) return data
   if (typeof data !== 'object' || data === null) return data
   if (Array.isArray(data)) return data.map(desensitize)
 

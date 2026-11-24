@@ -11,7 +11,7 @@ export async function settingsRoutes(app: FastifyInstance) {
     // 公开端点 — 无需认证，独立作用域避免被下方 hook 影响
     app.get('/public', {
         schema: {
-            description: '获取公开配置（注册开关、默认主题）',
+            description: '获取公开配置（注册开关、默认主题、是否已完成初始化）',
             tags: ['设置']
         },
         config: {
@@ -21,15 +21,19 @@ export async function settingsRoutes(app: FastifyInstance) {
                     description: '公开配置',
                     properties: {
                         registrationOpen: {type: 'boolean', description: '是否开放注册'},
-                        defaultTheme: {type: 'string', description: '默认主题'}
+                        defaultTheme: {type: 'string', description: '默认主题'},
+                        hasUsers: {type: 'boolean', description: '是否已有用户（false 表示首次部署，需创建管理员账户）'}
                     }
                 }
             }
         }
     }, async () => {
-        const configs = await prisma.systemConfig.findMany({
-            where: {key: {in: ['registrationOpen', 'defaultTheme']}},
-        })
+        const [configs, userCount] = await Promise.all([
+            prisma.systemConfig.findMany({
+                where: {key: {in: ['registrationOpen', 'defaultTheme']}},
+            }),
+            prisma.user.count(),
+        ])
         const result: Record<string, unknown> = {registrationOpen: true}
         for (const c of configs) {
             try {
@@ -38,7 +42,7 @@ export async function settingsRoutes(app: FastifyInstance) {
                 result[c.key] = c.value
             }
         }
-        return result
+        return {...result, hasUsers: userCount > 0}
     })
 
     // 登录用户可访问 — 独立子作用域

@@ -16,6 +16,7 @@ import { smsRoutes } from './routes/sms.js'
 import { backupRoutes } from './routes/backup.js'
 import { chatRoutes } from './routes/chat.js'
 import { aiConfigRoutes } from './routes/ai-config.js'
+import { mcpRoutes } from './routes/mcp.js'
 import { seedDefaults } from './seed.js'
 import { startScheduler } from './services/scheduler.js'
 import { APP_VERSION } from './version.js'
@@ -56,6 +57,8 @@ async function main() {
   app.register(chatRoutes, { prefix: '/api/chat' })
   // AI 配置类接口（供应商配置 / 助手偏好 / 记忆 / 供应商探测）与对话共用 /api/chat 前缀
   app.register(aiConfigRoutes, { prefix: '/api/chat' })
+  // MCP 服务（Streamable HTTP），供外部 AI 客户端接入
+  app.register(mcpRoutes, { prefix: '/api/mcp' })
 
   // 启动固定收支调度器
   startScheduler()
