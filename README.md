@@ -22,6 +22,10 @@
   <img alt="SQLite/MySQL/PostgreSQL" src="https://img.shields.io/badge/DB-SQLite%20%7C%20MySQL%20%7C%20PostgreSQL-green" />
 </p>
 
+<p align="center">
+  🔗 项目主页：<a href="https://saaangxy.github.io/HomiBook/">https://saaangxy.github.io/HomiBook/</a>
+</p>
+
 </div>
 
 ---
@@ -74,11 +78,20 @@
 
 ## 📸 页面预览
 
-[首页](screenshots/home.png)
-[统计分析](screenshots/stats.png)
-[流水日历](screenshots/calendar.png)
-[流水管理](screenshots/records.png)
-[AI 记账助手](screenshots/ai-assistant.png)
+### 首页
+![首页](screenshots/home.png)
+
+### 统计分析
+![统计分析](screenshots/stats.png)
+
+### 流水日历
+![流水日历](screenshots/calendar.png)
+
+### 流水管理
+![流水管理](screenshots/records.png)
+
+### AI 记账助手
+![AI 记账助手](screenshots/ai-assistant.png)
 
 ## 🛠 技术栈
 
