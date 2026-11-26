@@ -7,7 +7,7 @@ import { useChatStore, useSessionView } from '@/stores/chat';
 import { getToolDisplayName } from '@/services/chat';
 import { settingsApi } from '@/services/settings';
 import { MiniTable, computeColWidths } from './MiniTable';
-import { accountLabel, isMultiOwnerAccounts, ACCOUNT_TYPE_LABELS, BUDGET_TYPE_LABELS, IMPORT_SOURCE_LABELS, RECORD_TYPE_LABELS, resolveToolCallStatus, isAwaitingUserAction, normalizeSuggestionQuestions, ToolCallEntry } from '@homibook/core';
+import { accountLabel, isMultiOwnerAccounts, ACCOUNT_TYPE_LABELS, BUDGET_TYPE_LABELS, IMPORT_SOURCE_LABELS, RECORD_TYPE_LABELS, resolveToolCallStatus, isAwaitingUserAction, normalizeSuggestionQuestions, ToolCallEntry, type NormalizedSuggestionQuestion } from '@homibook/core';
 
 
 import { ImportPreviewCard } from './ImportPreviewCard';
@@ -268,7 +268,8 @@ export function ImageReadHint({ status }: { status: ToolCallEntry['status'] }) {
 export function ToolCard({ toolCall, bookId, stale }: { toolCall: ToolCallEntry; bookId: string; /** 所属消息之后已有新对话:按过期处理 */ stale?: boolean }) {
   const { colors } = useTheme();
   const [expanded, setExpanded] = useState(false);
-  const [selected, setSelected] = useState<Record<string, string>>({});
+  /** 每个问题已选中的选项(单选也存数组,多选共用同一套逻辑) */
+  const [selected, setSelected] = useState<Record<string, string[]>>({});
   const [custom, setCustom] = useState<Record<string, string>>({});
   const [bookChoice, setBookChoice] = useState('');
   const [submitted, setSubmitted] = useState(false);
@@ -443,14 +444,30 @@ export function ToolCard({ toolCall, bookId, stale }: { toolCall: ToolCallEntry;
     confirmAndContinue(bookId, toolCall.toolCallId, approved);
   };
 
-  const getValue = (field: string) => {
-    const sel = selected[field];
-    if (!sel) return '';
-    return sel === '__custom__' ? (custom[field] || '').trim() : sel;
+  /** 切换选项:单选替换,多选增删 */
+  const toggleOption = (q: NormalizedSuggestionQuestion, value: string) => {
+    setSelected((prev) => {
+      const cur = prev[q.field] || [];
+      if (!q.multiple) return { ...prev, [q.field]: [value] };
+      return { ...prev, [q.field]: cur.includes(value) ? cur.filter((v) => v !== value) : [...cur, value] };
+    });
+  };
+  /** 取某题答案:多选返回数组,单选返回字符串 */
+  const getValue = (q: NormalizedSuggestionQuestion): string | string[] => {
+    const picked = selected[q.field] || [];
+    const values = picked.filter((v) => v !== '__custom__');
+    if (picked.includes('__custom__')) {
+      const text = (custom[q.field] || '').trim();
+      if (text) values.push(text);
+    }
+    return q.multiple ? values : (values[0] ?? '');
   };
   // 历史消息里可能是模型写出的 <label>/<value> 标签文本,渲染前统一归一化
   const suggestionQuestions = suggestion?.questions ? normalizeSuggestionQuestions(suggestion.questions) : undefined;
-  const allFilled = (suggestionQuestions ?? []).every((q) => !!getValue(q.field));
+  const allFilled = (suggestionQuestions ?? []).every((q) => {
+    const v = getValue(q);
+    return Array.isArray(v) ? v.length > 0 : !!v;
+  });
 
   const btnText = { fontSize: 12.5, fontWeight: '600' as const };
 
@@ -637,30 +654,31 @@ export function ToolCard({ toolCall, bookId, stale }: { toolCall: ToolCallEntry;
       {effectiveStatus === 'suggesting' && suggestionQuestions && (
         <View style={{ marginTop: 4, gap: 10 }}>
           {suggestionQuestions.map((q, qi) => {
-            const sel = selected[q.field] || '';
+            const picked = selected[q.field] || [];
             return (
               <View key={q.field} style={{ gap: 6 }}>
                 <Text style={{ fontSize: 12.5, fontWeight: '600', color: colors.foreground }}>
                   {suggestionQuestions.length > 1 && <Text style={{ color: colors.mutedForeground }}>{qi + 1}. </Text>}{q.question}
+                  {q.multiple && <Text style={{ fontSize: 10, fontWeight: '400', color: '#8b5cf6' }}>（可多选）</Text>}
                 </Text>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
                   {q.options.map((opt) => {
                     const label = typeof opt === 'string' ? opt : (opt?.label || opt?.name || opt?.description || JSON.stringify(opt));
                     const value = typeof opt === 'string' ? opt : (opt?.value || opt?.code || label);
-                    const active = sel === value;
+                    const active = picked.includes(value);
                     return (
-                      <Pressable key={value} onPress={() => setSelected((p) => ({ ...p, [q.field]: value }))} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: active ? colors.primary : 'transparent', borderWidth: 1, borderColor: active ? colors.primary : colors.border }}>
+                      <Pressable key={value} onPress={() => toggleOption(q, value)} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: active ? colors.primary : 'transparent', borderWidth: 1, borderColor: active ? colors.primary : colors.border }}>
                         <Text style={{ fontSize: 11.5, color: active ? '#fff' : colors.foreground }}>{label}</Text>
                       </Pressable>
                     );
                   })}
                   {q.allowCustom && (
-                    <Pressable onPress={() => setSelected((p) => ({ ...p, [q.field]: '__custom__' }))} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: sel === '__custom__' ? colors.primary : 'transparent', borderWidth: 1, borderColor: sel === '__custom__' ? colors.primary : colors.border }}>
-                      <Text style={{ fontSize: 11.5, color: sel === '__custom__' ? '#fff' : colors.foreground }}>自定义</Text>
+                    <Pressable onPress={() => toggleOption(q, '__custom__')} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: picked.includes('__custom__') ? colors.primary : 'transparent', borderWidth: 1, borderColor: picked.includes('__custom__') ? colors.primary : colors.border }}>
+                      <Text style={{ fontSize: 11.5, color: picked.includes('__custom__') ? '#fff' : colors.foreground }}>自定义</Text>
                     </Pressable>
                   )}
                 </View>
-                {sel === '__custom__' && (
+                {picked.includes('__custom__') && (
                   <TextInput
                     value={custom[q.field] || ''}
                     onChangeText={(t) => setCustom((p) => ({ ...p, [q.field]: t }))}
@@ -680,7 +698,7 @@ export function ToolCard({ toolCall, bookId, stale }: { toolCall: ToolCallEntry;
           )}
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <Pressable
-              onPress={() => { if (!allFilled || submitted) return; setSubmitted(true); respondToSuggestion(bookId, toolCall.toolCallId, Object.fromEntries((suggestionQuestions ?? []).map((q) => [q.field, getValue(q.field)]))); }}
+              onPress={() => { if (!allFilled || submitted) return; setSubmitted(true); respondToSuggestion(bookId, toolCall.toolCallId, Object.fromEntries((suggestionQuestions ?? []).map((q) => [q.field, getValue(q)]))); }}
               disabled={!allFilled || submitted}
               style={{ flex: 1, borderRadius: 10, paddingVertical: 8, alignItems: 'center', backgroundColor: colors.primary, flexDirection: 'row', justifyContent: 'center', gap: 6, opacity: (!allFilled || submitted) ? 0.5 : 1 }}
             >

@@ -684,7 +684,7 @@ function ConfirmPreviewView({
 
 // ---- 建议选择组件 ----
 
-type QuestionDef = { question: string; field: string; options: (string | SuggestionOption)[]; allowCustom: boolean }
+type QuestionDef = { question: string; field: string; options: (string | SuggestionOption)[]; allowCustom: boolean; multiple?: boolean }
 
 function SuggestionView({
   suggestion,
@@ -697,26 +697,47 @@ function SuggestionView({
 }) {
   // 历史消息里可能是模型写出的 <label>/<value> 标签文本,渲染前统一归一化
   const questions = normalizeSuggestionQuestions(suggestion.questions)
-  const [selectedOption, setSelectedOption] = useState<Record<string, string>>({})
+  /** 每个问题已选中的选项(单选也存数组,多选共用同一套逻辑) */
+  const [selectedOption, setSelectedOption] = useState<Record<string, string[]>>({})
   const [customInputs, setCustomInputs] = useState<Record<string, string>>({})
   const [submitted, setSubmitted] = useState(false)
   const submittingRef = useRef(false)
 
-  const getValue = (field: string) => {
-    const sel = selectedOption[field]
-    if (!sel) return ''
-    return sel === '__custom__' ? (customInputs[field] || '').trim() : sel
+  /** 切换选项:单选替换,多选增删 */
+  const toggleOption = (q: QuestionDef, value: string) => {
+    setSelectedOption((prev) => {
+      const cur = prev[q.field] || []
+      if (!q.multiple) return { ...prev, [q.field]: [value] }
+      return {
+        ...prev,
+        [q.field]: cur.includes(value) ? cur.filter((v) => v !== value) : [...cur, value],
+      }
+    })
   }
 
-  const allFilled = questions.every((q) => !!getValue(q.field))
+  /** 取某题答案:多选返回数组,单选返回字符串 */
+  const getValue = (q: QuestionDef): string | string[] => {
+    const picked = selectedOption[q.field] || []
+    const values = picked.filter((v) => v !== '__custom__')
+    if (picked.includes('__custom__')) {
+      const custom = (customInputs[q.field] || '').trim()
+      if (custom) values.push(custom)
+    }
+    return q.multiple ? values : (values[0] ?? '')
+  }
+
+  const allFilled = questions.every((q) => {
+    const v = getValue(q)
+    return Array.isArray(v) ? v.length > 0 : !!v
+  })
 
   const handleSubmit = () => {
     if (!allFilled || submittingRef.current || isSubmitted(toolCallId)) return
     const { currentBookId } = useBookStore.getState()
     if (!currentBookId) return
-    const values: Record<string, string> = {}
+    const values: Record<string, string | string[]> = {}
     for (const q of questions) {
-      values[q.field] = getValue(q.field)
+      values[q.field] = getValue(q)
     }
     markSubmitted(toolCallId)
     submittingRef.current = true
@@ -727,7 +748,7 @@ function SuggestionView({
   return (
     <div className="mt-2 space-y-3">
       {questions.map((q, qi) => {
-        const sel = selectedOption[q.field] || ''
+        const picked = selectedOption[q.field] || []
         const customVal = customInputs[q.field] || ''
 
         return (
@@ -735,6 +756,7 @@ function SuggestionView({
             <p className="font-medium text-sm mb-1">
               {questions.length > 1 && <span className="text-muted-foreground">{qi + 1}. </span>}
               {q.question}
+              {q.multiple && <span className="ml-1 text-[10px] font-normal text-violet-500">（可多选）</span>}
             </p>
             <div className="flex flex-wrap gap-1.5">
               {q.options.map((opt) => {
@@ -744,11 +766,11 @@ function SuggestionView({
                 <Button
                   key={value}
                   size="sm"
-                  variant={sel === value ? 'default' : 'outline'}
+                  variant={picked.includes(value) ? 'default' : 'outline'}
                   // Button 默认 whitespace-nowrap:长选项会撑破卡片(浮窗里尤其明显),
                   // 这里允许换行并限制不超过父容器宽度
                   className="text-xs h-auto min-h-7 max-w-full whitespace-normal break-words text-left leading-snug py-1"
-                  onClick={() => setSelectedOption((prev) => ({ ...prev, [q.field]: value }))}
+                  onClick={() => toggleOption(q, value)}
                 >
                   {label}
                 </Button>
@@ -758,13 +780,13 @@ function SuggestionView({
               <div className="flex items-center gap-2 mt-1">
                 <Button
                   size="sm"
-                  variant={sel === '__custom__' ? 'default' : 'outline'}
+                  variant={picked.includes('__custom__') ? 'default' : 'outline'}
                   className="text-xs h-7"
-                  onClick={() => setSelectedOption((prev) => ({ ...prev, [q.field]: '__custom__' }))}
+                  onClick={() => toggleOption(q, '__custom__')}
                 >
                   自定义
                 </Button>
-                {sel === '__custom__' && (
+                {picked.includes('__custom__') && (
                   <input
                     className="flex-1 border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-violet-400"
                     placeholder="输入自定义内容..."

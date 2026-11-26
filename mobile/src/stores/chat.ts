@@ -60,7 +60,7 @@ interface ChatState {
   webSearchEnabled: boolean;
   setWebSearchEnabled: (enabled: boolean) => void;
   confirmAndContinue: (accountBookId: string, toolCallId: string, approved: boolean, data?: Record<string, unknown>) => void;
-  respondToSuggestion: (accountBookId: string, toolCallId: string, values: Record<string, string> | null) => void;
+  respondToSuggestion: (accountBookId: string, toolCallId: string, values: Record<string, string | string[]> | null) => void;
   switchBook: (accountBookId: string, toolCallId: string, bookId: string) => void;
   retryMessage: (assistantMsgId: string) => void;
   selectBranch: (parentMessageId: string, childMessageId: string) => void;

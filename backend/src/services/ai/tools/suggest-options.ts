@@ -5,7 +5,7 @@ export const suggestOptionsTool: ToolDef = {
   name: 'suggest_options',
   displayName: '建议选项',
   promptHint: '用户操作意图明确但缺少具体参数时使用',
-  description: '当需要用户选择或补充信息时调用。可同时提出多个问题，一次收集所有缺失信息。向用户展示每个问题的选项列表并等待用户选择或输入，结果会作为工具返回值传给模型继续对话。',
+  description: '当需要用户选择或补充信息时调用。可同时提出多个问题，一次收集所有缺失信息。每个问题支持单选或多选（multiple=true 时用户可选多个选项，答案以数组返回）。向用户展示每个问题的选项列表并等待用户选择或输入，结果会作为工具返回值传给模型继续对话。',
   // 执行后挂起：返回问题列表，等用户选择/填写后续流
   pause: 'suggestion',
   parameters: {
@@ -44,6 +44,7 @@ export const suggestOptionsTool: ToolDef = {
                 'label/value 必须作为 JSON 对象字段输出，禁止写成 <label>…</label>、<value>…</value> 这类标签文本',
             },
             allowCustom: { type: 'boolean', description: '是否允许用户自定义输入，默认 true' },
+            multiple: { type: 'boolean', description: '是否多选：为 true 时用户可同时选中多个选项，答案以数组形式返回；默认 false（单选）。需要用户一次选多项（如多个标签、多个账户）时设为 true' },
           },
           required: ['question', 'field', 'options'],
         },

@@ -68,7 +68,7 @@ export interface ToolCallEntry {
   durationMs?: number;
   status: 'pending' | 'success' | 'error' | 'confirming' | 'suggesting' | 'switching';
   preview?: string;
-  suggestion?: { questions: { question: string; field: string; options: (string | SuggestionOption)[]; allowCustom: boolean }[] };
+  suggestion?: { questions: { question: string; field: string; options: (string | SuggestionOption)[]; allowCustom: boolean; multiple?: boolean }[] };
   /** 用户决定时暂存的附加数据（多工具并行时随 decisions 一起提交，仅作用于本工具） */
   decisionData?: Record<string, unknown>;
   /**
@@ -127,7 +127,7 @@ export interface ToolConfirmRequiredEvent {
 export interface ToolSuggestRequiredEvent {
   toolCallId: string;
   toolName: string;
-  questions: { question: string; field: string; options: (string | SuggestionOption)[]; allowCustom: boolean }[];
+  questions: { question: string; field: string; options: (string | SuggestionOption)[]; allowCustom: boolean; multiple?: boolean }[];
 }
 
 export interface ToolSwitchBookEvent {

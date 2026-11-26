@@ -113,8 +113,9 @@ export async function runConfirmationTurn(opts: {
     }
 
     // suggest_options：用户已选择/填写的字段值直接作为工具结果
+    // 多选问题的值是数组，单选是字符串，统一按原样透传给模型
     if (entry.toolName === 'suggest_options') {
-      const toolResult = { success: true, values: (decData?.values ?? {}) as Record<string, string> }
+      const toolResult = { success: true, values: (decData?.values ?? {}) as Record<string, string | string[]> }
       entry.status = 'success'
       entry.result = toolResult
       initialSSEEvents.push({ event: 'tool-result', data: { toolCallId, toolName: entry.toolName, result: toolResult, durationMs: 0, status: 'success' } })

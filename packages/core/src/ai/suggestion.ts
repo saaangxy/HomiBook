@@ -6,6 +6,8 @@ export interface NormalizedSuggestionQuestion {
   field: string
   options: Array<string | SuggestionOption>
   allowCustom: boolean
+  /** 是否多选:多选问题的答案以数组形式回填给模型 */
+  multiple: boolean
 }
 
 /** 模型偶尔会把 label/value 写成 XML 式标签文本,这里统一清理 */
@@ -57,12 +59,14 @@ export function normalizeSuggestionOption(option: unknown): string | SuggestionO
 /** 归一化问题列表:用于工具执行结果与前端历史回显,避免把标签直接展示/回传 */
 export function normalizeSuggestionQuestions(questions: unknown[]): NormalizedSuggestionQuestion[] {
   return questions.map((question) => {
-    const item = question as { question?: unknown; field?: unknown; options?: unknown; allowCustom?: unknown }
+    const item = question as { question?: unknown; field?: unknown; options?: unknown; allowCustom?: unknown; multiple?: unknown }
     return {
       question: cleanText(String(item?.question ?? '')),
       field: String(item?.field ?? ''),
       options: Array.isArray(item?.options) ? item.options.map(normalizeSuggestionOption) : [],
       allowCustom: item?.allowCustom !== false,
+      // 兼容模型用 multiSelect / multi 等写法表达多选
+      multiple: item?.multiple === true || (item as { multiSelect?: unknown })?.multiSelect === true,
     }
   })
 }
