@@ -19,6 +19,7 @@ import { useUIShell, usePageRefresh } from '@/components/chrome/chrome';
 import {
   fetchMonthlyTrend, fetchBalanceHistory, fetchAccounts, fetchGroupSummary, fetchCategoryTrend, fetchSummary, fetchRecordsPaged, fetchBookMembers, fetchBudgets, type GroupSummaryItem, type CategoryTrendResult, } from '@/services/records';
 import { fetchRecurring } from '@/services/recurring';
+import { currentMonthDateRange, fetchPeriodSummary, monthDateRange, yearDateRange } from '@/services/stats';
 import { computeRadarMetrics, computeTimeRadar } from '@/lib/financial-health';
 import { accountLabel, isMultiOwnerAccounts } from '@homibook/core';
 
@@ -35,6 +36,9 @@ const TABS: { key: StatsTab; label: string }[] = [
   { key: 'monthly', label: '月度' },
   { key: 'free', label: '自由' },
 ];
+
+/** 汇总占位值:时间段数据未就绪时不要再回退到全量 summary,否则会短暂显示错误口径的金额 */
+const ZERO_SUMMARY: RecordSummary = { income: 0, expense: 0, transfer: 0, netIncome: 0 };
 
 /**
  * 账户余额变化的时间范围。后端 granularity 只支持 daily / monthly:
@@ -137,6 +141,8 @@ export default function StatsPage() {
   const [netWorth, setNetWorth] = useState<{ dates: string[]; values: number[] }>({ dates: [], values: [] });
   const [balance, setBalance] = useState<{ dates: string[]; series: { name: string; data: number[] }[] }>({ dates: [], series: [] });
   const [radar, setRadar] = useState<RadarMetric[]>([]);
+  /** 概览顶部汇总:与首页默认卡片同口径(本月),避免两处「首页」数字对不上 */
+  const [overviewSummary, setOverviewSummary] = useState<RecordSummary>(ZERO_SUMMARY);
   // 账户余额变化选中的账户(默认取前 5 个 ACTIVE,之后由用户决定)
   const [balanceAccountIds, setBalanceAccountIds] = useState<string[]>([]);
   const balanceDefaultedRef = useRef(false);
@@ -188,15 +194,18 @@ export default function StatsPage() {
     const startD = new Date(nowD.getFullYear(), nowD.getMonth() - 11, 1);
     const dateFrom = `${startD.getFullYear()}-${p2(startD.getMonth() + 1)}-01`;
     // (账户余额变化的 dailyFrom 已随逻辑移到下方独立 effect)
-    const [trendRes, accountsRes, loans, passive, insurance] = await Promise.all([
+    const [trendRes, accountsRes, loans, passive, insurance, monthSum] = await Promise.all([
       fetchMonthlyTrend(bookId, dateFrom, dateTo),
       fetchAccounts(bookId).catch(() => []),
       fetchRecurring(bookId).catch(() => []),
       // 被动收入(投资收益,分红) 与 保费支出(保险) 用于 7 维评分
       fetchSummary(bookId, { type: 'INCOME', categoryCode: '投资收益,分红', dateFrom, dateTo }),
       fetchSummary(bookId, { type: 'EXPENSE', categoryCode: '保险', dateFrom, dateTo }),
+      // 顶部汇总与首页「本月」共用统计口径
+      fetchPeriodSummary(bookId, currentMonthDateRange()),
     ]);
     setTrend(trendRes);
+    setOverviewSummary(monthSum);
     // 资产净值趋势:汇总所有 ACTIVE 账户余额(月度,对齐 web)
     const active = accountsRes.filter((a) => a.status === 'ACTIVE');
     if (active.length > 0) {
@@ -243,12 +252,9 @@ export default function StatsPage() {
   // ── 时间视图数据(对齐 web StatsTimeView/AnalysisPanel):时间段 + 分组汇总 + 分类趋势 ──
   const pad2 = (n: number) => String(n).padStart(2, '0');
   const range = useMemo(() => {
-    if (tab === 'yearly') return { dateFrom: `${year}-01-01`, dateTo: `${year}-12-31` };
-    if (tab === 'monthly') {
-      const last = new Date(year, month, 0).getDate();
-      return { dateFrom: `${year}-${pad2(month)}-01`, dateTo: `${year}-${pad2(month)}-${last}` };
-    }
-    return { dateFrom: freeParams.dateFrom, dateTo: freeParams.dateTo };
+    if (tab === 'yearly') return yearDateRange(year);
+    if (tab === 'monthly') return monthDateRange(year, month);
+    return { dateFrom: freeParams.dateFrom ?? '', dateTo: freeParams.dateTo ?? '' };
   }, [tab, year, month, freeParams]);
 
   const [analysis, setAnalysis] = useState<{ category: GroupSummaryItem[]; owner: GroupSummaryItem[]; account: GroupSummaryItem[] }>({ category: [], owner: [], account: [] });
@@ -290,7 +296,7 @@ export default function StatsPage() {
         : { granularity: 'daily' as const, dateFrom: range.dateFrom, dateTo: range.dateTo };
     Promise.all([
       fetchCategoryTrend(bookId, { type: 'EXPENSE', ...trendParams, accountId: freeAccountId, ownerId: freeOwnerId }),
-      fetchSummary(bookId, { dateFrom: range.dateFrom, dateTo: range.dateTo, accountId: freeAccountId, ownerId: freeOwnerId }),
+      fetchPeriodSummary(bookId, { dateFrom: range.dateFrom, dateTo: range.dateTo }, { accountId: freeAccountId, ownerId: freeOwnerId }),
       // 5维雷达数据源:固定预算 / 活跃贷款 / 被动收入(投资收益,分红)
       fetchBudgets(bookId).catch(() => []),
       fetchRecurring(bookId).catch(() => []),
@@ -439,6 +445,8 @@ export default function StatsPage() {
     () => balance.dates.map((d) => (d.length > 7 ? d.slice(5) : d)),
     [balance.dates],
   );
+  /** 时间段汇总:只认区间查询结果,未就绪时用 0 占位(不回退全量) */
+  const timeSummary = rangeSummary ?? ZERO_SUMMARY;
 
   // ── 首页(Overview):对齐网页 StatsOverview ──
   const renderOverview = () => {
@@ -447,12 +455,12 @@ export default function StatsPage() {
     return (
     <View style={{ gap: 16 }}>
       <View style={{ flexDirection: 'row', gap: 8 }}>
-        <SummaryCard icon={TrendingUp} label="总收入" value={summary.income} color={cc.income} />
-        <SummaryCard icon={TrendingDown} label="总支出" value={summary.expense} color={cc.expense} />
+        <SummaryCard icon={TrendingUp} label="本月收入" value={overviewSummary.income} color={cc.income} />
+        <SummaryCard icon={TrendingDown} label="本月支出" value={overviewSummary.expense} color={cc.expense} />
       </View>
       <View style={{ flexDirection: 'row', gap: 8 }}>
-        <SummaryCard icon={Activity} label="净收入" value={summary.netIncome} color={summary.netIncome >= 0 ? cc.income : cc.expense} />
-        <SummaryCard icon={Wallet} label="转账总额" value={summary.transfer} color={cc.transfer} />
+        <SummaryCard icon={Activity} label="本月结余" value={overviewSummary.netIncome} color={overviewSummary.netIncome >= 0 ? cc.income : cc.expense} />
+        <SummaryCard icon={Wallet} label="本月转账" value={overviewSummary.transfer} color={cc.transfer} />
       </View>
 
       <ChartCard title="月度收支趋势">
@@ -648,12 +656,12 @@ export default function StatsPage() {
         <>
           {/* 汇总卡片(时间段) */}
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            <SummaryCard icon={TrendingUp} label="总收入" value={(rangeSummary ?? summary).income} color={cc.income} />
-            <SummaryCard icon={TrendingDown} label="总支出" value={(rangeSummary ?? summary).expense} color={cc.expense} />
+            <SummaryCard icon={TrendingUp} label="总收入" value={timeSummary.income} color={cc.income} />
+            <SummaryCard icon={TrendingDown} label="总支出" value={timeSummary.expense} color={cc.expense} />
           </View>
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            <SummaryCard icon={Activity} label="净收入" value={(rangeSummary ?? summary).netIncome} color={(rangeSummary ?? summary).netIncome >= 0 ? cc.income : cc.expense} />
-            <SummaryCard icon={Wallet} label="转账总额" value={(rangeSummary ?? summary).transfer} color={cc.transfer} />
+            <SummaryCard icon={Activity} label="净收入" value={timeSummary.netIncome} color={timeSummary.netIncome >= 0 ? cc.income : cc.expense} />
+            <SummaryCard icon={Wallet} label="转账总额" value={timeSummary.transfer} color={cc.transfer} />
           </View>
 
           {timeLoading ? (

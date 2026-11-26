@@ -11,7 +11,8 @@ import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { FadeInView } from '@/components/FadeInView';
 import { LoadingState } from '@/components/ui/LoadingState';
-import { fetchBudgets, fetchGroupSummary, fetchMonthlyTrend, fetchSummary, type GroupSummaryItem } from '@/services/records';
+import { fetchBudgets, fetchGroupSummary, type GroupSummaryItem } from '@/services/records';
+import { currentMonthDateRange, currentYearDateRange, fetchPeriodSummary } from '@/services/stats';
 import { fetchRecurring } from '@/services/recurring';
 import { uploadImage } from '@/services/chat';
 import { showToast } from '@/components/chrome/Toast';
@@ -21,15 +22,6 @@ import { formatMoney, formatMoneyShort } from '@/lib/format';
 import type { BudgetItem, RecordSummary, RecurringTransaction } from '@/types';
 
 type Period = '本月' | '当年';
-
-/** 本月日期范围(YYYY-MM-DD),与 web 首页「本月收入/支出/结余」同口径 */
-function currentMonthRange() {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = d.getMonth() + 1;
-  const p = (n: number) => String(n).padStart(2, '0');
-  return { dateFrom: `${y}-${p(m)}-01`, dateTo: `${y}-${p(m)}-${new Date(y, m, 0).getDate()}` };
-}
 
 // 首页:收支总览(品牌渐变) + 预算 + AI 助手 + 最近流水;数据消费 useRecords() 唯一数据源
 export default function HomeScreen() {
@@ -68,12 +60,12 @@ export default function HomeScreen() {
         await Promise.all([
           refresh(),
           fetchBudgets(bookId).then(setBudgets),
-          fetchMonthlyTrend(bookId).then((t) => {
-            setYearIncome(t.income.reduce((s, x) => s + x, 0));
-            setYearExpense(t.expense.reduce((s, x) => s + x, 0));
+          fetchPeriodSummary(bookId, currentYearDateRange()).then((s) => {
+            setYearIncome(s.income);
+            setYearExpense(s.expense);
           }),
-          fetchSummary(bookId, currentMonthRange()).then(setMonthSummary),
-          fetchGroupSummary(bookId, { type: 'EXPENSE', groupBy: 'category', dateFrom: currentMonthRange().dateFrom, dateTo: currentMonthRange().dateTo }).then(setTopCategories).catch(() => {}),
+          fetchPeriodSummary(bookId, currentMonthDateRange()).then(setMonthSummary),
+          fetchGroupSummary(bookId, { type: 'EXPENSE', groupBy: 'category', ...currentMonthDateRange() }).then(setTopCategories).catch(() => {}),
           fetchRecurring(bookId).then(setRecurrings).catch(() => {}),
         ]);
       } else {
@@ -90,15 +82,15 @@ export default function HomeScreen() {
     // 预算 + 年度收支都到齐再撤首屏占位(之后切页回来都是静默刷新,不闪 loading)
     Promise.all([
       fetchBudgets(bookId).then(setBudgets),
-      // 当年收支:由月度趋势累计
-      fetchMonthlyTrend(bookId).then((t) => {
-        setYearIncome(t.income.reduce((s, x) => s + x, 0));
-        setYearExpense(t.expense.reduce((s, x) => s + x, 0));
+      // 当年收支:与统计页「年度」共用同一区间与汇总查询
+      fetchPeriodSummary(bookId, currentYearDateRange()).then((s) => {
+        setYearIncome(s.income);
+        setYearExpense(s.expense);
       }),
-      // 本月收支:与 web 首页「本月收入/支出/结余」同口径(带当月 dateFrom/dateTo)
-      fetchSummary(bookId, currentMonthRange()).then(setMonthSummary),
+      // 本月收支:与统计页「月度」同口径
+      fetchPeriodSummary(bookId, currentMonthDateRange()).then(setMonthSummary),
       // 仪表盘:本月支出 Top3 / 固定收支待办(单个失败不拖垮首屏)
-      fetchGroupSummary(bookId, { type: 'EXPENSE', groupBy: 'category', dateFrom: currentMonthRange().dateFrom, dateTo: currentMonthRange().dateTo }).then(setTopCategories).catch(() => {}),
+      fetchGroupSummary(bookId, { type: 'EXPENSE', groupBy: 'category', ...currentMonthDateRange() }).then(setTopCategories).catch(() => {}),
       fetchRecurring(bookId).then(setRecurrings).catch(() => {}),
     ]).catch(() => {}).finally(() => setExtraLoading(false));
   }, [isFocused, currentLedger.id]); // 切到本页时,预算进度与年度收支即时重算
@@ -108,12 +100,12 @@ export default function HomeScreen() {
     const bookId = currentLedger.id;
     if (!bookId) return;
     fetchBudgets(bookId).then(setBudgets);
-    fetchMonthlyTrend(bookId).then((t) => {
-      setYearIncome(t.income.reduce((s, x) => s + x, 0));
-      setYearExpense(t.expense.reduce((s, x) => s + x, 0));
+    fetchPeriodSummary(bookId, currentYearDateRange()).then((s) => {
+      setYearIncome(s.income);
+      setYearExpense(s.expense);
     });
-    fetchSummary(bookId, currentMonthRange()).then(setMonthSummary);
-    fetchGroupSummary(bookId, { type: 'EXPENSE', groupBy: 'category', dateFrom: currentMonthRange().dateFrom, dateTo: currentMonthRange().dateTo }).then(setTopCategories).catch(() => {});
+    fetchPeriodSummary(bookId, currentMonthDateRange()).then(setMonthSummary);
+    fetchGroupSummary(bookId, { type: 'EXPENSE', groupBy: 'category', ...currentMonthDateRange() }).then(setTopCategories).catch(() => {});
     fetchRecurring(bookId).then(setRecurrings).catch(() => {});
   }, [currentLedger.id]);
   usePageRefresh(reloadPage);
