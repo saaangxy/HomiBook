@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, Brain, BookOpen, Database, FolderOpen, Key, Link2, Plug, Settings, Wallet } from 'lucide-react-native';
+import { ArchiveRestore, ArrowLeft, Brain, BookOpen, Database, FolderOpen, Key, Link2, Plug, Settings, Wallet } from 'lucide-react-native';
 import { useTheme, paletteOrder, palettes } from '@/theme';
 import { useAuth } from '@/stores/auth';
 import { Text } from '@/components/ui/Text';
 import { Section, Field, Chips, Btn, ErrorText, OkText, LabeledInput } from '@/components/settings/shared';
 import { AccountMappingManager, ApiKeyManager, CategoryMappingManager, DictManager, DICT_GROUPS } from '@/components/settings/Managers';
 import { McpSettings } from '@/components/settings/MCPSettings';
+import { BackupSettingsPanel } from '@/components/settings/BackupSettings';
 import { holidayApi, memoryApi, settingsApi, type UserMemory } from '@/services/settings';
 import { ConfirmProvider, useConfirm } from '@/components/chrome/ConfirmSheet';
 import { showToast } from '@/components/chrome/Toast';
@@ -359,6 +360,9 @@ export default function ServerSettingsScreen() {
             </Section>
             <Section icon={<FolderOpen size={15} color={colors.primaryForeground} />} title="附件管理">
               <AttachmentManager />
+            </Section>
+            <Section icon={<ArchiveRestore size={15} color={colors.primaryForeground} />} title="备份与还原">
+              <BackupSettingsPanel />
             </Section>
             <Section icon={<Database size={15} color={colors.primaryForeground} />} title="数据迁移">
               <Text variant="muted" style={{ fontSize: 12.5 }}>

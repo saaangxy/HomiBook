@@ -1,8 +1,15 @@
-import cron from 'node-cron'
+﻿import cron from 'node-cron'
 import { prisma } from '../app.js'
 import { getNextTriggerTime, ensureFixedTag } from './recurring.js'
-import { normalizeRecordType } from '@homibook/core'
+import { BACKUP_SCHEDULES, normalizeRecordType } from '@homibook/core'
 import { cleanupExpiredAuditLogs } from './ai/audit.js'
+import { ALL_BACKUP_MODULES, cleanupAfterScheduledBackup, createSnapshot } from './backup/snapshot.js'
+import {
+  computeNextRunAt,
+  ensureBackupDir,
+  readBackupSettings,
+  updateBackupSchedule,
+} from './backup/store.js'
 
 interface CronLike {
   schedule(cronExpression: string, fn: () => void): { stop(): void }
@@ -48,6 +55,7 @@ interface RecurringTxParams {
 
 let recurringTask: { stop(): void } | null = null
 let auditCleanupTask: { stop(): void } | null = null
+let backupTask: { stop(): void } | null = null
 
 export function startScheduler(client: PrismaLike = prisma, cronLib: CronLike = cron) {
   if (recurringTask) return
@@ -77,7 +85,89 @@ export function startScheduler(client: PrismaLike = prisma, cronLib: CronLike = 
     }
   })
 
+  // 每分钟检查一次定时备份是否到点（每天/每周/每月各自独立开关，配置改动即时生效）
+  ensureBackupDir()
+  const backupSettings = readBackupSettings()
+  for (const preset of BACKUP_SCHEDULES) {
+    const state = backupSettings.schedules[preset.key]
+    if (state.enabled && !state.nextRunAt) {
+      updateBackupSchedule(preset.key, { nextRunAt: computeNextRunAt(preset.cron)?.toISOString() ?? null })
+    }
+  }
+  backupTask = cronLib.schedule('* * * * *', () => {
+    void tickAutoBackup()
+  })
+
   console.log('[Scheduler] 固定收支调度器已启动')
+}
+
+let backupTickRunning = false
+
+/**
+ * 定时备份 tick：
+ * - 逐个检查每天/每周/每月三个频率，未开启的跳过
+ * - 到点后执行一次全量备份，并按该频率的保留份数清理旧快照
+ * - 有手动备份/恢复占用时本轮跳过（不推进 nextRunAt，下一分钟重试）
+ */
+async function tickAutoBackup() {
+  if (backupTickRunning) return
+  backupTickRunning = true
+  try {
+    let settings
+    try {
+      settings = readBackupSettings()
+    } catch (e) {
+      console.error('[Backup] 读取备份配置失败:', e)
+      return
+    }
+
+    for (const preset of BACKUP_SCHEDULES) {
+      const state = settings.schedules[preset.key]
+      if (!state.enabled) continue
+
+      const next = state.nextRunAt ? new Date(state.nextRunAt) : null
+      if (!next || Number.isNaN(next.getTime())) {
+        settings = updateBackupSchedule(preset.key, {
+          nextRunAt: computeNextRunAt(preset.cron)?.toISOString() ?? null,
+        })
+        continue
+      }
+      if (Date.now() < next.getTime()) continue
+
+      // 先算好下一次，避免备份耗时跨过多个周期
+      const nextRunAt = computeNextRunAt(preset.cron)?.toISOString() ?? null
+
+      try {
+        const meta = await createSnapshot({
+          trigger: 'SCHEDULED',
+          schedule: preset.key,
+          modules: ALL_BACKUP_MODULES,
+          includeAttachments: settings.includeAttachments,
+        })
+        const cleaned = cleanupAfterScheduledBackup(preset.key, state.retention)
+        settings = updateBackupSchedule(preset.key, {
+          nextRunAt,
+          lastRunAt: meta.createdAt,
+          lastResult: { at: meta.createdAt, status: 'SUCCESS' },
+        })
+        console.log(
+          `[Backup] ${preset.label}定时备份完成 ${meta.id}（${meta.size} 字节）${cleaned ? `，清理 ${cleaned} 份旧快照` : ''}`,
+        )
+      } catch (e: any) {
+        // 被其他备份/恢复任务占用：不推进周期，下一分钟再试
+        if (e?.statusCode === 409) continue
+        const at = new Date().toISOString()
+        settings = updateBackupSchedule(preset.key, {
+          nextRunAt,
+          lastRunAt: at,
+          lastResult: { at, status: 'FAILED', error: e?.message || '未知错误' },
+        })
+        console.error(`[Backup] ${preset.label}定时备份失败:`, e)
+      }
+    }
+  } finally {
+    backupTickRunning = false
+  }
 }
 
 export async function generateRecord(rt: RecurringTxParams, client: PrismaLike = prisma) {

@@ -21,6 +21,8 @@ services:
     volumes:
       - homibook-data:/app/data
       - homibook-uploads:/app/uploads
+      # 服务端备份快照（手动/定时/安全备份）——需持久化，否则容器重建后快照丢失
+      - homibook-backups:/app/backups
     ports:
       - "${PORT:-8080}:${PORT:-8080}"
     healthcheck:
@@ -65,5 +67,6 @@ services:
 volumes:
   homibook-data:
   homibook-uploads:
+  homibook-backups:
 #  homibook-mysql:
 #  homibook-postgres:

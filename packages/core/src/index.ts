@@ -9,6 +9,7 @@ export * from './ai/tool-status.js';
 export * from './ai/import-message.js';
 export * from './ai/suggestion.js';
 export * from './backup.js';
+export * from './backup-snapshot.js';
 export * from './dedup.js';
 export * from './filter-params.js';
 export * from './account.js';

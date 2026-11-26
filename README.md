@@ -169,6 +169,8 @@ IMAGE_REPO=ghcr.io/saaangxy/homibook docker compose up -d
 
 访问 http://\<服务器IP\>:8080 即可。
 
+> 备份快照保存在容器 `/app/backups`，compose 已挂载 `homibook-backups` 卷；可用 `BACKUP_DIR` 覆盖目录。请勿删除该卷，否则手动/定时备份会丢失。
+
 > 更详细的部署方式（MySQL/PostgreSQL、Render、CI/CD）见 **[部署指南](docs/deployment.md)**
 
 ## 🤖 AI 记账助手

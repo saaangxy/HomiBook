@@ -82,6 +82,8 @@ COPY --from=frontend-build /app/frontend/dist ./public
 
 COPY backend/docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x docker-entrypoint.sh
+# 服务端备份快照目录（docker-compose 通过 homibook-backups 卷持久化）
+RUN mkdir -p /app/backups
 
 EXPOSE 8080
 

@@ -130,6 +130,27 @@ async function download(url: string, data?: unknown): Promise<Record<string, num
   return counts
 }
 
+/** GET 下载：用于服务端快照等直接返回二进制的接口 */
+async function downloadGet(url: string): Promise<void> {
+  const token = getToken()
+  const headers: Record<string, string> = {}
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const res = await fetch(url, { method: 'GET', headers })
+  if (!res.ok) throw await toError(res, token, '下载失败', url)
+
+  const blob = await res.blob()
+  const filename = filenameFromDisposition(res.headers.get('content-disposition')) || 'download.zip'
+  const objectUrl = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = objectUrl
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+}
+
 export const api = {
   get: <T>(url: string) => request<T>(url),
   post: <T>(url: string, data: unknown) => request<T>(url, { method: 'POST', body: JSON.stringify(data) }),
@@ -139,4 +160,5 @@ export const api = {
   uploadFile,
   uploadForm,
   download,
+  downloadGet,
 }

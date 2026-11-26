@@ -1,4 +1,10 @@
-import { BACKUP_MODULES as CORE_BACKUP_MODULES, type BackupModuleOption } from '@homibook/core'
+import {
+  BACKUP_MODULES as CORE_BACKUP_MODULES,
+  type BackupFrequency,
+  type BackupModuleOption,
+  type BackupSettings,
+  type BackupSnapshotMeta,
+} from '@homibook/core'
 import { api } from './http'
 
 export interface BackupBook {
@@ -35,9 +41,45 @@ export interface ImportResult {
   appVersion?: string
 }
 
+export interface BackupSchedulePatch {
+  enabled?: boolean
+  retention?: number
+}
+
+export interface BackupSettingsPatch {
+  includeAttachments?: boolean
+  schedules?: Partial<Record<BackupFrequency, BackupSchedulePatch>>
+}
+
+export interface CreateSnapshotParams {
+  includeAttachments?: boolean
+}
+
+export interface RestoreSnapshotResult {
+  restored: boolean
+  safetySnapshotId: string | null
+  results: Record<string, number>
+  attachmentsRestored: number
+  skipped?: number
+  appVersion?: string
+  exportedAt?: string
+}
+
+const SNAPSHOT_BASE = '/api/settings/backup/snapshots'
+
 export const backupApi = {
   listBooks: () => api.get<BackupBook[]>('/api/settings/backup/books'),
   exportBackup: (params: ExportBackupParams) => api.download('/api/settings/backup/export', params),
   inspectBackup: (file: File) => api.uploadForm('/api/settings/backup/import/inspect', file, {}),
   importBackup: (file: File) => api.uploadForm<ImportResult>('/api/settings/backup/import', file, {}),
+
+  // 服务端快照
+  getSettings: () => api.get<BackupSettings>('/api/settings/backup/settings'),
+  updateSettings: (data: BackupSettingsPatch) => api.put<BackupSettings>('/api/settings/backup/settings', data),
+  listSnapshots: () => api.get<BackupSnapshotMeta[]>(SNAPSHOT_BASE),
+  createSnapshot: (params: CreateSnapshotParams) => api.post<BackupSnapshotMeta>(SNAPSHOT_BASE, params),
+  deleteSnapshot: (id: string) => api.delete<{ success: boolean }>(`${SNAPSHOT_BASE}/${id}`),
+  restoreSnapshot: (id: string, data: { safetyBackup?: boolean }) =>
+    api.post<RestoreSnapshotResult>(`${SNAPSHOT_BASE}/${id}/restore`, data),
+  downloadSnapshot: (id: string) => api.downloadGet(`${SNAPSHOT_BASE}/${id}/download`),
 }

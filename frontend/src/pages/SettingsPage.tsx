@@ -16,7 +16,8 @@ import { useAuthStore } from '@/stores/auth'
 import { AIAssistantSettings } from '@/components/ai/AISettings'
 import { AIMemorySettings } from '@/components/ai/AIMemorySettings'
 import { DataMigrationPanel } from '@/components/backup/DataMigrationPanel'
-import { Bot, Brain, Info, ExternalLink, Database, RefreshCw, Loader2 } from 'lucide-react'
+import { BackupSystemPanel } from '@/components/backup/BackupSystemPanel'
+import { Bot, Brain, Info, ExternalLink, Database, ArchiveRestore, RefreshCw, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 /** 与 backend/src/services/github-release.ts 的 LatestReleaseInfo 对应 */
@@ -120,6 +121,21 @@ export function SettingsPage() {
           </AccordionTrigger>
           <AccordionContent className="pt-2 pb-5">
             <DataMigrationPanel />
+          </AccordionContent>
+        </AccordionItem>
+
+        {/* 备份与还原（服务端快照） */}
+        <AccordionItem value="backup-system" className="border rounded-xl px-5">
+          <AccordionTrigger className="text-base font-semibold hover:no-underline">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+                <ArchiveRestore size={16} className="text-primary-foreground" />
+              </div>
+              备份与还原
+            </div>
+          </AccordionTrigger>
+          <AccordionContent className="pt-2 pb-5">
+            <BackupSystemPanel />
           </AccordionContent>
         </AccordionItem>
 

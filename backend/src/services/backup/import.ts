@@ -2,6 +2,7 @@ import unzipper from 'unzipper'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import { pipeline } from 'stream/promises'
 import { rawPrisma } from '../../app.js'
 import { BACKUP_FORMAT_VERSION, IMPORT_TABLE_ORDER } from './modules.js'
 
@@ -86,15 +87,27 @@ interface BackupManifest {
 /**
  * 解压 zip 到 targetDir，带 zip-slip 防护：
  * 每个条目路径 resolve 后必须仍在 targetDir 内，否则拒绝。
+ *
+ * 注意：unzipper 的 entry 是并行写入的，parse 的 close 不代表文件已落盘。
+ * 必须等待所有写入完成后才能 resolve，否则调用方紧接着读取大表文件时
+ * 可能读到空/半个 JSON（readTable 会容错成空数组），进而在恢复关联表时触发外键错误。
  */
 function extractZip(zipPath: string, targetDir: string): Promise<void> {
   const root = path.resolve(targetDir)
   return new Promise((resolve, reject) => {
     const src = fs.createReadStream(zipPath)
     const parse = unzipper.Parse()
-    src.on('error', reject)
-    parse.on('error', reject)
-    parse.on('close', resolve)
+    let settled = false
+    const fail = (err: unknown) => {
+      if (settled) return
+      settled = true
+      src.destroy()
+      reject(err)
+    }
+    const pending = new Set<Promise<void>>()
+
+    src.on('error', fail)
+    parse.on('error', fail)
 
     src.pipe(parse)
     parse.on('entry', (entry: any) => {
@@ -102,28 +115,26 @@ function extractZip(zipPath: string, targetDir: string): Promise<void> {
       const inside = target === root || target.startsWith(root + path.sep)
       if (!inside) {
         entry.autodrain()
-        reject(new Error(`备份包包含非法路径: ${entry.path}`))
+        fail(new Error(`备份包包含非法路径: ${entry.path}`))
         return
       }
       if (entry.type === 'Directory') {
         entry.autodrain()
         return
       }
-      fs.promises
-        .mkdir(path.dirname(target), { recursive: true })
-        .then(() => {
-          const out = fs.createWriteStream(target)
-          out.on('error', (e) => {
-            src.destroy()
-            reject(e)
-          })
-          entry.on('error', (e: Error) => {
-            src.destroy()
-            reject(e)
-          })
-          entry.pipe(out)
-        })
-        .catch(reject)
+      const task = (async () => {
+        await fs.promises.mkdir(path.dirname(target), { recursive: true })
+        await pipeline(entry, fs.createWriteStream(target))
+      })()
+      pending.add(task)
+      task.catch(fail).finally(() => pending.delete(task))
+    })
+    parse.on('close', () => {
+      Promise.all([...pending]).then(() => {
+        if (settled) return
+        settled = true
+        resolve()
+      }, fail)
     })
   })
 }
