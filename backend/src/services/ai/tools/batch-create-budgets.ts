@@ -1,6 +1,7 @@
 import { prisma } from '../../../app.js'
 import { checkEnums, desensitize, ToolError } from '../security.js'
 import { BUDGET_TYPE_LABELS, BUDGET_TYPES, normalizeBudgetType, type BudgetType } from '@homibook/core'
+import { normalizeTags, resolveBudgetOwner } from '../../budget.js'
 import type { ConfirmPreview } from '../runtime/preview-format.js'
 import type { PreviewScope } from '../runtime/preview-scope.js'
 import type { ToolDef, ToolContext } from './types.js'
@@ -13,6 +14,8 @@ interface BatchCreateBudgetsArgs {
   year: number
   categoryCode?: string
   tags?: string[]
+  ownerId?: string
+  ownerName?: string
   startDate?: string
   endDate?: string
   remark?: string
@@ -34,10 +37,12 @@ export const batchCreateBudgetsTool: ToolDef = {
       amount: { type: 'number', description: '预算金额' },
       months: { type: 'array', items: { type: 'number' }, description: '目标月份列表 (1-12)' },
       year: { type: 'number', description: '年份' },
-      categoryCode: { type: 'string', description: '关联分类编码' },
-      tags: { type: 'array', items: { type: 'string' }, description: '标签' },
-      startDate: { type: 'string', description: '开始日期（FREE类型）' },
-      endDate: { type: 'string', description: '结束日期（FREE类型）' },
+      categoryCode: { type: 'string', description: '分类维度：关联分类编码' },
+      tags: { type: 'array', items: { type: 'string' }, description: '标签维度：标签' },
+      ownerId: { type: 'string', description: '家庭成员维度：归属人 User.id' },
+      ownerName: { type: 'string', description: '家庭成员维度：归属人昵称/邮箱' },
+      startDate: { type: 'string', description: '开始日期（项目预算）' },
+      endDate: { type: 'string', description: '结束日期（项目预算）' },
       remark: { type: 'string', description: '备注' },
     },
     required: ['name', 'type', 'amount', 'months', 'year'],
@@ -58,7 +63,9 @@ export const batchCreateBudgetsTool: ToolDef = {
         { label: '类型', value: args.type === 'FIXED' ? BUDGET_TYPE_LABELS.FIXED : BUDGET_TYPE_LABELS.FREE },
         { label: '金额', value: `每月 ${(args.amount ?? 0).toFixed(2)}` },
         { label: '月份', value: monthsText || '-' },
-        ...(args.categoryCode ? [{ label: '关联分类', value: categoryMap.get(args.categoryCode) || args.categoryCode }] : []),
+        ...(args.categoryCode ? [{ label: '分类', value: categoryMap.get(args.categoryCode) || args.categoryCode }] : []),
+        ...(Array.isArray(args.tags) && args.tags.length > 0 ? [{ label: '标签', value: args.tags.join('、') }] : []),
+        ...(args.ownerName ? [{ label: '成员', value: args.ownerName }] : []),
         ...(args.remark ? [{ label: '备注', value: args.remark }] : []),
       ],
     }
@@ -70,22 +77,29 @@ export const batchCreateBudgetsTool: ToolDef = {
     const badEnum = validateArgs(args)
     if (badEnum) throw new ToolError(badEnum.error ?? '参数非法', badEnum.retryable)
 
-    const tagsJson = JSON.stringify(args.tags || [])
+    const tagsJson = normalizeTags(args.tags)
     const created: { month: number; id: string }[] = []
     // 归一化:模型可能不遵守 schema 枚举,非法预算类型会让该预算在所有列表里查不到
     const budgetType = normalizeBudgetType(args.type)
+    let owner: string | null
+    try {
+      owner = await resolveBudgetOwner(ctx.accountBookId, args.ownerId, args.ownerName)
+    } catch (e: any) {
+      throw new ToolError(e?.message || '归属人无效', false)
+    }
 
     await prisma.$transaction(async (tx) => {
       for (const month of args.months) {
-        const existing = await tx.budget.findUnique({
+        const existing = await tx.budget.findFirst({
           where: {
-            accountBookId_type_year_month_name: {
-              accountBookId: ctx.accountBookId,
-              type: budgetType,
-              year: args.year,
-              month,
-              name: args.name,
-            },
+            accountBookId: ctx.accountBookId,
+            type: budgetType,
+            year: args.year,
+            month,
+            name: args.name,
+            categoryCode: args.categoryCode ?? null,
+            ownerId: owner,
+            tags: tagsJson,
           },
         })
         if (existing) continue
@@ -100,6 +114,7 @@ export const batchCreateBudgetsTool: ToolDef = {
             amount: args.amount,
             categoryCode: args.categoryCode,
             tags: tagsJson,
+            ownerId: owner,
             startDate: args.startDate ? new Date(args.startDate) : undefined,
             endDate: args.endDate ? new Date(args.endDate) : undefined,
             remark: args.remark,

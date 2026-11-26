@@ -94,6 +94,7 @@ export const categoryTrendSchema = z.object({
   dateFrom: z.string().optional().describe('开始日期'),
   dateTo: z.string().optional().describe('结束日期'),
   accountId: z.string().optional().describe('账户ID'),
+  categoryCode: z.string().optional().describe('分类编码，逗号分隔多选'),
   ownerId: z.string().optional().describe('归属人ID'),
   tags: z.string().optional().describe('标签，逗号分隔'),
 })

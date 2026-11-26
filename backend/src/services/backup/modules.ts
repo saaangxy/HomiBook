@@ -89,7 +89,10 @@ export const FOREIGN_KEYS: Record<string, ForeignKey[]> = {
   ],
   // recordAttachment 与流水是多对多（中间表由 Prisma 维护），关联在导入时按 recordIds 单独恢复
   shareCode: [{column: 'accountBookId', refTable: 'accountBook', nullable: false}],
-  budget: [{column: 'accountBookId', refTable: 'accountBook', nullable: false}],
+  budget: [
+    {column: 'accountBookId', refTable: 'accountBook', nullable: false},
+    {column: 'ownerId', refTable: 'user', nullable: true},
+  ],
   recurringTransaction: [
     {column: 'accountBookId', refTable: 'accountBook', nullable: false},
     {column: 'accountId', refTable: 'account', nullable: false},

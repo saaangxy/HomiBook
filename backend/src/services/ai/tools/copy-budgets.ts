@@ -15,7 +15,7 @@ export const copyBudgetsTool: ToolDef = {
   name: 'copy_budgets',
   displayName: '复制预算',
   promptHint: '将预算复制到其他月份',
-  description: '将源月份的预算复制到目标月份（跳过已存在的同名预算）。',
+  description: '将源月份的预算复制到目标月份（跳过已存在的相同维度预算）。',
   parameters: {
     type: 'object',
     properties: {
@@ -56,7 +56,7 @@ export const copyBudgetsTool: ToolDef = {
     const preview: ConfirmPreview = {
       type: 'records-table',
       title: `确认复制预算到 ${targetText}`,
-      description: `源月份：${args.sourceYear}年${args.sourceMonth}月（跳过已存在的同名预算）`,
+      description: `源月份：${args.sourceYear}年${args.sourceMonth}月（跳过已存在的相同维度预算）`,
       columns: ['预算名称', '类型', '金额'],
       rows: sourceBudgets.map((b) => [
         { text: b.name || b.categoryLabel || b.categoryCode || '-' },
@@ -81,15 +81,16 @@ export const copyBudgetsTool: ToolDef = {
         for (const budget of sourceBudgets) {
           // 归一化:源数据若为历史脏类型,复制出来的预算也不应继承
           const budgetType = normalizeBudgetType(budget.type)
-          const existing = await tx.budget.findUnique({
+          const existing = await tx.budget.findFirst({
             where: {
-              accountBookId_type_year_month_name: {
-                accountBookId: ctx.accountBookId,
-                type: budgetType,
-                year: target.year,
-                month: target.month,
-                name: budget.name,
-              },
+              accountBookId: ctx.accountBookId,
+              type: budgetType,
+              year: target.year,
+              month: target.month,
+              name: budget.name,
+              categoryCode: budget.categoryCode,
+              ownerId: budget.ownerId,
+              tags: budget.tags,
             },
           })
           if (existing) continue
@@ -104,6 +105,7 @@ export const copyBudgetsTool: ToolDef = {
               amount: budget.amount,
               categoryCode: budget.categoryCode,
               tags: budget.tags,
+              ownerId: budget.ownerId,
               startDate: budget.startDate,
               endDate: budget.endDate,
               remark: budget.remark,

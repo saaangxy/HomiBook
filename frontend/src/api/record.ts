@@ -281,6 +281,7 @@ export const recordApi = {
     dateFrom?: string
     dateTo?: string
     accountId?: string
+    categoryCode?: string
     ownerId?: string
     tags?: string
   }) => api.get<{

@@ -1,27 +1,34 @@
 import { prisma } from '../../../app.js'
 import { desensitize } from '../security.js'
+import { buildBudgetRecordWhere, loadBudgetCategorySets, parseTags } from '../../budget.js'
 import type { ToolDef, ToolContext } from './types.js'
 
 interface QueryBudgetsArgs {
   year?: number
   month?: number
+  ownerId?: string
+  categoryCode?: string
+  tag?: string
 }
 
 export const queryBudgetsTool: ToolDef = {
   name: 'query_budgets',
   displayName: '查询预算',
-  promptHint: '查看各分类预算执行情况',
-  description: '查询预算信息。可指定年份和月份筛选。',
+  promptHint: '查看各维度预算执行情况',
+  description:
+    '查询预算信息与执行情况。可指定年份、月份，以及按成员、分类、标签筛选。',
   parameters: {
     type: 'object',
     properties: {
       year: { type: 'number', description: '年份，默认当前年份' },
       month: { type: 'number', description: '月份 (1-12)，不填则返回全年所有预算' },
+      ownerId: { type: 'string', description: '按家庭成员（流水归属人 User.id）筛选' },
+      categoryCode: { type: 'string', description: '按分类编码筛选' },
+      tag: { type: 'string', description: '按标签筛选' },
     },
   },
 
   async execute(args: QueryBudgetsArgs, ctx: ToolContext) {
-
     const now = new Date()
     const year = args.year ? Number(args.year) : now.getFullYear()
     const month = args.month ? Number(args.month) : undefined
@@ -31,44 +38,21 @@ export const queryBudgetsTool: ToolDef = {
         accountBookId: ctx.accountBookId,
         year,
         ...(month ? { month } : {}),
+        ...(args.ownerId ? { ownerId: args.ownerId } : {}),
+        ...(args.categoryCode ? { categoryCode: args.categoryCode } : {}),
+        ...(args.tag ? { tags: { contains: args.tag } } : {}),
       },
+      include: { owner: { select: { id: true, nickname: true, email: true } } },
       orderBy: [{ month: 'asc' }, { type: 'asc' }],
     })
 
-    // 计算每个预算的已用金额
+    // 收支分类与流水匹配条件统一走 services/budget.ts，避免与页面口径漂移
+    const categorySets = await loadBudgetCategorySets()
+
     const enriched = await Promise.all(
       budgets.map(async (b) => {
-        const expenseWhere: Record<string, unknown> = {
-          accountBookId: ctx.accountBookId,
-          type: 'EXPENSE',
-          date: {},
-        }
-
-        // 时间范围
-        if (b.type === 'FIXED' && b.month > 0) {
-          expenseWhere.date = {
-            gte: new Date(`${year}-${String(b.month).padStart(2, '0')}-01`),
-            lte: new Date(`${year}-${String(b.month).padStart(2, '0')}-${new Date(year, b.month, 0).getDate()}`),
-          }
-        } else if (b.type === 'FREE') {
-          if (b.startDate) Object.assign(expenseWhere.date as object, { gte: b.startDate })
-          if (b.endDate) Object.assign(expenseWhere.date as object, { lte: b.endDate })
-        }
-
-        // 分类条件
-        if (b.categoryCode) expenseWhere.categoryCode = b.categoryCode
-
-        // 标签条件 (OR 关系)
-        if (b.tags && b.tags !== '[]') {
-          const tags: string[] = JSON.parse(b.tags)
-          if (tags.length > 0) {
-            // 标签存储在 Record.tags JSON 数组中，用 contains 匹配
-            expenseWhere.AND = tags.map((t) => ({ tags: { contains: t } }))
-          }
-        }
-
         const aggregate = await prisma.record.aggregate({
-          where: expenseWhere,
+          where: buildBudgetRecordWhere(b, ctx.accountBookId, categorySets),
           _sum: { amount: true },
         })
 
@@ -83,8 +67,14 @@ export const queryBudgetsTool: ToolDef = {
           amount: b.amount,
           used: Math.round(used * 100) / 100,
           remaining: Math.round((b.amount - used) * 100) / 100,
-          percentage: Math.round((used / b.amount) * 10000) / 100,
+          percentage: b.amount > 0 ? Math.round((used / b.amount) * 10000) / 100 : 0,
           categoryCode: b.categoryCode,
+          tags: parseTags(b.tags),
+          ownerId: b.ownerId,
+          ownerName: b.owner ? (b.owner.nickname || b.owner.email) : null,
+          period: b.type === 'FIXED'
+            ? `${b.year}-${String(b.month).padStart(2, '0')}`
+            : `${b.startDate ? b.startDate.toISOString().slice(0, 10) : '...'} ~ ${b.endDate ? b.endDate.toISOString().slice(0, 10) : '...'}`,
         }
       }),
     )

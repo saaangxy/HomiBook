@@ -1,4 +1,4 @@
-import { errorMessage } from '@homibook/core'
+import { errorMessage, BUDGET_TYPE_LABELS, BUDGET_DIMENSION_LABELS } from '@homibook/core'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import {
@@ -47,7 +47,8 @@ import { BudgetDetailSheet } from '@/components/BudgetDetailSheet'
 import { DatePicker } from '@/components/ui/date-picker'
 import { useBookStore } from '../stores/book'
 import { useIsMobile } from '@/hooks/use-mobile'
-import { budgetApi, type BudgetItem, type BudgetType } from '@/api/budget'
+import { budgetApi, type BudgetItem, type BudgetType, type BudgetOwnerOption } from '@/api/budget'
+import { settingsApi } from '@/api/settings'
 import { Plus, Copy, Trash2, Pencil, Search, Check, Target, PiggyBank, TrendingUp, Info } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -55,8 +56,76 @@ const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1)
 
 function BudgetTypeBadge({ type }: { type: BudgetType }) {
   return type === 'FIXED'
-    ? <Badge variant="outline" className="text-xs border-[#3b82f6]/50 text-[#3b82f6]">固定</Badge>
-    : <Badge variant="outline" className="text-xs border-primary/50 text-primary">自由</Badge>
+    ? <Badge variant="outline" className="text-xs border-[#3b82f6]/50 text-[#3b82f6]">{BUDGET_TYPE_LABELS.FIXED}</Badge>
+    : <Badge variant="outline" className="text-xs border-primary/50 text-primary">{BUDGET_TYPE_LABELS.FREE}</Badge>
+}
+
+/** 维度列：分类 / 标签 / 成员，未限定的维度不展示 */
+function BudgetDimensions({ budget, categoryLabels }: { budget: BudgetItem; categoryLabels: Record<string, string> }) {
+  const hasAny = budget.categoryCode || (budget.tags?.length ?? 0) > 0 || budget.ownerId
+  if (!hasAny) return <span className="text-xs text-muted-foreground">全部</span>
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {budget.categoryCode && (
+        <Badge variant="outline" className="text-[10px]">
+          {BUDGET_DIMENSION_LABELS.category}：{categoryLabels[budget.categoryCode] || budget.categoryCode}
+        </Badge>
+      )}
+      {budget.tags?.map((t) => (
+        <Badge key={t} variant="secondary" className="text-[10px]">{BUDGET_DIMENSION_LABELS.project}：{t}</Badge>
+      ))}
+      {budget.ownerId && (
+        <Badge variant="secondary" className="text-[10px]">{BUDGET_DIMENSION_LABELS.member}：{budget.ownerName || '成员'}</Badge>
+      )}
+    </div>
+  )
+}
+
+interface DimensionGroup {
+  key: string
+  name: string
+  amount: number
+  actual: number
+}
+
+/** 维度汇总卡片：按成员/分类/项目聚合预算与实际支出 */
+function DimensionSummaryCard({ title, groups }: { title: string; groups: DimensionGroup[] }) {
+  if (groups.length === 0) {
+    return (
+      <Card>
+        <CardContent className="py-4">
+          <div className="text-xs font-medium mb-2">{title}</div>
+          <div className="text-xs text-muted-foreground">暂无相关预算</div>
+        </CardContent>
+      </Card>
+    )
+  }
+  return (
+    <Card>
+      <CardContent className="py-4 space-y-2.5">
+        <div className="text-xs font-medium">{title}</div>
+        {groups.slice(0, 5).map((g) => {
+          const percent = g.amount > 0 ? (g.actual / g.amount) * 100 : 0
+          return (
+            <div key={g.key} className="space-y-1">
+              <div className="flex items-center justify-between text-xs gap-2">
+                <span className="truncate">{g.name}</span>
+                <span className={percent > 100 ? 'text-[#ef4444] tabular-nums' : 'text-muted-foreground tabular-nums'}>
+                  ¥{g.actual.toFixed(0)} / ¥{g.amount.toFixed(0)} · {percent.toFixed(0)}%
+                </span>
+              </div>
+              <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full ${percent > 100 ? 'bg-[#ef4444]' : percent > 80 ? 'bg-primary' : 'bg-[#22c55e]'}`}
+                  style={{ width: `${Math.min(percent, 100)}%` }}
+                />
+              </div>
+            </div>
+          )
+        })}
+      </CardContent>
+    </Card>
+  )
 }
 
 function UsageBar({ percent, remaining }: { percent: number; remaining: number }) {
@@ -73,6 +142,9 @@ function UsageBar({ percent, remaining }: { percent: number; remaining: number }
           style={{ width: `${Math.min(percent, 100)}%` }}
         />
       </div>
+      <span className={`text-xs tabular-nums w-11 text-right ${percent > 100 ? 'text-[#ef4444]' : 'text-muted-foreground'}`}>
+        {percent.toFixed(0)}%
+      </span>
       <span className={`text-xs tabular-nums w-20 text-right ${remaining < 0 ? 'text-[#ef4444]' : 'text-muted-foreground'}`}>
         {remaining < 0 ? `超支 ¥${Math.abs(remaining).toFixed(2)}` : `剩余 ¥${remaining.toFixed(2)}`}
       </span>
@@ -96,6 +168,12 @@ export function BudgetsPage() {
   const [searchName, setSearchName] = useState('')
   const [freeStartDate, setFreeStartDate] = useState('')
   const [freeEndDate, setFreeEndDate] = useState('')
+  // 维度筛选
+  const [filterCategory, setFilterCategory] = useState('')
+  const [filterTag, setFilterTag] = useState('')
+  const [filterOwner, setFilterOwner] = useState('')
+  const [members, setMembers] = useState<BudgetOwnerOption[]>([])
+  const [categoryLabels, setCategoryLabels] = useState<Record<string, string>>({})
 
   // 对话框状态
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -111,6 +189,7 @@ export function BudgetsPage() {
   const [batchEditAmount, setBatchEditAmount] = useState('')
   const [batchEditCategory, setBatchEditCategory] = useState('')
   const [batchEditTags, setBatchEditTags] = useState<string[]>([])
+  const [batchEditOwner, setBatchEditOwner] = useState('')
   const [batchEditStartDate, setBatchEditStartDate] = useState('')
   const [batchEditEndDate, setBatchEditEndDate] = useState('')
   const [batchEditRemark, setBatchEditRemark] = useState('')
@@ -124,6 +203,7 @@ export function BudgetsPage() {
   const [formCategory, setFormCategory] = useState('')
   const [formMonth, setFormMonth] = useState(now.getMonth() + 1)
   const [formTags, setFormTags] = useState<string[]>([])
+  const [formOwner, setFormOwner] = useState('')
   const [formStartDate, setFormStartDate] = useState('')
   const [formEndDate, setFormEndDate] = useState('')
   const [formRemark, setFormRemark] = useState('')
@@ -137,6 +217,7 @@ export function BudgetsPage() {
   const [batchCategory, setBatchCategory] = useState('')
   const [batchMonths, setBatchMonths] = useState<number[]>([])
   const [batchTags, setBatchTags] = useState<string[]>([])
+  const [batchOwner, setBatchOwner] = useState('')
   const [batchStartDate, setBatchStartDate] = useState('')
   const [batchEndDate, setBatchEndDate] = useState('')
   const [batchYear, setBatchYear] = useState(now.getFullYear())
@@ -156,7 +237,7 @@ export function BudgetsPage() {
       const data = await budgetApi.listFixed({ bookId: currentBookId, year, month })
       setFixedBudgets(data)
     } catch (e) {
-      setError(errorMessage(e, '加载固定预算失败'))
+      setError(errorMessage(e, '加载月度预算失败'))
     }
   }, [currentBookId, year, month])
 
@@ -170,7 +251,7 @@ export function BudgetsPage() {
       })
       setFreeBudgets(data)
     } catch (e) {
-      setError(errorMessage(e, '加载自由预算失败'))
+      setError(errorMessage(e, '加载项目预算失败'))
     }
   }, [currentBookId, freeStartDate, freeEndDate])
 
@@ -184,12 +265,37 @@ export function BudgetsPage() {
     Promise.all(promises).finally(() => setLoading(false))
   }, [currentBookId, tabView, loadFixedBudgets, loadFreeBudgets])
 
-  // 前端名称筛选
+  // 家庭成员维度选项
+  useEffect(() => {
+    if (!currentBookId) return
+    budgetApi.listMembers(currentBookId).then(setMembers).catch(() => {})
+  }, [currentBookId])
+
+  // 分类编码 → 名称（支出 + 收入）
+  useEffect(() => {
+    Promise.all([
+      settingsApi.getDictionary('transaction_category_expense'),
+      settingsApi.getDictionary('transaction_category_income'),
+    ])
+      .then(([expense, income]) => {
+        const map: Record<string, string> = {}
+        for (const d of [...expense, ...income]) map[d.code] = d.label
+        setCategoryLabels(map)
+      })
+      .catch(() => {})
+  }, [])
+
+  const matchesDimensions = (b: BudgetItem) =>
+    (!filterCategory || b.categoryCode === filterCategory) &&
+    (!filterTag || (b.tags || []).includes(filterTag)) &&
+    (!filterOwner || b.ownerId === filterOwner)
+
+  // 前端名称 + 维度筛选
   const filteredFixedBudgets = fixedBudgets.filter((b) =>
-    !searchName.trim() || b.name.toLowerCase().includes(searchName.trim().toLowerCase())
+    (!searchName.trim() || b.name.toLowerCase().includes(searchName.trim().toLowerCase())) && matchesDimensions(b)
   )
   const filteredFreeBudgets = freeBudgets.filter((b) =>
-    !searchName.trim() || b.name.toLowerCase().includes(searchName.trim().toLowerCase())
+    (!searchName.trim() || b.name.toLowerCase().includes(searchName.trim().toLowerCase())) && matchesDimensions(b)
   )
 
   // 打开创建弹窗
@@ -201,6 +307,7 @@ export function BudgetsPage() {
     setFormCategory('')
     setFormMonth(month ?? now.getMonth() + 1)
     setFormTags([])
+    setFormOwner('')
     setFormStartDate('')
     setFormEndDate('')
     setFormRemark('')
@@ -217,6 +324,7 @@ export function BudgetsPage() {
     setFormCategory(b.categoryCode || '')
     setFormMonth(b.month)
     setFormTags(b.tags || [])
+    setFormOwner(b.ownerId || '')
     setFormStartDate(b.startDate ? b.startDate.slice(0, 10) : '')
     setFormEndDate(b.endDate ? b.endDate.slice(0, 10) : '')
     setFormRemark(b.remark || '')
@@ -229,7 +337,10 @@ export function BudgetsPage() {
     if (!currentBookId) return
     if (!formName.trim()) { setFormError('请输入预算名称'); return }
     if (!formAmount || Number(formAmount) <= 0) { setFormError('请输入有效金额'); return }
-    if (formType === 'FIXED' && !formCategory) { setFormError('请选择分类'); return }
+    if (formType === 'FREE' && !formCategory && formTags.length === 0 && !formOwner) {
+      setFormError('项目预算请至少选择分类、标签或成员之一')
+      return
+    }
 
     setFormSaving(true)
     setFormError('')
@@ -238,8 +349,9 @@ export function BudgetsPage() {
         await budgetApi.update(editingBudget.id, {
           name: formName.trim(),
           amount: Number(formAmount),
-          categoryCode: formType === 'FIXED' ? formCategory : null,
+          categoryCode: formCategory || null,
           tags: formTags,
+          ownerId: formOwner || null,
           startDate: formType === 'FREE' ? (formStartDate || null) : null,
           endDate: formType === 'FREE' ? (formEndDate || null) : null,
           remark: formRemark || null,
@@ -252,8 +364,9 @@ export function BudgetsPage() {
           year,
           month: formType === 'FREE' ? 0 : formMonth,
           amount: Number(formAmount),
-          categoryCode: formType === 'FIXED' ? formCategory : undefined,
+          categoryCode: formCategory || undefined,
           tags: formTags.length > 0 ? formTags : undefined,
+          ownerId: formOwner || undefined,
           startDate: formType === 'FREE' ? (formStartDate || undefined) : undefined,
           endDate: formType === 'FREE' ? (formEndDate || undefined) : undefined,
           remark: formRemark || undefined,
@@ -286,6 +399,10 @@ export function BudgetsPage() {
     if (!batchName.trim()) return
     if (!batchAmount || Number(batchAmount) <= 0) return
     if (batchType === 'FIXED' && batchMonths.length === 0) return
+    if (batchType === 'FREE' && !batchCategory && batchTags.length === 0 && !batchOwner) {
+      setError('项目预算请至少选择分类、标签或成员之一')
+      return
+    }
 
     setBatchSaving(true)
     try {
@@ -294,8 +411,9 @@ export function BudgetsPage() {
         name: batchName.trim(),
         type: batchType,
         amount: Number(batchAmount),
-        categoryCode: batchType === 'FIXED' ? batchCategory : undefined,
+        categoryCode: batchCategory || undefined,
         tags: batchTags.length > 0 ? batchTags : undefined,
+        ownerId: batchOwner || undefined,
         months: batchType === 'FREE' ? [0] : batchMonths,
         year: batchType === 'FREE' ? now.getFullYear() : batchYear,
         startDate: batchType === 'FREE' ? (batchStartDate || undefined) : undefined,
@@ -335,7 +453,7 @@ export function BudgetsPage() {
   const handleBatchEdit = async () => {
     if (selectedIds.size === 0) return
 
-    if (!batchEditAmount.trim() && !batchEditCategory && !batchEditRemark.trim() && batchEditTags.length === 0 && !batchEditStartDate && !batchEditEndDate) {
+    if (!batchEditAmount.trim() && !batchEditCategory && !batchEditRemark.trim() && batchEditTags.length === 0 && !batchEditOwner && !batchEditStartDate && !batchEditEndDate) {
       setBatchEditError('请至少填写一个要修改的字段')
       return
     }
@@ -351,6 +469,7 @@ export function BudgetsPage() {
       if (batchEditAmount.trim()) data.amount = Number(batchEditAmount)
       if (batchEditCategory) data.categoryCode = batchEditCategory
       if (batchEditTags.length > 0) data.tags = batchEditTags
+      if (batchEditOwner) data.ownerId = batchEditOwner
       if (batchEditStartDate) data.startDate = batchEditStartDate
       if (batchEditEndDate) data.endDate = batchEditEndDate
       if (batchEditRemark.trim()) data.remark = batchEditRemark.trim()
@@ -379,19 +498,66 @@ export function BudgetsPage() {
     })
   }
 
-  const summaryData = useMemo(() => {
-    const budgets = tabView === 'FREE' ? filteredFreeBudgets
+  const visibleBudgets = useMemo(
+    () => tabView === 'FREE' ? filteredFreeBudgets
       : tabView === 'FIXED' ? filteredFixedBudgets
-      : [...filteredFixedBudgets, ...filteredFreeBudgets]
-    const totalBudget = budgets.reduce((s, b) => s + b.amount, 0)
-    const totalActual = budgets.reduce((s, b) => s + (b.actualAmount ?? 0), 0)
+      : [...filteredFixedBudgets, ...filteredFreeBudgets],
+    [tabView, filteredFixedBudgets, filteredFreeBudgets],
+  )
+
+  const summaryData = useMemo(() => {
+    const totalBudget = visibleBudgets.reduce((s, b) => s + b.amount, 0)
+    const totalActual = visibleBudgets.reduce((s, b) => s + (b.actualAmount ?? 0), 0)
     return {
       totalBudget,
       totalActual,
       totalRemaining: totalBudget - totalActual,
       totalUsagePercent: totalBudget > 0 ? (totalActual / totalBudget) * 100 : 0,
     }
-  }, [tabView, filteredFixedBudgets, filteredFreeBudgets])
+  }, [visibleBudgets])
+
+  // 维度筛选选项
+  const categoryOptions = useMemo(() => {
+    const codes = new Set<string>()
+    for (const b of [...fixedBudgets, ...freeBudgets]) if (b.categoryCode) codes.add(b.categoryCode)
+    return Array.from(codes).map((code) => ({ value: code, label: categoryLabels[code] || code }))
+  }, [fixedBudgets, freeBudgets, categoryLabels])
+
+  const tagOptions = useMemo(() => {
+    const tags = new Set<string>()
+    for (const b of [...fixedBudgets, ...freeBudgets]) for (const t of b.tags || []) tags.add(t)
+    return Array.from(tags).map((t) => ({ value: t, label: t }))
+  }, [fixedBudgets, freeBudgets])
+
+  const ownerOptions = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const m of members) map.set(m.userId, m.name)
+    for (const b of [...fixedBudgets, ...freeBudgets]) {
+      if (b.ownerId) map.set(b.ownerId, b.ownerName || '成员')
+    }
+    return Array.from(map, ([value, label]) => ({ value, label }))
+  }, [members, fixedBudgets, freeBudgets])
+
+  // 维度汇总：同一预算会同时计入其涉及的每个维度组（多标签预算计入多个项目）
+  const dimensionSummary = useMemo(() => {
+    const member = new Map<string, DimensionGroup>()
+    const category = new Map<string, DimensionGroup>()
+    const project = new Map<string, DimensionGroup>()
+    const add = (map: Map<string, DimensionGroup>, key: string, name: string, b: BudgetItem) => {
+      const g = map.get(key) ?? { key, name, amount: 0, actual: 0 }
+      g.amount += b.amount
+      g.actual += b.actualAmount ?? 0
+      map.set(key, g)
+    }
+    for (const b of visibleBudgets) {
+      if (b.ownerId) add(member, b.ownerId, b.ownerName || '成员', b)
+      if (b.categoryCode) add(category, b.categoryCode, categoryLabels[b.categoryCode] || b.categoryCode, b)
+      for (const t of b.tags || []) add(project, t, t, b)
+    }
+    const sorted = (map: Map<string, DimensionGroup>) =>
+      Array.from(map.values()).sort((a, b) => b.amount - a.amount)
+    return { member: sorted(member), category: sorted(category), project: sorted(project) }
+  }, [visibleBudgets, categoryLabels])
 
   // 选择勾选
   const toggleSelect = (id: string) => {
@@ -427,8 +593,8 @@ export function BudgetsPage() {
           </TableHead>
           <TableHead className="w-[140px]">名称</TableHead>
           {showMonth && <TableHead className="w-[60px]">月份</TableHead>}
-          <TableHead className="w-[80px]">类型</TableHead>
-          {tabView !== 'FIXED' && <TableHead className="w-[100px]">分类/标签</TableHead>}
+          <TableHead className="w-[70px]">类型</TableHead>
+          <TableHead className="w-[220px]">维度</TableHead>
           <TableHead className="text-right w-[100px]">预算额</TableHead>
           <TableHead className="text-right w-[100px]">实际支出</TableHead>
           <TableHead className="w-[200px]">使用进度</TableHead>
@@ -456,29 +622,7 @@ export function BudgetsPage() {
               <TableCell className="font-medium">{b.name}</TableCell>
               {showMonth && <TableCell className="text-muted-foreground">{b.month}月</TableCell>}
               <TableCell><BudgetTypeBadge type={b.type as BudgetType} /></TableCell>
-              {tabView !== 'FIXED' && (
-                <TableCell className="text-muted-foreground text-xs">
-                  {b.type === 'FIXED'
-                    ? b.categoryCode
-                    : (
-                      <div className="space-y-1">
-                        {b.tags && b.tags.length > 0 && (
-                          <div className="flex flex-wrap gap-1">
-                            {b.tags.map((t, i) => (
-                              <Badge key={i} variant="secondary" className="text-[10px]">{t}</Badge>
-                            ))}
-                          </div>
-                        )}
-                        {(b.startDate || b.endDate) && (
-                          <div className="text-[10px] text-muted-foreground">
-                            {b.startDate ? b.startDate.slice(0, 10) : '...'} ~ {b.endDate ? b.endDate.slice(0, 10) : '...'}
-                          </div>
-                        )}
-                        {(!b.tags || b.tags.length === 0) && !b.startDate && !b.endDate && '-'}
-                      </div>
-                    )}
-                </TableCell>
-              )}
+              <TableCell><BudgetDimensions budget={b} categoryLabels={categoryLabels} /></TableCell>
               <TableCell className="text-right tabular-nums">¥{b.amount.toFixed(2)}</TableCell>
               <TableCell className="text-right tabular-nums">¥{actual.toFixed(2)}</TableCell>
               <TableCell>
@@ -534,28 +678,14 @@ export function BudgetsPage() {
               <BudgetTypeBadge type={b.type as BudgetType} />
               <span className="ml-auto text-sm font-bold tabular-nums">¥{b.amount.toFixed(2)}</span>
             </div>
-            {tabView !== 'FIXED' && (
-              <div className="text-xs text-muted-foreground mb-2">
-                {b.type === 'FIXED'
-                  ? b.categoryCode || '-'
-                  : (
-                    <div className="space-y-1">
-                      {b.tags && b.tags.length > 0 && (
-                        <div className="flex flex-wrap gap-1">
-                          {b.tags.map((t, i) => (
-                            <Badge key={i} variant="secondary" className="text-[10px]">{t}</Badge>
-                          ))}
-                        </div>
-                      )}
-                      {(b.startDate || b.endDate) && (
-                        <div className="text-[10px]">
-                          {b.startDate ? b.startDate.slice(0, 10) : '...'} ~ {b.endDate ? b.endDate.slice(0, 10) : '...'}
-                        </div>
-                      )}
-                    </div>
-                  )}
-              </div>
-            )}
+            <div className="text-xs mb-2">
+              <BudgetDimensions budget={b} categoryLabels={categoryLabels} />
+              {b.type === 'FREE' && (b.startDate || b.endDate) && (
+                <div className="text-[10px] text-muted-foreground mt-1">
+                  {b.startDate ? b.startDate.slice(0, 10) : '...'} ~ {b.endDate ? b.endDate.slice(0, 10) : '...'}
+                </div>
+              )}
+            </div>
             <div className="mb-2">
               <UsageBar percent={percent} remaining={remaining} />
             </div>
@@ -599,8 +729,8 @@ export function BudgetsPage() {
         <Tabs value={tabView} onValueChange={(v) => setTabView(v as any)}>
           <TabsList>
             <TabsTrigger value="ALL">全部</TabsTrigger>
-            <TabsTrigger value="FIXED">固定预算</TabsTrigger>
-            <TabsTrigger value="FREE">自由预算</TabsTrigger>
+            <TabsTrigger value="FIXED">{BUDGET_TYPE_LABELS.FIXED}预算</TabsTrigger>
+            <TabsTrigger value="FREE">{BUDGET_TYPE_LABELS.FREE}预算</TabsTrigger>
           </TabsList>
         </Tabs>
 
@@ -617,10 +747,47 @@ export function BudgetsPage() {
           />
         </div>
 
+        {/* 维度筛选 */}
+        <Select value={filterCategory || 'all'} onValueChange={(v) => setFilterCategory(v === 'all' ? '' : v)}>
+          <SelectTrigger className="h-9 w-[130px]" aria-label="按分类筛选">
+            <SelectValue placeholder="全部分类" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">全部分类</SelectItem>
+            {categoryOptions.map((o) => (
+              <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={filterTag || 'all'} onValueChange={(v) => setFilterTag(v === 'all' ? '' : v)}>
+          <SelectTrigger className="h-9 w-[130px]" aria-label="按标签筛选">
+            <SelectValue placeholder="全部标签" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">全部标签</SelectItem>
+            {tagOptions.map((o) => (
+              <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={filterOwner || 'all'} onValueChange={(v) => setFilterOwner(v === 'all' ? '' : v)}>
+          <SelectTrigger className="h-9 w-[130px]" aria-label="按成员筛选">
+            <SelectValue placeholder="全部成员" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">全部成员</SelectItem>
+            {ownerOptions.map((o) => (
+              <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
         <Button variant="outline" size="sm" onClick={() => { setCopySourceYear(year); setCopySourceMonth(month ?? now.getMonth() + 1); setCopyTargets([]); setCopyOpen(true) }}>
           <Copy size={14} className="mr-1" />复制预算
         </Button>
-        <Button variant="outline" size="sm" onClick={() => { setBatchName(''); setBatchType('FIXED'); setBatchAmount(''); setBatchCategory(''); setBatchTags([]); setBatchStartDate(''); setBatchEndDate(''); setBatchMonths([]); setBatchYear(year); setBatchRemark(''); setBatchOpen(true) }}>
+        <Button variant="outline" size="sm" onClick={() => { setBatchName(''); setBatchType('FIXED'); setBatchAmount(''); setBatchCategory(''); setBatchTags([]); setBatchOwner(''); setBatchStartDate(''); setBatchEndDate(''); setBatchMonths([]); setBatchYear(year); setBatchRemark(''); setBatchOpen(true) }}>
           批量添加
         </Button>
         <Button size="sm" onClick={openCreate}>
@@ -636,6 +803,7 @@ export function BudgetsPage() {
             setBatchEditAmount('')
             setBatchEditCategory('')
             setBatchEditTags([])
+            setBatchEditOwner('')
             setBatchEditStartDate('')
             setBatchEditEndDate('')
             setBatchEditRemark('')
@@ -684,6 +852,21 @@ export function BudgetsPage() {
         </div>
       )}
 
+      {/* 维度汇总 */}
+      {!loading && (dimensionSummary.member.length > 0 || dimensionSummary.category.length > 0 || dimensionSummary.project.length > 0) && (
+        <div className="space-y-2">
+          <h2 className="text-sm font-semibold">维度汇总</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <DimensionSummaryCard title={`按${BUDGET_DIMENSION_LABELS.member}`} groups={dimensionSummary.member} />
+            <DimensionSummaryCard title={`按${BUDGET_DIMENSION_LABELS.category}`} groups={dimensionSummary.category} />
+            <DimensionSummaryCard title={`按${BUDGET_DIMENSION_LABELS.project}`} groups={dimensionSummary.project} />
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            同一预算会同时计入其限定的维度；多标签预算会分别计入各标签。
+          </p>
+        </div>
+      )}
+
       {/* 加载 */}
       {loading && (
         <div className="flex justify-center py-12">
@@ -704,7 +887,7 @@ export function BudgetsPage() {
           {tabView !== 'FREE' && (
             <div>
               <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                <PiggyBank size={18} />固定预算
+                <PiggyBank size={18} />{BUDGET_TYPE_LABELS.FIXED}预算
               </h2>
               <div className="flex items-center gap-3 mb-3">
                 <Select value={String(year)} onValueChange={(v) => setYear(Number(v))}>
@@ -735,7 +918,7 @@ export function BudgetsPage() {
           {tabView !== 'FIXED' && (
             <div>
               <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                <TrendingUp size={18} />自由预算
+                <TrendingUp size={18} />{BUDGET_TYPE_LABELS.FREE}预算
               </h2>
               <div className="flex items-center gap-3 mb-3">
                 <DatePicker
@@ -772,8 +955,8 @@ export function BudgetsPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="FIXED">固定预算（每月固定支出）</SelectItem>
-                  <SelectItem value="FREE">自由预算（临时项目预算）</SelectItem>
+                  <SelectItem value="FIXED">{BUDGET_TYPE_LABELS.FIXED}预算（按自然月统计）</SelectItem>
+                  <SelectItem value="FREE">{BUDGET_TYPE_LABELS.FREE}预算（按标签统计，可跨月）</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -785,40 +968,42 @@ export function BudgetsPage() {
               <Label>金额</Label>
               <Input aria-label="金额" type="number" value={formAmount} onChange={(e) => setFormAmount(e.target.value)} placeholder="预算金额" />
             </div>
+
+            {/* 维度：分类 / 项目 / 成员，可组合 */}
+            <div>
+              <Label>{BUDGET_DIMENSION_LABELS.category}（可选）</Label>
+              <DictCombobox
+                groups={['transaction_category_expense', 'transaction_category_income']}
+                value={formCategory}
+                onChange={setFormCategory}
+                placeholder="不限分类"
+              />
+            </div>
+            <div>
+              <Label>标签（可选，多标签为或关系）</Label>
+              <TagCombobox
+                value={formTags}
+                onChange={setFormTags}
+                bookId={currentBookId || ''}
+                placeholder="不限项目"
+              />
+            </div>
+            <div>
+              <Label>{BUDGET_DIMENSION_LABELS.member}（可选）</Label>
+              <Select value={formOwner || 'all'} onValueChange={(v) => setFormOwner(v === 'all' ? '' : v)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">不限成员</SelectItem>
+                  {ownerOptions.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             {formType === 'FIXED' ? (
-              <div>
-                <Label>关联分类</Label>
-                <DictCombobox
-                  groups={['transaction_category_expense', 'transaction_category_income']}
-                  value={formCategory}
-                  onChange={setFormCategory}
-                  placeholder="选择收支分类..."
-                />
-              </div>
-            ) : (
-              <>
-                <div>
-                  <Label>关联标签（多标签为或关系）</Label>
-                  <TagCombobox
-                    value={formTags}
-                    onChange={setFormTags}
-                    bookId={currentBookId || ''}
-                    placeholder="选择或输入标签..."
-                  />
-                </div>
-                <div className="flex gap-3">
-                  <div className="flex-1">
-                    <Label>统计起始日期（可选）</Label>
-                    <DatePicker value={formStartDate} onChange={setFormStartDate} placeholder="选择起始日期" />
-                  </div>
-                  <div className="flex-1">
-                    <Label>统计结束日期（可选）</Label>
-                    <DatePicker value={formEndDate} onChange={setFormEndDate} placeholder="选择结束日期" />
-                  </div>
-                </div>
-              </>
-            )}
-            {formType === 'FIXED' && (
               <div>
                 <Label>月份</Label>
                 <Select value={String(formMonth)} onValueChange={(v) => setFormMonth(Number(v))} disabled={!!editingBudget}>
@@ -831,6 +1016,17 @@ export function BudgetsPage() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            ) : (
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <Label>统计起始日期（可选）</Label>
+                  <DatePicker value={formStartDate} onChange={setFormStartDate} placeholder="选择起始日期" />
+                </div>
+                <div className="flex-1">
+                  <Label>统计结束日期（可选）</Label>
+                  <DatePicker value={formEndDate} onChange={setFormEndDate} placeholder="选择结束日期" />
+                </div>
               </div>
             )}
             <div>
@@ -863,8 +1059,8 @@ export function BudgetsPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="FIXED">固定预算</SelectItem>
-                  <SelectItem value="FREE">自由预算</SelectItem>
+                  <SelectItem value="FIXED">{BUDGET_TYPE_LABELS.FIXED}预算</SelectItem>
+                  <SelectItem value="FREE">{BUDGET_TYPE_LABELS.FREE}预算</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -876,38 +1072,49 @@ export function BudgetsPage() {
               <Label>金额</Label>
               <Input aria-label="金额" type="number" value={batchAmount} onChange={(e) => setBatchAmount(e.target.value)} />
             </div>
-            {batchType === 'FIXED' ? (
-              <div>
-                <Label>关联分类</Label>
-                <DictCombobox
-                  groups={['transaction_category_expense', 'transaction_category_income']}
-                  value={batchCategory}
-                  onChange={setBatchCategory}
-                  placeholder="选择分类..."
-                />
+            <div>
+              <Label>{BUDGET_DIMENSION_LABELS.category}（可选）</Label>
+              <DictCombobox
+                groups={['transaction_category_expense', 'transaction_category_income']}
+                value={batchCategory}
+                onChange={setBatchCategory}
+                placeholder="不限分类"
+              />
+            </div>
+            <div>
+              <Label>标签（可选，多标签为或关系）</Label>
+              <TagCombobox
+                value={batchTags}
+                onChange={setBatchTags}
+                bookId={currentBookId || ''}
+                placeholder="不限项目"
+              />
+            </div>
+            <div>
+              <Label>{BUDGET_DIMENSION_LABELS.member}（可选）</Label>
+              <Select value={batchOwner || 'all'} onValueChange={(v) => setBatchOwner(v === 'all' ? '' : v)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">不限成员</SelectItem>
+                  {ownerOptions.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {batchType === 'FREE' && (
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <Label>统计起始日期（可选）</Label>
+                  <DatePicker value={batchStartDate} onChange={setBatchStartDate} placeholder="选择起始日期" />
+                </div>
+                <div className="flex-1">
+                  <Label>统计结束日期（可选）</Label>
+                  <DatePicker value={batchEndDate} onChange={setBatchEndDate} placeholder="选择结束日期" />
+                </div>
               </div>
-            ) : (
-              <>
-                <div>
-                  <Label>关联标签（多标签为或关系）</Label>
-                  <TagCombobox
-                    value={batchTags}
-                    onChange={setBatchTags}
-                    bookId={currentBookId || ''}
-                    placeholder="选择或输入标签..."
-                  />
-                </div>
-                <div className="flex gap-3">
-                  <div className="flex-1">
-                    <Label>统计起始日期（可选）</Label>
-                    <DatePicker value={batchStartDate} onChange={setBatchStartDate} placeholder="选择起始日期" />
-                  </div>
-                  <div className="flex-1">
-                    <Label>统计结束日期（可选）</Label>
-                    <DatePicker value={batchEndDate} onChange={setBatchEndDate} placeholder="选择结束日期" />
-                  </div>
-                </div>
-              </>
             )}
             {batchType === 'FIXED' && (
               <>
@@ -1066,7 +1273,7 @@ export function BudgetsPage() {
               />
             </div>
             <div>
-              <Label>关联分类（留空则不修改，仅对固定预算生效）</Label>
+              <Label>{BUDGET_DIMENSION_LABELS.category}（留空则不修改）</Label>
               <DictCombobox
                 groups={['transaction_category_expense', 'transaction_category_income']}
                 value={batchEditCategory}
@@ -1075,13 +1282,27 @@ export function BudgetsPage() {
               />
             </div>
             <div>
-              <Label>关联标签（留空则不修改，仅对自由预算生效）</Label>
+              <Label>标签（留空则不修改）</Label>
               <TagCombobox
                 value={batchEditTags}
                 onChange={setBatchEditTags}
                 bookId={currentBookId || ''}
                 placeholder="不修改"
               />
+            </div>
+            <div>
+              <Label>{BUDGET_DIMENSION_LABELS.member}（留空则不修改）</Label>
+              <Select value={batchEditOwner || 'all'} onValueChange={(v) => setBatchEditOwner(v === 'all' ? '' : v)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">不修改</SelectItem>
+                  {ownerOptions.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex gap-3">
               <div className="flex-1">

@@ -213,6 +213,7 @@ export function BudgetDetailSheet({ budget, bookId, onClose }: Props) {
         accountId: filterAccountId || undefined,
         payer: filterPayer || undefined,
         tags: filterParams.tags,
+        ownerId: filterParams.ownerId,
         dateFrom: filterDateFrom || filterParams.dateFrom,
         dateTo: filterDateTo || filterParams.dateTo,
         amountFrom: filterAmountFrom ? Number(filterAmountFrom) : undefined,
@@ -236,7 +237,9 @@ export function BudgetDetailSheet({ budget, bookId, onClose }: Props) {
       const categoryData = await recordApi.categorySummary({
         bookId,
         type: filterParams.type,
+        categoryCode: filterParams.categoryCode,
         tags: filterParams.tags,
+        ownerId: filterParams.ownerId,
         dateFrom: filterParams.dateFrom,
         dateTo: filterParams.dateTo,
       })
@@ -265,7 +268,9 @@ export function BudgetDetailSheet({ budget, bookId, onClose }: Props) {
         granularity,
         dateFrom: filterParams.dateFrom,
         dateTo: filterParams.dateTo,
+        categoryCode: filterParams.categoryCode,
         tags: filterParams.tags,
+        ownerId: filterParams.ownerId,
       })
       setTrendPeriods(trendData.periods)
       setTrendCategories(

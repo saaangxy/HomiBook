@@ -31,6 +31,7 @@ async function collectRows(table: string, bookIds?: string[]): Promise<any[]> {
             { ownedBooks: { some: { id: { in: bookIds } } } },
             { memberships: { some: { accountBookId: { in: bookIds } } } },
             { records: { some: { accountBookId: { in: bookIds } } } },
+            { budgetsOwned: { some: { accountBookId: { in: bookIds } } } },
           ],
         },
       })

@@ -114,11 +114,6 @@ export function MCPSettings() {
             <Plug size={16} className="text-primary-foreground" />
           </div>
           MCP 服务
-          {!loading && info && (
-            <Badge variant={info.enabled ? 'default' : 'secondary'} className="ml-1">
-              {info.enabled ? '已启用' : '未启用'}
-            </Badge>
-          )}
         </div>
       </AccordionTrigger>
       <AccordionContent className="pt-2 pb-5">

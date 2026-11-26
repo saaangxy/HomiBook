@@ -6,6 +6,7 @@ export interface BudgetFilterParams {
   type?: string
   categoryCode?: string
   tags?: string
+  ownerId?: string
   dateFrom?: string
   dateTo?: string
 }
@@ -48,6 +49,7 @@ export function useBudgetFilterParams(budget: BudgetItem | null) {
           setParams({
             type: recordType,
             categoryCode: budget.categoryCode || undefined,
+            ownerId: budget.ownerId || undefined,
             dateFrom,
             dateTo,
           })
@@ -59,16 +61,19 @@ export function useBudgetFilterParams(budget: BudgetItem | null) {
           const lastDay = new Date(year, month, 0).getDate()
           setParams({
             categoryCode: budget.categoryCode || undefined,
+            ownerId: budget.ownerId || undefined,
             dateFrom: `${year}-${String(month).padStart(2, '0')}-01`,
             dateTo: `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`,
           })
         })
         .finally(() => setLoading(false))
     } else {
-      // FREE 预算：按标签 + EXPENSE + 日期范围
+      // 项目预算：按标签 + EXPENSE + 可选分类/成员 + 日期范围
       setParams({
         type: 'EXPENSE',
+        categoryCode: budget.categoryCode || undefined,
         tags: budget.tags?.length ? budget.tags.join(',') : undefined,
+        ownerId: budget.ownerId || undefined,
         dateFrom: budget.startDate?.slice(0, 10) || undefined,
         dateTo: budget.endDate?.slice(0, 10) || undefined,
       })

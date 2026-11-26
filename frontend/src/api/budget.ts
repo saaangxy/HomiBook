@@ -13,12 +13,19 @@ export interface BudgetItem {
   amount: number
   categoryCode: string | null
   tags: string[]
+  ownerId: string | null
+  ownerName: string | null
   startDate: string | null
   endDate: string | null
   remark: string | null
   actualAmount: number
   createdAt: string
   updatedAt: string
+}
+
+export interface BudgetOwnerOption {
+  userId: string
+  name: string
 }
 
 export const budgetApi = {
@@ -30,6 +37,9 @@ export const budgetApi = {
     if (params.type) search.set('type', params.type)
     return api.get<BudgetItem[]>(`/api/budgets?${search.toString()}`)
   },
+
+  listMembers: (bookId: string) =>
+    api.get<BudgetOwnerOption[]>(`/api/budgets/members?bookId=${encodeURIComponent(bookId)}`),
 
   listFixed: (params: { bookId: string; year?: number; month?: number }) => {
     const search = new URLSearchParams()
@@ -56,6 +66,7 @@ export const budgetApi = {
     amount: number
     categoryCode?: string
     tags?: string[]
+    ownerId?: string
     startDate?: string
     endDate?: string
     remark?: string
@@ -66,6 +77,7 @@ export const budgetApi = {
     amount?: number
     categoryCode?: string | null
     tags?: string[]
+    ownerId?: string | null
     startDate?: string | null
     endDate?: string | null
     remark?: string | null
@@ -81,6 +93,7 @@ export const budgetApi = {
     amount: number
     categoryCode?: string
     tags?: string[]
+    ownerId?: string
     months: number[]
     year: number
     startDate?: string
@@ -104,6 +117,7 @@ export const budgetApi = {
       amount?: number
       categoryCode?: string | null
       tags?: string[]
+      ownerId?: string | null
       startDate?: string | null
       endDate?: string | null
       remark?: string | null

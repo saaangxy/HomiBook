@@ -62,6 +62,8 @@ function toBudgetItem(b: CoreBudget): BudgetItem {
     year: b.year,
     month: b.month,
     tags: b.tags ?? [],
+    ownerId: b.ownerId ?? null,
+    ownerName: b.ownerName ?? null,
     startDate: b.startDate,
     endDate: b.endDate,
     remark: b.remark,
@@ -121,6 +123,7 @@ export async function fetchRecords(bookId: string, opts?: RecordQuery): Promise<
         remark: opts?.remark,
         tags: opts?.tags,
         payer: opts?.payer,
+        ownerId: opts?.ownerId,
         offsetState: opts?.offsetState,
       },
     },
@@ -242,7 +245,9 @@ export async function fetchCategoryTrend(bookId: string, params: {
   dateFrom?: string;
   dateTo?: string;
   accountId?: string;
+  categoryCode?: string;
   ownerId?: string;
+  tags?: string;
 }): Promise<CategoryTrendResult> {
   const res = await http.get<CategoryTrendResult>('/api/records/category-trend', { query: { bookId, ...params } });
   return { periods: res?.periods ?? [], categories: res?.categories ?? [] };
@@ -441,10 +446,11 @@ export interface BudgetCreatePayload {
   name: string;
   type: BudgetType;
   year: number;
-  month: number; // 0=全年(FREE)
+  month: number; // 0=项目预算
   amount: number;
   categoryCode?: string;
   tags?: string[];
+  ownerId?: string;
   startDate?: string;
   endDate?: string;
   remark?: string;
@@ -464,6 +470,7 @@ export interface BudgetUpdatePayload {
   amount?: number;
   categoryCode?: string | null;
   tags?: string[];
+  ownerId?: string | null;
   startDate?: string | null;
   endDate?: string | null;
   remark?: string | null;
@@ -477,7 +484,7 @@ export async function deleteBudgetApi(id: string): Promise<void> {
 export async function batchCreateBudgetApi(
   bookId: string,
   data: {
-    name: string; type: BudgetType; amount: number; categoryCode?: string; tags?: string[];
+    name: string; type: BudgetType; amount: number; categoryCode?: string; tags?: string[]; ownerId?: string;
     year: number; months: number[]; startDate?: string; endDate?: string; remark?: string;
   },
 ): Promise<void> {
@@ -487,6 +494,11 @@ export async function batchCreateBudgetApi(
 /** 复制预算:把 sourceYear/sourceMonth 的预算复制到 targetMonths */
 export async function copyBudgetApi(bookId: string, data: { sourceYear: number; sourceMonth: number; targetMonths: { year: number; month: number }[] }): Promise<void> {
   await http.post('/api/budgets/copy', { ...data, accountBookId: bookId });
+}
+
+/** 预算可选归属人(账本归属人 + 成员) */
+export async function fetchBudgetMembers(bookId: string): Promise<{ userId: string; name: string }[]> {
+  return (await http.get<{ userId: string; name: string }[]>(`/api/budgets/members?bookId=${encodeURIComponent(bookId)}`).catch(() => [])) ?? [];
 }
 
 /** 账本下所有记录的标签 */

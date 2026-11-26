@@ -28,6 +28,7 @@ model User {
   accounts             Account[]
   records              Record[]
   recurringTransactions RecurringTransaction[]
+  budgetsOwned         Budget[] @relation("BudgetOwner")
   apiKeys              ApiKey[]
   chatSessions         ChatSession[]
   memories             UserMemory[]
@@ -217,26 +218,28 @@ model Holiday {
   createdAt DateTime @default(now())
 }
 
-// 预算
+// 预算（多维度：月度/分类/项目/家庭成员，维度之间为 AND）
 model Budget {
   id            String      @id @default(uuid())
   accountBookId String
   accountBook   AccountBook @relation(fields: [accountBookId], references: [id], onDelete: Cascade)
   name          String
-  type          String      // FIXED | FREE
+  type          String      // FIXED(月度) | FREE(项目)
   year          Int
-  month         Int         // 1-12, FREE=0
+  month         Int         // 1-12；项目预算=0
   amount        Float
-  categoryCode  String?     // 固定预算关联字典分类code
-  tags          String      @default("[]") // 关联标签 JSON 数组，多标签为或关系
-  startDate     DateTime?   // 自由预算统计起始日期（含），为空不限制
-  endDate       DateTime?   // 自由预算统计结束日期（含），为空不限制
+  categoryCode  String?     // 分类维度关联字典分类code
+  tags          String      @default("[]") // 项目标签 JSON 数组，多标签为或关系
+  ownerId       String?     // 家庭成员维度（流水归属人 User.id）
+  owner         User?       @relation("BudgetOwner", fields: [ownerId], references: [id])
+  startDate     DateTime?   // 项目预算统计起始日期（含），为空不限制
+  endDate       DateTime?   // 项目预算统计结束日期（含），为空不限制
   remark        String?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
-  @@unique([accountBookId, type, year, month, name])
   @@index([accountBookId, year, month])
+  @@index([accountBookId, ownerId])
 }
 
 // 固定收支

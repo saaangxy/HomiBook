@@ -101,6 +101,8 @@ export interface BudgetItem {
   year: number;
   month: number | null;
   tags: string[];
+  ownerId: string | null;
+  ownerName: string | null;
   startDate: string | null;
   endDate: string | null;
   remark: string | null;

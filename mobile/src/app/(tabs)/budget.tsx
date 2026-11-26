@@ -2,39 +2,67 @@ import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { RefreshControl, ScrollView, View, Pressable, TextInput, Keyboard, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIsFocused } from 'expo-router';
-import { Plus, Pencil, Trash2, Search, X } from 'lucide-react-native';
-import { useTheme, alpha } from '@/theme';
+import { Calendar, ChevronDown, ChevronUp, Plus, Pencil, Trash2, SlidersHorizontal, X, Info } from 'lucide-react-native';
+import { useTheme, alpha, haptics } from '@/theme';
 import { Text } from '@/components/ui/Text';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { ConfirmSheet } from '@/components/chrome/ConfirmSheet';
+import { showToast } from '@/components/chrome/Toast';
 import { ChipSelect } from '@/components/ui/ChipSelect';
 import { DatePicker } from '@/components/ui/DatePicker';
 import { TagPicker } from '@/components/ui/TagPicker';
 import { FormSheet } from '@/components/chrome/FormSheet';
+import { BudgetDetailSheet } from '@/components/budget/BudgetDetailSheet';
+import {
+  BudgetFilterSheet, countActiveBudgetFilters, emptyBudgetFilters, type BudgetFilters,
+} from '@/components/budget/BudgetFilterSheet';
 import { useUIShell, usePageRefresh } from '@/components/chrome/chrome';
 import { useRecords } from '@/stores/records';
 import {
-  fetchBudgets, fetchBudgetTags, createBudgetApi, updateBudgetApi,
+  fetchBudgets, fetchBudgetTags, fetchBudgetMembers, createBudgetApi, updateBudgetApi,
   deleteBudgetApi, batchCreateBudgetApi, copyBudgetApi,
 } from '@/services/records';
 import type { BudgetItem, BudgetType } from '@/types';
-import { BUDGET_TYPE_LABELS } from '@homibook/core';
+import { BUDGET_DIMENSION_LABELS, BUDGET_TYPE_LABELS } from '@homibook/core';
 
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
-// 类型标签单一来源 @homibook/core
-const BUDGET_TYPES: { key: BudgetType | 'ALL'; label: string }[] = [
-  { key: 'ALL', label: '全部' },
-  { key: 'FIXED', label: BUDGET_TYPE_LABELS.FIXED },
-  { key: 'FREE', label: BUDGET_TYPE_LABELS.FREE },
-];
 
-// 预算管理页:对齐网页端完整新增/编辑 —— 固定/自由两种类型、批量添加、复制到多月份
+/** 全局查询条件(类型*之外*的分类/标签/成员/关键词):对月度与项目预算同时生效 */
+function matchesBudgetFilters(b: BudgetItem, filters: BudgetFilters, keyword: string): boolean {
+  if (keyword && !b.name.includes(keyword)) return false;
+  if (filters.categoryCode && b.categoryCode !== filters.categoryCode) return false;
+  if (filters.tag && !(b.tags ?? []).includes(filters.tag)) return false;
+  if (filters.ownerId && b.ownerId !== filters.ownerId) return false;
+  return true;
+}
+
+/**
+ * 项目预算日期筛选(与后端 /api/budgets/free 同口径):
+ * 预算日期区间与查询区间有交集即命中;未设置任何日期的预算视为长期,始终命中。
+ */
+function freeBudgetInRange(b: BudgetItem, start: string, end: string): boolean {
+  const s = start ? start.slice(0, 10) : '';
+  const e = end ? end.slice(0, 10) : '';
+  if (!s && !e) return true;
+  const bs = b.startDate ? b.startDate.slice(0, 10) : '';
+  const be = b.endDate ? b.endDate.slice(0, 10) : '';
+  if (!bs && !be) return true;
+  if (s && e) {
+    if (bs && bs > e) return false;
+    if (be && be < s) return false;
+    return true;
+  }
+  if (s) return !be || be >= s;
+  return !bs || bs <= e;
+}
+
+// 预算管理页:对齐网页端多维度预算 —— 月度/项目两种类型、分类/项目/成员组合、批量添加、复制到多月份
 export default function BudgetPage() {
   const { colors } = useTheme();
   const { currentLedger } = useUIShell();
   const bookId = currentLedger.id;
-  // 分类复用 records store(关联分类取 支出+收入 两字典,对齐网页端)
+  // 分类复用 records store(支出+收入两字典,对齐网页端维度选择)
   // 刷新时机:切到本页时(isFocused)重拉预算数据
   const { categories: allCategories } = useRecords();
   const isFocused = useIsFocused();
@@ -53,20 +81,32 @@ export default function BudgetPage() {
     };
   }, []);
   const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
-  const [typeFilter, setTypeFilter] = useState<BudgetType | 'ALL'>('ALL');
-  const [search, setSearch] = useState('');
+  const [budgetMembers, setBudgetMembers] = useState<{ userId: string; name: string }[]>([]);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [monthPickerOpen, setMonthPickerOpen] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  /** 筛选条件(与流水管理同构:类型多选 + 分类/标签/成员 + 关键词) */
+  const [filters, setFilters] = useState<BudgetFilters>(emptyBudgetFilters);
+  /** 活跃条件胶囊:默认单行横向滚动,展开后换行限高 */
+  const [chipsExpanded, setChipsExpanded] = useState(false);
   const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [month, setMonth] = useState<number | null>(now.getMonth() + 1);
+  // 项目预算的时间筛选与月度预算分开(对齐网页端:月度=年/月,项目=日期区间)
+  const [freeStartDate, setFreeStartDate] = useState('');
+  const [freeEndDate, setFreeEndDate] = useState('');
+  const [freeDateOpen, setFreeDateOpen] = useState(false);
 
   // ── 新建/编辑 ──
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<BudgetItem | null>(null);
+  const [detailBudget, setDetailBudget] = useState<BudgetItem | null>(null);
   const [formName, setFormName] = useState('');
   const [formType, setFormType] = useState<BudgetType>('FIXED');
   const [formAmount, setFormAmount] = useState('');
   const [formCategory, setFormCategory] = useState('');
   const [formMonth, setFormMonth] = useState(now.getMonth() + 1);
   const [formTags, setFormTags] = useState<string[]>([]);
+  const [formOwner, setFormOwner] = useState('');
   const [formStartDate, setFormStartDate] = useState('');
   const [formEndDate, setFormEndDate] = useState('');
   const [formRemark, setFormRemark] = useState('');
@@ -85,6 +125,7 @@ export default function BudgetPage() {
   const [batchAmount, setBatchAmount] = useState('');
   const [batchCategory, setBatchCategory] = useState('');
   const [batchTags, setBatchTags] = useState<string[]>([]);
+  const [batchOwner, setBatchOwner] = useState('');
   const [batchStartDate, setBatchStartDate] = useState('');
   const [batchEndDate, setBatchEndDate] = useState('');
   const [batchMonths, setBatchMonths] = useState<number[]>([]);
@@ -113,6 +154,12 @@ export default function BudgetPage() {
     fetchBudgetTags(bookId).then(setTagSuggestions).catch(() => {});
   }, [bookId]);
 
+  // 家庭成员维度选项(账本归属人 + 成员)
+  useEffect(() => {
+    if (!bookId) return;
+    fetchBudgetMembers(bookId).then(setBudgetMembers).catch(() => {});
+  }, [bookId]);
+
   const reload = useCallback(() => {
     if (bookId) fetchBudgets(bookId).then(setBudgets);
   }, [bookId]);
@@ -130,40 +177,150 @@ export default function BudgetPage() {
     }
   }, [bookId]);
 
-  // ── 筛选(自由预算不受月份筛选影响) ──
-  const filtered = useMemo(() => {
+  // ── 筛选 ──
+  // 与网页端一致:月度预算按「年/月」筛,项目预算按独立「日期区间」筛;分类/标签/成员/关键词为全局条件。
+  const showFixed = filters.types.length === 0 || filters.types.includes('FIXED');
+  const showFree = filters.types.length === 0 || filters.types.includes('FREE');
+
+  const filteredFixed = useMemo(() => {
+    if (!showFixed) return [];
+    const keyword = filters.keyword.trim();
     return budgets.filter((b) => {
-      if (typeFilter !== 'ALL' && b.type !== typeFilter) return false;
-      if (search && !b.name.includes(search)) return false;
+      if (b.type !== 'FIXED') return false;
       if (b.year !== year) return false;
-      if (b.month !== null && b.month !== month) return false;
-      return true;
+      if (month !== null && b.month !== month) return false;
+      return matchesBudgetFilters(b, filters, keyword);
     });
-  }, [budgets, typeFilter, search, year, month]);
+  }, [budgets, showFixed, filters, year, month]);
+
+  const filteredFree = useMemo(() => {
+    if (!showFree) return [];
+    const keyword = filters.keyword.trim();
+    return budgets.filter((b) =>
+      b.type === 'FREE' &&
+      freeBudgetInRange(b, freeStartDate, freeEndDate) &&
+      matchesBudgetFilters(b, filters, keyword),
+    );
+  }, [budgets, showFree, filters, freeStartDate, freeEndDate]);
+
+  /** 汇总与维度统计的可见范围:月度(按年月) + 项目(按日期区间) */
+  const filtered = useMemo(() => [...filteredFixed, ...filteredFree], [filteredFixed, filteredFree]);
+
+  /** 项目预算时间筛选的按钮文案 */
+  const freeDateLabel = useMemo(() => {
+    const s = freeStartDate ? freeStartDate.slice(0, 10) : '';
+    const e = freeEndDate ? freeEndDate.slice(0, 10) : '';
+    if (!s && !e) return '全部日期';
+    if (s && e) {
+      return s.slice(0, 4) === e.slice(0, 4) ? `${s.slice(5)} ~ ${e.slice(5)}` : `${s} ~ ${e}`;
+    }
+    return s ? `${s.slice(5)} 起` : `至 ${e.slice(5)}`;
+  }, [freeStartDate, freeEndDate]);
 
   // ── 统计 ──
   const totalBudget = useMemo(() => filtered.reduce((s, b) => s + b.amount, 0), [filtered]);
   const totalActual = useMemo(() => filtered.reduce((s, b) => s + b.actualAmount, 0), [filtered]);
   const overCount = useMemo(() => filtered.filter((b) => b.actualAmount > b.amount).length, [filtered]);
 
+  // 维度汇总:同一预算会同时计入其涉及的每个维度;多标签预算分别计入各项目
+  const dimensionSummary = useMemo(() => {
+    type Group = { key: string; name: string; amount: number; actual: number };
+    const member = new Map<string, Group>();
+    const category = new Map<string, Group>();
+    const project = new Map<string, Group>();
+    const add = (map: Map<string, Group>, key: string, name: string, b: BudgetItem) => {
+      const g = map.get(key) ?? { key, name, amount: 0, actual: 0 };
+      g.amount += b.amount;
+      g.actual += b.actualAmount;
+      map.set(key, g);
+    };
+    const categoryLabel = (code: string) => allCategories.find((c) => c.code === code)?.label ?? code;
+    for (const b of filtered) {
+      if (b.ownerId) add(member, b.ownerId, b.ownerName || '成员', b);
+      if (b.categoryCode) add(category, b.categoryCode, categoryLabel(b.categoryCode), b);
+      for (const t of b.tags ?? []) add(project, t, t, b);
+    }
+    const top = (map: Map<string, Group>) => Array.from(map.values()).sort((a, b) => b.amount - a.amount).slice(0, 3);
+    return { member: top(member), category: top(category), project: top(project) };
+  }, [filtered, allCategories]);
+
+  // ── 活跃筛选条件胶囊(对齐流水管理:可单个移除、可一键清空) ──
+  const activeCount = countActiveBudgetFilters(filters);
+  const categoryLabelOf = (code: string) => allCategories.find((c) => c.code === code)?.label ?? code;
+  const activeChips: { key: string; label: string; onClear: () => void }[] = [
+    ...filters.types.map((t) => ({
+      key: `t-${t}`,
+      label: BUDGET_TYPE_LABELS[t],
+      onClear: () => setFilters((f) => ({ ...f, types: f.types.filter((x) => x !== t) })),
+    })),
+    ...(filters.categoryCode
+      ? [{
+          key: 'category',
+          label: categoryLabelOf(filters.categoryCode),
+          onClear: () => setFilters((f) => ({ ...f, categoryCode: '' })),
+        }]
+      : []),
+    ...(filters.tag
+      ? [{
+          key: 'tag',
+          label: `${BUDGET_DIMENSION_LABELS.project}: ${filters.tag}`,
+          onClear: () => setFilters((f) => ({ ...f, tag: '' })),
+        }]
+      : []),
+    ...(filters.ownerId
+      ? [{
+          key: 'owner',
+          label: `${BUDGET_DIMENSION_LABELS.member}: ${budgetMembers.find((m) => m.userId === filters.ownerId)?.name ?? filters.ownerId}`,
+          onClear: () => setFilters((f) => ({ ...f, ownerId: '' })),
+        }]
+      : []),
+    ...(filters.keyword.trim()
+      ? [{
+          key: 'kw',
+          label: `「${filters.keyword.trim()}」`,
+          onClear: () => setFilters((f) => ({ ...f, keyword: '' })),
+        }]
+      : []),
+  ];
+
+  // 单条条件胶囊(限宽 + 省略号,避免长标签吃掉整行)
+  const renderChip = (c: { key: string; label: string; onClear: () => void }) => (
+    <View key={c.key} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingLeft: 12, paddingRight: 8, paddingVertical: 6, borderRadius: 999, backgroundColor: alpha(colors.primary, 0.1), borderWidth: 1, borderColor: alpha(colors.primary, 0.3), maxWidth: 200 }}>
+      <Text style={{ fontSize: 12, color: colors.primary, flexShrink: 1 }} numberOfLines={1}>{c.label}</Text>
+      <Pressable onPress={c.onClear} hitSlop={6}>
+        <X size={12} color={colors.primary} />
+      </Pressable>
+    </View>
+  );
+
+  const clearAllChip = (
+    <Pressable onPress={() => { setFilters(emptyBudgetFilters); haptics.tap(); }} hitSlop={6} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border }}>
+      <Text style={{ fontSize: 12, color: colors.mutedForeground }}>清空</Text>
+    </Pressable>
+  );
+
   const resetForm = useCallback(() => {
     setFormName(''); setFormType('FIXED'); setFormAmount(''); setFormCategory('');
-    setFormMonth(month); setFormTags([]); setFormStartDate(''); setFormEndDate(''); setFormRemark(''); setFormError('');
+    setFormMonth(month ?? now.getMonth() + 1); setFormTags([]); setFormOwner(''); setFormStartDate(''); setFormEndDate(''); setFormRemark(''); setFormError('');
   }, [month]);
 
   // ── 新建/编辑保存(对齐网页端 handleSave 校验与载荷) ──
   const handleSave = async () => {
     if (!formName.trim()) { setFormError('请输入预算名称'); return; }
     if (!formAmount || Number(formAmount) <= 0) { setFormError('请输入有效金额'); return; }
-    if (formType === 'FIXED' && !formCategory) { setFormError('请选择分类'); return; }
+    if (formType === 'FREE' && !formCategory && formTags.length === 0 && !formOwner) {
+      setFormError('项目预算请至少选择分类、标签或成员之一');
+      return;
+    }
     setFormSaving(true);
     try {
       if (editing) {
         await updateBudgetApi(editing.id, {
           name: formName.trim(),
           amount: Number(formAmount),
-          categoryCode: formType === 'FIXED' ? formCategory : null,
+          categoryCode: formCategory || null,
           tags: formTags,
+          ownerId: formOwner || null,
           startDate: formType === 'FREE' ? (formStartDate ? formStartDate.slice(0, 10) : null) : null,
           endDate: formType === 'FREE' ? (formEndDate ? formEndDate.slice(0, 10) : null) : null,
           remark: formRemark || null,
@@ -175,8 +332,9 @@ export default function BudgetPage() {
           year,
           month: formType === 'FREE' ? 0 : formMonth,
           amount: Number(formAmount),
-          categoryCode: formType === 'FIXED' ? formCategory : undefined,
+          categoryCode: formCategory || undefined,
           tags: formTags.length > 0 ? formTags : undefined,
+          ownerId: formOwner || undefined,
           startDate: formType === 'FREE' ? (formStartDate ? formStartDate.slice(0, 10) : undefined) : undefined,
           endDate: formType === 'FREE' ? (formEndDate ? formEndDate.slice(0, 10) : undefined) : undefined,
           remark: formRemark || undefined,
@@ -201,6 +359,7 @@ export default function BudgetPage() {
     setFormCategory(b.categoryCode ?? '');
     setFormMonth(b.month ?? now.getMonth() + 1);
     setFormTags(b.tags ?? []);
+    setFormOwner(b.ownerId ?? '');
     setFormStartDate(b.startDate ? b.startDate.slice(0, 10) : '');
     setFormEndDate(b.endDate ? b.endDate.slice(0, 10) : '');
     setFormRemark(b.remark ?? '');
@@ -220,7 +379,7 @@ export default function BudgetPage() {
 
   // ── 批量添加 ──
   const openBatch = () => {
-    setBatchName(''); setBatchType('FIXED'); setBatchAmount(''); setBatchCategory(''); setBatchTags([]);
+    setBatchName(''); setBatchType('FIXED'); setBatchAmount(''); setBatchCategory(''); setBatchTags([]); setBatchOwner('');
     setBatchStartDate(''); setBatchEndDate(''); setBatchMonths([]); setBatchYear(year); setBatchRemark('');
     setBatchOpen(true);
   };
@@ -228,14 +387,19 @@ export default function BudgetPage() {
   const handleBatchCreate = async () => {
     if (!batchName.trim() || !batchAmount || Number(batchAmount) <= 0) return;
     if (batchType === 'FIXED' && batchMonths.length === 0) return;
+    if (batchType === 'FREE' && !batchCategory && batchTags.length === 0 && !batchOwner) {
+      showToast('项目预算请至少选择分类、标签或成员之一');
+      return;
+    }
     setBatchSaving(true);
     try {
       await batchCreateBudgetApi(bookId, {
         name: batchName.trim(),
         type: batchType,
         amount: Number(batchAmount),
-        categoryCode: batchType === 'FIXED' ? batchCategory : undefined,
+        categoryCode: batchCategory || undefined,
         tags: batchTags.length > 0 ? batchTags : undefined,
+        ownerId: batchOwner || undefined,
         months: batchType === 'FREE' ? [0] : batchMonths,
         year: batchType === 'FREE' ? now.getFullYear() : batchYear,
         startDate: batchType === 'FREE' ? (batchStartDate ? batchStartDate.slice(0, 10) : undefined) : undefined,
@@ -252,7 +416,7 @@ export default function BudgetPage() {
   // ── 复制预算 ──
   const openCopy = () => {
     setCopySourceYear(year);
-    setCopySourceMonth(month);
+    setCopySourceMonth(month ?? now.getMonth() + 1);
     setCopyTargets([]);
     setCopyTargetYear(year);
     setCopyOpen(true);
@@ -347,7 +511,9 @@ export default function BudgetPage() {
     <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ maxHeight: Math.min(460, winH - 260 - kbH) }}>
       {fieldLabel('类型')}
       {editing ? (
-        <Text style={{ fontSize: 14, color: colors.foreground }}>{formType === 'FIXED' ? '固定预算(每月固定支出)' : '自由预算(临时项目预算)'}</Text>
+        <Text style={{ fontSize: 14, color: colors.foreground }}>
+          {formType === 'FIXED' ? '月度预算(按自然月统计)' : '项目预算(按标签统计,可跨月)'}
+        </Text>
       ) : (
         seg([
           { key: 'FIXED', label: BUDGET_TYPE_LABELS.FIXED },
@@ -361,18 +527,25 @@ export default function BudgetPage() {
       {fieldLabel('金额')}
       <TextInput value={formAmount} onChangeText={(v) => { setFormAmount(v); setFormError(''); }} placeholder="预算金额" keyboardType="decimal-pad" placeholderTextColor={colors.mutedForeground} style={inputStyle} />
 
-      {formType === 'FIXED' ? (
-        <>
-          {fieldLabel('关联分类')}
-          <ChipSelect value={formCategory} onChange={setFormCategory} options={allCatOptions} />
-        </>
-      ) : (
-        <>
-          {fieldLabel('关联标签(多标签为或关系)')}
-          <TagPicker value={formTags} onChange={setFormTags} suggestions={tagSuggestions} />
-          {freeDateFields(formStartDate, formEndDate, setFormStartDate, setFormEndDate)}
-        </>
-      )}
+      {/* 维度：分类 / 项目 / 成员，可组合 */}
+      {fieldLabel(`${BUDGET_DIMENSION_LABELS.category}(可选)`)}
+      <ChipSelect
+        value={formCategory}
+        onChange={setFormCategory}
+        options={[{ value: '', label: '不限' }, ...allCatOptions]}
+      />
+
+      {fieldLabel('标签(可选,多标签为或关系)')}
+      <TagPicker value={formTags} onChange={setFormTags} suggestions={tagSuggestions} />
+
+      {fieldLabel(`${BUDGET_DIMENSION_LABELS.member}(可选)`)}
+      <ChipSelect
+        value={formOwner}
+        onChange={setFormOwner}
+        options={[{ value: '', label: '不限' }, ...budgetMembers.map((m) => ({ value: m.userId, label: m.name }))]}
+      />
+
+      {formType === 'FREE' && freeDateFields(formStartDate, formEndDate, setFormStartDate, setFormEndDate)}
 
       {formType === 'FIXED' && (
         <>
@@ -412,26 +585,35 @@ export default function BudgetPage() {
             backgroundColor: b.type === 'FIXED' ? alpha(colors.primary, 0.12) : alpha(colors.income, 0.12),
           }}>
             <Text style={{ fontSize: 11, fontWeight: '600', color: b.type === 'FIXED' ? colors.primary : colors.income }}>
-              {b.type === 'FIXED' ? '固定' : '自由'}
+              {BUDGET_TYPE_LABELS[b.type]}
             </Text>
           </View>
           <Text style={{ flex: 1, fontSize: 15, fontWeight: '600', color: colors.foreground }} numberOfLines={1}>{b.name}</Text>
-          <Text style={{ fontSize: 12, color: colors.mutedForeground }}>{b.month ? `${b.month}月` : '自由区间'}</Text>
           <Text style={{ fontSize: 14, fontWeight: '700', fontVariant: ['tabular-nums'], color: colors.foreground }}>¥{b.amount.toLocaleString()}</Text>
         </View>
-        {/* FREE:标签 + 统计区间 */}
-        {b.type === 'FREE' && ((b.tags?.length ?? 0) > 0 || b.startDate || b.endDate) && (
+        {/* 维度：分类 / 项目 / 成员 + 项目区间 */}
+        {(b.categoryCode || (b.tags?.length ?? 0) > 0 || b.ownerId || ((b.startDate || b.endDate) && b.type === 'FREE')) && (
           <View style={{ gap: 4 }}>
-            {(b.tags?.length ?? 0) > 0 && (
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
-                {b.tags.map((t) => (
-                  <View key={t} style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999, backgroundColor: colors.muted }}>
-                    <Text style={{ fontSize: 10, color: colors.foreground }}>{t}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
-            {(b.startDate || b.endDate) && (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
+              {b.categoryCode && (
+                <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999, backgroundColor: alpha(colors.primary, 0.1) }}>
+                  <Text style={{ fontSize: 10, color: colors.primary }}>
+                    {allCategories.find((c) => c.code === b.categoryCode)?.label ?? b.categoryCode}
+                  </Text>
+                </View>
+              )}
+              {b.tags?.map((t) => (
+                <View key={t} style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999, backgroundColor: colors.muted }}>
+                  <Text style={{ fontSize: 10, color: colors.foreground }}>{t}</Text>
+                </View>
+              ))}
+              {b.ownerId && (
+                <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999, backgroundColor: colors.muted }}>
+                  <Text style={{ fontSize: 10, color: colors.foreground }}>{b.ownerName || '成员'}</Text>
+                </View>
+              )}
+            </View>
+            {b.type === 'FREE' && (b.startDate || b.endDate) && (
               <Text variant="muted" style={{ fontSize: 11 }}>
                 {b.startDate ? b.startDate.slice(0, 10) : '...'} ~ {b.endDate ? b.endDate.slice(0, 10) : '...'}
               </Text>
@@ -454,6 +636,13 @@ export default function BudgetPage() {
         </View>
         {/* 操作 */}
         <View style={{ flexDirection: 'row', gap: 8 }}>
+          <Pressable onPress={() => setDetailBudget(b)} style={{
+            flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5,
+            borderRadius: 8, backgroundColor: alpha(colors.primary, 0.1),
+          }}>
+            <Info size={14} color={colors.primary} />
+            <Text style={{ fontSize: 12, color: colors.primary }}>明细</Text>
+          </Pressable>
           <Pressable onPress={() => openEdit(b)} style={{
             flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5,
             borderRadius: 8, backgroundColor: colors.muted,
@@ -481,120 +670,207 @@ export default function BudgetPage() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['bottom']}>
       <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}>
-        {/* 标题 + 操作 */}
+        {/* 标题 + 新建 */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Text style={{ flex: 1, fontSize: 20, fontWeight: '700', color: colors.foreground }}>预算管理</Text>
-          <Pressable onPress={openCopy} style={{
-            flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-            paddingHorizontal: 12, paddingVertical: 9, borderRadius: 10, backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border,
-          }}>
-            <Text style={{ color: colors.foreground, fontWeight: '600', fontSize: 13 }}>复制预算</Text>
-          </Pressable>
-          <Pressable onPress={openBatch} style={{
-            flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-            paddingHorizontal: 12, paddingVertical: 9, borderRadius: 10, backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border,
-          }}>
-            <Text style={{ color: colors.foreground, fontWeight: '600', fontSize: 13 }}>批量添加</Text>
-          </Pressable>
           <Pressable onPress={() => { resetForm(); setCreating(true); setEditing(null); }} style={{
             flexDirection: 'row', alignItems: 'center', gap: 4,
-            paddingHorizontal: 12, paddingVertical: 9, borderRadius: 10, backgroundColor: colors.primary,
+            paddingHorizontal: 14, paddingVertical: 9, borderRadius: 10, backgroundColor: colors.primary,
           }}>
             <Plus size={16} color={colors.primaryForeground} />
             <Text style={{ color: colors.primaryForeground, fontWeight: '600', fontSize: 13 }}>新建</Text>
           </Pressable>
         </View>
 
-        {/* 年月选择 + 搜索 */}
+        {/* 全局筛选 + 快捷操作(时间筛选按预算类型分开放到各自区块) */}
         <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-          <Pressable onPress={() => setYear(y => y - 1)} style={{
-            width: 32, height: 36, alignItems: 'center', justifyContent: 'center',
-            borderRadius: 8, backgroundColor: colors.muted,
-          }}>
-            <Text style={{ color: colors.foreground }}>‹</Text>
+          <Pressable
+            onPress={() => { setFilterOpen(true); haptics.tap(); }}
+            style={{ flex: 1, position: 'relative', justifyContent: 'center', flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 7, borderRadius: 999, backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border }}
+          >
+            <SlidersHorizontal size={13} color={colors.foreground} />
+            <Text style={{ flexShrink: 0, fontSize: 13, color: colors.foreground, fontWeight: '500' }}>筛选</Text>
+            {activeCount > 0 && (
+              <View style={{ position: 'absolute', top: -5, right: -5, minWidth: 16, height: 16, borderRadius: 8, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, borderWidth: 1.5, borderColor: colors.background }}>
+                <Text style={{ fontSize: 9, color: colors.primaryForeground, fontWeight: '700' }}>{activeCount}</Text>
+              </View>
+            )}
           </Pressable>
-          <Pressable onPress={() => setMonth(m => (m <= 1 ? (setYear(y => y - 1), 12) : m - 1))} style={{
-            width: 36, height: 36, alignItems: 'center', justifyContent: 'center',
-            borderRadius: 8, backgroundColor: colors.muted,
-          }}>
-            <Text style={{ color: colors.foreground }}>月‹</Text>
+          <Pressable onPress={() => { openCopy(); haptics.tap(); }} style={{ flex: 1, justifyContent: 'center', flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 7, borderRadius: 999, backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border }}>
+            <Text style={{ flexShrink: 0, fontSize: 13, color: colors.foreground, fontWeight: '500' }}>复制</Text>
           </Pressable>
-          <Text style={{ fontSize: 15, fontWeight: '600', color: colors.foreground, minWidth: 96, textAlign: 'center' }}>
-            {year}年{month}月
-          </Text>
-          <Pressable onPress={() => setMonth(m => (m >= 12 ? (setYear(y => y + 1), 1) : m + 1))} style={{
-            width: 36, height: 36, alignItems: 'center', justifyContent: 'center',
-            borderRadius: 8, backgroundColor: colors.muted,
-          }}>
-            <Text style={{ color: colors.foreground }}>月›</Text>
+          <Pressable onPress={() => { openBatch(); haptics.tap(); }} style={{ flex: 1, justifyContent: 'center', flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 7, borderRadius: 999, backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border }}>
+            <Text style={{ flexShrink: 0, fontSize: 13, color: colors.foreground, fontWeight: '500' }}>批量</Text>
           </Pressable>
-          <Pressable onPress={() => setYear(y => y + 1)} style={{
-            width: 32, height: 36, alignItems: 'center', justifyContent: 'center',
-            borderRadius: 8, backgroundColor: colors.muted,
-          }}>
-            <Text style={{ color: colors.foreground }}>›</Text>
-          </Pressable>
-          <View style={{
-            flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6,
-            paddingHorizontal: 10, height: 36, borderRadius: 8, backgroundColor: colors.muted,
-          }}>
-            <Search size={16} color={colors.mutedForeground} />
-            <TextInput
-              placeholder="搜索" value={search} onChangeText={setSearch}
-              style={{ flex: 1, fontSize: 14, color: colors.foreground, padding: 0 }}
-              placeholderTextColor={colors.mutedForeground}
-            />
-          </View>
         </View>
 
-        {/* 类型筛选 */}
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          {BUDGET_TYPES.map(t => (
-            <Pressable key={t.key} onPress={() => setTypeFilter(t.key)} style={{
-              paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20,
-              backgroundColor: typeFilter === t.key ? colors.primary : colors.muted,
-            }}>
-              <Text style={{
-                fontSize: 13, fontWeight: '500',
-                color: typeFilter === t.key ? colors.primaryForeground : colors.foreground,
-              }}>{t.label}</Text>
-            </Pressable>
-          ))}
-        </View>
+        {/* 活跃条件胶囊:默认单行横向滚动,展开后换行并限高 */}
+        {activeChips.length > 0 && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            {chipsExpanded ? (
+              <ScrollView style={{ flex: 1, maxHeight: 124 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {activeChips.map(renderChip)}
+                  {clearAllChip}
+                </View>
+              </ScrollView>
+            ) : (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ gap: 8, alignItems: 'center', paddingRight: 4 }}>
+                {activeChips.map(renderChip)}
+                {clearAllChip}
+              </ScrollView>
+            )}
+            {activeChips.length > 1 && (
+              <Pressable
+                onPress={() => { setChipsExpanded((v) => !v); haptics.tap(); }}
+                hitSlop={8}
+                style={{ width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border }}
+              >
+                {chipsExpanded ? <ChevronUp size={15} color={colors.foreground} /> : <ChevronDown size={15} color={colors.foreground} />}
+              </Pressable>
+            )}
+          </View>
+        )}
 
         {/* 汇总 */}
         <View style={{
-          flexDirection: 'row', gap: 8, padding: 12, borderRadius: 12,
+          padding: 14, borderRadius: 12, gap: 10,
           backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
         }}>
-          <View style={{ flex: 1, alignItems: 'center' }}>
-            <Text style={{ fontSize: 11, color: colors.mutedForeground }}>总预算</Text>
-            <Text style={{ fontSize: 16, fontWeight: '700', color: colors.foreground }}>
-              ¥{totalBudget.toLocaleString()}
-            </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 11, color: colors.mutedForeground }}>总预算</Text>
+              <Text style={{ fontSize: 18, fontWeight: '700', color: colors.foreground, fontVariant: ['tabular-nums'] }}>
+                ¥{totalBudget.toLocaleString()}
+              </Text>
+            </View>
+            <View style={{ alignItems: 'flex-end' }}>
+              <Text style={{ fontSize: 11, color: colors.mutedForeground }}>使用率</Text>
+              <Text style={{
+                fontSize: 18, fontWeight: '700', fontVariant: ['tabular-nums'],
+                color: totalActual > totalBudget ? colors.destructive : colors.foreground,
+              }}>
+                {totalBudget > 0 ? `${((totalActual / totalBudget) * 100).toFixed(0)}%` : '—'}
+              </Text>
+            </View>
           </View>
-          <View style={{ width: 1, backgroundColor: colors.border }} />
-          <View style={{ flex: 1, alignItems: 'center' }}>
-            <Text style={{ fontSize: 11, color: colors.mutedForeground }}>已使用</Text>
-            <Text style={{ fontSize: 16, fontWeight: '700', color: totalActual > totalBudget ? colors.destructive : colors.foreground }}>
-              ¥{totalActual.toLocaleString()}
-            </Text>
+
+          <View style={{ height: 8, borderRadius: 4, backgroundColor: colors.muted, overflow: 'hidden' }}>
+            <View style={{
+              height: '100%', borderRadius: 4,
+              width: `${totalBudget > 0 ? Math.min((totalActual / totalBudget) * 100, 100) : 0}%`,
+              backgroundColor: totalActual > totalBudget ? colors.destructive : colors.primary,
+            }} />
           </View>
-          <View style={{ width: 1, backgroundColor: colors.border }} />
-          <View style={{ flex: 1, alignItems: 'center' }}>
-            <Text style={{ fontSize: 11, color: colors.mutedForeground }}>超支数</Text>
-            <Text style={{ fontSize: 16, fontWeight: '700', color: overCount > 0 ? colors.destructive : colors.foreground }}>
-              {overCount}
+
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontVariant: ['tabular-nums'] }}>
+              已用 ¥{totalActual.toLocaleString()}
+            </Text>
+            <Text style={{
+              fontSize: 12, fontWeight: '600', fontVariant: ['tabular-nums'],
+              color: totalActual > totalBudget ? colors.destructive : colors.mutedForeground,
+            }}>
+              {totalActual > totalBudget
+                ? `超支 ¥${(totalActual - totalBudget).toLocaleString()}${overCount > 0 ? ` · ${overCount} 项` : ''}`
+                : `剩余 ¥${(totalBudget - totalActual).toLocaleString()}${overCount > 0 ? ` · 超支 ${overCount} 项` : ''}`}
             </Text>
           </View>
         </View>
 
-        {/* 列表 */}
+        {/* 维度汇总 */}
+        {(dimensionSummary.member.length > 0 || dimensionSummary.category.length > 0 || dimensionSummary.project.length > 0) && (
+          <View style={{ borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, overflow: 'hidden' }}>
+            <Pressable onPress={() => setSummaryOpen((v) => !v)} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10 }}>
+              <Text style={{ flex: 1, fontSize: 13, fontWeight: '600', color: colors.foreground }}>维度汇总</Text>
+              <Text style={{ fontSize: 12, color: colors.mutedForeground }}>{summaryOpen ? '收起' : '展开'}</Text>
+            </Pressable>
+            {summaryOpen && (
+              <View style={{ paddingHorizontal: 12, paddingBottom: 12, gap: 10 }}>
+                {[
+                  { title: `按${BUDGET_DIMENSION_LABELS.member}`, groups: dimensionSummary.member },
+                  { title: `按${BUDGET_DIMENSION_LABELS.category}`, groups: dimensionSummary.category },
+                  { title: `按${BUDGET_DIMENSION_LABELS.project}`, groups: dimensionSummary.project },
+                ].filter((s) => s.groups.length > 0).map((section) => (
+                  <View key={section.title} style={{ gap: 5 }}>
+                    <Text variant="muted" style={{ fontSize: 11 }}>{section.title}</Text>
+                    {section.groups.map((g) => {
+                      const pct = g.amount > 0 ? (g.actual / g.amount) * 100 : 0;
+                      return (
+                        <View key={`${section.title}-${g.key}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <Text style={{ flex: 1, fontSize: 12, color: colors.foreground }} numberOfLines={1}>{g.name}</Text>
+                          <Text style={{ fontSize: 11, fontVariant: ['tabular-nums'], color: pct > 100 ? colors.destructive : colors.mutedForeground }}>
+                            ¥{g.actual.toLocaleString()} / ¥{g.amount.toLocaleString()} · {pct.toFixed(0)}%
+                          </Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* 列表:月度/项目各自带时间筛选(与网页端一致),分类/标签/成员等全局条件对两者同时生效 */}
         {loading ? (
           <LoadingState />
         ) : filtered.length === 0 ? (
-          <EmptyState icon="" title="暂无预算" description="创建一个预算开始管理支出" />
-        ) : filtered.map(b => renderBudgetCard(b))}
+          <EmptyState
+            icon=""
+            title={activeCount > 0 ? '没有符合条件的预算' : '暂无预算'}
+            description={activeCount > 0 ? '试试调整或清空筛选条件' : '创建一个预算开始管理支出'}
+          />
+        ) : (
+          <View style={{ gap: 16 }}>
+            {showFixed && (
+              <View style={{ gap: 10 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Text style={{ flex: 1, fontSize: 15, fontWeight: '700', color: colors.foreground }}>
+                    {BUDGET_TYPE_LABELS.FIXED}预算
+                  </Text>
+                  <Pressable onPress={() => { setMonthPickerOpen(true); haptics.tap(); }} style={{
+                    flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 11, paddingVertical: 6,
+                    borderRadius: 999, backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border,
+                  }}>
+                    <Text style={{ fontSize: 12.5, fontWeight: '600', color: colors.foreground }} numberOfLines={1}>
+                      {year}年{month === null ? ' · 全年' : `${month}月`}
+                    </Text>
+                    <ChevronDown size={12} color={colors.mutedForeground} />
+                  </Pressable>
+                </View>
+                {filteredFixed.length === 0 ? (
+                  <Text variant="muted" style={{ fontSize: 12 }}>当前时间范围内暂无月度预算</Text>
+                ) : filteredFixed.map(renderBudgetCard)}
+              </View>
+            )}
+
+            {showFree && (
+              <View style={{ gap: 10 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Text style={{ flex: 1, fontSize: 15, fontWeight: '700', color: colors.foreground }}>
+                    {BUDGET_TYPE_LABELS.FREE}预算
+                  </Text>
+                  <Pressable onPress={() => { setFreeDateOpen(true); haptics.tap(); }} style={{
+                    flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 11, paddingVertical: 6,
+                    borderRadius: 999, borderWidth: 1,
+                    borderColor: freeStartDate || freeEndDate ? colors.primary : colors.border,
+                    backgroundColor: freeStartDate || freeEndDate ? alpha(colors.primary, 0.1) : colors.muted,
+                  }}>
+                    <Calendar size={12} color={freeStartDate || freeEndDate ? colors.primary : colors.mutedForeground} />
+                    <Text style={{ fontSize: 12.5, fontWeight: '600', color: freeStartDate || freeEndDate ? colors.primary : colors.foreground }} numberOfLines={1}>
+                      {freeDateLabel}
+                    </Text>
+                  </Pressable>
+                </View>
+                {filteredFree.length === 0 ? (
+                  <Text variant="muted" style={{ fontSize: 12 }}>当前日期范围内暂无项目预算</Text>
+                ) : filteredFree.map(renderBudgetCard)}
+              </View>
+            )}
+          </View>
+        )}
+
       </ScrollView>
 
       {/* ── 新建/编辑弹出 ── */}
@@ -614,18 +890,20 @@ export default function BudgetPage() {
           {fieldLabel('金额')}
           <TextInput value={batchAmount} onChangeText={setBatchAmount} keyboardType="decimal-pad" placeholderTextColor={colors.mutedForeground} style={inputStyle} />
 
-          {batchType === 'FIXED' ? (
-            <>
-              {fieldLabel('关联分类')}
-              <ChipSelect value={batchCategory} onChange={setBatchCategory} options={allCatOptions} />
-            </>
-          ) : (
-            <>
-              {fieldLabel('关联标签(多标签为或关系)')}
-              <TagPicker value={batchTags} onChange={setBatchTags} suggestions={tagSuggestions} />
-              {freeDateFields(batchStartDate, batchEndDate, setBatchStartDate, setBatchEndDate)}
-            </>
-          )}
+          {fieldLabel(`${BUDGET_DIMENSION_LABELS.category}(可选)`)}
+          <ChipSelect value={batchCategory} onChange={setBatchCategory} options={[{ value: '', label: '不限' }, ...allCatOptions]} />
+
+          {fieldLabel('标签(可选,多标签为或关系)')}
+          <TagPicker value={batchTags} onChange={setBatchTags} suggestions={tagSuggestions} />
+
+          {fieldLabel(`${BUDGET_DIMENSION_LABELS.member}(可选)`)}
+          <ChipSelect
+            value={batchOwner}
+            onChange={setBatchOwner}
+            options={[{ value: '', label: '不限' }, ...budgetMembers.map((m) => ({ value: m.userId, label: m.name }))]}
+          />
+
+          {batchType === 'FREE' && freeDateFields(batchStartDate, batchEndDate, setBatchStartDate, setBatchEndDate)}
 
           {batchType === 'FIXED' && (
             <>
@@ -673,6 +951,49 @@ export default function BudgetPage() {
           )}
         </ScrollView>
       </FormSheet>
+
+      {/* ── 项目预算日期筛选(与月度预算的年/月筛选分开) ── */}
+      <FormSheet visible={freeDateOpen} title="项目预算日期" onClose={() => setFreeDateOpen(false)} onSave={() => setFreeDateOpen(false)} saveLabel="完成">
+        <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ maxHeight: 420 }}>
+          {fieldLabel('起始日期(可选)')}
+          <DatePicker value={freeStartDate} onChange={setFreeStartDate} />
+          {fieldLabel('结束日期(可选)')}
+          <DatePicker value={freeEndDate} onChange={setFreeEndDate} />
+          <Pressable
+            onPress={() => { setFreeStartDate(''); setFreeEndDate(''); }}
+            style={{ marginTop: 16, alignItems: 'center', paddingVertical: 10, borderRadius: 10, backgroundColor: colors.muted }}
+          >
+            <Text style={{ fontSize: 13, color: colors.foreground }}>清空日期</Text>
+          </Pressable>
+        </ScrollView>
+      </FormSheet>
+      {/* ── 月份选择 ── */}
+      <FormSheet visible={monthPickerOpen} title="选择月份" onClose={() => setMonthPickerOpen(false)} onSave={() => setMonthPickerOpen(false)} saveLabel="完成">
+        <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ maxHeight: 420 }}>
+          {fieldLabel('年份')}
+          {yearStepper(year, setYear)}
+          {fieldLabel('月份')}
+          <ChipSelect
+            value={month === null ? 'all' : String(month)}
+            onChange={(v) => setMonth(v === 'all' ? null : Number(v))}
+            options={[{ value: 'all', label: '全年' }, ...MONTHS.map((m) => ({ value: String(m), label: `${m}月` }))]}
+          />
+        </ScrollView>
+      </FormSheet>
+
+      {/* ── 筛选(与流水管理同款抽屉:chip 选择 + 重置/应用) ── */}
+      <BudgetFilterSheet
+        visible={filterOpen}
+        initial={filters}
+        categoryOptions={allCatOptions}
+        tagOptions={tagSuggestions}
+        memberOptions={budgetMembers.map((m) => ({ value: m.userId, label: m.name }))}
+        onApply={setFilters}
+        onClose={() => setFilterOpen(false)}
+      />
+
+      {/* ── 预算明细 ── */}
+      <BudgetDetailSheet budget={detailBudget} bookId={bookId} onClose={() => setDetailBudget(null)} />
 
       {/* 危险操作二次确认 */}
       <ConfirmSheet
