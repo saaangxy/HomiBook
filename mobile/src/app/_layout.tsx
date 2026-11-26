@@ -26,7 +26,7 @@ import { UIShellProvider } from '@/components/chrome/chrome';
 import { ShareIntakeBridge } from '@/hooks/useShareIntake';
 import { SmsAutoBookkeepingBridge } from '@/hooks/useSmsAutoBookkeeping';
 import { NotificationIntakeBridge } from '@/hooks/useNotificationIntake';
-import { Sidebar } from '@/components/chrome/Sidebar';
+import { Sidebar, SidebarSwipeArea } from '@/components/chrome/Sidebar';
 import { LedgerModal } from '@/components/chrome/LedgerModal';
 import { RecordModal } from '@/components/chrome/RecordModal';
 import { AIAssistantModal } from '@/components/chrome/AIAssistantModal';
@@ -88,7 +88,12 @@ export default function RootLayout() {
             <LedgerProvider>
               <UIShellProvider>
               <RecordsProvider>
-                <RootNavigator />
+                {/* 页面任意位置右滑拉出抽屉(不遮挡页面点击);抽屉内左滑关闭 */}
+                <SidebarSwipeArea>
+                  <View style={{ flex: 1 }}>
+                    <RootNavigator />
+                  </View>
+                </SidebarSwipeArea>
                 {/* 全局覆盖层(置于 RecordsProvider 内,可同时访问 UIShell 与 Records) */}
                 <Sidebar />
                 <LedgerModal />

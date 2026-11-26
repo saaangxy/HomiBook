@@ -1,7 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { usePathname, useRouter } from 'expo-router';
-import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import {
   ArrowLeftRight, BarChart3, Book, CalendarDays, LayoutDashboard, Repeat, Settings,
   Target, Users, Wallet, type LucideIcon,
@@ -29,12 +30,43 @@ const MENU: MenuItem[] = [
 ];
 
 const PANEL_W = 280;
+/** 关闭态的贴边热区宽度(跟手拖动用);系统返回手势占用屏幕最左侧约 20dp,真正起效的是热区内侧部分 */
+const EDGE_W = 24;
+/** 页面级右滑判定的水平位移阈值:避开系统边缘手势,任意位置右滑超过该距离即可拉出抽屉 */
+const PAGE_SWIPE_X = 28;
+/** 页面级右滑判定的纵向容差:超过则认为用户在做纵向滚动,交给页面 */
+const PAGE_SWIPE_TOLERANCE_Y = 24;
+
+/**
+ * 页面级右滑打开抽屉:包在导航内容外层。
+ *
+ * 不采用全屏透明热区 —— 覆盖层会吃掉下方页面的点击;包在内容外层时手势与页面点击共存,
+ * 右滑可从页面任意位置起手,自然避开系统「返回」边缘手势区域。
+ */
+export function SidebarSwipeArea({ children }: { children: ReactNode }) {
+  const { sidebarOpen, openSidebar } = useUIShell();
+  const { isLoggedIn } = useAuth();
+
+  const pan = Gesture.Pan()
+    .enabled(isLoggedIn && !sidebarOpen)
+    // activeOffsetX 的区间是「不激活的死区」:右边界设为阈值,只有右滑超过阈值才激活(左滑/纵向滚动不会误触)
+    .activeOffsetX([-10000, PAGE_SWIPE_X])
+    .failOffsetY([-PAGE_SWIPE_TOLERANCE_Y, PAGE_SWIPE_TOLERANCE_Y])
+    // 直接在 JS 线程回调:无需 runOnJS,避免 worklet 内调用 setState 的限制
+    .runOnJS(true)
+    .onStart(() => {
+      haptics.tap();
+      openSidebar();
+    });
+
+  return <GestureDetector gesture={pan}>{children}</GestureDetector>;
+}
 
 // 左侧抽屉:对齐网页端侧边栏 —— Logo 头 + 单列菜单(当前路由高亮) + 底部用户卡
 // 直接驱动 translateX,对称缓动绝不过冲
 export function Sidebar() {
   const { palette, sidebar } = useTheme();
-  const { sidebarOpen, closeSidebar } = useUIShell();
+  const { sidebarOpen, openSidebar, closeSidebar } = useUIShell();
   const { user } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
@@ -45,6 +77,49 @@ export function Sidebar() {
     // 纯线性 ease:开关双向均速滑行,不加速不减速,绝无弹离感(参数集中管理于 motion.sidebar)
     translateX.value = withTiming(sidebarOpen ? 0 : -PANEL_W, motion.sidebar);
   }, [sidebarOpen, translateX]);
+
+  // ── 手势:关闭态从左边缘右滑拉出,打开态左滑收起 ──
+  /** 起手位移(拖动过程中以它为基准) */
+  const gestureStartX = useSharedValue(-PANEL_W);
+
+  /** 松手落位:吸附到开/关两档,并把状态同步回 JS 侧 */
+  const settleOpen = (open: boolean) => {
+    haptics.tap();
+    if (open) openSidebar();
+    else closeSidebar();
+  };
+
+  /** 打开态:面板/遮罩上横向拖动 —— 左滑关闭、右滑回弹;纵向位移让给列表滚动 */
+  const swipeGesture = Gesture.Pan()
+    .activeOffsetX([-12, 12])
+    .failOffsetY([-16, 16])
+    .onStart(() => {
+      gestureStartX.value = translateX.value;
+    })
+    .onUpdate((e) => {
+      translateX.value = Math.max(-PANEL_W, Math.min(0, gestureStartX.value + e.translationX));
+    })
+    .onEnd((e) => {
+      const open = translateX.value > -PANEL_W * 0.35 || e.velocityX > 500;
+      translateX.value = withTiming(open ? 0 : -PANEL_W, motion.sidebar);
+      runOnJS(settleOpen)(open);
+    });
+
+  /** 关闭态:左边缘右滑拉出抽屉(死区右边界=阈值,只接受向右位移,纵向滚动不触发) */
+  const edgeGesture = Gesture.Pan()
+    .activeOffsetX([-10000, 14])
+    .failOffsetY([-16, 16])
+    .onStart(() => {
+      gestureStartX.value = translateX.value;
+    })
+    .onUpdate((e) => {
+      translateX.value = Math.max(-PANEL_W, Math.min(0, gestureStartX.value + e.translationX));
+    })
+    .onEnd((e) => {
+      const open = translateX.value > -PANEL_W * 0.3 || e.velocityX > 500;
+      translateX.value = withTiming(open ? 0 : -PANEL_W, motion.sidebar);
+      runOnJS(settleOpen)(open);
+    });
 
   const overlayStyle = useAnimatedStyle(() => {
     // translateX 从 -PANEL_W(关)到 0(开),进度 = (translateX + PANEL_W) / PANEL_W
@@ -62,12 +137,24 @@ export function Sidebar() {
   const avatarChar = (displayName[0] || 'U').toUpperCase();
 
   return (
-    <View
-      pointerEvents={sidebarOpen ? 'auto' : 'none'}
-      style={StyleSheet.absoluteFill}
-      accessibilityElementsHidden={!sidebarOpen}
-      importantForAccessibility={sidebarOpen ? 'yes' : 'no-hide-descendants'}
-    >
+    <>
+      {/* 关闭态:屏幕左边缘热区(右滑拉出抽屉);打开后让出触摸,避免遮挡面板 */}
+      <GestureDetector gesture={edgeGesture}>
+        <View
+          collapsable={false}
+          pointerEvents={sidebarOpen ? 'none' : 'auto'}
+          style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: sidebarOpen ? 0 : EDGE_W }}
+        />
+      </GestureDetector>
+
+      {/* 打开态:整层可左滑收起;关闭时 pointerEvents 为 none,不拦截页面触摸 */}
+      <GestureDetector gesture={swipeGesture}>
+        <View
+          pointerEvents={sidebarOpen ? 'auto' : 'none'}
+          style={StyleSheet.absoluteFill}
+          accessibilityElementsHidden={!sidebarOpen}
+          importantForAccessibility={sidebarOpen ? 'yes' : 'no-hide-descendants'}
+        >
       {/* 遮罩(与面板同步淡入,点按关闭) */}
       <Animated.View style={[StyleSheet.absoluteFill, overlayStyle]}>
         <Pressable style={{ flex: 1 }} onPress={closeSidebar} />
@@ -140,6 +227,8 @@ export function Sidebar() {
           </View>
         </>
       </Animated.View>
-    </View>
+        </View>
+      </GestureDetector>
+    </>
   );
 }

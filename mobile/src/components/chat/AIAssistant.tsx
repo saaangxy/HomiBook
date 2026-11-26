@@ -3,6 +3,7 @@ import { buildImportMessage, parseImportMessage, IMPORT_AI_SOURCES, IMPORT_SOURC
 import { ActivityIndicator, BackHandler, FlatList, Image, NativeScrollEvent, NativeSyntheticEvent, Platform, Pressable, SectionList, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { cancelAnimation, Easing, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Markdown from 'react-native-markdown-display';
 import { ArrowDown, Bot, Brain, Camera, ChevronDown, ChevronLeft, ChevronRight, FileText, FileUp, Globe, ImagePlus, List, Pencil, Plus, RefreshCw, Send, Sparkles, StopCircle, Trash2, X } from 'lucide-react-native';
 import { useTheme, alpha, haptics } from '@/theme';
@@ -544,6 +545,33 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
     setSessionListOpen(true);
   };
 
+  /**
+   * 右滑拉出会话列表(全局 AI 弹窗与记一笔 AI tab 共用):
+   * 弹窗在独立覆盖层/Modal 里,拿不到根布局的页面级手势,这里单独挂一份。
+   * activeOffsetX 区间为「不激活的死区」,右边界=阈值 → 只响应向右位移;
+   * 纵向超过容差即失败,把滚动让给消息列表。
+   */
+  const sessionSwipe = Gesture.Pan()
+    .enabled(!sessionListOpen)
+    .activeOffsetX([-10000, 28])
+    .failOffsetY([-24, 24])
+    .runOnJS(true)
+    .onStart(() => {
+      openSessionList();
+      haptics.tap();
+    });
+
+  /** 左滑关闭会话列表(与右滑拉出对称;死区左边界=-阈值 → 只响应向左位移) */
+  const sessionCloseSwipe = Gesture.Pan()
+    .enabled(sessionListOpen)
+    .activeOffsetX([-28, 10000])
+    .failOffsetY([-24, 24])
+    .runOnJS(true)
+    .onStart(() => {
+      setSessionListOpen(false);
+      haptics.tap();
+    });
+
   // 会话抽屉操作(左侧抽屉:AI 弹窗与记一笔 AI tab 共用同一份实现)
   const handleCreateSession = () => {
     if (!bookId) return;
@@ -768,8 +796,9 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
   const composerBtn = { padding: 3, borderRadius: 8 };
 
   return (
-    // 底色由宿主提供(全局 AI 弹窗 / 记一笔弹窗均为 card 白面),保持整体一色不割裂
-    <View style={{ flex: 1 }}>
+    <GestureDetector gesture={sessionSwipe}>
+      <View style={{ flex: 1 }}>
+        {/* 底色由宿主提供(全局 AI 弹窗 / 记一笔弹窗均为 card 白面),保持整体一色不割裂;右滑可拉出会话列表 */}
       {/* 会话工具行:菜单按钮 + 当前会话标题 + 新建 */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.hairline }}>
         <Pressable onPress={openSessionList} style={iconBtn}>
@@ -1023,8 +1052,9 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
         </View>
       </View>
 
-      {/* 会话列表:占满整个 AI 面板的抽屉(无遮罩 —— 它本身就是一页会话列表;X / 返回键 / 选中会话即关闭) */}
+      {/* 会话列表:占满整个 AI 面板的抽屉(无遮罩 —— 它本身就是一页会话列表;X / 返回键 / 左滑 / 选中会话即关闭) */}
       {sessionListOpen && (
+        <GestureDetector gesture={sessionCloseSwipe}>
         <Animated.View
           style={[{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: colors.card }, drawerAnim]}
         >
@@ -1095,6 +1125,7 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
             />
           )}
         </Animated.View>
+        </GestureDetector>
       )}
 
       {/* 导入弹窗:自定义来源选择(对齐 web DropdownMenu),选择后打开系统文件选择器 */}
@@ -1151,6 +1182,7 @@ export function AIAssistant({ onClose, shareIntake }: { onClose?: () => void; sh
         onClose={() => setSessionToDelete(null)}
       />
     </View>
+    </GestureDetector>
   );
 }
 
