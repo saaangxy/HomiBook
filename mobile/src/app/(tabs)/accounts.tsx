@@ -175,9 +175,14 @@ export default function AccountsScreen() {
     const a = removing;
     if (!a) return;
     setRemoving(null);
-    await deleteAccountApi(a.id);
-    if (bookId) fetchAccounts(bookId).then(setAccounts);
-    setEditing(null);
+    try {
+      await deleteAccountApi(a.id);
+      if (bookId) fetchAccounts(bookId).then(setAccounts);
+      setEditing(null);
+    } catch (e: any) {
+      // 有流水时服务端会拒绝删除,把原因原样提示给用户(不能静默失败)
+      showToast(e?.message || '删除账户失败');
+    }
   };
 
   // ── 余额调整 ──

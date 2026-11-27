@@ -1,7 +1,7 @@
 import { prisma } from '../../../app.js'
 import { desensitize, ToolError } from '../security.js'
 import type { ToolDef, ToolContext } from './types.js'
-import { assertCanManageAccount } from '../../account.js'
+import { assertCanManageAccount, countAccountRecords } from '../../account.js'
 import { genericPreview, type ConfirmPreview } from '../runtime/preview-format.js'
 import type { PreviewScope } from '../runtime/preview-scope.js'
 
@@ -9,7 +9,7 @@ export const deleteAccountTool: ToolDef = {
   name: 'delete_account',
   displayName: '删除账户',
   promptHint: '需要用户确认',
-  description: '删除账户及其余额调整记录。',
+  description: '删除账户。账户下仍有流水（收入/支出/转账转入转出）时不允许删除。',
   parameters: {
     type: 'object',
     properties: {
@@ -46,6 +46,12 @@ export const deleteAccountTool: ToolDef = {
     const account = await assertCanManageAccount(args.id, ctx.userId)
     if (account.accountBookId !== ctx.accountBookId) {
       throw new ToolError('无权删除该账户', false)
+    }
+
+    // 与手动删除同一道校验:账户下还有流水时不允许删除,否则流水会指向已删除的账户
+    const recordCount = await countAccountRecords(args.id)
+    if (recordCount > 0) {
+      throw new ToolError(`该账户下还有 ${recordCount} 条流水（收入/支出/转账），无法删除`, false)
     }
 
     await prisma.account.update({

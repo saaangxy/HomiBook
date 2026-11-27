@@ -20,6 +20,41 @@ export async function assertCanManageAccount(accountId: string, userId: string) 
   throw Object.assign(new Error('无权管理该账户'), { statusCode: 403 })
 }
 
+/**
+ * 账户关联的流水数。
+ *
+ * 流水对账户有三个引用字段:普通收支的 accountId、转账的 fromAccountId(转出)与
+ * toAccountId(转入)。任一有值都算「这个账户下还有流水」,删账户前必须一起检查,
+ * 否则只查 accountId 会漏掉「只作为转入方」的账户。
+ */
+export async function countAccountRecords(accountId: string): Promise<number> {
+  return prisma.record.count({
+    where: {
+      OR: [
+        { accountId },
+        { fromAccountId: accountId },
+        { toAccountId: accountId },
+      ],
+    },
+  })
+}
+
+/**
+ * 删除账户前的守卫:**有流水就不允许删除**。
+ *
+ * 账户删掉后,这些流水会指向一个已删除的账户:记录列表/统计/余额都对不上,
+ * 也再没有入口能修正它们。手动删除与 AI 的 delete_account 共用这一道校验。
+ */
+export async function assertAccountDeletable(accountId: string): Promise<void> {
+  const count = await countAccountRecords(accountId)
+  if (count > 0) {
+    throw Object.assign(
+      new Error(`该账户下还有 ${count} 条流水（收入/支出/转账），无法删除`),
+      { statusCode: 400 },
+    )
+  }
+}
+
 /** 对非公开账户脱敏 */
 export function sanitizeAccount(account: Record<string, unknown>, userId: string) {
   if (account.visibility === 'PRIVATE' && account.ownerId !== userId) {

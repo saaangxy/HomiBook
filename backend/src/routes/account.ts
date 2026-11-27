@@ -18,6 +18,7 @@ import {
 } from '../schemas/account.js'
 import {
   assertCanManageAccount,
+  assertAccountDeletable,
   sanitizeAccount,
   computeAccountBalance,
   refreshAccountBalance,
@@ -463,7 +464,7 @@ export async function accountRoutes(app: FastifyInstance) {
   // 删除账户（软删除）
   app.delete('/:id', {
     schema: {
-      description: '软删除账户，保留关联记录和余额调整历史',
+      description: '软删除账户（账户下仍有流水时拒绝删除）',
       tags: ['账户'],
       params: zSchema(z.object({ id: z.string() })),
     },
@@ -473,6 +474,8 @@ export async function accountRoutes(app: FastifyInstance) {
 
     try {
       await assertCanManageAccount(id, userId)
+      // 有流水就不允许删除:删完这些流水会变成指向已删除账户的孤儿数据
+      await assertAccountDeletable(id)
     } catch (e: any) {
       return reply.status(e.statusCode || 403).send({ message: e.message })
     }
