@@ -23,6 +23,8 @@ const PROMPT = `## 账单文件与导入流水数据
 2. 分析 analyze 返回的数据（字段用途见下），**必须**按下列顺序产出决议：
    - 账户：unmatchedAccounts=账户待定清单；accountUnmatchedRecords=这些账户涉及的原始行(最多 200 行,含转账转入账户待定的行,务必结合两者一起判断)。为每个未匹配账户生成一条 accountResolutions：已有候选(candidates) → action="existing" + targetAccountId；无候选 → action="create" + 推断的 targetAccountName + accountType；判断是同一账户但名称有差异时合并它
    - 分类：unmatchedCategories=未映射的源分类；categorySamples=每个源分类的 Top 5 样本(payer/remark/type/amount)，**必须基于样本判断,不得凭空命名**；existingRules/existingAccountRules=本来源已有规则，**能覆盖就不要新建**
+     - **unmatchedCategories 为空时不要产出 categoryResolutions**（没有可映射的源分类）。若账单里只有「需处理」的未识别流水(analyze 的 parsedRows=0)，这些行由用户在预览卡里选类型与分类，不要为它们猜分类规则(尤其不要传 sourceCategory 为空的决议)
+     - 每条决议的 sourceCategory 必须是账单里**真实出现**的交易分类名，不能留空
    - 分类决议的产出顺序（硬约束）：
      ① 同一源分类的 categorySamples 里出现多个明显不同的交易方簇 → **按簇产出多条条件化规则**，每条必须给 payerContains 或 descriptionContains；
      ② 样本同质（交易方/说明高度相似）→ 产出**一条无条件规则**（payerContains/descriptionContains 留空）；

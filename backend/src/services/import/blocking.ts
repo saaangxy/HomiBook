@@ -164,6 +164,17 @@ function describeResolutions<T extends CategoryResolutionLike>(resolutions: T[])
 }
 
 /**
+ * 找出「源分类为空」的决议。
+ *
+ * 模型在没有 categorySamples 时容易凭空产出 `{ sourceCategory: '', targetCategoryCode: '日用百货' }`
+ * 这样的规则:预览卡会显示成一条没有源分类的「未匹配分类」(原始分类文本为空),
+ * 确认后还会把空源分类写进规则表。源分类必须是账单里真实出现的分类名,不能为空。
+ */
+export function findEmptySourceCategoryResolutions<T extends CategoryResolutionLike>(resolutions: T[]): T[] {
+  return resolutions.filter(r => !(r.sourceCategory || '').trim())
+}
+
+/**
  * preview_import / confirm_import 共用的映射校验。
  *
  * 两处必须给出完全一致的结论，否则会出现「预览通过、确认失败」的死循环，
@@ -172,6 +183,14 @@ function describeResolutions<T extends CategoryResolutionLike>(resolutions: T[])
 export function validateCategoryResolutions<T extends CategoryResolutionLike>(
   resolutions: T[],
 ): CategoryResolutionCheck {
+  const emptySource = findEmptySourceCategoryResolutions(resolutions)
+  if (emptySource.length > 0) {
+    return {
+      ok: false,
+      error: `分类决议缺少源分类（sourceCategory 为空）：${describeResolutions(emptySource)}。sourceCategory 必须是账单里真实出现的交易分类名；如果 analyze 返回的 unmatchedCategories / categorySamples 为空，说明这些流水无法识别收支（在「需处理」里处置），不要为它们生成分类规则，请去掉该决议。`,
+    }
+  }
+
   const genericBad = findGenericUnconditionalResolutions(resolutions)
   if (genericBad.length > 0) {
     return {

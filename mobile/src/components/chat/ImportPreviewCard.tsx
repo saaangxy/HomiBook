@@ -93,7 +93,7 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
   interface CategoryResolution { id: string; sourceCategory: string; type: string; targetCode: string; save: boolean; payerContains: string; descriptionContains: string }
   // 每种收支类型一条；UNKNOWN 不建（交给「需手动处理」区块），跨类型建议值会被 dictItems 校验置空
   const [categoryRes, setCategoryRes] = useState<CategoryResolution[]>(() =>
-    initCategoryResolutionEntries(data.unmatchedCategories ?? [], {
+    initCategoryResolutionEntries((data.unmatchedCategories ?? []).filter((uc: any) => !!uc.sourceCategory?.trim()), {
       // AI 卡片的「保存」同时是提交开关（见 toCategoryResolutionPayload 的 onlySaved），默认必须为 true
       saveByDefault: true,
       dictItems,
