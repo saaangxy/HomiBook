@@ -139,14 +139,19 @@ export async function runConfirmationTurn(opts: {
     let toolResult: any
     try {
       if (entry.toolName === 'preview_import') {
-        const args = entry.args || {}
-        const userOverrides = peekImportOverrides(args.attachmentId as string)
-        const mergedArgs = { ...args, accountResolutions: userOverrides?.accountResolutions ?? args.accountResolutions, categoryResolutions: userOverrides?.categoryResolutions ?? args.categoryResolutions }
-        const reData = ((await tool.execute(mergedArgs, ctx)) ?? {}) as any
+        // 用户已在预览卡上确认:这里**不再重跑预览**。
+        // 之前会以 confirmed=true 重新执行 preview_import,并把整套预览数据回给模型(还附一句
+        // 「请检查以上映射结果是否正确」),模型据此又调一轮 preview_import → 用户再确认 → 循环。
+        // 现在只回执「已确认」,让模型按技能提示词直接进入 confirm_import。
         toolResult = {
           success: true, retryable: false,
-          // confirmed: true 标记该预览已确认，前端 ImportPreviewInteractive 据此切换为「已确认」并禁用按钮（防重复提交）
-          data: { mode: 'review', confirmed: true, source: reData.source, records: reData.records ? (reData.records as any[]).map((r: any) => ({ type: r.type, categoryCode: r.categoryCode, categoryLabel: r.categoryLabel, mappedCategoryCode: r.mappedCategoryCode, mappedCategoryLabel: r.mappedCategoryLabel, payer: r.payer, remark: r.remark })) : [], unrecognizedRecords: reData.unrecognizedRecords ? (reData.unrecognizedRecords as any[]).map((r: any) => ({ type: r.type, categoryCode: r.categoryCode, categoryLabel: r.categoryLabel, mappedCategoryCode: r.mappedCategoryCode, mappedCategoryLabel: r.mappedCategoryLabel, payer: r.payer, remark: r.remark })) : [], unmatchedAccounts: reData.unmatchedAccounts || [], unmatchedCategories: reData.unmatchedCategories || [], stats: reData.stats, message: '请检查以上映射结果是否正确。' },
+          data: {
+            mode: 'review',
+            confirmed: true,
+            source: (entry.args as any)?.source,
+            accountBookId,
+            message: '用户已确认本次预览。请立即调用 confirm_import 执行导入，不要再调用 preview_import，也不要重复展示预览。',
+          },
         }
       } else if (entry.toolName === 'confirm_import') {
         const args = entry.args || {}

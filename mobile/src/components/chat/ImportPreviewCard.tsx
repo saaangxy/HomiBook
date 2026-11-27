@@ -141,8 +141,7 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
     unrecognizedResolutions: effectiveUnrecRes,
   });
   // 放行判定在服务端:点确认后由 confirm_import 裁决,未决原因经 confirmError 回显
-
-  const allRecords = [...records, ...unrec];
+  // 「记录」只展示正常记录:未识别行只在「需处理」出现,避免同一条流水重复展示
 
   // 「将新建」的账户(源账户名 → 目标名),preview_import 回报
   const newAccountCreations = (data as { newAccountCreations?: { sourceAccountName: string; name: string; type: string }[] }).newAccountCreations || [];
@@ -188,7 +187,7 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
   const mappedCategoryOf = (row: { mappedCategoryLabel?: string | null; mappedCategoryCode?: string | null }) =>
     row.mappedCategoryLabel || row.mappedCategoryCode || '-';
   const tabs = [
-    { key: 'records' as const, label: `记录 (${allRecords.length})` },
+    { key: 'records' as const, label: `记录 (${records.length})` },
     { key: 'accounts' as const, label: `未匹配账户 (${unmatchedAccounts.length})` },
     { key: 'categories' as const, label: `未匹配分类 (${categoryRes.length})` },
     { key: 'unrec' as const, label: `需处理 (${unrec.length})` },
@@ -334,6 +333,16 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
   const inputStyle = { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.hairline, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5, fontSize: 11, color: colors.foreground } as const;
   const selectBtnStyle = { flex: 1, flexDirection: 'row' as const, alignItems: 'center' as const, justifyContent: 'space-between' as const, borderWidth: 1, borderColor: colors.hairline, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6, backgroundColor: colors.card };
 
+  // 已确认:后端只回执「用户已确认」(不再重发整套预览数据),这里收起明细,只保留状态行
+  if (isConfirmed) {
+    return (
+      <View style={{ marginTop: 4, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <CheckCircle2 size={14} color="#22c55e" />
+        <Text style={{ fontSize: 11.5, color: '#22c55e' }}>已确认，等待导入...</Text>
+      </View>
+    );
+  }
+
   return (
     <View style={{ marginTop: 4, gap: 8 }}>
       {/* 统计摘要 */}
@@ -369,7 +378,7 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
         <MiniTable
           columns={['日期', '类型', '金额', '账户', '目标账户', '交易方', '原始分类', '系统分类', '备注']}
           aligns={['left', 'left', 'left', 'right']}
-          rows={allRecords.map((r) => {
+          rows={records.map((r) => {
             let displayDate = r.date;
             try {
               const d = new Date(r.date);
@@ -614,31 +623,24 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
           <Text style={{ fontSize: 11, color: '#ef4444' }}>{confirmError}</Text>
         </View>
       ) : null}
-      {!isConfirmed ? (
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          <Pressable
-            onPress={handleConfirm}
-            disabled={showSubmitted}
-            style={{ flex: 1.6, borderRadius: 10, paddingVertical: 9, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6, backgroundColor: colors.primary, opacity: showSubmitted ? 0.6 : 1 }}
-          >
-            {showSubmitted && <ActivityIndicator size="small" color={colors.primaryForeground} />}
-            <Text style={{ fontSize: 12.5, fontWeight: '600', color: colors.primaryForeground }}>{showSubmitted ? '提交中...' : '确认无误，继续导入'}</Text>
-          </Pressable>
-          {/* 取消:与确认同为这张卡的决定(web ImportPreviewInteractive 同款) */}
-          <Pressable
-            onPress={handleCancel}
-            disabled={showSubmitted}
-            style={{ flex: 1, borderRadius: 10, paddingVertical: 9, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, opacity: showSubmitted ? 0.6 : 1 }}
-          >
-            <Text style={{ fontSize: 12.5, color: colors.foreground }}>取消</Text>
-          </Pressable>
-        </View>
-      ) : (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <CheckCircle2 size={14} color="#22c55e" />
-          <Text style={{ fontSize: 11.5, color: '#22c55e' }}>已确认，等待导入...</Text>
-        </View>
-      )}
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        <Pressable
+          onPress={handleConfirm}
+          disabled={showSubmitted}
+          style={{ flex: 1.6, borderRadius: 10, paddingVertical: 9, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6, backgroundColor: colors.primary, opacity: showSubmitted ? 0.6 : 1 }}
+        >
+          {showSubmitted && <ActivityIndicator size="small" color={colors.primaryForeground} />}
+          <Text style={{ fontSize: 12.5, fontWeight: '600', color: colors.primaryForeground }}>{showSubmitted ? '提交中...' : '确认无误，继续导入'}</Text>
+        </Pressable>
+        {/* 取消:与确认同为这张卡的决定(web ImportPreviewInteractive 同款) */}
+        <Pressable
+          onPress={handleCancel}
+          disabled={showSubmitted}
+          style={{ flex: 1, borderRadius: 10, paddingVertical: 9, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, opacity: showSubmitted ? 0.6 : 1 }}
+        >
+          <Text style={{ fontSize: 12.5, color: colors.foreground }}>取消</Text>
+        </Pressable>
+      </View>
 
       {/* 底部选择弹窗:必须用 RN Modal —— FormSheet 是相对**父容器**的覆盖层,
           挂在卡片里只占卡片宽度(长账户名被截断、背景卡片还会透出来)。

@@ -61,6 +61,12 @@ interface ConfirmPreviewData {
   ownerId: string
   owners: Owner[]
   accountBookId: string
+  /** 服务端裁决(remapImportRows):false 时不可导入 */
+  canProceed?: boolean
+  /** canProceed 为 false 时的逐条原因 */
+  blockReasons?: string[]
+  /** 未处置的未识别行数量(点确认即视为同意跳过) */
+  skippedUnrecognized?: number
 }
 
 interface ConfirmResultData {
@@ -105,7 +111,11 @@ export function ImportConfirmCard({ data, toolCallId }: Props) {
     )
   }
 
+  // 服务端裁决不可继续时不提交(否则 confirm_import 执行阶段会抛错,模型只得重走预览 → 循环)
+  const blocked = data.canProceed === false
+
   const handleConfirm = () => {
+    if (blocked) return
     markSubmitted(toolCallId)
     // 保持 submitted 标记，防止重复提交；导入完成 data 切换为 imported 结果后清除
     useChatStore.getState().confirmAndContinue(data.accountBookId, toolCallId, true, { attachmentId: data.attachmentId, ownerId })
@@ -212,11 +222,21 @@ export function ImportConfirmCard({ data, toolCallId }: Props) {
         </div>
       )}
 
+      {/* 服务端裁决不可继续:展示原因并禁用确认(与手动向导「下一步」同一道门禁) */}
+      {blocked && (
+        <div className="rounded border border-red-200 bg-red-50 p-2 text-xs text-red-600 space-y-0.5">
+          <div className="font-medium">暂时无法导入，请先处理以下问题：</div>
+          {(data.blockReasons?.length ? data.blockReasons : ['存在未处理的导入问题']).map((r, i) => (
+            <div key={i}>· {r}</div>
+          ))}
+        </div>
+      )}
+
       {/* 操作按钮 */}
       <div className="flex gap-2">
-        <Button size="sm" variant="default" disabled={submitted} onClick={handleConfirm}>
+        <Button size="sm" variant="default" disabled={submitted || blocked} onClick={handleConfirm}>
           {submitted ? <Loader2 size={12} className="animate-spin mr-1" /> : null}
-          {submitted ? '提交中...' : `确认导入 ${data.stats.totalRecords} 条记录`}
+          {submitted ? '提交中...' : blocked ? '请先处理上述问题' : `确认导入 ${data.stats.totalRecords} 条记录`}
         </Button>
         <Button size="sm" variant="outline" disabled={submitted} onClick={handleReject}>
           取消

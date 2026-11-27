@@ -617,10 +617,25 @@ export function ToolCard({ toolCall, bookId, stale }: { toolCall: ToolCallEntry;
                 maxHeight={220}
               />
             )}
+            {/* 服务端裁决不可继续:展示原因并禁用确认(与手动向导「下一步」同一道门禁) */}
+            {data.canProceed === false && (
+              <View style={{ borderRadius: 8, borderWidth: 1, borderColor: alpha('#ef4444', 0.4), backgroundColor: alpha('#ef4444', 0.08), padding: 8, gap: 2 }}>
+                <Text style={{ fontSize: 11, fontWeight: '600', color: '#ef4444' }}>暂时无法导入，请先处理以下问题：</Text>
+                {((data.blockReasons?.length ? data.blockReasons : ['存在未处理的导入问题']) as string[]).map((r, i) => (
+                  <Text key={i} style={{ fontSize: 10.5, color: '#ef4444' }}>· {r}</Text>
+                ))}
+              </View>
+            )}
             <View style={{ flexDirection: 'row', gap: 8 }}>
-              <Pressable onPress={() => confirmAndContinue(data.accountBookId || bookId, toolCall.toolCallId, true, { attachmentId: data.attachmentId, ownerId: confirmOwnerId || data.ownerId })} disabled={submitted} style={{ flex: 1.6, borderRadius: 10, paddingVertical: 8, alignItems: 'center', backgroundColor: colors.primary, flexDirection: 'row', justifyContent: 'center', gap: 6, opacity: submitted ? 0.6 : 1 }}>
+              <Pressable
+                onPress={() => { if (data.canProceed !== false) confirmAndContinue(data.accountBookId || bookId, toolCall.toolCallId, true, { attachmentId: data.attachmentId, ownerId: confirmOwnerId || data.ownerId }); }}
+                disabled={submitted || data.canProceed === false}
+                style={{ flex: 1.6, borderRadius: 10, paddingVertical: 8, alignItems: 'center', backgroundColor: colors.primary, flexDirection: 'row', justifyContent: 'center', gap: 6, opacity: submitted || data.canProceed === false ? 0.6 : 1 }}
+              >
                 {submitted && <ActivityIndicator size="small" color="#fff" />}
-                <Text numberOfLines={1} style={{ color: '#fff', ...btnText }}>{submitted ? '提交中...' : `确认导入 ${data.stats?.totalRecords ?? 0} 条`}</Text>
+                <Text numberOfLines={1} style={{ color: '#fff', ...btnText }}>
+                  {submitted ? '提交中...' : data.canProceed === false ? '请先处理上述问题' : `确认导入 ${data.stats?.totalRecords ?? 0} 条`}
+                </Text>
               </Pressable>
               <Pressable onPress={() => confirmAndContinue(data.accountBookId || bookId, toolCall.toolCallId, false)} disabled={submitted} style={{ flex: 1, borderRadius: 10, paddingVertical: 8, alignItems: 'center', borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, opacity: submitted ? 0.6 : 1 }}>
                 <Text numberOfLines={1} style={{ fontSize: 12.5, color: colors.foreground }}>取消</Text>

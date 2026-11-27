@@ -92,6 +92,14 @@ export interface ImportPreviewData {
 // ---- 常量 ----
 
 const TYPE_LABELS: Record<string, string> = { ...RECORD_TYPE_LABELS, UNKNOWN: '未知' }
+
+/** ISO(UTC) → 本地 YYYY-MM-DD HH:mm(直接展示原值会显示 UTC 时间,与记录列表口径不一致) */
+function formatLocalMinute(value: string): string {
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return (value || '').replace('T', ' ').slice(0, 16)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
 const TYPE_COLORS = RECORD_TYPE_TEXT_CLASS
 // 收支类型 → 字典组映射统一来自 @homibook/core
 const TYPE_TO_GROUP = coreTypeToGroup
@@ -216,7 +224,7 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
     unrecognizedResolutions: effectiveUnrecognizedResolutions,
   })
   // 放行判定在服务端:点确认后由 confirm_import 裁决,未决原因经 confirmError 回显
-  const allRecords = [...records, ...unrecognizedRecords]
+  // 「记录」tab 只展示正常记录:未识别行只在「需处理」tab 出现,避免同一条流水在两个 tab 各出现一次
 
   /**
    * 账户列展示「映射后账户名」(与手动向导确认页同口径):
@@ -259,7 +267,7 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
     row.mappedCategoryLabel || row.mappedCategoryCode || '-'
 
   const tabs = [
-    { key: 'records' as const, label: `记录 (${allRecords.length})` },
+    { key: 'records' as const, label: `记录 (${records.length})` },
     { key: 'unmatchedAccounts' as const, label: `未匹配账户 (${(data.unmatchedAccounts || []).length})` },
     { key: 'unmatchedCategories' as const, label: `未匹配分类 (${categoryResolutions.length})` },
     { key: 'unrecognized' as const, label: `需处理 (${unrecognizedRecords.length})` },
@@ -283,6 +291,16 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
       groups.set(d.group, list)
     }
     return groups
+  }
+
+  // 已确认:后端只回执「用户已确认」(不再重发整套预览数据),这里收起明细,只保留状态行
+  if (isConfirmed) {
+    return (
+      <div className="flex items-center gap-2 text-xs text-[#22c55e] py-1">
+        <CheckCircle2 size={14} />
+        <span>已确认，等待导入...</span>
+      </div>
+    )
   }
 
   // ---- 渲染 ----
@@ -352,7 +370,7 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
               </tr>
             </thead>
             <tbody>
-              {allRecords.map((r, i) => {
+              {records.map((r, i) => {
                 const displayDate = (() => {
                   try {
                     const d = new Date(r.date)
@@ -361,7 +379,7 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
                   } catch { return r.date }
                 })()
                 return (
-                <tr key={i} className={cn('border-t', r.type === 'UNKNOWN' && 'bg-red-50/30')}>
+                <tr key={i} className="border-t">
                   <td className="px-1 py-0.5">{displayDate}</td>
                   <td className={cn('px-1 py-0.5', TYPE_COLORS[r.type])}>{TYPE_LABELS[r.type] || r.type}</td>
                   <td className="px-1 py-0.5 text-right">{r.amount.toFixed(2)}</td>
@@ -623,7 +641,7 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
                   'flex flex-wrap items-center gap-1.5 p-1.5 rounded border text-[10px]',
                   isResolved ? 'border-[#22c55e]/30 bg-[#22c55e]/5' : 'border-orange-300 bg-orange-50',
                 )}>
-                  <span className="min-w-[70px]">{r.date}</span>
+                  <span className="min-w-[70px]">{formatLocalMinute(r.date)}</span>
                   <span className="min-w-[60px] text-right font-mono">{r.amount.toFixed(2)}</span>
                   <span className="min-w-[60px] truncate">{r.accountName}</span>
                   <span className="min-w-[50px] truncate text-muted-foreground">{r.payer || '-'}</span>
@@ -693,8 +711,7 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
           </div>
         )}
 
-        {!isConfirmed ? (
-          <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2">
           <Button
             size="sm"
             className="flex-1 text-xs"
@@ -781,13 +798,7 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
           >
             取消
           </Button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 text-xs text-[#22c55e]">
-            <CheckCircle2 size={14} />
-            <span>已确认，等待导入...</span>
-          </div>
-        )}
+        </div>
       </div>
     </div>
   )
