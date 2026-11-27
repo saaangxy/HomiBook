@@ -33,6 +33,17 @@ export interface UnrecognizedResolutionDraft {
   accountId: string;
   categoryCode: string;
   toAccountId: string;
+  /** 用户是否手动选过账户：选过之后不再被上方账户映射的默认值覆盖 */
+  accountTouched?: boolean;
+}
+
+/** 从上方账户映射推导出的未识别行账户引用 */
+export interface DerivedUnrecognizedAccount {
+  /** 提交用的账户引用：已有账户为 id，本次将新建的账户为目标名 */
+  value: string;
+  action: 'existing' | 'create';
+  /** 将新建账户的名称（下拉里展示为「新建：名称」） */
+  newAccountName?: string;
 }
 
 /** 分类决议的扁平条目（复合键已解析，供投影与匹配使用） */
@@ -176,6 +187,71 @@ export function initUnrecognizedResolutionDrafts(
     drafts[r.rowIndex] = { type: '', accountId: '', categoryCode: '', toAccountId: '' };
   }
   return drafts;
+}
+
+// ── 未识别行的账户默认值（来源：上方账户映射） ──
+
+/**
+ * 按本行源账户名推导账户引用：上方账户映射里已配置（映射到已有账户 / 新建账户）时返回结果。
+ *
+ * 首次导入没有已有账户时，「需手动处理」行的账户下拉此前为空，行永远完不成；
+ * 这里让行内能直接复用它上方已经配置好的结果 —— 引用方式与普通记录一致：
+ * 已有账户用 id，本次将新建的账户用目标名（后端 buildValidAccountRefs / AccountResolver 已支持）。
+ *
+ * 注：候选建议（isDefault）同样可用 —— 它只表示「尚未显式采纳」，不阻塞行内带入。
+ */
+export function deriveUnrecognizedAccount(
+  accountName: string | null | undefined,
+  accountResolutions: Record<string, AccountResolution>,
+): DerivedUnrecognizedAccount | null {
+  if (!accountName) return null;
+  const res = accountResolutions[accountName];
+  if (!res) return null;
+  if (res.action === 'existing') {
+    return res.accountId ? { value: res.accountId, action: 'existing' } : null;
+  }
+  return res.name ? { value: res.name, action: 'create', newAccountName: res.name } : null;
+}
+
+/**
+ * 本次将新建的账户名（去重、排除与已有账户同名的项）。
+ *
+ * 用于「需手动处理」行的账户下拉追加「新建：名称」选项；与已有账户同名时无需重复 ——
+ * 后端创建账户会按同名去重到同一账户，引用目标名与引用该账户 id 等价。
+ */
+export function collectPendingAccountNames(
+  accountResolutions: Record<string, AccountResolution>,
+  existingAccountNames: Iterable<string>,
+): string[] {
+  const existing = new Set(existingAccountNames);
+  const names = new Set<string>();
+  for (const res of Object.values(accountResolutions)) {
+    if (res.action === 'create' && res.name && !existing.has(res.name)) names.add(res.name);
+  }
+  return Array.from(names);
+}
+
+/**
+ * 合并「默认账户」后的有效未识别行决议：
+ * - 用户手选过（accountTouched）的行保持不变；
+ * - 其余行用上方账户映射推导出的账户覆盖（含 AI 卡里预置的首个账户等「默认值」）。
+ * 只补账户，类型/分类/转入账户仍由用户自行选择。
+ */
+export function applyUnrecognizedAccountDefaults(
+  state: Record<number, UnrecognizedResolutionDraft>,
+  rows: { rowIndex?: number; accountName?: string | null }[],
+  accountResolutions: Record<string, AccountResolution>,
+): Record<number, UnrecognizedResolutionDraft> {
+  const out: Record<number, UnrecognizedResolutionDraft> = {};
+  for (const row of rows) {
+    const rowIndex = row.rowIndex ?? -1;
+    const cur = state[rowIndex] ?? { type: '', accountId: '', categoryCode: '', toAccountId: '' };
+    const derived = cur.accountTouched
+      ? null
+      : deriveUnrecognizedAccount(row.accountName, accountResolutions);
+    out[rowIndex] = derived ? { ...cur, accountId: derived.value } : cur;
+  }
+  return out;
 }
 
 // ── 投影 ──

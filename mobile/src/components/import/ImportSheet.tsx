@@ -21,7 +21,7 @@ import {
   mergeAccountCreations, type AccountResolution, type ImportColumnField, type ImportSource, accountLabel,
   buildCategoryResolutionKey, findBestCategoryResolution, initCategoryResolutionDrafts,
   toAccountResolutionPayload, toCategoryResolutionEntries, toCategoryResolutionPayload,
-  toUnrecognizedResolutionPayload,
+  toUnrecognizedResolutionPayload, applyUnrecognizedAccountDefaults, collectPendingAccountNames,
   type CategoryResolutionDraft, type UnrecognizedResolutionDraft,
 } from '@homibook/core';
 
@@ -428,6 +428,17 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
     (preview?.unmatchedAccounts ?? []).map((ua) => ua.suggestedName?.trim() || ua.csvName),
   ).size;
 
+  // 本次将新建的账户(与已有账户同名的已排除):「需手动处理」行的账户下拉可选它们
+  const pendingAccountNames = collectPendingAccountNames(accountRes, ownerPool.map((a) => a.name));
+  const unrecognizedAccountOptions = [
+    ...ownerPool.map((a) => ({ value: a.id, label: accountLabel(a, multiOwnerAccounts) })),
+    ...pendingAccountNames.map((name) => ({ value: name, label: `新建：${name}` })),
+  ];
+  // 未识别行的有效决议:未手选账户的行按「本行源账户在上方账户映射中的结果」带入默认账户
+  const effectiveUnrecognizedRes = applyUnrecognizedAccountDefaults(
+    unrecognizedRes, preview?.unrecognizedRecords ?? [], accountRes,
+  );
+
   // 导入进度(待处理/已映射/将跳过;口径统一在 core computeImportProgress)
   const progress = computeImportProgress({
     unmatchedAccounts: preview?.unmatchedAccounts ?? [],
@@ -441,7 +452,7 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
       }));
     }),
     unrecognizedRecords: preview?.unrecognizedRecords ?? [],
-    unrecognizedResolutions: unrecognizedRes,
+    unrecognizedResolutions: effectiveUnrecognizedRes,
   });
   // 注:第一步的放行判定已收敛到服务端(见 goConfirm 的 canProceed),此处 progress 仅用于展示
 
@@ -467,7 +478,7 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
     const ownerId = effectiveOwner === '__self__' ? undefined : effectiveOwner;
     const accountResForServer = toAccountResolutionPayload(override?.accountResolutions ?? accountRes);
     const catResForServer = toCategoryResolutionPayload(categoryEntries);
-    const unrecResForServer = toUnrecognizedResolutionPayload(unrecognizedRes);
+    const unrecResForServer = toUnrecognizedResolutionPayload(effectiveUnrecognizedRes);
 
     // 预置预览(短信 / 通知记账)没有上传文件,/import/check 用不了。
     // 由调用方提供 presetServerCheck(→ /api/sms/check),服务端用**同一套** remapImportRows 裁决,
@@ -645,12 +656,12 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
     // 未识别记录(已设置类型+账户的)
     const resolvedUnrecognized = (preview?.unrecognizedRecords ?? [])
       .filter((r) => {
-        const res = unrecognizedRes[r.rowIndex ?? -1];
+        const res = effectiveUnrecognizedRes[r.rowIndex ?? -1];
         // 转账必须指定转入账户,否则该行仍算未设置(跳过)
         return res?.type && res?.accountId && (res.type !== 'TRANSFER' || !!res.toAccountId);
       })
       .map((r) => {
-        const res = unrecognizedRes[r.rowIndex ?? -1];
+        const res = effectiveUnrecognizedRes[r.rowIndex ?? -1];
         return {
           date: r.date,
           type: res.type,
@@ -774,12 +785,12 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
       return Object.entries(IMPORT_TYPE_LABELS).map(([k, v]) => ({ value: k, label: v }));
     }
     if (picker.kind === 'unrec-acct') {
-      return ownerPool.map((a) => ({ value: a.id, label: accountLabel(a, multiOwnerAccounts) }));
+      return unrecognizedAccountOptions;
     }
     if (picker.kind === 'unrec-toacct') {
       // 转入账户:排除已选的转出账户(转账两端不能是同一个账户)
-      const from = picker.key !== undefined ? unrecognizedRes[Number(picker.key)]?.accountId : undefined;
-      return ownerPool.filter((a) => a.id !== from).map((a) => ({ value: a.id, label: accountLabel(a, multiOwnerAccounts) }));
+      const from = picker.key !== undefined ? effectiveUnrecognizedRes[Number(picker.key)]?.accountId : undefined;
+      return unrecognizedAccountOptions.filter((o) => o.value !== from);
     }
     if (picker.kind === 'unrec-cat') {
       const res = picker.key ? unrecognizedRes[Number(picker.key)] : undefined;
@@ -828,7 +839,8 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
     } else if (picker.kind === 'unrec-type' && key !== undefined) {
       setUnrecognizedRes((p) => ({ ...p, [Number(key)]: { ...p[Number(key)], type: value, categoryCode: '' } }));
     } else if (picker.kind === 'unrec-acct' && key !== undefined) {
-      setUnrecognizedRes((p) => ({ ...p, [Number(key)]: { ...p[Number(key)], accountId: value } }));
+      // 手选账户后不再被上方映射覆盖(accountTouched)
+      setUnrecognizedRes((p) => ({ ...p, [Number(key)]: { ...p[Number(key)], accountId: value, accountTouched: true } }));
     } else if (picker.kind === 'unrec-toacct' && key !== undefined) {
       setUnrecognizedRes((p) => ({ ...p, [Number(key)]: { ...p[Number(key)], toAccountId: value } }));
     } else if (picker.kind === 'unrec-cat' && key !== undefined) {
@@ -1311,15 +1323,23 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
                     </Pressable>
                   ) : null}
                   {preview.unrecognizedRecords.map((r) => {
-                    const res = unrecognizedRes[r.rowIndex ?? -1];
+                    // 有效决议:未手选账户的行已按上方账户映射带入默认值
+                    const res = effectiveUnrecognizedRes[r.rowIndex ?? -1];
                     // 转账还要有转入账户才算设置完成(否则该行会被跳过)
                     const isResolved = !!res?.type && !!res?.accountId && (res.type !== 'TRANSFER' || !!res.toAccountId);
                     const isTransfer = res?.type === 'TRANSFER';
                     const typeLabel = res?.type ? IMPORT_TYPE_LABELS[res.type as keyof typeof IMPORT_TYPE_LABELS] ?? res.type : '类型';
+                    // 账户引用可能是 id(已有账户),也可能是本次将新建账户的目标名
                     const fromAccount = accounts.find((x) => x.id === res?.accountId);
-                    const fromLabel = fromAccount ? accountLabel(fromAccount, multiOwnerAccounts) : isTransfer ? '转出账户' : '账户';
+                    const fromIsPending = !!res?.accountId && !fromAccount && pendingAccountNames.includes(res.accountId);
+                    const fromLabel = fromAccount
+                      ? accountLabel(fromAccount, multiOwnerAccounts)
+                      : fromIsPending ? `新建：${res!.accountId}` : isTransfer ? '转出账户' : '账户';
                     const toAccount = accounts.find((x) => x.id === res?.toAccountId);
-                    const toLabel = toAccount ? `转入 → ${accountLabel(toAccount, multiOwnerAccounts)}` : '转入账户';
+                    const toIsPending = !!res?.toAccountId && !toAccount && pendingAccountNames.includes(res.toAccountId);
+                    const toLabel = toAccount
+                      ? `转入 → ${accountLabel(toAccount, multiOwnerAccounts)}`
+                      : toIsPending ? `转入 → 新建：${res!.toAccountId}` : '转入账户';
                     const catLabel = allDictItems.find((d) => d.code === res?.categoryCode)?.label ?? '分类';
                     // 一个选择器按钮(kind 决定打开哪个 picker);三个选择器等宽,文字占满左侧、
                     // 箭头统一靠右(此前「类型」按内容自适应,与另两个 flex:1 的宽度参差)
@@ -1368,6 +1388,12 @@ export function ImportSheet({ visible, onClose, bookId, dictCodes, presetPreview
                             {pickBtn('unrec-cat', catLabel, !!res?.categoryCode)}
                           </View>
                         )}
+                        {/* 账户没有可选项(无已有账户、无将新建账户):提示去上方账户映射配置 */}
+                        {unrecognizedAccountOptions.length === 0 ? (
+                          <Text style={{ fontSize: 10.5, color: '#f59e0b', marginTop: 6 }}>
+                            请先在上方账户映射中为「{r.accountName || '该账户'}」配置账户
+                          </Text>
+                        ) : null}
                       </View>
                     );
                   })}

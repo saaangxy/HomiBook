@@ -13,6 +13,7 @@ import {
   initAccountResolutions, type AccountResolution, type ToolCallEntry, accountLabel, isMultiOwnerAccounts,
   initCategoryResolutionEntries,
   toAccountResolutionPayload, toCategoryResolutionPayload, toUnrecognizedResolutionPayload,
+  applyUnrecognizedAccountDefaults, collectPendingAccountNames,
   type CategoryResolutionEntry, type UnrecognizedResolutionDraft,
 } from '@homibook/core';
 
@@ -124,12 +125,20 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
   const showSubmitted = submitted && !isConfirmed && !toolError;
 
   // 导入进度(待处理/已映射/将跳过;口径统一在 core computeImportProgress,与手动向导/web AI 卡一致)
+  // 未手选账户的行按「本行源账户在上方账户映射中的结果」带入默认账户
+  const effectiveUnrecRes = applyUnrecognizedAccountDefaults(unrecRes, unrec, accountRes);
+  const pendingAccountNames = collectPendingAccountNames(accountRes, accounts.map((a) => a.name));
+  const unrecAccountOptions = [
+    ...accounts.map((a) => ({ value: a.id, label: accountLabel(a, multiOwnerAccounts) })),
+    ...pendingAccountNames.map((name) => ({ value: name, label: `新建：${name}` })),
+  ];
+
   const progress = computeImportProgress({
     unmatchedAccounts,
     accountResolutions: accountRes,
     categoryResolutions: categoryRes.map((cr) => ({ sourceCategory: cr.sourceCategory, targetCode: cr.targetCode })),
     unrecognizedRecords: unrec,
-    unrecognizedResolutions: unrecRes,
+    unrecognizedResolutions: effectiveUnrecRes,
   });
   // 放行判定在服务端:点确认后由 confirm_import 裁决,未决原因经 confirmError 回显
 
@@ -226,11 +235,11 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
     if (picker.kind === 'unrec-type') {
       return Object.entries(RECORD_TYPE_LABELS).map(([k, v]) => ({ value: k, label: v as string }));
     }
-    if (picker.kind === 'unrec-acct') return accounts.map((a) => ({ value: a.id, label: accountLabel(a, multiOwnerAccounts) }));
+    if (picker.kind === 'unrec-acct') return unrecAccountOptions;
     if (picker.kind === 'unrec-toacct') {
       // 转入账户:排除已选的转出账户(转账两端不能是同一个账户)
-      const from = unrecRes[Number(picker.key)]?.accountId;
-      return accounts.filter((a) => a.id !== from).map((a) => ({ value: a.id, label: accountLabel(a, multiOwnerAccounts) }));
+      const from = effectiveUnrecRes[Number(picker.key)]?.accountId;
+      return unrecAccountOptions.filter((o) => o.value !== from);
     }
     if (picker.kind === 'unrec-cat') {
       const res = unrecRes[Number(picker.key)];
@@ -243,10 +252,10 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
     if (!picker) return undefined;
     if (picker.kind === 'acct-existing') return (accountRes[picker.key] as any)?.accountId;
     if (picker.kind === 'acct-type') return (accountRes[picker.key] as any)?.type;
-    if (picker.kind === 'unrec-type') return unrecRes[Number(picker.key)]?.type;
-    if (picker.kind === 'unrec-acct') return unrecRes[Number(picker.key)]?.accountId;
-    if (picker.kind === 'unrec-toacct') return unrecRes[Number(picker.key)]?.toAccountId;
-    if (picker.kind === 'unrec-cat') return unrecRes[Number(picker.key)]?.categoryCode;
+    if (picker.kind === 'unrec-type') return effectiveUnrecRes[Number(picker.key)]?.type;
+    if (picker.kind === 'unrec-acct') return effectiveUnrecRes[Number(picker.key)]?.accountId;
+    if (picker.kind === 'unrec-toacct') return effectiveUnrecRes[Number(picker.key)]?.toAccountId;
+    if (picker.kind === 'unrec-cat') return effectiveUnrecRes[Number(picker.key)]?.categoryCode;
     return undefined;
   })();
   const onPickerSelect = (v: string) => {
@@ -254,7 +263,7 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
     if (picker.kind === 'acct-existing') setAccountRes((p) => ({ ...p, [picker.key]: { action: 'existing', accountId: v } }));
     else if (picker.kind === 'acct-type') setAccountRes((p) => ({ ...p, [picker.key]: { ...(p[picker.key] as any), action: 'create', type: v } }));
     else if (picker.kind === 'unrec-type') setUnrecRes((p) => ({ ...p, [Number(picker.key)]: { ...p[Number(picker.key)], type: v, categoryCode: '' } }));
-    else if (picker.kind === 'unrec-acct') setUnrecRes((p) => ({ ...p, [Number(picker.key)]: { ...p[Number(picker.key)], accountId: v } }));
+    else if (picker.kind === 'unrec-acct') setUnrecRes((p) => ({ ...p, [Number(picker.key)]: { ...p[Number(picker.key)], accountId: v, accountTouched: true } }));
     else if (picker.kind === 'unrec-toacct') setUnrecRes((p) => ({ ...p, [Number(picker.key)]: { ...p[Number(picker.key)], toAccountId: v } }));
     else if (picker.kind === 'unrec-cat') setUnrecRes((p) => ({ ...p, [Number(picker.key)]: { ...p[Number(picker.key)], categoryCode: v } }));
     setPicker(null);
@@ -295,7 +304,7 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
     const userCats = toCategoryResolutionPayload(categoryEntries, { onlySaved: true });
     if (userCats.length > 0) overrides.categoryResolutions = userCats;
     // 未识别行：只提交完整处置（转账必须有转入账户）
-    const userUnrec = toUnrecognizedResolutionPayload(unrecRes, { onlyComplete: true });
+    const userUnrec = toUnrecognizedResolutionPayload(effectiveUnrecRes, { onlyComplete: true });
     if (userUnrec.length > 0) overrides.unrecognizedResolutions = userUnrec;
 
     try {
@@ -521,15 +530,23 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
             <Text style={{ fontSize: 11.5, color: colors.mutedForeground }}>无未识别记录</Text>
           ) : (
             unrec.map((r) => {
-              const res = unrecRes[r.rowIndex] ?? { type: '', accountId: '', categoryCode: '', toAccountId: '' };
+              // 有效决议:未手选账户的行已按上方账户映射带入默认值
+              const res = effectiveUnrecRes[r.rowIndex] ?? { type: '', accountId: '', categoryCode: '', toAccountId: '' };
               // 转账还要有转入账户才算设置完成(否则该行会被跳过)
               const resolved = !!res.type && !!res.accountId && (res.type !== 'TRANSFER' || !!res.toAccountId);
               const isTransfer = res.type === 'TRANSFER';
               const typeLabel = IMPORT_TYPE_LABELS[res.type] ?? '类型';
+              // 账户引用可能是 id(已有账户),也可能是本次将新建账户的目标名
               const fromAccount = accounts.find((x) => x.id === res.accountId);
-              const fromLabel = fromAccount ? accountLabel(fromAccount, multiOwnerAccounts) : isTransfer ? '转出账户' : '账户';
+              const fromIsPending = !!res.accountId && !fromAccount && pendingAccountNames.includes(res.accountId);
+              const fromLabel = fromAccount
+                ? accountLabel(fromAccount, multiOwnerAccounts)
+                : fromIsPending ? `新建：${res.accountId}` : isTransfer ? '转出账户' : '账户';
               const toAccount = accounts.find((x) => x.id === res.toAccountId);
-              const toLabel = toAccount ? `转入 → ${accountLabel(toAccount, multiOwnerAccounts)}` : '转入账户';
+              const toIsPending = !!res.toAccountId && !toAccount && pendingAccountNames.includes(res.toAccountId);
+              const toLabel = toAccount
+                ? `转入 → ${accountLabel(toAccount, multiOwnerAccounts)}`
+                : toIsPending ? `转入 → 新建：${res.toAccountId}` : '转入账户';
               const catLabel = dictItems.find((d) => d.code === res.categoryCode)?.label ?? '分类';
               // 一个选择器按钮(kind 决定打开哪个 sheet)
               const pickBtn = (kind: 'unrec-type' | 'unrec-acct' | 'unrec-toacct' | 'unrec-cat', label: string, filled: boolean) => (
@@ -578,6 +595,12 @@ export function ImportPreviewCard({ toolCall, bookId }: { toolCall: ToolCallEntr
                       {pickBtn('unrec-cat', catLabel, !!res.categoryCode)}
                     </View>
                   )}
+                  {/* 账户没有可选项(无已有账户、无将新建账户):提示去上方账户映射配置 */}
+                  {unrecAccountOptions.length === 0 ? (
+                    <Text style={{ fontSize: 10, color: '#fb923c' }}>
+                      请先在上方账户映射中为「{r.accountName || '该账户'}」配置账户
+                    </Text>
+                  ) : null}
                 </View>
               );
             })

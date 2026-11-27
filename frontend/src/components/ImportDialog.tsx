@@ -21,7 +21,7 @@ import {
   matchAccountInPool, type AccountResolution,
   buildCategoryResolutionKey, findBestCategoryResolution, initCategoryResolutionDrafts, initUnrecognizedResolutionDrafts,
   toAccountResolutionPayload, toCategoryResolutionEntries, toCategoryResolutionPayload,
-  toUnrecognizedResolutionPayload,
+  toUnrecognizedResolutionPayload, applyUnrecognizedAccountDefaults, collectPendingAccountNames,
   type CategoryResolutionDraft, type UnrecognizedResolutionDraft,
 } from '@homibook/core';
 
@@ -395,6 +395,17 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
     unmatchedAccounts.map(ua => ua.suggestedName?.trim() || ua.csvName),
   ).size
 
+  // 本次将新建的账户(与已有账户同名的已排除):「需手动处理」行的账户下拉可选它们
+  const pendingAccountNames = collectPendingAccountNames(accountResolutions, ownerPool.map(a => a.name))
+  const unrecognizedAccountOptions = [
+    ...ownerPool.map(a => ({ value: a.id, label: accountLabel(a, multiOwnerAccounts) })),
+    ...pendingAccountNames.map(name => ({ value: name, label: `新建：${name}` })),
+  ]
+  // 未识别行的有效决议:未手选账户的行按「本行源账户在上方账户映射中的结果」补默认账户
+  const effectiveUnrecognizedResolutions = applyUnrecognizedAccountDefaults(
+    unrecognizedResolutions, unrecognizedRecords, accountResolutions,
+  )
+
   // 导入进度(待处理/已映射/将跳过;口径统一在 core computeImportProgress)
   const progress = computeImportProgress({
     unmatchedAccounts,
@@ -408,7 +419,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
       })),
     ),
     unrecognizedRecords,
-    unrecognizedResolutions,
+    unrecognizedResolutions: effectiveUnrecognizedResolutions,
   })
   // 注:第一步的放行判定已收敛到服务端(见 goConfirm 的 canProceed),此处 progress 仅用于展示
 
@@ -431,7 +442,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
     const ownerId = effectiveOwner === '__self__' ? undefined : effectiveOwner
     const accountRes = toAccountResolutionPayload(override?.accountResolutions ?? accountResolutions)
     const catRes = toCategoryResolutionPayload(toCategoryResolutionEntries(categoryResolutions))
-    const unrecRes = toUnrecognizedResolutionPayload(unrecognizedResolutions)
+    const unrecRes = toUnrecognizedResolutionPayload(effectiveUnrecognizedResolutions)
 
     try {
       const res = await importExportApi.preview(file, source, bookId, columnMapping, typeMapping, headerRow, {
@@ -593,12 +604,12 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
 
     const resolvedUnrecognized = unrecognizedRecords
       .filter(r => {
-        const res = unrecognizedResolutions[r.rowIndex]
+        const res = effectiveUnrecognizedResolutions[r.rowIndex]
         // 转账必须指定转入账户,否则该行仍算未设置(跳过)
         return res?.type && res?.accountId && (res.type !== 'TRANSFER' || !!res.toAccountId)
       })
       .map(r => {
-        const res = unrecognizedResolutions[r.rowIndex]
+        const res = effectiveUnrecognizedResolutions[r.rowIndex]
         return {
           date: r.date,
           type: res.type,
@@ -1402,12 +1413,17 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                   )}
                   <div className="space-y-2 max-h-64 overflow-y-auto">
                     {unrecognizedRecords.map(r => {
-                      const res = unrecognizedResolutions[r.rowIndex]
+                      // 有效决议:未手选账户的行已按上方账户映射带入默认值
+                      const res = effectiveUnrecognizedResolutions[r.rowIndex]
                       // 转账还要有转入账户才算设置完成
                       const isResolved = !!res?.type && !!res?.accountId && (res.type !== 'TRANSFER' || !!res.toAccountId)
                       const updateRes = (patch: Partial<typeof res>) => {
                         const cur = unrecognizedResolutions[r.rowIndex] || { type: '', accountId: '', categoryCode: '', toAccountId: '' }
-                        setUnrecognizedResolutions({ ...unrecognizedResolutions, [r.rowIndex]: { ...cur, ...patch } })
+                        setUnrecognizedResolutions({
+                          ...unrecognizedResolutions,
+                          // 手选账户后不再被上方映射覆盖(accountTouched)
+                          [r.rowIndex]: { ...cur, ...patch, ...(patch.accountId !== undefined ? { accountTouched: true } : {}) },
+                        })
                       }
                       // 按类型筛选可选分类
                       const resolvedType = res?.type
@@ -1416,7 +1432,7 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                         ? allDictItems.filter(d => d.group === allowedGroup)
                         : allDictItems
                       return (
-                        <div key={r.rowIndex} className={`flex items-center gap-2 p-3 rounded-lg border text-xs ${isResolved ? 'border-[#22c55e]/30 bg-[#22c55e]/5' : 'border-orange-300 bg-orange-50 dark:bg-orange-950/20'}`}>
+                        <div key={r.rowIndex} className={`flex flex-wrap items-center gap-2 p-3 rounded-lg border text-xs ${isResolved ? 'border-[#22c55e]/30 bg-[#22c55e]/5' : 'border-orange-300 bg-orange-50 dark:bg-orange-950/20'}`}>
                           <span className="font-mono whitespace-nowrap text-muted-foreground">{new Date(r.date).toLocaleDateString('zh-CN')}</span>
                           <span className="font-mono whitespace-nowrap">{r.amount.toFixed(2)}</span>
                           <TrucCell text={r.accountName} maxW="max-w-[60px]" />
@@ -1437,8 +1453,8 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                               <SelectValue placeholder={res?.type === 'TRANSFER' ? '转出账户' : '选择账户'} />
                             </SelectTrigger>
                             <SelectContent className="bg-card border-border max-h-48">
-                              {ownerPool.map(a => (
-                                <SelectItem key={a.id} value={a.id} className="text-xs">{accountLabel(a, multiOwnerAccounts)}</SelectItem>
+                              {unrecognizedAccountOptions.map(o => (
+                                <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
@@ -1449,8 +1465,8 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                                 <SelectValue placeholder="转入账户" />
                               </SelectTrigger>
                               <SelectContent className="bg-card border-border max-h-48">
-                                {ownerPool.filter(a => a.id !== res?.accountId).map(a => (
-                                  <SelectItem key={a.id} value={a.id} className="text-xs">{accountLabel(a, multiOwnerAccounts)}</SelectItem>
+                                {unrecognizedAccountOptions.filter(o => o.value !== res?.accountId).map(o => (
+                                  <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
@@ -1471,6 +1487,12 @@ export function ImportDialog({ open, onOpenChange, bookId, accounts, dictCodes, 
                             <CheckCircle size={14} className="text-[#22c55e] shrink-0" />
                           ) : (
                             <span className="text-[10px] text-orange-500 shrink-0">未设置</span>
+                          )}
+                          {/* 账户没有可选项(无已有账户、无将新建账户):提示去上方账户映射配置 */}
+                          {unrecognizedAccountOptions.length === 0 && (
+                            <span className="w-full text-[10px] text-orange-500">
+                              请先在上方账户映射中为「{r.accountName || '该账户'}」配置账户
+                            </span>
                           )}
                         </div>
                       )

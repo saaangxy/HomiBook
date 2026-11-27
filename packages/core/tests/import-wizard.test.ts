@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  applyUnrecognizedAccountDefaults,
   buildCategoryResolutionKey,
+  collectPendingAccountNames,
+  deriveUnrecognizedAccount,
   findBestCategoryResolution,
   initCategoryResolutionDrafts,
   initCategoryResolutionEntries,
@@ -282,5 +285,60 @@ describe('findBestCategoryResolution', () => {
     expect(findBestCategoryResolution([
       { ...base, sourceCategory: '餐饮', recordType: 'EXPENSE', targetCode: '', payerContains: '美团' },
     ], { sourceCategory: '餐饮', recordType: 'EXPENSE', payer: '美团', remark: '' })).toBeNull();
+  });
+});
+
+describe('未识别行的默认账户（上方账户映射）', () => {
+  const resolutions: Record<string, AccountResolution> = {
+    '招商银行': { action: 'create', name: '招行储蓄卡', type: 'SAVINGS' },
+    '支付宝余额': { action: 'existing', accountId: 'acc-1' },
+    '微信零钱': { action: 'create', name: '现金', type: 'CASH', isDefault: true },
+  };
+
+  it('按源账户名推导：新建账户用目标名，已有账户用 id', () => {
+    expect(deriveUnrecognizedAccount('招商银行', resolutions)).toEqual({ value: '招行储蓄卡', action: 'create', newAccountName: '招行储蓄卡' });
+    expect(deriveUnrecognizedAccount('支付宝余额', resolutions)).toEqual({ value: 'acc-1', action: 'existing' });
+  });
+
+  it('源账户没有映射 / 名称为空时返回 null', () => {
+    expect(deriveUnrecognizedAccount('未知卡', resolutions)).toBeNull();
+    expect(deriveUnrecognizedAccount('', resolutions)).toBeNull();
+    expect(deriveUnrecognizedAccount(null, resolutions)).toBeNull();
+  });
+
+  it('候选建议（isDefault）同样可被带入', () => {
+    expect(deriveUnrecognizedAccount('微信零钱', resolutions)?.value).toBe('现金');
+  });
+
+  it('待新建账户名去重，并排除与已有账户同名的项', () => {
+    expect(collectPendingAccountNames(resolutions, ['现金'])).toEqual(['招行储蓄卡']);
+    expect(collectPendingAccountNames(resolutions, [])).toEqual(['招行储蓄卡', '现金']);
+  });
+
+  it('合并默认值：未手选的行按上方映射带入，手选的行保持', () => {
+    const drafts = initUnrecognizedResolutionDrafts([{ rowIndex: 1 }, { rowIndex: 2 }, { rowIndex: 3 }]);
+    drafts[2] = { ...drafts[2], accountId: 'manual', accountTouched: true };
+    // 没有 accountTouched 的预置值只是默认值(如 AI 卡预填首个账户),应被上方映射覆盖
+    drafts[3] = { ...drafts[3], accountId: 'preset' };
+    const rows = [
+      { rowIndex: 1, accountName: '招商银行' },
+      { rowIndex: 2, accountName: '支付宝余额' },
+      { rowIndex: 3, accountName: '支付宝余额' },
+      { rowIndex: 4, accountName: '未知卡' },
+    ];
+    const merged = applyUnrecognizedAccountDefaults(drafts, rows, resolutions);
+    expect(merged[1].accountId).toBe('招行储蓄卡');
+    expect(merged[2].accountId).toBe('manual');
+    expect(merged[3].accountId).toBe('acc-1');
+    // 没有映射的行保持原值(无预置时为空，仍由用户手选)
+    expect(merged[4].accountId).toBe('');
+  });
+
+  it('合并后的结果可直接投影成提交载荷（不携带 accountTouched）', () => {
+    const drafts = initUnrecognizedResolutionDrafts([{ rowIndex: 1 }]);
+    drafts[1] = { ...drafts[1], type: 'EXPENSE', categoryCode: 'FOOD' };
+    const merged = applyUnrecognizedAccountDefaults(drafts, [{ rowIndex: 1, accountName: '招商银行' }], resolutions);
+    const payload = toUnrecognizedResolutionPayload(merged);
+    expect(payload).toEqual([{ rowIndex: 1, type: 'EXPENSE', accountId: '招行储蓄卡', categoryCode: 'FOOD', toAccountId: undefined }]);
   });
 });

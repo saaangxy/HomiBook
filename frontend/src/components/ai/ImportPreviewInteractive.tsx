@@ -7,6 +7,7 @@ import {
   RECORD_TYPE_LABELS, TYPE_TO_GROUP as coreTypeToGroup, type AccountResolution,
   initCategoryResolutionEntries,
   toAccountResolutionPayload, toCategoryResolutionPayload, toUnrecognizedResolutionPayload,
+  applyUnrecognizedAccountDefaults, collectPendingAccountNames,
   type CategoryResolutionEntry, type UnrecognizedResolutionDraft,
 } from '@homibook/core'
 
@@ -195,13 +196,24 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
   }, [data?.confirmed, toolCallId])
 
   // ---- 计算 ----
+  // 本次将新建的账户(与已有账户同名的已排除):「需手动处理」行的账户下拉可选它们
+  const pendingAccountNames = collectPendingAccountNames(accountResolutions, accounts.map(a => a.name))
+  const unrecognizedAccountOptions = [
+    ...accounts.map(a => ({ value: a.id, label: a.name })),
+    ...pendingAccountNames.map(name => ({ value: name, label: `新建：${name}` })),
+  ]
+  // 未识别行的有效决议:未手选账户的行按「本行源账户在上方账户映射中的结果」带入默认账户
+  const effectiveUnrecognizedResolutions = applyUnrecognizedAccountDefaults(
+    unrecognizedResolutions, unrecognizedRecords, accountResolutions,
+  )
+
   // 导入进度(待处理/已映射/将跳过;口径统一在 core computeImportProgress,与手动向导/AI 移动端卡一致)
   const progress = computeImportProgress({
     unmatchedAccounts: data.unmatchedAccounts || [],
     accountResolutions,
     categoryResolutions: categoryResolutions.map(cr => ({ sourceCategory: cr.sourceCategory, targetCode: cr.targetCode })),
     unrecognizedRecords,
-    unrecognizedResolutions,
+    unrecognizedResolutions: effectiveUnrecognizedResolutions,
   })
   // 放行判定在服务端:点确认后由 confirm_import 裁决,未决原因经 confirmError 回显
   const allRecords = [...records, ...unrecognizedRecords]
@@ -595,15 +607,20 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
             <p className="text-muted-foreground text-xs">无未识别记录</p>
           ) : (
             unrecognizedRecords.map(r => {
-              const res = unrecognizedResolutions[r.rowIndex] || { type: '', accountId: '', categoryCode: '', toAccountId: '' }
+              // 有效决议:未手选账户的行已按上方账户映射带入默认值
+              const res = effectiveUnrecognizedResolutions[r.rowIndex] || { type: '', accountId: '', categoryCode: '', toAccountId: '' }
               // 转账还要有转入账户才算设置完成
               const isResolved = !!res.type && !!res.accountId && (res.type !== 'TRANSFER' || !!res.toAccountId)
               const updateRes = (patch: Partial<UnrecognizedResolutionDraft>) =>
-                setUnrecognizedResolutions(prev => ({ ...prev, [r.rowIndex]: { ...res, ...patch } }))
+                setUnrecognizedResolutions(prev => {
+                  const cur = prev[r.rowIndex] || { type: '', accountId: '', categoryCode: '', toAccountId: '' }
+                  // 手选账户后不再被上方映射覆盖(accountTouched)
+                  return { ...prev, [r.rowIndex]: { ...cur, ...patch, ...(patch.accountId !== undefined ? { accountTouched: true } : {}) } }
+                })
 
               return (
                 <div key={r.rowIndex} className={cn(
-                  'flex items-center gap-1.5 p-1.5 rounded border text-[10px]',
+                  'flex flex-wrap items-center gap-1.5 p-1.5 rounded border text-[10px]',
                   isResolved ? 'border-[#22c55e]/30 bg-[#22c55e]/5' : 'border-orange-300 bg-orange-50',
                 )}>
                   <span className="min-w-[70px]">{r.date}</span>
@@ -628,7 +645,7 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__none__" className="text-xs">-</SelectItem>
-                      {accounts.map(a => <SelectItem key={a.id} value={a.id} className="text-xs">{a.name}</SelectItem>)}
+                      {unrecognizedAccountOptions.map(o => <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>)}
                     </SelectContent>
                   </Select>
                   {/* 转账必须指定转入账户(否则会落成没有收款方的转账);候选排除已选的转出账户 */}
@@ -639,7 +656,7 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="__none__" className="text-xs">-</SelectItem>
-                        {accounts.filter(a => a.id !== res.accountId).map(a => <SelectItem key={a.id} value={a.id} className="text-xs">{a.name}</SelectItem>)}
+                        {unrecognizedAccountOptions.filter(o => o.value !== res.accountId).map(o => <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   ) : null}
@@ -655,6 +672,12 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
                     </SelectContent>
                   </Select>
                   {isResolved ? <CheckCircle2 size={12} className="text-[#22c55e] shrink-0" /> : <span className="text-[10px] text-orange-500 shrink-0">未设置</span>}
+                  {/* 账户没有可选项(无已有账户、无将新建账户):提示去账户映射配置 */}
+                  {unrecognizedAccountOptions.length === 0 && (
+                    <span className="w-full text-[10px] text-orange-500">
+                      请先在上方账户映射中为「{r.accountName || '该账户'}」配置账户
+                    </span>
+                  )}
                 </div>
               )
             })
@@ -704,7 +727,7 @@ export function ImportPreviewInteractive({ data, accountBookId, toolCallId, aiAr
                   if (userCategoryResolutions.length > 0) overrides.categoryResolutions = userCategoryResolutions
 
                   // 未识别行：只提交完整处置（转账必须有转入账户）
-                  const userUnrecognizedResolutions = toUnrecognizedResolutionPayload(unrecognizedResolutions, { onlyComplete: true })
+                  const userUnrecognizedResolutions = toUnrecognizedResolutionPayload(effectiveUnrecognizedResolutions, { onlyComplete: true })
                   if (userUnrecognizedResolutions.length > 0) overrides.unrecognizedResolutions = userUnrecognizedResolutions
 
                   // 服务端裁决(与手动向导「下一步」同一道校验):未通过就停在卡片上,不执行导入
